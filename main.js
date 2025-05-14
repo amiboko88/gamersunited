@@ -60,3 +60,51 @@ client.once('ready', () => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
+
+
+
+
+
+client.on('voiceStateUpdate', async (oldState, newState) => {
+    try {
+      const joinedChannel = newState.channelId;
+      const leftChannel = oldState.channelId;
+  
+      const TEST_CHANNEL = process.env.TTS_TEST_CHANNEL_ID;
+  
+      // רק אם נכנס לערוץ הייעודי
+      if (joinedChannel === TEST_CHANNEL && leftChannel !== TEST_CHANNEL) {
+        const channel = newState.guild.channels.cache.get(TEST_CHANNEL);
+  
+        // נוודא שיש לפחות 1 או 2 משתמשים
+        const members = channel.members.filter(m => !m.user.bot);
+        if (members.size < 1) return;
+  
+        // הבוט מצטרף
+        const connection = await channel.join(); // אם אתה ב-Discord.js v13, אחרת נעשה דרך Voice
+        console.log('🎤 הצטרפתי לערוץ בדיקה');
+  
+        // השמעת TTS הומוריסטי
+        const sentences = [
+          "יאללה חברים, תתנהגו בהתאם, יש כאן בוט עם חוש הומור.",
+          "אני רק בודק סאונד, תמשיכו לדבר כאילו כלום לא קרה.",
+          "שימי הבוט הגיע, נא לא לרייר.",
+          "אני שומע פה יותר שתיקות מאשר בקבוצת ווטסאפ של קרובי משפחה.",
+        ];
+        const chosen = sentences[Math.floor(Math.random() * sentences.length)];
+  
+        // Text-to-Speech: נשתמש ב־gTTS או מערכת קול אחרת (מוכן להוספה לפי בחירה)
+  
+        // כאן נכניס השמעה בפועל (או נשאיר כתשובת טקסט להמשך)
+  
+        // יציאה אחרי כמה שניות
+        setTimeout(() => {
+          connection.disconnect();
+          console.log("👋 הבוט יצא מהערוץ");
+        }, 5000);
+      }
+    } catch (err) {
+      console.error("❌ שגיאה ב-TTS:", err);
+    }
+  });
+  

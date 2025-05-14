@@ -127,27 +127,30 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
 // ==============================
 
 async function synthesizeAzureTTS(text) {
-  const key = process.env.AZURE_SPEECH_KEY;
-  const region = process.env.AZURE_SPEECH_REGION;
-
-  const endpoint = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
-
-  const ssml = `
-    <speak version='1.0' xml:lang='he-IL'>
-      <voice xml:lang='he-IL' xml:gender='Male' name='he-IL-AvriNeural'>
-        ${text}
-      </voice>
-    </speak>`;
-
-  const response = await axios.post(endpoint, ssml, {
-    responseType: "arraybuffer",
-    headers: {
-      "Ocp-Apim-Subscription-Key": key,
-      "Content-Type": "application/ssml+xml",
-      "X-Microsoft-OutputFormat": "audio-16khz-32kbitrate-mono-mp3",
-      "User-Agent": "discord-bot",
-    },
-  });
-
-  return response.data;
-}
+    const key = process.env.AZURE_SPEECH_KEY;
+    const region = process.env.AZURE_SPEECH_REGION;
+  
+    const endpoint = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
+  
+    const ssml = `
+      <speak version='1.0' xml:lang='he-IL'>
+        <voice xml:lang='he-IL' xml:gender='Male' name='he-IL-AvriNeural'>
+          ${text}
+        </voice>
+      </speak>`;
+  
+    const response = await axios.post(endpoint, ssml, {
+      responseType: "arraybuffer", // 👈 חשוב
+      headers: {
+        "Ocp-Apim-Subscription-Key": key,
+        "Content-Type": "application/ssml+xml",
+        "X-Microsoft-OutputFormat": "audio-16khz-32kbitrate-mono-mp3",
+        "User-Agent": "discord-bot",
+      },
+    });
+  
+    // ודא שהחזרנו Buffer תקני
+    const buffer = Buffer.from(response.data);
+    return buffer;
+  }
+  

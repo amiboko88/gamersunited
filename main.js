@@ -38,7 +38,7 @@ async function testConnection() {
 testConnection();
 
 // ==============================
-// 🤖 Discord Bot (discord.js v14)
+// 🤖 Discord Bot – discord.js v14
 // ==============================
 require('dotenv').config();
 
@@ -49,10 +49,13 @@ const {
   createAudioResource,
   entersState,
   AudioPlayerStatus,
-  VoiceConnectionStatus
+  VoiceConnectionStatus,
+  StreamType
 } = require('@discordjs/voice');
 
 const googleTTS = require('google-tts-api');
+const ffmpeg = require('ffmpeg-static');
+const { spawn } = require('child_process');
 
 const client = new Client({
   intents: [
@@ -70,63 +73,71 @@ client.once('ready', () => {
 client.login(process.env.DISCORD_TOKEN);
 
 // ==============================
-// 🔊 TTS אוטומטי בעת כניסה לערוץ קול מסוים
+// 🔊 TTS בעת כניסה לערוץ בדיקה
 // ==============================
 
 client.on('voiceStateUpdate', async (oldState, newState) => {
-    const joinedChannel = newState.channelId;
-    const leftChannel = oldState.channelId;
-    const TEST_CHANNEL = process.env.TTS_TEST_CHANNEL_ID;
-  
-    console.log(`🎯 בדיקה: joined=${joinedChannel}, expected=${TEST_CHANNEL}`);
-  
-    // נבדוק האם אכן נכנס לערוץ הייעודי
-    if (joinedChannel === TEST_CHANNEL && leftChannel !== TEST_CHANNEL) {
-      try {
-        console.log("✅ תנאי הופעל – מתחילים השמעה");
-  
-        const channel = newState.guild.channels.cache.get(TEST_CHANNEL);
-        const members = channel.members.filter(m => !m.user.bot);
-        if (members.size < 1) return;
-  
-        const connection = joinVoiceChannel({
-          channelId: channel.id,
-          guildId: channel.guild.id,
-          adapterCreator: channel.guild.voiceAdapterCreator,
-        });
-  
-        await entersState(connection, VoiceConnectionStatus.Ready, 5000);
-  
-        const sentences = [
-          "יאללה חברים, תתנהגו בהתאם, יש כאן בוט עם חוש הומור.",
-          "אני רק בודק סאונד, תמשיכו לדבר כאילו כלום לא קרה.",
-          "שימי הבוט הגיע, נא לא לרייר.",
-          "אני שומע פה יותר שתיקות מאשר בקבוצת ווטסאפ של קרובי משפחה."
-        ];
-        const chosen = sentences[Math.floor(Math.random() * sentences.length)];
-  
-        const url = googleTTS.getAudioUrl(chosen, {
-          lang: 'he',
-          slow: false,
-          host: 'https://translate.google.com',
-        });
-  
-        const resource = createAudioResource(url);
-        const player = createAudioPlayer();
-  
-        connection.subscribe(player);
-        player.play(resource);
-  
-        player.once(AudioPlayerStatus.Idle, () => {
-          connection.destroy();
-          console.log("👋 הבוט סיים והשאיר רושם");
-        });
-  
-      } catch (err) {
-        console.error("❌ שגיאה בתהליך השמעת הקול:", err);
-      }
+  const joinedChannel = newState.channelId;
+  const leftChannel = oldState.channelId;
+  const TEST_CHANNEL = process.env.TTS_TEST_CHANNEL_ID;
+
+  console.log(`🎯 בדיקה: joined=${joinedChannel}, expected=${TEST_CHANNEL}`);
+
+  if (joinedChannel === TEST_CHANNEL && leftChannel !== TEST_CHANNEL) {
+    try {
+      console.log("✅ תנאי הופעל – מתחילים השמעה");
+
+      const channel = newState.guild.channels.cache.get(TEST_CHANNEL);
+      const members = channel.members.filter(m => !m.user.bot);
+      if (members.size < 1) return;
+
+      const connection = joinVoiceChannel({
+        channelId: channel.id,
+        guildId: channel.guild.id,
+        adapterCreator: channel.guild.voiceAdapterCreator,
+      });
+
+      await entersState(connection, VoiceConnectionStatus.Ready, 5000);
+
+      const sentences = [
+        "יאללה חברים, תתנהגו בהתאם, יש כאן בוט עם חוש הומור.",
+        "אני רק בודק סאונד, תמשיכו לדבר כאילו כלום לא קרה.",
+        "שימי הבוט הגיע, נא לא לרייר.",
+        "אני שומע פה יותר שתיקות מאשר בקבוצת ווטסאפ של קרובי משפחה."
+      ];
+      const chosen = sentences[Math.floor(Math.random() * sentences.length)];
+
+      const url = googleTTS.getAudioUrl(chosen, {
+        lang: 'he',
+        slow: false,
+        host: 'https://translate.google.com',
+      });
+
+      const ffmpegProcess = spawn(ffmpeg, [
+        '-i', url,
+        '-analyzeduration', '0',
+        '-loglevel', '0',
+        '-f', 's16le',
+        '-ar', '48000',
+        '-ac', '2',
+        'pipe:1'
+      ], { stdio: ['pipe', 'pipe', 'ignore'] });
+
+      const resource = createAudioResource(ffmpegProcess.stdout, {
+        inputType: StreamType.Raw
+      });
+
+      const player = createAudioPlayer();
+      connection.subscribe(player);
+      player.play(resource);
+
+      player.once(AudioPlayerStatus.Idle, () => {
+        connection.destroy();
+        console.log("👋 הבוט סיים והשאיר רושם");
+      });
+
+    } catch (err) {
+      console.error("❌ שגיאה בתהליך השמעת הקול:", err);
     }
-  });
-  
-  
-  
+  }
+});

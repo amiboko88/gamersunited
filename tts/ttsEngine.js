@@ -14,19 +14,16 @@ function getUserProfileSSML(username) {
   const selectedVoice = voices[Math.floor(Math.random() * voices.length)];
 
   const fallbackLines = [
-    'שלום שלום לשחקן האלמוני. תפתיע הפעם.',
-    'שוב אתה? לא נמאס לך להפסיד?',
-    'הבוט מזהה אותך... ומעדיף לשתוק.',
-    'כנראה שנגמרו השחקנים אם אתה פה.',
-    'תתאמץ היום קצת. נמאס לנו לחפות עליך.'
-  ];
-
-  const englishEndings = [
-    "I'm watching you.",
-    "Don't disappoint me.",
-    "Your KD ratio is embarrassing.",
-    "Shhh... someone’s about to rage quit.",
-    "Please... don't camp again."
+    "שלום שלום לשחקן האלמוני. תפתיע הפעם.",
+    "שוב אתה? לא נמאס לך להפסיד?",
+    "הבוט מזהה אותך... ומעדיף לשתוק.",
+    "כנראה שנגמרו השחקנים אם אתה פה.",
+    "תתאמץ היום קצת. נמאס לנו לחפות עליך.",
+    "שוב נכנסת בלי תקווה – רק בונדה לה קקה הפעם?",
+    "הקבוצה שלך כבר מתפללת שתחליק על גג ותתנתק.",
+    "דודה של קאלי ביקשה ממך: אל תפתח קופסאות, תן דמג.",
+    "אם אתה מתכוון רק לגנוח – תחסוך לכולנו את הכניסה.",
+    "רק תזכור: הפעם האחרונה שעשית משהו טוב הייתה בטעות."
   ];
 
   const personalLines = playerProfiles[username];
@@ -34,17 +31,12 @@ function getUserProfileSSML(username) {
     ? personalLines[Math.floor(Math.random() * personalLines.length)]
     : fallbackLines[Math.floor(Math.random() * fallbackLines.length)];
 
-  const englishWhisper = englishEndings[Math.floor(Math.random() * englishEndings.length)];
-
   return `
 <speak version='1.0' xml:lang='he-IL'>
   <voice name='${selectedVoice}'>
     <prosody rate='${mood.rate}' pitch='${mood.pitch}'>
       ${hebrewText}
     </prosody>
-  </voice>
-  <voice name='en-US-JennyMultilingualNeural' style='whispering'>
-    ${englishWhisper}
   </voice>
 </speak>
   `;

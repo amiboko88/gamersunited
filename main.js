@@ -3,7 +3,7 @@
 // ==============================
 const admin = require("firebase-admin");
 
-const serviceAccountString = process.env.FIREBASE_SERVICE_ACCOUNT;
+const serviceAccountString = process.env.FIREBASE_CREDENTIAL;
 
 if (!serviceAccountString) {
   console.error("❌ לא הוגדר משתנה סביבה FIREBASE_SERVICE_ACCOUNT");

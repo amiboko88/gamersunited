@@ -4,9 +4,8 @@
 const admin = require("firebase-admin");
 
 const serviceAccountString = process.env.FIREBASE_CREDENTIAL;
-
 if (!serviceAccountString) {
-  console.error("❌ לא הוגדר משתנה סביבה FIREBASE_CREDENTIAL");
+  console.error("❌ לא הוגדר FIREBASE_CREDENTIAL");
   process.exit(1);
 }
 
@@ -38,11 +37,10 @@ async function testConnection() {
 testConnection();
 
 // ==============================
-// 🤖 Discord Bot – discord.js v14
+// 🤖 Discord Bot – עם Azure TTS בלבד
 // ==============================
-require('dotenv').config();
-
-const { Client, GatewayIntentBits } = require('discord.js');
+require("dotenv").config();
+const { Client, GatewayIntentBits } = require("discord.js");
 const {
   joinVoiceChannel,
   createAudioPlayer,
@@ -50,33 +48,30 @@ const {
   entersState,
   AudioPlayerStatus,
   VoiceConnectionStatus,
-  StreamType
-} = require('@discordjs/voice');
-
-const googleTTS = require('google-tts-api');
-const ffmpeg = require('ffmpeg-static');
-const { spawn } = require('child_process');
+  StreamType,
+} = require("@discordjs/voice");
+const axios = require("axios");
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
   ],
 });
 
-client.once('ready', () => {
+client.once("ready", () => {
   console.log(`שימי הבוט באוויר! ${client.user.tag}`);
 });
 
 client.login(process.env.DISCORD_TOKEN);
 
 // ==============================
-// 🔊 TTS בעת כניסה לערוץ בדיקה
+// 🔊 TTS – על בסיס Azure בלבד
 // ==============================
 
-client.on('voiceStateUpdate', async (oldState, newState) => {
+client.on("voiceStateUpdate", async (oldState, newState) => {
   const joinedChannel = newState.channelId;
   const leftChannel = oldState.channelId;
   const TEST_CHANNEL = process.env.TTS_TEST_CHANNEL_ID;
@@ -88,7 +83,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       console.log("✅ תנאי הופעל – מתחילים השמעה");
 
       const channel = newState.guild.channels.cache.get(TEST_CHANNEL);
-      const members = channel.members.filter(m => !m.user.bot);
+      const members = channel.members.filter((m) => !m.user.bot);
       if (members.size < 1) return;
 
       const connection = joinVoiceChannel({
@@ -103,28 +98,14 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         "יאללה חברים, תתנהגו בהתאם, יש כאן בוט עם חוש הומור.",
         "אני רק בודק סאונד, תמשיכו לדבר כאילו כלום לא קרה.",
         "שימי הבוט הגיע, נא לא לרייר.",
-        "אני שומע פה יותר שתיקות מאשר בקבוצת ווטסאפ של קרובי משפחה."
+        "אני שומע פה יותר שתיקות מאשר בקבוצת ווטסאפ של קרובי משפחה.",
       ];
-      const chosen = sentences[Math.floor(Math.random() * sentences.length)];
+      const text = sentences[Math.floor(Math.random() * sentences.length)];
 
-      const url = googleTTS.getAudioUrl(chosen, {
-        lang: 'he',
-        slow: false,
-        host: 'https://translate.google.com',
-      });
+      const audioBuffer = await synthesizeAzureTTS(text);
 
-      const ffmpegProcess = spawn(ffmpeg, [
-        '-i', url,
-        '-analyzeduration', '0',
-        '-loglevel', '0',
-        '-f', 's16le',
-        '-ar', '48000',
-        '-ac', '2',
-        'pipe:1'
-      ], { stdio: ['pipe', 'pipe', 'ignore'] });
-
-      const resource = createAudioResource(ffmpegProcess.stdout, {
-        inputType: StreamType.Raw
+      const resource = createAudioResource(audioBuffer, {
+        inputType: StreamType.Arbitrary,
       });
 
       const player = createAudioPlayer();
@@ -135,9 +116,38 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         connection.destroy();
         console.log("👋 הבוט סיים והשאיר רושם");
       });
-
     } catch (err) {
-      console.error("❌ שגיאה בתהליך השמעת הקול:", err);
+      console.error("❌ שגיאה בתהליך השמעה:", err);
     }
   }
 });
+
+// ==============================
+// 🧠 פונקציה: יצירת קול עברי באמצעות Azure TTS
+// ==============================
+
+async function synthesizeAzureTTS(text) {
+  const key = process.env.AZURE_SPEECH_KEY;
+  const region = process.env.AZURE_SPEECH_REGION;
+
+  const endpoint = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
+
+  const ssml = `
+    <speak version='1.0' xml:lang='he-IL'>
+      <voice xml:lang='he-IL' xml:gender='Male' name='he-IL-AvriNeural'>
+        ${text}
+      </voice>
+    </speak>`;
+
+  const response = await axios.post(endpoint, ssml, {
+    responseType: "arraybuffer",
+    headers: {
+      "Ocp-Apim-Subscription-Key": key,
+      "Content-Type": "application/ssml+xml",
+      "X-Microsoft-OutputFormat": "audio-16khz-32kbitrate-mono-mp3",
+      "User-Agent": "discord-bot",
+    },
+  });
+
+  return response.data;
+}

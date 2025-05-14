@@ -37,7 +37,7 @@ async function testConnection() {
 testConnection();
 
 // ==============================
-// 🤖 Discord Bot – עם Azure TTS בלבד
+// 🤖 Discord Bot – עם Azure TTS נקי
 // ==============================
 require("dotenv").config();
 const { Client, GatewayIntentBits } = require("discord.js");
@@ -51,6 +51,7 @@ const {
   StreamType,
 } = require("@discordjs/voice");
 const axios = require("axios");
+const { Readable } = require("stream");
 
 const client = new Client({
   intents: [
@@ -68,9 +69,8 @@ client.once("ready", () => {
 client.login(process.env.DISCORD_TOKEN);
 
 // ==============================
-// 🔊 TTS – על בסיס Azure בלבד
+// 🔊 TTS – עם Azure בלבד
 // ==============================
-
 client.on("voiceStateUpdate", async (oldState, newState) => {
   const joinedChannel = newState.channelId;
   const leftChannel = oldState.channelId;
@@ -92,7 +92,7 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
         adapterCreator: channel.guild.voiceAdapterCreator,
       });
 
-      await entersState(connection, VoiceConnectionStatus.Ready, 5000);
+      await entersState(connection, VoiceConnectionStatus.Ready, 5_000);
 
       const sentences = [
         "יאללה חברים, תתנהגו בהתאם, יש כאן בוט עם חוש הומור.",
@@ -103,8 +103,9 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
       const text = sentences[Math.floor(Math.random() * sentences.length)];
 
       const audioBuffer = await synthesizeAzureTTS(text);
+      const stream = Readable.from(audioBuffer);
 
-      const resource = createAudioResource(audioBuffer, {
+      const resource = createAudioResource(stream, {
         inputType: StreamType.Arbitrary,
       });
 
@@ -117,40 +118,36 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
         console.log("👋 הבוט סיים והשאיר רושם");
       });
     } catch (err) {
-      console.error("❌ שגיאה בתהליך השמעה:", err);
+      console.error("❌ שגיאה בתהליך ההשמעה:", err);
     }
   }
 });
 
 // ==============================
-// 🧠 פונקציה: יצירת קול עברי באמצעות Azure TTS
+// 🧠 פונקציית Azure – יצירת MP3 איכותי בקול עברי
 // ==============================
-
 async function synthesizeAzureTTS(text) {
-    const key = process.env.AZURE_SPEECH_KEY;
-    const region = process.env.AZURE_SPEECH_REGION;
-  
-    const endpoint = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
-  
-    const ssml = `
-      <speak version='1.0' xml:lang='he-IL'>
-        <voice xml:lang='he-IL' xml:gender='Male' name='he-IL-AvriNeural'>
-          ${text}
-        </voice>
-      </speak>`;
-  
-    const response = await axios.post(endpoint, ssml, {
-      responseType: "arraybuffer", // 👈 חשוב
-      headers: {
-        "Ocp-Apim-Subscription-Key": key,
-        "Content-Type": "application/ssml+xml",
-        "X-Microsoft-OutputFormat": "audio-16khz-32kbitrate-mono-mp3",
-        "User-Agent": "discord-bot",
-      },
-    });
-  
-    // ודא שהחזרנו Buffer תקני
-    const buffer = Buffer.from(response.data);
-    return buffer;
-  }
-  
+  const key = process.env.AZURE_SPEECH_KEY;
+  const region = process.env.AZURE_SPEECH_REGION;
+
+  const endpoint = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
+
+  const ssml = `
+    <speak version='1.0' xml:lang='he-IL'>
+      <voice xml:lang='he-IL' xml:gender='Male' name='he-IL-AvriNeural'>
+        ${text}
+      </voice>
+    </speak>`;
+
+  const response = await axios.post(endpoint, ssml, {
+    responseType: "arraybuffer",
+    headers: {
+      "Ocp-Apim-Subscription-Key": key,
+      "Content-Type": "application/ssml+xml",
+      "X-Microsoft-OutputFormat": "audio-16khz-32kbitrate-mono-mp3",
+      "User-Agent": "discord-bot",
+    },
+  });
+
+  return response.data;
+}

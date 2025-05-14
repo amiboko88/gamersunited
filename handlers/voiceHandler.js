@@ -1,4 +1,3 @@
-
 // 📁 handlers/voiceHandler.js
 const { joinVoiceChannel, entersState, VoiceConnectionStatus, createAudioPlayer, createAudioResource, AudioPlayerStatus, StreamType } = require('@discordjs/voice');
 const { Readable } = require('stream');

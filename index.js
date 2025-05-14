@@ -12,8 +12,12 @@ const client = new Client({
   ]
 });
 
+const { startCleanupScheduler } = require('./handlers/channelCleaner');
+
+// אחרי client.once('ready', ...)
 client.once('ready', () => {
-  console.log(`🤖 הבוט באוויר: ${client.user.tag}`);
+  console.log(`שימי הבוט באוויר! ${client.user.tag}`);
+  startCleanupScheduler(client); // ← כאן אנחנו מחברים את מנגנון הניקוי
 });
 
 client.on('voiceStateUpdate', (oldState, newState) => {

@@ -1,4 +1,3 @@
-
 const axios = require('axios');
 const { playerProfiles } = require('../data/profiles');
 
@@ -10,6 +9,7 @@ function getUserProfileSSML(username) {
     { rate: 'default', pitch: '+0%' }
   ];
   const mood = moods[Math.floor(Math.random() * moods.length)];
+
   const voices = ['he-IL-HilaNeural', 'he-IL-AvriNeural'];
   const selectedVoice = voices[Math.floor(Math.random() * voices.length)];
 
@@ -37,16 +37,16 @@ function getUserProfileSSML(username) {
   const englishWhisper = englishEndings[Math.floor(Math.random() * englishEndings.length)];
 
   return `
-  <speak version='1.0' xml:lang='he-IL'>
-    <voice name='${selectedVoice}'>
-      <prosody rate='${mood.rate}' pitch='${mood.pitch}'>
-        ${hebrewText}
-      </prosody>
-    </voice>
-    <voice name='en-US-JennyMultilingualNeural' style='whispering'>
-      ${englishWhisper}
-    </voice>
-  </speak>
+<speak version='1.0' xml:lang='he-IL'>
+  <voice name='${selectedVoice}'>
+    <prosody rate='${mood.rate}' pitch='${mood.pitch}'>
+      ${hebrewText}
+    </prosody>
+  </voice>
+  <voice name='en-US-JennyMultilingualNeural' style='whispering'>
+    ${englishWhisper}
+  </voice>
+</speak>
   `;
 }
 
@@ -64,6 +64,11 @@ async function synthesizeAzureTTS(ssml) {
       'User-Agent': 'discord-bot',
     },
   });
+
+  if (!response.data || !(response.data instanceof Buffer || response.data instanceof Uint8Array)) {
+    throw new Error("Azure לא החזיר Buffer תקני");
+  }
+
   return response.data;
 }
 

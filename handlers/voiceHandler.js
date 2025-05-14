@@ -1,5 +1,7 @@
 
+// 📁 handlers/voiceHandler.js
 const { joinVoiceChannel, entersState, VoiceConnectionStatus, createAudioPlayer, createAudioResource, AudioPlayerStatus, StreamType } = require('@discordjs/voice');
+const { Readable } = require('stream');
 const { getUserProfileSSML, synthesizeAzureTTS } = require('../tts/ttsEngine');
 const { enqueueTTS, ttsQueue, ttsIsPlaying, setTTSPlaying } = require('../utils/queueManager');
 
@@ -46,7 +48,16 @@ async function processQueue(channel) {
       const next = ttsQueue.shift();
       const ssml = getUserProfileSSML(next.username);
       const audioBuffer = await synthesizeAzureTTS(ssml);
-      const resource = createAudioResource(audioBuffer, {
+
+      if (!audioBuffer || audioBuffer.length < 1000) {
+        console.warn(`🔇 קול לא תקין או חסר ל־${next.username}`);
+        connection.destroy();
+        setTTSPlaying(false);
+        return;
+      }
+
+      const stream = Readable.from(audioBuffer);
+      const resource = createAudioResource(stream, {
         inputType: StreamType.Arbitrary,
       });
 

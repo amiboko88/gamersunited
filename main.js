@@ -37,7 +37,7 @@ async function testConnection() {
 testConnection();
 
 // ==============================
-// 🤖 Discord Bot – עם Azure TTS נקי
+// 🤖 Discord Bot – עם Azure TTS משודרג
 // ==============================
 require("dotenv").config();
 const { Client, GatewayIntentBits } = require("discord.js");
@@ -69,7 +69,7 @@ client.once("ready", () => {
 client.login(process.env.DISCORD_TOKEN);
 
 // ==============================
-// 🔊 TTS – עם Azure בלבד
+// 🔊 TTS עם חילה הסרקסטית 👑
 // ==============================
 client.on("voiceStateUpdate", async (oldState, newState) => {
   const joinedChannel = newState.channelId;
@@ -94,13 +94,7 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
 
       await entersState(connection, VoiceConnectionStatus.Ready, 5_000);
 
-      const sentences = [
-        "יאללה חברים, תתנהגו בהתאם, יש כאן בוט עם חוש הומור.",
-        "אני רק בודק סאונד, תמשיכו לדבר כאילו כלום לא קרה.",
-        "שימי הבוט הגיע, נא לא לרייר.",
-        "אני שומע פה יותר שתיקות מאשר בקבוצת ווטסאפ של קרובי משפחה.",
-      ];
-      const text = sentences[Math.floor(Math.random() * sentences.length)];
+      const text = getRandomFunnySSML();
 
       const audioBuffer = await synthesizeAzureTTS(text);
       const stream = Readable.from(audioBuffer);
@@ -124,20 +118,39 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
 });
 
 // ==============================
-// 🧠 פונקציית Azure – יצירת MP3 איכותי בקול עברי
+// 🧠 דיבור עם סטייל – SSML מגניב
 // ==============================
-async function synthesizeAzureTTS(text) {
+function getRandomFunnySSML() {
+  const phrases = [
+    "היי שם! <break time='300ms'/> כן, אתה. <break time='500ms'/> תתנהג בהתאם.",
+    "שימי הבוט כאן <break time='200ms'/> ואני לא רואה אתכם צוחקים. תתעוררו!",
+    "ברוכים הבאים לערוץ. <break time='400ms'/> תזכרו – מי שמפריע, מקבל השתקה אוטומטית מהיקום.",
+    "אני שומעת פה יותר שקט <break time='300ms'/> מאשר בשיעור מתמטיקה ביום שישי.",
+    "אם לא תצחקו תוך 3 שניות, <break time='300ms'/> אני מתחילה לשיר בעצמי.",
+    "אני כאן כדי לבדוק סאונד <break time='300ms'/> ולחלק הערות סרקסטיות. מוכנים?"
+  ];
+
+  const chosen = phrases[Math.floor(Math.random() * phrases.length)];
+
+  return `
+    <speak version='1.0' xml:lang='he-IL'>
+      <voice xml:lang='he-IL' xml:gender='Female' name='he-IL-HilaNeural'>
+        <prosody rate="medium" pitch="+15%">
+          ${chosen}
+        </prosody>
+      </voice>
+    </speak>
+  `;
+}
+
+// ==============================
+// 🔁 דיבור אמיתי דרך Azure
+// ==============================
+async function synthesizeAzureTTS(ssml) {
   const key = process.env.AZURE_SPEECH_KEY;
   const region = process.env.AZURE_SPEECH_REGION;
 
   const endpoint = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
-
-  const ssml = `
-    <speak version='1.0' xml:lang='he-IL'>
-      <voice xml:lang='he-IL' xml:gender='Male' name='he-IL-AvriNeural'>
-        ${text}
-      </voice>
-    </speak>`;
 
   const response = await axios.post(endpoint, ssml, {
     responseType: "arraybuffer",

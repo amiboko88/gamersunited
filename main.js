@@ -73,18 +73,60 @@ client.login(process.env.DISCORD_TOKEN);
 // 🔊 TTS אוטומטי בעת כניסה לערוץ קול מסוים
 // ==============================
 
-client.on('voiceStateUpdate', (oldState, newState) => {
-    console.log("🎯 voiceStateUpdate פועל");
+client.on('voiceStateUpdate', async (oldState, newState) => {
+    const joinedChannel = newState.channelId;
+    const leftChannel = oldState.channelId;
+    const TEST_CHANNEL = process.env.TTS_TEST_CHANNEL_ID;
   
-    console.log("old:", {
-      channelId: oldState.channelId,
-      user: oldState.member?.user.tag
-    });
+    console.log(`🎯 בדיקה: joined=${joinedChannel}, expected=${TEST_CHANNEL}`);
   
-    console.log("new:", {
-      channelId: newState.channelId,
-      user: newState.member?.user.tag
-    });
+    // נבדוק האם אכן נכנס לערוץ הייעודי
+    if (joinedChannel === TEST_CHANNEL && leftChannel !== TEST_CHANNEL) {
+      try {
+        console.log("✅ תנאי הופעל – מתחילים השמעה");
+  
+        const channel = newState.guild.channels.cache.get(TEST_CHANNEL);
+        const members = channel.members.filter(m => !m.user.bot);
+        if (members.size < 1) return;
+  
+        const connection = joinVoiceChannel({
+          channelId: channel.id,
+          guildId: channel.guild.id,
+          adapterCreator: channel.guild.voiceAdapterCreator,
+        });
+  
+        await entersState(connection, VoiceConnectionStatus.Ready, 5000);
+  
+        const sentences = [
+          "יאללה חברים, תתנהגו בהתאם, יש כאן בוט עם חוש הומור.",
+          "אני רק בודק סאונד, תמשיכו לדבר כאילו כלום לא קרה.",
+          "שימי הבוט הגיע, נא לא לרייר.",
+          "אני שומע פה יותר שתיקות מאשר בקבוצת ווטסאפ של קרובי משפחה."
+        ];
+        const chosen = sentences[Math.floor(Math.random() * sentences.length)];
+  
+        const url = googleTTS.getAudioUrl(chosen, {
+          lang: 'he',
+          slow: false,
+          host: 'https://translate.google.com',
+        });
+  
+        const resource = createAudioResource(url);
+        const player = createAudioPlayer();
+  
+        connection.subscribe(player);
+        player.play(resource);
+  
+        player.once(AudioPlayerStatus.Idle, () => {
+          connection.destroy();
+          console.log("👋 הבוט סיים והשאיר רושם");
+        });
+  
+      } catch (err) {
+        console.error("❌ שגיאה בתהליך השמעת הקול:", err);
+      }
+    }
   });
+  
   
   

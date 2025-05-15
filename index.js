@@ -1,31 +1,35 @@
-
 require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const { trackGamePresence, validatePresenceOnReady } = require('./handlers/presenceTracker');
-const { checkMVPStatusAndRun } = require('./handlers/mvpTracker'); 
-
+const {
+  checkMVPStatusAndRun,
+  registerMvpCommand,
+  handleMvpInteraction
+} = require('./handlers/mvpTracker');
+const db = require('./utils/firebase');
+const { startCleanupScheduler } = require('./handlers/channelCleaner');
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildPresences, 
+    GatewayIntentBits.GuildPresences,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.MessageContent
   ]
 });
 
-const { startCleanupScheduler } = require('./handlers/channelCleaner');
+// רישום Slash Commands
+const commands = [];
+registerMvpCommand(commands);
 
-// אחרי client.once('ready', ...)
 client.once('ready', async () => {
   console.log(`שימי הבוט באוויר! ${client.user.tag}`);
 
-  startCleanupScheduler(client); // זה יכול להישאר בלי await אם לא צריך
-  validatePresenceOnReady(client); // גם זה – תלוי אם הוא אסינכרוני
-
-  await checkMVPStatusAndRun(client, db); // ← זה חייב להיות await כדי לוודא שזה נגמר
+  startCleanupScheduler(client); // ניקוי חדרים
+  await validatePresenceOnReady(client); // בדיקת תפקידים למשחקים
+  await checkMVPStatusAndRun(client, db); // בדיקת MVP אוטומטית
 });
 
 client.on('presenceUpdate', (oldPresence, newPresence) => {
@@ -34,6 +38,10 @@ client.on('presenceUpdate', (oldPresence, newPresence) => {
 
 client.on('voiceStateUpdate', (oldState, newState) => {
   handleVoiceStateUpdate(oldState, newState);
+});
+
+client.on('interactionCreate', interaction => {
+  handleMvpInteraction(interaction, client, db); // טיפול ב־/mvp
 });
 
 client.login(process.env.DISCORD_TOKEN);

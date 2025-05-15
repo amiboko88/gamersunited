@@ -3,19 +3,39 @@ const { joinVoiceChannel, entersState, VoiceConnectionStatus, createAudioPlayer,
 const { Readable } = require('stream');
 const { getUserProfileSSML, synthesizeAzureTTS } = require('../tts/ttsEngine');
 const { enqueueTTS, ttsQueue, ttsIsPlaying, setTTSPlaying } = require('../utils/queueManager');
+const { updateVoiceActivity } = require('./mvpTracker');
+const db = require('../utils/firebase');
 
 const TEST_CHANNEL = process.env.TTS_TEST_CHANNEL_ID;
+const voiceJoinTimestamps = new Map();
 let disconnectTimer = null;
 
 async function handleVoiceStateUpdate(oldState, newState) {
   const joinedChannel = newState.channelId;
   const leftChannel = oldState.channelId;
+  const userId = (newState.member || oldState.member)?.id;
 
+  // משתמש נכנס לערוץ טסט
   if (joinedChannel === TEST_CHANNEL && leftChannel !== TEST_CHANNEL) {
+    voiceJoinTimestamps.set(userId, Date.now());
+
     const channel = newState.guild.channels.cache.get(TEST_CHANNEL);
     const username = newState.member.displayName;
     enqueueTTS({ channel, username });
     processQueue(channel);
+  }
+
+  // משתמש עוזב את הערוץ טסט
+  if (leftChannel === TEST_CHANNEL && joinedChannel !== TEST_CHANNEL) {
+    const joinedAt = voiceJoinTimestamps.get(userId);
+    if (joinedAt) {
+      const durationMinutes = Math.floor((Date.now() - joinedAt) / 1000 / 60);
+      if (durationMinutes > 0) {
+        await updateVoiceActivity(userId, durationMinutes, db);
+        console.log(`⏱️ ${userId} היה מחובר ${durationMinutes} דקות – נשלח ל־Firestore`);
+      }
+      voiceJoinTimestamps.delete(userId);
+    }
   }
 }
 

@@ -8,21 +8,30 @@ const MVP_ANNOUNCE_CHANNEL = 'general';
 
 // ⏱️ עדכון פעילות קולית
 async function updateVoiceActivity(memberId, durationMinutes, db) {
-  const userRef = db.doc(`voiceTime/${memberId}`);
-  const userSnap = await userRef.get();
+  try {
+    const userRef = db.doc(`voiceTime/${memberId}`);
+    const userSnap = await userRef.get();
 
-  if (!userSnap.exists) {
-    await userRef.set({ minutes: durationMinutes });
-  } else {
-    const data = userSnap.data();
-    await userRef.update({ minutes: (data.minutes || 0) + durationMinutes });
+    if (!userSnap.exists) {
+      await userRef.set({ minutes: durationMinutes });
+    } else {
+      const data = userSnap.data();
+      await userRef.update({ minutes: (data.minutes || 0) + durationMinutes });
+    }
+
+    console.log(`📈 עדכון פעילות ל־${memberId}: ${durationMinutes} דקות`);
+  } catch (err) {
+    console.error(`❌ שגיאה בעדכון Firestore למשתמש ${memberId}:`, err);
   }
 }
 
 // 🏆 חישוב והכרזה
 async function calculateAndAnnounceMVP(client, db) {
   const voiceRef = await db.collection('voiceTime').get();
-  if (voiceRef.empty) return;
+  if (voiceRef.empty) {
+    console.log('📭 אין נתונים לחישוב MVP');
+    return;
+  }
 
   let topUser = null;
   let maxMinutes = 0;
@@ -51,13 +60,13 @@ async function calculateAndAnnounceMVP(client, db) {
   }
 
   const allMembers = await guild.members.fetch();
-  allMembers.forEach(m => {
+  for (const m of allMembers.values()) {
     if (m.roles.cache.has(mvpRole.id)) {
-      m.roles.remove(mvpRole);
+      await m.roles.remove(mvpRole).catch(() => {});
     }
-  });
+  }
 
-  await member.roles.add(mvpRole);
+  await member.roles.add(mvpRole).catch(() => {});
 
   const statsRef = db.doc(`mvpStats/${topUser.id}`);
   const statsSnap = await statsRef.get();
@@ -77,14 +86,15 @@ async function calculateAndAnnounceMVP(client, db) {
       .setColor('Gold')
       .setTimestamp();
 
-    await channel.send({ content: '@everyone', embeds: [embed] });
+    await channel.send({ content: '@everyone', embeds: [embed] }).catch(() => {});
   }
 
   for (const docSnap of voiceRef.docs) {
-    await db.doc(`voiceTime/${docSnap.id}`).update({ minutes: 0 });
+    await db.doc(`voiceTime/${docSnap.id}`).update({ minutes: 0 }).catch(() => {});
   }
 
   await db.doc('mvpSystem/status').set({ lastCalculated: Timestamp.now() });
+  console.log(`✅ MVP חושב והוענק ל־${topUser.id} עם ${topUser.minutes} דקות`);
 }
 
 // 🕒 בדיקה שבועית
@@ -130,19 +140,20 @@ async function handleMvpInteraction(interaction, client, db) {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName !== 'mvp') return;
 
-  await interaction.reply({
-    content: '⏳ מחשב MVP...',
-    ephemeral: true
-  });
-
-  await calculateAndAnnounceMVP(client, db);
-
-  await interaction.editReply({
-    content: '✅ MVP חושב ופורסם!'
-  });
+  try {
+    await interaction.deferReply({ ephemeral: true });
+    await calculateAndAnnounceMVP(client, db);
+    await interaction.editReply({ content: '✅ MVP חושב ופורסם!' });
+  } catch (err) {
+    console.error('❌ שגיאה בהרצת Slash /mvp:', err);
+    if (!interaction.replied) {
+      await interaction.reply({ content: '❌ שגיאה כללית. נסה שוב.', ephemeral: true });
+    } else {
+      await interaction.editReply({ content: '❌ משהו השתבש.' });
+    }
+  }
 }
 
-// ייצוא
 module.exports = {
   updateVoiceActivity,
   calculateAndAnnounceMVP,

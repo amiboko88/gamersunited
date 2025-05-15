@@ -4,6 +4,7 @@ const { getUserProfileSSML, synthesizeAzureTTS } = require('../tts/ttsEngine');
 const { enqueueTTS, ttsQueue, ttsIsPlaying, setTTSPlaying } = require('../utils/queueManager');
 const { updateVoiceActivity } = require('./mvpTracker');
 const db = require('../utils/firebase');
+const { log } = require('../utils/logger'); // רק אם קיים
 
 const TEST_CHANNEL = process.env.TTS_TEST_CHANNEL_ID;
 const voiceJoinTimestamps = new Map();
@@ -17,7 +18,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
   const leftChannel = oldState.channelId;
   const userId = user.id;
 
-  // כניסה לערוץ טסט
+  // ✅ כניסה לערוץ טסט
   if (joinedChannel === TEST_CHANNEL && leftChannel !== TEST_CHANNEL) {
     voiceJoinTimestamps.set(userId, Date.now());
 
@@ -27,13 +28,20 @@ async function handleVoiceStateUpdate(oldState, newState) {
     processQueue(channel);
   }
 
-  // יציאה מהערוץ טסט
+  // ✅ יציאה מהערוץ טסט
   if (leftChannel === TEST_CHANNEL && joinedChannel !== TEST_CHANNEL) {
     const joinedAt = voiceJoinTimestamps.get(userId);
     if (joinedAt) {
-      const durationMinutes = Math.floor((Date.now() - joinedAt) / 1000 / 60);
-      await updateVoiceActivity(userId, durationMinutes, db);
-      console.log(`⏱️ ${userId} היה מחובר ${durationMinutes} דקות – נשלח ל־Firestore`);
+      const durationMs = Date.now() - joinedAt;
+      const durationMinutes = Math.max(1, Math.floor(durationMs / 1000 / 60)); // לפחות דקה אחת
+
+      try {
+        await updateVoiceActivity(userId, durationMinutes, db);
+        console.log(`⏱️ ${userId} היה מחובר ${durationMinutes} דקות – נשלח ל־Firestore`);
+      } catch (err) {
+        console.error(`❌ שגיאה בשמירת זמן קול למשתמש ${userId}:`, err);
+      }
+
       voiceJoinTimestamps.delete(userId);
     }
   }

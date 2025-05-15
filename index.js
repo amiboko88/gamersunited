@@ -18,10 +18,13 @@ const client = new Client({
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
 
 // אחרי client.once('ready', ...)
-client.once('ready', () => {
+client.once('ready', async () => {
   console.log(`שימי הבוט באוויר! ${client.user.tag}`);
-  startCleanupScheduler(client); // ← כאן אנחנו מחברים את מנגנון הניקוי
-  validatePresenceOnReady(client); // ← בודק נוכחות גם כשעולה
+
+  startCleanupScheduler(client); // זה יכול להישאר בלי await אם לא צריך
+  validatePresenceOnReady(client); // גם זה – תלוי אם הוא אסינכרוני
+
+  await checkMVPStatusAndRun(client, db); // ← זה חייב להיות await כדי לוודא שזה נגמר
 });
 
 client.on('presenceUpdate', (_, newPresence) => {

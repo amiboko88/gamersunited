@@ -28,7 +28,7 @@ client.once('ready', async () => {
   await checkMVPStatusAndRun(client, db); // ← זה חייב להיות await כדי לוודא שזה נגמר
 });
 
-client.on('presenceUpdate', (_, newPresence) => {
+client.on('presenceUpdate', (oldPresence, newPresence) => {
   trackGamePresence(newPresence);
 });
 

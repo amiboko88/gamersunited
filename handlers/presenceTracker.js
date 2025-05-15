@@ -1,99 +1,88 @@
 const { log } = require('../utils/logger');
 
 const WARZONE_KEYWORDS = ['Black Ops 6', 'Call Of Duty'];
+
 const ROLE_WARZONE_ID = process.env.ROLE_WARZONE_ID;
 const ROLE_GENERIC_ID = process.env.ROLE_GENERIC_ID;
 
-// 🎮 מאזין לכל שינוי במשחקים
 async function trackGamePresence(presence) {
   if (!presence || !presence.member || presence.user?.bot) return;
 
   const member = presence.member;
   const activities = presence.activities || [];
-  const gameActivity = activities.find(act => act.type === 0);
-  const username = member.displayName;
+  const gameActivity = activities.find(act => act.type === 0); // Playing
 
   const hasWarzone = gameActivity && WARZONE_KEYWORDS.some(keyword =>
     gameActivity.name?.toLowerCase().includes(keyword.toLowerCase())
   );
 
-  const roleWarzone = ROLE_WARZONE_ID && member.guild.roles.cache.get(ROLE_WARZONE_ID);
-  const roleGeneric = ROLE_GENERIC_ID && member.guild.roles.cache.get(ROLE_GENERIC_ID);
-
+  // אם הפסיק לשחק – הסרת תפקידים
   if (!gameActivity) {
-    if (roleWarzone && member.roles.cache.has(roleWarzone.id)) {
-      await member.roles.remove(roleWarzone).catch(() => {});
-      log(`❌ ${username} הפסיק לשחק – תפקיד WARZONE הוסר`);
+    if (ROLE_WARZONE_ID && member.roles.cache.has(ROLE_WARZONE_ID)) {
+      await member.roles.remove(ROLE_WARZONE_ID).catch(() => {});
     }
-    if (roleGeneric && member.roles.cache.has(roleGeneric.id)) {
-      await member.roles.remove(roleGeneric).catch(() => {});
-      log(`❌ ${username} הפסיק לשחק – תפקיד 🎮 הוסר`);
+    if (ROLE_GENERIC_ID && member.roles.cache.has(ROLE_GENERIC_ID)) {
+      await member.roles.remove(ROLE_GENERIC_ID).catch(() => {});
     }
     return;
   }
 
+  // משחק WARZONE
   if (hasWarzone) {
-    if (roleWarzone && !member.roles.cache.has(roleWarzone.id)) {
-      await member.roles.add(roleWarzone).catch(() => {});
-      log(`🔥 ${username} התחיל לשחק Warzone – קיבל תפקיד WARZONE`);
+    if (ROLE_WARZONE_ID && !member.roles.cache.has(ROLE_WARZONE_ID)) {
+      await member.roles.add(ROLE_WARZONE_ID).catch(() => {});
     }
-    if (roleGeneric && member.roles.cache.has(roleGeneric.id)) {
-      await member.roles.remove(roleGeneric).catch(() => {});
+    if (ROLE_GENERIC_ID && member.roles.cache.has(ROLE_GENERIC_ID)) {
+      await member.roles.remove(ROLE_GENERIC_ID).catch(() => {});
     }
   } else {
-    if (roleGeneric && !member.roles.cache.has(roleGeneric.id)) {
-      await member.roles.add(roleGeneric).catch(() => {});
-      log(`🎮 ${username} משחק משהו אחר – קיבל תפקיד 🎮`);
+    // משחק אחר
+    if (ROLE_GENERIC_ID && !member.roles.cache.has(ROLE_GENERIC_ID)) {
+      await member.roles.add(ROLE_GENERIC_ID).catch(() => {});
     }
-    if (roleWarzone && member.roles.cache.has(roleWarzone.id)) {
-      await member.roles.remove(roleWarzone).catch(() => {});
+    if (ROLE_WARZONE_ID && member.roles.cache.has(ROLE_WARZONE_ID)) {
+      await member.roles.remove(ROLE_WARZONE_ID).catch(() => {});
     }
   }
 }
 
-// 🎯 בעת עליית הבוט – סורק את כל המשתמשים
 async function validatePresenceOnReady(client) {
   for (const guild of client.guilds.cache.values()) {
-    await guild.members.fetch();
-
-    const roleWarzone = ROLE_WARZONE_ID && guild.roles.cache.get(ROLE_WARZONE_ID);
-    const roleGeneric = ROLE_GENERIC_ID && guild.roles.cache.get(ROLE_GENERIC_ID);
+    try {
+      await guild.members.fetch({ time: 15000 });
+    } catch (err) {
+      log(`⚠️ לא ניתן לטעון את כל המשתמשים בשרת: ${guild.name} – ${err.code}`);
+    }
 
     for (const member of guild.members.cache.values()) {
       if (member.user.bot) continue;
 
       const activities = member.presence?.activities || [];
       const gameActivity = activities.find(act => act.type === 0);
-      const username = member.displayName;
-
       const hasWarzone = gameActivity && WARZONE_KEYWORDS.some(keyword =>
         gameActivity.name?.toLowerCase().includes(keyword.toLowerCase())
       );
 
       if (!gameActivity) {
-        if (roleWarzone && member.roles.cache.has(roleWarzone.id)) {
-          await member.roles.remove(roleWarzone).catch(() => {});
-          log(`❌ ${username} לא משחק – WARZONE הוסר`);
+        if (ROLE_WARZONE_ID && member.roles.cache.has(ROLE_WARZONE_ID)) {
+          await member.roles.remove(ROLE_WARZONE_ID).catch(() => {});
         }
-        if (roleGeneric && member.roles.cache.has(roleGeneric.id)) {
-          await member.roles.remove(roleGeneric).catch(() => {});
-          log(`❌ ${username} לא משחק – 🎮 הוסר`);
+        if (ROLE_GENERIC_ID && member.roles.cache.has(ROLE_GENERIC_ID)) {
+          await member.roles.remove(ROLE_GENERIC_ID).catch(() => {});
         }
       } else if (hasWarzone) {
-        if (roleWarzone && !member.roles.cache.has(roleWarzone.id)) {
-          await member.roles.add(roleWarzone).catch(() => {});
-          log(`🔥 ${username} כבר בתוך Warzone – קיבל תפקיד WARZONE`);
+        if (ROLE_WARZONE_ID && !member.roles.cache.has(ROLE_WARZONE_ID)) {
+          await member.roles.add(ROLE_WARZONE_ID).catch(() => {});
         }
-        if (roleGeneric && member.roles.cache.has(roleGeneric.id)) {
-          await member.roles.remove(roleGeneric).catch(() => {});
+        if (ROLE_GENERIC_ID && member.roles.cache.has(ROLE_GENERIC_ID)) {
+          await member.roles.remove(ROLE_GENERIC_ID).catch(() => {});
         }
       } else {
-        if (roleGeneric && !member.roles.cache.has(roleGeneric.id)) {
-          await member.roles.add(roleGeneric).catch(() => {});
-          log(`🎮 ${username} פעיל במשחק אחר – קיבל 🎮`);
+        if (ROLE_GENERIC_ID && !member.roles.cache.has(ROLE_GENERIC_ID)) {
+          await member.roles.add(ROLE_GENERIC_ID).catch(() => {});
         }
-        if (roleWarzone && member.roles.cache.has(roleWarzone.id)) {
-          await member.roles.remove(roleWarzone).catch(() => {});
+        if (ROLE_WARZONE_ID && member.roles.cache.has(ROLE_WARZONE_ID)) {
+          await member.roles.remove(ROLE_WARZONE_ID).catch(() => {});
         }
       }
     }

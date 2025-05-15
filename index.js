@@ -3,6 +3,7 @@ require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const { trackGamePresence, validatePresenceOnReady } = require('./handlers/presenceTracker');
+const { checkMVPStatusAndRun } = require('./handlers/mvpTracker'); 
 
 
 const client = new Client({

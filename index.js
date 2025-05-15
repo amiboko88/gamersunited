@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const { trackGamePresence, validatePresenceOnReady } = require('./handlers/presenceTracker');
 const {
@@ -27,9 +27,23 @@ registerMvpCommand(commands);
 client.once('ready', async () => {
   console.log(`שימי הבוט באוויר! ${client.user.tag}`);
 
+  // ✅ רישום Slash Commands אוטומטי לשרת
+  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+  const guildId = client.guilds.cache.first().id;
+
+  try {
+    await rest.put(
+      Routes.applicationGuildCommands(client.user.id, guildId),
+      { body: commands }
+    );
+    console.log('✅ פקודות Slash עודכנו בהצלחה');
+  } catch (err) {
+    console.error('❌ שגיאה ברישום Slash Commands:', err);
+  }
+
   startCleanupScheduler(client); // ניקוי חדרים
-  await validatePresenceOnReady(client); // בדיקת תפקידים למשחקים
-  await checkMVPStatusAndRun(client, db); // בדיקת MVP אוטומטית
+  await validatePresenceOnReady(client); // תפקידים לפי משחק
+  await checkMVPStatusAndRun(client, db); // MVP אוטומטי
 });
 
 client.on('presenceUpdate', (oldPresence, newPresence) => {

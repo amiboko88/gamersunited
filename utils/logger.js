@@ -3,26 +3,29 @@ const { WebhookClient, EmbedBuilder } = require('discord.js');
 const webhookUrl = process.env.LOG_WEBHOOK_URL;
 const webhook = webhookUrl ? new WebhookClient({ url: webhookUrl }) : null;
 
-// טקסט רגיל – קיים אצלך
-function logText(message) {
+function log(message) {
   console.log(message);
   if (webhook) {
     webhook.send({ content: `📢 ${message}` }).catch(() => {});
   }
 }
 
-// Embed לתיעוד תפקידים
 function logRoleChange({ member, action, roleName, gameName }) {
   if (!webhook) return;
+
+  const fields = [
+    { name: 'תפקיד', value: roleName, inline: true }
+  ];
+
+  if (gameName) {
+    fields.push({ name: 'משחק', value: gameName, inline: true });
+  }
 
   const embed = new EmbedBuilder()
     .setTitle(action === 'add' ? '✅ תפקיד נוסף' : '❌ תפקיד הוסר')
     .setColor(action === 'add' ? 0x57F287 : 0xED4245)
     .setDescription(`**${member.user.tag}** (${member.id})`)
-    .addFields(
-      { name: 'תפקיד', value: roleName, inline: true },
-      gameName ? { name: 'משחק', value: gameName, inline: true } : null
-    )
+    .addFields(fields)
     .setThumbnail(member.user.displayAvatarURL())
     .setTimestamp()
     .setFooter({ text: 'שימי הבוט – מערכת תיעוד חכמה' });
@@ -31,6 +34,6 @@ function logRoleChange({ member, action, roleName, gameName }) {
 }
 
 module.exports = {
-  log: logText,
+  log,
   logRoleChange
 };

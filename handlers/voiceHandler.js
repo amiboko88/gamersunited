@@ -1,4 +1,3 @@
-// 📁 handlers/voiceHandler.js
 const { joinVoiceChannel, entersState, VoiceConnectionStatus, createAudioPlayer, createAudioResource, AudioPlayerStatus, StreamType } = require('@discordjs/voice');
 const { Readable } = require('stream');
 const { getUserProfileSSML, synthesizeAzureTTS } = require('../tts/ttsEngine');
@@ -11,11 +10,14 @@ const voiceJoinTimestamps = new Map();
 let disconnectTimer = null;
 
 async function handleVoiceStateUpdate(oldState, newState) {
+  const user = (newState.member || oldState.member)?.user;
+  if (!user || user.bot) return;
+
   const joinedChannel = newState.channelId;
   const leftChannel = oldState.channelId;
-  const userId = (newState.member || oldState.member)?.id;
+  const userId = user.id;
 
-  // משתמש נכנס לערוץ טסט
+  // כניסה לערוץ טסט
   if (joinedChannel === TEST_CHANNEL && leftChannel !== TEST_CHANNEL) {
     voiceJoinTimestamps.set(userId, Date.now());
 
@@ -25,15 +27,13 @@ async function handleVoiceStateUpdate(oldState, newState) {
     processQueue(channel);
   }
 
-  // משתמש עוזב את הערוץ טסט
+  // יציאה מהערוץ טסט
   if (leftChannel === TEST_CHANNEL && joinedChannel !== TEST_CHANNEL) {
     const joinedAt = voiceJoinTimestamps.get(userId);
     if (joinedAt) {
       const durationMinutes = Math.floor((Date.now() - joinedAt) / 1000 / 60);
-      if (durationMinutes > 0) {
-        await updateVoiceActivity(userId, durationMinutes, db);
-        console.log(`⏱️ ${userId} היה מחובר ${durationMinutes} דקות – נשלח ל־Firestore`);
-      }
+      await updateVoiceActivity(userId, durationMinutes, db);
+      console.log(`⏱️ ${userId} היה מחובר ${durationMinutes} דקות – נשלח ל־Firestore`);
       voiceJoinTimestamps.delete(userId);
     }
   }

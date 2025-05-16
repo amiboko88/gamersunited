@@ -56,7 +56,7 @@ client.on('voiceStateUpdate', (oldState, newState) => {
 
 client.on('interactionCreate', interaction => {
   if (interaction.commandName === 'סאונד') return soundExecute(interaction, client);
-  if (interaction.commandName === 'mvp') return mvpDisplayExecute(interaction); // ✅ שימוש בתצוגה החדשה
+  if (interaction.commandName === 'mvp') return mvpDisplayExecute(interaction, client);
 });
 
 client.login(process.env.DISCORD_TOKEN);

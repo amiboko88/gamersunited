@@ -7,6 +7,7 @@ const {
   registerMvpCommand,
   handleMvpInteraction
 } = require('./handlers/mvpTracker');
+const { execute: soundExecute, data: soundData } = require('./handlers/soundboard'); // ← חדש
 const db = require('./utils/firebase');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
 
@@ -23,11 +24,12 @@ const client = new Client({
 // רישום Slash Commands
 const commands = [];
 registerMvpCommand(commands);
+commands.push(soundData); // ← פקודת /סאונד
 
 client.once('ready', async () => {
   console.log(`שימי הבוט באוויר! ${client.user.tag}`);
 
-  // ✅ רישום Slash Commands אוטומטי לשרת
+  // ✅ רישום Slash Commands לשרת
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   const guildId = client.guilds.cache.first().id;
 
@@ -41,9 +43,9 @@ client.once('ready', async () => {
     console.error('❌ שגיאה ברישום Slash Commands:', err);
   }
 
-  startCleanupScheduler(client); // ניקוי חדרים
-  await validatePresenceOnReady(client); // תפקידים לפי משחק
-  await checkMVPStatusAndRun(client, db); // MVP אוטומטי
+  startCleanupScheduler(client); // ניקוי חדרים ריקים
+  await validatePresenceOnReady(client); // עדכון תפקידים לפי משחק
+  await checkMVPStatusAndRun(client, db); // MVP שבועי
 });
 
 client.on('presenceUpdate', (oldPresence, newPresence) => {
@@ -55,7 +57,8 @@ client.on('voiceStateUpdate', (oldState, newState) => {
 });
 
 client.on('interactionCreate', interaction => {
-  handleMvpInteraction(interaction, client, db); // טיפול ב־/mvp
+  if (interaction.commandName === 'סאונד') return soundExecute(interaction, client);
+  handleMvpInteraction(interaction, client, db);
 });
 
 client.login(process.env.DISCORD_TOKEN);

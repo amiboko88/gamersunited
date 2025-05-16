@@ -4,10 +4,10 @@ const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const { trackGamePresence, validatePresenceOnReady } = require('./handlers/presenceTracker');
 const {
   checkMVPStatusAndRun,
-  registerMvpCommand,
-  handleMvpInteraction
+  registerMvpCommand
 } = require('./handlers/mvpTracker');
-const { execute: soundExecute, data: soundData } = require('./handlers/soundboard'); // ← חדש
+const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
+const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay'); // ✅ חדש
 const db = require('./utils/firebase');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
 
@@ -58,7 +58,7 @@ client.on('voiceStateUpdate', (oldState, newState) => {
 
 client.on('interactionCreate', interaction => {
   if (interaction.commandName === 'סאונד') return soundExecute(interaction, client);
-  handleMvpInteraction(interaction, client, db);
+  if (interaction.commandName === 'mvp') return mvpDisplayExecute(interaction); // ✅ שימוש בתצוגה החדשה
 });
 
 client.login(process.env.DISCORD_TOKEN);

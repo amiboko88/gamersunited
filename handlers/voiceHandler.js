@@ -1,15 +1,44 @@
-const { joinVoiceChannel, entersState, VoiceConnectionStatus, createAudioPlayer, createAudioResource, AudioPlayerStatus, StreamType } = require('@discordjs/voice');
+const {
+  joinVoiceChannel,
+  entersState,
+  VoiceConnectionStatus,
+  createAudioPlayer,
+  createAudioResource,
+  AudioPlayerStatus,
+  StreamType
+} = require('@discordjs/voice');
 const { Readable } = require('stream');
 const { getUserProfileSSML, synthesizeAzureTTS } = require('../tts/ttsEngine');
-const { enqueueTTS, ttsQueue, ttsIsPlaying, setTTSPlaying } = require('../utils/queueManager');
 const { updateVoiceActivity } = require('./mvpTracker');
 const db = require('../utils/firebase');
-const { log } = require('../utils/logger'); // רק אם קיים
+const { log } = require('../utils/logger');
 
 const TEST_CHANNEL = process.env.TTS_TEST_CHANNEL_ID;
 const voiceJoinTimestamps = new Map();
+const ttsQueue = [];
+const entryHistory = new Map(); // זיהוי קרציות
+const cooldowns = new Map(); // מונע תגובות חוזרות
+
+let isPlaying = false;
+let connection = null;
 let disconnectTimer = null;
 
+// 🧠 מזהה אם משתמש קרציה
+function isAnnoying(userId) {
+  const now = Date.now();
+  const history = entryHistory.get(userId) || [];
+  const recent = history.filter(ts => now - ts <= 30_000); // 30 שניות
+  entryHistory.set(userId, [...recent, now]);
+
+  if (recent.length >= 2 && !cooldowns.has(userId)) {
+    cooldowns.set(userId, now);
+    setTimeout(() => cooldowns.delete(userId), 60_000); // 1 דקה השהייה
+    return true;
+  }
+  return false;
+}
+
+// ⏱️ עדכון נוכחות ל־Firestore
 async function handleVoiceStateUpdate(oldState, newState) {
   const user = (newState.member || oldState.member)?.user;
   if (!user || user.bot) return;
@@ -18,47 +47,60 @@ async function handleVoiceStateUpdate(oldState, newState) {
   const leftChannel = oldState.channelId;
   const userId = user.id;
 
-  // ✅ כניסה לערוץ טסט
+  // ✅ כניסה
   if (joinedChannel === TEST_CHANNEL && leftChannel !== TEST_CHANNEL) {
-    voiceJoinTimestamps.set(userId, Date.now());
-
     const channel = newState.guild.channels.cache.get(TEST_CHANNEL);
     const username = newState.member.displayName;
-    enqueueTTS({ channel, username });
+
+    // 🔥 קרציה
+    if (isAnnoying(userId)) {
+      console.log(`🧨 זוהתה קרציה: ${username}`);
+      // תן TTS כועס קצר
+      enqueueTTS({ channel, userId: 'ANGRY' });
+      return;
+    }
+
+    voiceJoinTimestamps.set(userId, Date.now());
+    enqueueTTS({ channel, userId });
     processQueue(channel);
   }
 
-  // ✅ יציאה מהערוץ טסט
+  // ✅ יציאה
   if (leftChannel === TEST_CHANNEL && joinedChannel !== TEST_CHANNEL) {
     const joinedAt = voiceJoinTimestamps.get(userId);
     if (joinedAt) {
       const durationMs = Date.now() - joinedAt;
-      const durationMinutes = Math.max(1, Math.floor(durationMs / 1000 / 60)); // לפחות דקה אחת
-
+      const durationMinutes = Math.max(1, Math.floor(durationMs / 1000 / 60));
       try {
         await updateVoiceActivity(userId, durationMinutes, db);
         console.log(`⏱️ ${userId} היה מחובר ${durationMinutes} דקות – נשלח ל־Firestore`);
       } catch (err) {
         console.error(`❌ שגיאה בשמירת זמן קול למשתמש ${userId}:`, err);
       }
-
       voiceJoinTimestamps.delete(userId);
     }
   }
 }
 
+// ➕ לתור
+function enqueueTTS(entry) {
+  ttsQueue.push(entry);
+}
+
+// ▶️ תהליך
 async function processQueue(channel) {
-  if (ttsIsPlaying() || ttsQueue.length === 0) return;
-  const { username } = ttsQueue.shift();
-  setTTSPlaying(true);
+  if (isPlaying || ttsQueue.length === 0) return;
+  isPlaying = true;
 
   try {
-    const connection = joinVoiceChannel({
-      channelId: channel.id,
-      guildId: channel.guild.id,
-      adapterCreator: channel.guild.voiceAdapterCreator,
-    });
-    await entersState(connection, VoiceConnectionStatus.Ready, 5000);
+    if (!connection || connection.joinConfig.channelId !== channel.id) {
+      connection = joinVoiceChannel({
+        channelId: channel.id,
+        guildId: channel.guild.id,
+        adapterCreator: channel.guild.voiceAdapterCreator
+      });
+      await entersState(connection, VoiceConnectionStatus.Ready, 5000);
+    }
 
     const player = createAudioPlayer();
     connection.subscribe(player);
@@ -67,38 +109,113 @@ async function processQueue(channel) {
       if (ttsQueue.length === 0) {
         disconnectTimer = setTimeout(() => {
           connection.destroy();
-          setTTSPlaying(false);
-        }, 10000);
+          connection = null;
+          isPlaying = false;
+        }, 5000);
         return;
       }
 
-      const next = ttsQueue.shift();
-      const ssml = getUserProfileSSML(next.username);
-      const audioBuffer = await synthesizeAzureTTS(ssml);
+      const { userId } = ttsQueue.shift();
 
-      if (!audioBuffer || audioBuffer.length < 1000) {
-        console.warn(`🔇 קול לא תקין או חסר ל־${next.username}`);
-        connection.destroy();
-        setTTSPlaying(false);
-        return;
+      // קול כועס לקרציה
+      if (userId === 'ANGRY') {
+        return playAngryVoice(player, playNext);
       }
 
-      const stream = Readable.from(audioBuffer);
-      const resource = createAudioResource(stream, {
-        inputType: StreamType.Arbitrary,
-      });
+      // השמעת בונוס אם ≥ 3
+      if (ttsQueue.length >= 2) {
+        await playTransitionVoice(player, '📢 עומס בתור, תהיו רגועים!');
+      }
 
-      player.play(resource);
-      player.once(AudioPlayerStatus.Idle, () => {
-        clearTimeout(disconnectTimer);
+      const ssml = getUserProfileSSML(userId);
+      try {
+        const audioBuffer = await synthesizeAzureTTS(ssml);
+        if (!audioBuffer || audioBuffer.length < 1000) {
+          console.warn(`🔇 קול לא תקין ל־${userId}`);
+          return playNext();
+        }
+
+        const stream = Readable.from(audioBuffer);
+        const resource = createAudioResource(stream, {
+          inputType: StreamType.Arbitrary
+        });
+
+        player.play(resource);
+        player.once(AudioPlayerStatus.Idle, async () => {
+          clearTimeout(disconnectTimer);
+
+          if (ttsQueue.length > 0) {
+            await playTransitionVoice(player, '⬇️ הבא בתור...');
+          }
+
+          playNext();
+        });
+
+        log(`🔈 TTS עבור ${userId}`);
+      } catch (err) {
+        console.error(`❌ שגיאה בהשמעה עבור ${userId}:`, err);
         playNext();
-      });
+      }
     };
 
     playNext();
   } catch (err) {
-    console.error('❌ שגיאה בתהליך ההשמעה:', err);
-    setTTSPlaying(false);
+    console.error('❌ שגיאה כללית בתור:', err);
+    isPlaying = false;
+  }
+}
+
+// 💬 מעבר
+async function playTransitionVoice(player, text) {
+  const ssml = `
+  <speak xml:lang='he-IL'>
+    <voice name='he-IL-AvriNeural'>
+      <prosody rate='slow'><break time="400ms"/>${text}<break time="300ms"/></prosody>
+    </voice>
+  </speak>
+  `;
+  try {
+    const buffer = await synthesizeAzureTTS(ssml);
+    const stream = Readable.from(buffer);
+    const resource = createAudioResource(stream, {
+      inputType: StreamType.Arbitrary
+    });
+    player.play(resource);
+    await new Promise(resolve =>
+      player.once(AudioPlayerStatus.Idle, resolve)
+    );
+  } catch (err) {
+    console.warn('⚠️ שגיאה במעבר:', err);
+  }
+}
+
+// 😠 כועס לקרציות
+async function playAngryVoice(player, onComplete) {
+  const angryLine = `
+  <speak xml:lang='he-IL'>
+    <voice name='he-IL-HilaNeural'>
+      <prosody rate='slow' pitch='-10%'>
+        <break time="200ms"/>
+        די כבר! תבחר – בפנים או בחוץ!
+        <break time="400ms"/>
+        הבוט עייף ממך.
+      </prosody>
+    </voice>
+  </speak>
+  `;
+  try {
+    const buffer = await synthesizeAzureTTS(angryLine);
+    const stream = Readable.from(buffer);
+    const resource = createAudioResource(stream, {
+      inputType: StreamType.Arbitrary
+    });
+    player.play(resource);
+    player.once(AudioPlayerStatus.Idle, () => {
+      onComplete();
+    });
+  } catch (err) {
+    console.warn('⚠️ שגיאה ב־ANGRY:', err);
+    onComplete();
   }
 }
 

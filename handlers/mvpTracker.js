@@ -1,5 +1,5 @@
 const admin = require('firebase-admin');
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
 const { log } = require('../utils/logger');
 
 const Timestamp = admin.firestore.Timestamp;
@@ -128,84 +128,8 @@ async function checkMVPStatusAndRun(client, db) {
   }
 }
 
-// 📊 סטטיסטיקות ל־/mvp
-async function handleMvpInteraction(interaction, client, db) {
-  if (!interaction.isChatInputCommand()) return;
-  if (interaction.commandName !== 'mvp') return;
-
-  await interaction.deferReply({ ephemeral: true });
-
-  const [voiceRef, statsRef, lifeRef] = await Promise.all([
-    db.collection('voiceTime').get(),
-    db.collection('mvpStats').get(),
-    db.collection('voiceLifetime').get()
-  ]);
-
-  const current = [];
-  const stats = [];
-  const lifetime = [];
-
-  voiceRef.forEach(doc => {
-    const d = doc.data();
-    current.push({ id: doc.id, minutes: d.minutes || 0 });
-  });
-
-  statsRef.forEach(doc => {
-    const d = doc.data();
-    stats.push({ id: doc.id, wins: d.wins || 0 });
-  });
-
-  lifeRef.forEach(doc => {
-    const d = doc.data();
-    lifetime.push({ id: doc.id, total: d.total || 0 });
-  });
-
-  current.sort((a, b) => b.minutes - a.minutes);
-  stats.sort((a, b) => b.wins - a.wins);
-  lifetime.sort((a, b) => b.total - a.total);
-
-  const medals = ['🥇', '🥈', '🥉'];
-
-  const weeklyTop = current.slice(0, 5).map((u, i) =>
-    `${medals[i] || '🔸'} <@${u.id}> – **${u.minutes} דקות**`
-  ).join('\n');
-
-  const winsTop = stats.slice(0, 5).map((u, i) =>
-    `${medals[i] || '🏅'} <@${u.id}> – **${u.wins} זכיות**`
-  ).join('\n');
-
-  const lifeTop = lifetime.slice(0, 5).map((u, i) =>
-    `${medals[i] || '🎖️'} <@${u.id}> – **${u.total} דקות**`
-  ).join('\n');
-
-  const embed = new EmbedBuilder()
-    .setTitle('📊 לוח MVP כולל')
-    .setColor('Aqua')
-    .addFields(
-      { name: '🏆 השבוע הנוכחי:', value: weeklyTop || 'אין נתונים' },
-      { name: '🥇 זכיות מצטברות:', value: winsTop || 'אין זכיות' },
-      { name: '⏱️ דקות מצטברות:', value: lifeTop || 'אין נתונים' }
-    )
-    .setTimestamp()
-    .setFooter({ text: 'שימי הבוט - MVP לאורך זמן' });
-
-  await interaction.editReply({ embeds: [embed] });
-}
-
-// 🎯 הרשמה ל־Slash
-function registerMvpCommand(commands) {
-  commands.push(
-    new SlashCommandBuilder()
-      .setName('mvp')
-      .setDescription('צפייה בלוח MVP השבועי והמצטבר')
-      .toJSON()
-  );
-}
-
 module.exports = {
   updateVoiceActivity,
   calculateAndAnnounceMVP,
-  checkMVPStatusAndRun,
-  registerMvpCommand,
-  handleMvpInteraction
+  checkMVPStatusAndRun
 };

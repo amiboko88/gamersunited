@@ -2,7 +2,17 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 const medals = ['🥇', '🥈', '🥉', '🎖️', '🎖️'];
 
+function registerMvpCommand(commands) {
+  commands.push(
+    new SlashCommandBuilder()
+      .setName('mvp')
+      .setDescription('📊 צפייה בלוח MVP השבועי והמצטבר')
+      .toJSON()
+  );
+}
+
 module.exports = {
+  registerMvpCommand,
   data: new SlashCommandBuilder()
     .setName('mvp')
     .setDescription('📊 צפייה בלוח MVP השבועי והמצטבר'),

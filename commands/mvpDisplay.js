@@ -11,10 +11,10 @@ function registerMvpCommand(commands) {
   );
 }
 
-async function execute(interaction) {
-  await interaction.deferReply({ ephemeral: true });
+async function execute(interaction, client) {
+  await interaction.deferReply({ flags: 64 });
 
-  const db = interaction.client.db;
+  const db = client.db;
   const userName = interaction.user.displayName || interaction.user.username;
 
   const [voiceRef, statsRef, lifeRef] = await Promise.all([

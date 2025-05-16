@@ -2,12 +2,10 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const { trackGamePresence, validatePresenceOnReady } = require('./handlers/presenceTracker');
-const {
-  checkMVPStatusAndRun,
-  registerMvpCommand
-} = require('./handlers/mvpTracker');
+const { checkMVPStatusAndRun } = require('./handlers/mvpTracker'); // ✅ רק check נשאר פה
+const { registerMvpCommand } = require('./commands/mvpDisplay');   // ✅ עכשיו פה
 const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
-const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay'); // ✅ חדש
+const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
 const db = require('./utils/firebase');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
 

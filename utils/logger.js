@@ -9,7 +9,18 @@ function log(message) {
     webhook.send({ content: `📢 ${message}` }).catch(() => {});
   }
 }
+function logToWebhook({ title, description, color = 0x5865f2 }) {
+  if (!webhook) return;
 
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(description)
+    .setColor(color)
+    .setTimestamp()
+    .setFooter({ text: 'שימי הבוט – מערכת תיעוד חכמה' });
+
+  webhook.send({ embeds: [embed] }).catch(() => {});
+}
 function logRoleChange({ member, action, roleName, gameName }) {
   if (!webhook) return;
 
@@ -35,5 +46,6 @@ function logRoleChange({ member, action, roleName, gameName }) {
 
 module.exports = {
   log,
-  logRoleChange
+  logRoleChange,
+  logToWebhook 
 };

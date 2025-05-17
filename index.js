@@ -6,6 +6,7 @@ const { checkMVPStatusAndRun } = require('./handlers/mvpTracker'); // ✅ רק c
 const { registerMvpCommand } = require('./commands/mvpDisplay');   // ✅ עכשיו פה
 const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
 const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
+const { setupMemberTracker } = require('./handlers/memberTracker');
 const db = require('./utils/firebase');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
 
@@ -43,7 +44,8 @@ client.once('ready', async () => {
   } catch (err) {
     console.error('❌ שגיאה ברישום Slash Commands:', err);
   }
-
+  
+  setupMemberTracker(client);
   startCleanupScheduler(client); // ניקוי חדרים ריקים
   await validatePresenceOnReady(client); // עדכון תפקידים לפי משחק
 

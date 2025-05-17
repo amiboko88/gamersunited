@@ -16,11 +16,11 @@ const statuses = [
 function startPresenceRotation(client) {
   let index = 0;
 
-  const updatePresence = () => {
-    const { type, text } = statuses[index];
-    client.user.setActivity(text, { type }).catch(() => {});
-    index = (index + 1) % statuses.length;
-  };
+function updatePresence() {
+  const { type, text } = statuses[index];
+  client.user.setActivity(text, { type }); // ✅ בלי catch
+  index = (index + 1) % statuses.length;
+}
 
   updatePresence(); // ריצה ראשונית מיידית
   setInterval(updatePresence, 1000 * 60 * 5); // כל 5 דקות

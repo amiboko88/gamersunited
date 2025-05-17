@@ -4,26 +4,16 @@ const { playerProfiles } = require('../data/profiles');
 function getUserProfileSSML(userId) {
   const intros = [
     "היי חבר, שים לב...",
-    "טוב, הפעם זה מגיע מכיוון הבוט:",
-    "הנה משפט מעודד, או שלא:",
-    "ריכוז... ריכוז...",
-    "אבו קאקא!",
-    "בונדה לה קאקא 🤡",
+    "הבוט רוצה לומר משהו:",
+    "ריכוז – מגיע punchline:",
+    "וואו, עוד פעם אתה?",
+    "אבו קאקא 🤡",
+    "בונדה לה קאקא 💩",
     "אוווווויייייי!",
     "יוווווווווו!!",
-    "תכין את עצמך, הנה זה בא:",
     "תשתוק רגע, תקשיב:",
+    "ברוך הבא למחלקת השפלה אישית"
   ];
-
-  const moods = [
-    { rate: 'slow', pitch: '-5%' },
-    { rate: 'medium', pitch: '-5%' },
-    { rate: 'medium', pitch: '0%' },
-    { rate: 'medium', pitch: '+5%' }
-  ];
-  const mood = moods[Math.floor(Math.random() * moods.length)];
-
-  const intro = intros[Math.floor(Math.random() * intros.length)];
 
   const fallbackLines = [
     "בוא נראה מה תעשה היום, חוץ מלהחיות את כולנו.",
@@ -38,43 +28,54 @@ function getUserProfileSSML(userId) {
     "כמה קללות נספיק לשמוע ממך לפני שתמות?",
     "אם היית שקט כמו במשחק – אולי היינו מנצחים.",
     "תישאר עד הסוף – או שאתה שוב מתחמק מלהחיות?",
-    "המשחק חיכה רק לך... להפסיד שוב.",
     "לפחות הפעם תכוון על האויב, לא על הקיר.",
     "נשוי + גיימר + עייף = חצי שחקן במקרה הטוב.",
-    "זוכר שניצחנו? לא? גם אנחנו לא. היסטוריה עתיקה.",
-    "אחי, רק תזכור: זה משחק, לא סשן פסיכולוגי.",
-    "הבוט מקווה שהפעם תתפקד. גם הבוט מאבד תקווה.",
-    "שמע, תעשה mute – או תעשה פלאים.",
-    "הציפיות ממך כל כך נמוכות... אפילו אתה לא אכזבה יותר.",
-    "כל פעם שאתה נכנס, מישהו מתנתק.",
     "שיחקת פעם עם הידיים, לא עם המצפון?",
-    "מהר! לפני שהחיבור שלך ייפול שוב.",
-    "אם היה תואר ליותר מדי דיבורים – היית בטופ.",
-    "עוד יום, עוד סיבוב, עוד תירוץ."
+    "עוד יום, עוד סיבוב, עוד תירוץ.",
+    "זוכר שניצחנו? לא? גם אנחנו לא. היסטוריה עתיקה.",
+    "הבוט מקווה שהפעם תתפקד. גם הבוט מאבד תקווה.",
+    "הציפיות ממך כל כך נמוכות... אפילו אתה לא אכזבה יותר."
   ];
 
+  const moods = [
+    { rate: 'medium', pitch: '-5%' },
+    { rate: 'medium', pitch: '0%' },
+    { rate: 'medium', pitch: '+5%' },
+    { rate: 'fast', pitch: '0%' },
+    { rate: 'fast', pitch: '-5%' }
+  ];
+
+  const mood = moods[Math.floor(Math.random() * moods.length)];
+  const intro = intros[Math.floor(Math.random() * intros.length)];
   const personalLines = playerProfiles[userId];
-  const text = personalLines
+  const rawText = personalLines
     ? personalLines[Math.floor(Math.random() * personalLines.length)]
     : fallbackLines[Math.floor(Math.random() * fallbackLines.length)];
+
+  const segments = rawText.split(/(?<=[.!?])\s+/); // חלק את הטקסט לפסקאות קצרות
+  const emphasizedSegments = segments.map((part, i) => {
+    if (part.toLowerCase().includes('ragequit')) {
+      return `<lang xml:lang='en-US'>${part}</lang>`;
+    }
+    const emphasis = i === segments.length - 1 ? 'strong' : 'moderate';
+    return `<emphasis level='${emphasis}'>${part}</emphasis>`;
+  });
+
+  const speechBody = emphasizedSegments.join('<break time="300ms"/>');
 
   return `
 <speak version='1.0' xml:lang='he-IL'>
   <voice name='he-IL-HilaNeural'>
     <prosody rate='slow'>
-      <break time="500ms"/>
-      ${intro}
-      <break time="400ms"/>
+      <break time='500ms'/>${intro}<break time='300ms'/>
     </prosody>
   </voice>
   <voice name='he-IL-AvriNeural'>
     <prosody rate='${mood.rate}' pitch='${mood.pitch}'>
-      <emphasis level="strong">${text}</emphasis>
-      <break time="500ms"/>
+      ${speechBody}
     </prosody>
   </voice>
-</speak>
-`;
+</speak>`;
 }
 
 async function synthesizeAzureTTS(ssml) {

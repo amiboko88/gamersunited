@@ -143,6 +143,7 @@ async function processQueue(channel) {
           if (ttsQueue.length > 0) {
             await playTransitionVoice(player, '⬇️ הבא בתור...');
           }
+          isPlaying = false;
           playNext();
         });
 

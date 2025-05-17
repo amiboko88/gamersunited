@@ -46,6 +46,12 @@ client.once('ready', async () => {
 
   startCleanupScheduler(client); // ניקוי חדרים ריקים
   await validatePresenceOnReady(client); // עדכון תפקידים לפי משחק
+
+setInterval(() => {
+  validatePresenceOnReady(client);
+}, 1000 * 60 * 5); // בדיקה כל 5 דקות
+
+  
   await checkMVPStatusAndRun(client, db); // MVP שבועי
 });
 

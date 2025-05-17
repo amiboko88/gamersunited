@@ -5,8 +5,8 @@ const medals = ['🥇', '🥈', '🥉', '🎖️', '🎖️'];
 function registerMvpCommand(commands) {
   commands.push(
     new SlashCommandBuilder()
-      .setName('mvp')
-      .setDescription('📊 צפייה בלוח MVP השבועי והמצטבר')
+      .setName('MVP')
+      .setDescription('📊 צפייה בלוח השבועי')
       .toJSON()
   );
 }
@@ -53,26 +53,27 @@ async function execute(interaction, client) {
 
   const embed = new EmbedBuilder()
     .setColor('#facc15')
-    .setTitle('👑  מצטייני השבוע – FIFO BOT')
-    .addFields(
-      {
-        name: '🏅 TOP 5 השבוע:',
-        value: formatList(current, 'minutes', medals, 'דקות'),
-        inline: false
-      },
-      {
-        name: '🥇 זכיות מצטברות:',
-        value: formatList(stats, 'wins', medals, 'זכיות'),
-        inline: false
-      },
-      {
-        name: '⏱️ דקות Lifetime:',
-        value: formatList(lifetime, 'total', medals, 'דקות'),
-        inline: false
-      }
-    )
+    .setTitle('👑 מצטייני השבוע')
+.addFields(
+  {
+    name: '🏅 חמשת הפעילים ביותר השבוע:',
+    value: formatList(current, 'minutes', medals, 'דקות'),
+    inline: false
+  },
+  {
+    name: '🥇 מספר זכיות מצטברות:',
+    value: formatList(stats, 'wins', medals, 'זכיות'),
+    inline: false
+  },
+  {
+    name: '⏱️ סך כל דקות הנוכחות הכולל:',
+    value: formatList(lifetime, 'total', medals, 'דקות'),
+    inline: false
+  }
+)
+
     .setFooter({
-      text: `🧠 הופק על ידי: ${userName} | 🗓️ ${new Date().toLocaleDateString('he-IL')}`,
+      text: `🧠 ${userName} | 🗓️ ${new Date().toLocaleDateString('he-IL')}`,
       iconURL: interaction.user.displayAvatarURL()
     })
     .setTimestamp();

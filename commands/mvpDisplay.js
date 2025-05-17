@@ -5,7 +5,7 @@ const medals = ['🥇', '🥈', '🥉', '🎖️', '🎖️'];
 function registerMvpCommand(commands) {
   commands.push(
     new SlashCommandBuilder()
-      .setName('MVP')
+      .setName('mvp')
       .setDescription('📊 צפייה בלוח השבועי')
       .toJSON()
   );

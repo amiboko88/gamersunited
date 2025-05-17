@@ -5,12 +5,14 @@ const WARZONE_KEYWORDS = ['Black Ops 6', 'Call Of Duty'];
 const ROLE_WARZONE_ID = process.env.ROLE_WARZONE_ID;
 const ROLE_GENERIC_ID = process.env.ROLE_GENERIC_ID;
 
+const timeoutErrors = new Map(); // <guildId, lastErrorTimestamp>
+
 async function trackGamePresence(presence) {
   if (!presence || !presence.member || presence.user?.bot) return;
 
   const member = presence.member;
   const activities = presence.activities || [];
-  const gameActivity = activities.find(act => act.type === 0); // Playing
+  const gameActivity = activities.find(act => act.type === 0);
 
   const hasWarzone = gameActivity && WARZONE_KEYWORDS.some(keyword =>
     gameActivity.name?.toLowerCase().includes(keyword.toLowerCase())
@@ -48,8 +50,14 @@ async function validatePresenceOnReady(client) {
     try {
       await guild.members.fetch({ time: 15000 });
     } catch (err) {
+      const now = Date.now();
+      const lastError = timeoutErrors.get(guild.id) || 0;
+
       if (err.code === 'GuildMembersTimeout') {
-        log(`⚠️ לא ניתן לטעון את כל המשתמשים בשרת: ${guild.name} – ${err.code}`);
+        if (now - lastError > 1000 * 60 * 30) {
+          log(`⚠️ לא ניתן לטעון את כל המשתמשים בשרת: ${guild.name} – ${err.code}`);
+          timeoutErrors.set(guild.id, now);
+        }
       } else {
         log(`❌ שגיאה כללית בטעינת משתמשים לשרת: ${guild.name}`);
         console.error(err);

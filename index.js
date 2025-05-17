@@ -7,6 +7,7 @@ const { registerMvpCommand } = require('./commands/mvpDisplay');   // ✅ עכש
 const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
 const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
 const { setupMemberTracker } = require('./handlers/memberTracker');
+const { startPresenceRotation } = require('./handlers/presenceRotator');
 const db = require('./utils/firebase');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
 
@@ -29,6 +30,7 @@ registerMvpCommand(commands);
 commands.push(soundData); // ← פקודת /סאונד
 
 client.once('ready', async () => {
+  startPresenceRotation(client);
   console.log(`שימי הבוט באוויר! ${client.user.tag}`);
 
   // ✅ רישום Slash Commands לשרת
@@ -44,7 +46,7 @@ client.once('ready', async () => {
   } catch (err) {
     console.error('❌ שגיאה ברישום Slash Commands:', err);
   }
-  
+
   setupMemberTracker(client);
   startCleanupScheduler(client); // ניקוי חדרים ריקים
   await validatePresenceOnReady(client); // עדכון תפקידים לפי משחק

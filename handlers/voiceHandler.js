@@ -1,3 +1,4 @@
+// 📁 handlers/voiceHandler.js – מעודכן ל־Google TTS עם הקסמים
 const {
   joinVoiceChannel,
   entersState,
@@ -8,7 +9,7 @@ const {
   StreamType
 } = require('@discordjs/voice');
 const { Readable } = require('stream');
-const { getUserProfileSSML, synthesizeAzureTTS } = require('../tts/ttsEngine');
+const { getUserProfileGoogle, synthesizeGoogleTTS } = require('../tts/ttsEngine');
 const { updateVoiceActivity } = require('./mvpTracker');
 const db = require('../utils/firebase');
 const { log } = require('../utils/logger');
@@ -123,9 +124,9 @@ async function processQueue(channel) {
         await playTransitionVoice(player, '📢 עומס בתור, תהיו רגועים!');
       }
 
-      const ssml = getUserProfileSSML(userId);
+      const text = getUserProfileGoogle(userId);
       try {
-        const audioBuffer = await synthesizeAzureTTS(ssml);
+        const audioBuffer = await synthesizeGoogleTTS(text);
         if (!audioBuffer || audioBuffer.length < 1000) {
           console.warn(`🔇 קול לא תקין ל־${userId}`);
           isPlaying = false;
@@ -163,15 +164,8 @@ async function processQueue(channel) {
 }
 
 async function playTransitionVoice(player, text) {
-  const ssml = `
-  <speak xml:lang='he-IL'>
-    <voice name='he-IL-AvriNeural'>
-      <prosody rate='slow'><break time="400ms"/>${text}<break time="300ms"/></prosody>
-    </voice>
-  </speak>
-  `;
   try {
-    const buffer = await synthesizeAzureTTS(ssml);
+    const buffer = await synthesizeGoogleTTS(text);
     const stream = Readable.from(buffer);
     const resource = createAudioResource(stream, {
       inputType: StreamType.Arbitrary
@@ -186,20 +180,9 @@ async function playTransitionVoice(player, text) {
 }
 
 async function playAngryVoice(player, onComplete) {
-  const angryLine = `
-  <speak xml:lang='he-IL'>
-    <voice name='he-IL-HilaNeural'>
-      <prosody rate='slow' pitch='-10%'>
-        <break time="200ms"/>
-        די כבר! תבחר – בפנים או בחוץ!
-        <break time="400ms"/>
-        הבוט עייף ממך.
-      </prosody>
-    </voice>
-  </speak>
-  `;
+  const angryLine = "די כבר! תבחר – בפנים או בחוץ! הבוט עייף ממך.";
   try {
-    const buffer = await synthesizeAzureTTS(angryLine);
+    const buffer = await synthesizeGoogleTTS(angryLine);
     const stream = Readable.from(buffer);
     const resource = createAudioResource(stream, {
       inputType: StreamType.Arbitrary

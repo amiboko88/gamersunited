@@ -19,6 +19,9 @@ const client = new Client({
   ]
 });
 
+
+client.db = db; // ✅ שורה חשובה מאוד!
+
 // רישום Slash Commands
 const commands = [];
 registerMvpCommand(commands);

@@ -16,29 +16,27 @@ const { log } = require('../utils/logger');
 const TEST_CHANNEL = process.env.TTS_TEST_CHANNEL_ID;
 const voiceJoinTimestamps = new Map();
 const ttsQueue = [];
-const entryHistory = new Map(); // זיהוי קרציות
-const cooldowns = new Map(); // מונע תגובות חוזרות
+const entryHistory = new Map();
+const cooldowns = new Map();
 
 let isPlaying = false;
 let connection = null;
 let disconnectTimer = null;
 
-// 🧠 מזהה אם משתמש קרציה
 function isAnnoying(userId) {
   const now = Date.now();
   const history = entryHistory.get(userId) || [];
-  const recent = history.filter(ts => now - ts <= 30_000); // 30 שניות
+  const recent = history.filter(ts => now - ts <= 30_000);
   entryHistory.set(userId, [...recent, now]);
 
   if (recent.length >= 2 && !cooldowns.has(userId)) {
     cooldowns.set(userId, now);
-    setTimeout(() => cooldowns.delete(userId), 60_000); // 1 דקה השהייה
+    setTimeout(() => cooldowns.delete(userId), 60_000);
     return true;
   }
   return false;
 }
 
-// ⏱️ עדכון נוכחות ל־Firestore
 async function handleVoiceStateUpdate(oldState, newState) {
   const user = (newState.member || oldState.member)?.user;
   if (!user || user.bot) return;
@@ -47,15 +45,12 @@ async function handleVoiceStateUpdate(oldState, newState) {
   const leftChannel = oldState.channelId;
   const userId = user.id;
 
-  // ✅ כניסה
   if (joinedChannel === TEST_CHANNEL && leftChannel !== TEST_CHANNEL) {
     const channel = newState.guild.channels.cache.get(TEST_CHANNEL);
     const username = newState.member.displayName;
 
-    // 🔥 קרציה
     if (isAnnoying(userId)) {
       console.log(`🧨 זוהתה קרציה: ${username}`);
-      // תן TTS כועס קצר
       enqueueTTS({ channel, userId: 'ANGRY' });
       return;
     }
@@ -65,7 +60,6 @@ async function handleVoiceStateUpdate(oldState, newState) {
     processQueue(channel);
   }
 
-  // ✅ יציאה
   if (leftChannel === TEST_CHANNEL && joinedChannel !== TEST_CHANNEL) {
     const joinedAt = voiceJoinTimestamps.get(userId);
     if (joinedAt) {
@@ -82,12 +76,10 @@ async function handleVoiceStateUpdate(oldState, newState) {
   }
 }
 
-// ➕ לתור
 function enqueueTTS(entry) {
   ttsQueue.push(entry);
 }
 
-// ▶️ תהליך
 async function processQueue(channel) {
   if (isPlaying || ttsQueue.length === 0) return;
   isPlaying = true;
@@ -105,6 +97,12 @@ async function processQueue(channel) {
     const player = createAudioPlayer();
     connection.subscribe(player);
 
+    player.on('error', err => {
+      console.error(`🎙️ שגיאה בנגן הקול:`, err);
+      isPlaying = false;
+      processQueue(channel);
+    });
+
     const playNext = async () => {
       if (ttsQueue.length === 0) {
         disconnectTimer = setTimeout(() => {
@@ -117,12 +115,10 @@ async function processQueue(channel) {
 
       const { userId } = ttsQueue.shift();
 
-      // קול כועס לקרציה
       if (userId === 'ANGRY') {
         return playAngryVoice(player, playNext);
       }
 
-      // השמעת בונוס אם ≥ 3
       if (ttsQueue.length >= 2) {
         await playTransitionVoice(player, '📢 עומס בתור, תהיו רגועים!');
       }
@@ -132,6 +128,7 @@ async function processQueue(channel) {
         const audioBuffer = await synthesizeAzureTTS(ssml);
         if (!audioBuffer || audioBuffer.length < 1000) {
           console.warn(`🔇 קול לא תקין ל־${userId}`);
+          isPlaying = false;
           return playNext();
         }
 
@@ -143,17 +140,16 @@ async function processQueue(channel) {
         player.play(resource);
         player.once(AudioPlayerStatus.Idle, async () => {
           clearTimeout(disconnectTimer);
-
           if (ttsQueue.length > 0) {
             await playTransitionVoice(player, '⬇️ הבא בתור...');
           }
-
           playNext();
         });
 
         log(`🔈 TTS עבור ${userId}`);
       } catch (err) {
         console.error(`❌ שגיאה בהשמעה עבור ${userId}:`, err);
+        isPlaying = false;
         playNext();
       }
     };
@@ -165,7 +161,6 @@ async function processQueue(channel) {
   }
 }
 
-// 💬 מעבר
 async function playTransitionVoice(player, text) {
   const ssml = `
   <speak xml:lang='he-IL'>
@@ -189,7 +184,6 @@ async function playTransitionVoice(player, text) {
   }
 }
 
-// 😠 כועס לקרציות
 async function playAngryVoice(player, onComplete) {
   const angryLine = `
   <speak xml:lang='he-IL'>

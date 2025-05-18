@@ -1,5 +1,4 @@
 const { Events, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
-const { db } = require('../utils/firebase');
 const { logToWebhook } = require('../utils/logger');
 
 const CHECK_INTERVAL = 1000 * 60 * 60 * 6; // כל 6 שעות
@@ -8,14 +7,14 @@ const ONE_MONTH = 1000 * 60 * 60 * 24 * 30;
 function setupMemberTracker(client) {
   client.on(Events.GuildMemberAdd, async member => {
     if (member.user.bot) return;
-    const ref = db.doc(`users/${member.id}`);
+    const ref = client.db.doc(`users/${member.id}`);
     await ref.set({ joinedAt: Date.now(), lastActivity: null, pendingReminder: false });
   });
 
   client.on(Events.MessageCreate, async message => {
     if (message.channel.type !== 'DM' || message.author.bot) return;
 
-    const ref = db.doc(`users/${message.author.id}`);
+    const ref = client.db.doc(`users/${message.author.id}`);
     const doc = await ref.get();
     if (!doc.exists) return;
 
@@ -31,7 +30,7 @@ function setupMemberTracker(client) {
   client.on(Events.InteractionCreate, async interaction => {
     if (!interaction.isButton() || interaction.customId !== 'still_here') return;
 
-    const ref = db.doc(`users/${interaction.user.id}`);
+    const ref = client.db.doc(`users/${interaction.user.id}`);
     await ref.update({ lastActivity: Date.now(), pendingReminder: false });
 
     await interaction.reply({ content: 'תודה, עודכנת כפעיל 👍', ephemeral: true });
@@ -45,7 +44,7 @@ function setupMemberTracker(client) {
 
   setInterval(async () => {
     const now = Date.now();
-    const usersSnap = await db.collection('users').get();
+    const usersSnap = await client.db.collection('users').get();
 
     for (const doc of usersSnap.docs) {
       const { joinedAt, lastActivity, pendingReminder } = doc.data();
@@ -61,7 +60,7 @@ function setupMemberTracker(client) {
         .setDescription(
           "היי 👋\nהצטרפת אלינו לפני כחודש, אך לא זיהינו ממך פעילות כלשהי (לא בצ'אט ולא בערוץ קול).\nאם אתה עדיין מעוניין להישאר, לחץ על הכפתור או השב להודעה."
         )
-        .setFooter({ text: 'FIFO BOT | סינון משתמשים לא פעילים' });
+        .setFooter({ text: 'סינון משתמשים לא פעילים' });
 
       const button = new ButtonBuilder()
         .setCustomId('still_here')
@@ -71,7 +70,7 @@ function setupMemberTracker(client) {
       const row = new ActionRowBuilder().addComponents(button);
 
       await user.send({ embeds: [embed], components: [row] }).catch(() => {});
-      await db.doc(`users/${doc.id}`).update({ pendingReminder: true });
+      await client.db.doc(`users/${doc.id}`).update({ pendingReminder: true });
 
       await logToWebhook({
         title: '📌 משתמש חדש ללא פעילות',

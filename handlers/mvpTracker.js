@@ -6,6 +6,8 @@ const Timestamp = admin.firestore.Timestamp;
 const MVP_ROLE_ID = process.env.ROLE_MVP_ID;
 const MVP_ANNOUNCE_CHANNEL_ID = '583575179880431616';
 
+let lastPrintedDate = null; // 🧠 כדי למנוע ספאם בלוג אם כבר הוכרז היום
+
 async function updateVoiceActivity(memberId, durationMinutes, db) {
   const voiceRef = db.doc(`voiceTime/${memberId}`);
   const voiceSnap = await voiceRef.get();
@@ -124,7 +126,10 @@ async function checkMVPStatusAndRun(client, db) {
   }
 
   if (todayDate === lastDate) {
-    log(`⏱️ כבר הוכרז היום (today: ${todayDate}) – לא מכריז שוב`);
+    if (lastPrintedDate !== todayDate) {
+      log(`⏱️ כבר הוכרז היום (today: ${todayDate}) – לא מכריז שוב`);
+      lastPrintedDate = todayDate;
+    }
     return;
   }
 
@@ -138,7 +143,7 @@ async function checkMVPStatusAndRun(client, db) {
     log('⏳ הגיע הזמן להכריז MVP...');
     await calculateAndAnnounceMVP(client, db);
   } else {
-    log('⌛ עדיין לא הזמן הנכון להכרזה');
+    // נשתוק אם לא הזמן, כדי לא להציף את הלוג כל דקה
   }
 }
 

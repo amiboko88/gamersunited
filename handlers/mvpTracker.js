@@ -137,7 +137,7 @@ async function checkMVPStatusAndRun(client, db) {
   const hour = now.getHours();
   const minute = now.getMinutes();
 
-  log(`[MVP] בדיקה: יום=${day}, שעה=${hour}, דקה=${minute}`);
+  // log(`[MVP] בדיקה: יום=${day}, שעה=${hour}, דקה=${minute}`);
 
   if (day === 0 && hour === 20 && minute === 0) {
     log('⏳ הגיע הזמן להכריז MVP...');

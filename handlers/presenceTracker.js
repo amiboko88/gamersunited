@@ -47,6 +47,8 @@ async function trackGamePresence(presence) {
 
 async function validatePresenceOnReady(client) {
   for (const guild of client.guilds.cache.values()) {
+    let skipDueToTimeout = false;
+
     try {
       await guild.members.fetch({ time: 15000 });
     } catch (err) {
@@ -58,11 +60,14 @@ async function validatePresenceOnReady(client) {
           log(`⚠️ לא ניתן לטעון את כל המשתמשים בשרת: ${guild.name} – ${err.code}`);
           timeoutErrors.set(guild.id, now);
         }
+        skipDueToTimeout = true;
       } else {
         log(`❌ שגיאה כללית בטעינת משתמשים לשרת: ${guild.name}`);
         console.error(err);
       }
     }
+
+    if (skipDueToTimeout) continue;
 
     for (const member of guild.members.cache.values()) {
       if (member.user.bot) continue;

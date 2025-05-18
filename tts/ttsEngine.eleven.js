@@ -1,8 +1,11 @@
-// 📁 tts/ttsEngine.eleven.js – TTS דינמי עם ElevenLabs
+// 📁 tts/ttsEngine.eleven.js – שימוש מחודש ב־PlayHT במקום ElevenLabs
 const axios = require('axios');
+const { log } = require('../utils/logger');
 
-const ELEVEN_API_KEY = process.env.ELEVEN_API_KEY;
-const VOICE_ID = process.env.ELEVEN_VOICE_ID || 'EXAVITQu4vr4xnSDxMaL'; // קול ברירת מחדל
+// 🔐 משתני סביבה
+const PLAYHT_API_KEY = process.env.PLAYHT_API_KEY;
+const PLAYHT_USER_ID = process.env.PLAYHT_USER_ID; // נדרש על ידם
+const VOICE_ID = 'Mary Conversational'; // קול עברי "סביר"
 
 const funnyLines = [
   "מה זה השקט הזה? אתם בקבוצת יוגה או משחק יריות?",
@@ -31,28 +34,44 @@ const funnyLines = [
   "שקט!! עכשיו תנו לי לנסות להציל את מה שנשאר מהמוניטין של השרת הזה."
 ];
 
-async function synthesizeElevenTTS(text) {
-  const endpoint = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`;
-  const response = await axios.post(endpoint, {
-    text,
-    voice_settings: {
-      stability: 0.4,
-      similarity_boost: 0.6
-    },
-    model_id: 'eleven_multilingual_v2'
-  }, {
-    responseType: 'arraybuffer',
-    headers: {
-      'xi-api-key': ELEVEN_API_KEY,
-      'Content-Type': 'application/json'
-    }
-  });
-
-  return Buffer.from(response.data);
-}
-
 function getRandomElevenLine() {
   return funnyLines[Math.floor(Math.random() * funnyLines.length)];
+}
+
+async function synthesizeElevenTTS(text) {
+  try {
+    const response = await axios.post(
+      'https://api.play.ht/api/v2/tts',
+      {
+        voice: VOICE_ID,
+        text,
+        quality: 'high',
+        speed: 1.0,
+        sample_rate: 24000,
+        output_format: 'mp3'
+      },
+      {
+        responseType: 'arraybuffer',
+        headers: {
+          Authorization: `Bearer ${PLAYHT_API_KEY}`,
+          'X-User-Id': PLAYHT_USER_ID,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    if (!response.data || response.data.length < 1000) {
+      throw new Error('🔇 קובץ שמע לא תקין מ־PlayHT');
+    }
+
+    // נרשום בלוג כמה תווים השתמשנו
+    log(`🎙️ שימוש ב־PlayHT – ${text.length} תווים`);
+
+    return Buffer.from(response.data);
+  } catch (err) {
+    console.error('❌ שגיאה ב־PlayHT:', err.message);
+    throw err;
+  }
 }
 
 module.exports = {

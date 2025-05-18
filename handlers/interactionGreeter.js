@@ -12,6 +12,7 @@ const { Readable } = require('stream');
 const { synthesizeElevenTTS, getRandomElevenLine } = require('../tts/ttsEngine.eleven');
 const { ChannelType } = require('discord.js');
 const { log } = require('../utils/logger');
+
 const MAIN_TEXT_CHANNEL_ID = '1372283521447497759';
 
 const recentTriggers = new Map(); // anti-repeat
@@ -22,18 +23,16 @@ async function handleVoiceJoinGreeter(oldState, newState, client) {
 
   const channel = newState.channel;
   if (!channel || channel.type !== ChannelType.GuildVoice) return;
-  if (channel.members.filter(m => !m.user.bot).size < 3) return;
+  const nonBotMembers = channel.members.filter(m => !m.user.bot);
+  if (nonBotMembers.size < 5) return; // 🔁 רק אם יש 5 ומעלה
   if (channel.id === process.env.TTS_TEST_CHANNEL_ID) return;
 
   const key = `${channel.guild.id}-${channel.id}`;
   const now = Date.now();
-  if (recentTriggers.has(key) && now - recentTriggers.get(key) < 1000 * 60 * 60) return; // 1 שעה חסימה
+  if (recentTriggers.has(key) && now - recentTriggers.get(key) < 1000 * 60 * 60) return; // שעה חסימה
   recentTriggers.set(key, now);
 
-  const displayNames = channel.members
-    .filter(m => !m.user.bot)
-    .map(m => m.displayName)
-    .join(', ');
+  const displayNames = nonBotMembers.map(m => m.displayName).join(', ');
 
   const connection = joinVoiceChannel({
     channelId: channel.id,
@@ -46,7 +45,15 @@ async function handleVoiceJoinGreeter(oldState, newState, client) {
   connection.subscribe(player);
 
   const line = `${getRandomElevenLine()} ${displayNames}, תתארגנו לפני שאני משתעל עליכם!`;
-  const buffer = await synthesizeElevenTTS(line);
+  let buffer;
+  try {
+    buffer = await synthesizeElevenTTS(line); // ← עכשיו זה PlayHT
+  } catch (err) {
+    log(`❌ כשל בהשמעת ברכה של שמעון בערוץ ${channel.name}`);
+    connection.destroy();
+    return;
+  }
+
   const stream = Readable.from(buffer);
   const resource = createAudioResource(stream, {
     inputType: StreamType.Arbitrary
@@ -68,7 +75,7 @@ async function handleVoiceJoinGreeter(oldState, newState, client) {
       if (reaction && reaction.count === 1) {
         await fetched.reactions.removeAll();
       }
-    }, 1000 * 60 * 5);
+    }, 1000 * 60 * 5); // 5 דקות
 
     log(`💬 שמעון בירך את ${displayNames} בערוץ ${channel.name} עם המשפט: "${line}"`);
   }

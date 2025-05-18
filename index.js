@@ -2,8 +2,8 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const { trackGamePresence, validatePresenceOnReady } = require('./handlers/presenceTracker');
-const { checkMVPStatusAndRun } = require('./handlers/mvpTracker'); // ✅ רק check נשאר פה
-const { registerMvpCommand } = require('./commands/mvpDisplay');   // ✅ עכשיו פה
+const { startMvpScheduler } = require('./handlers/mvpTracker'); // ✅ במקום checkMVPStatusAndRun
+const { registerMvpCommand } = require('./commands/mvpDisplay');
 const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
 const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
 const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
@@ -24,19 +24,18 @@ const client = new Client({
   ]
 });
 
+client.db = db; // ✅ חשוב מאוד – גישה לפיירסטור
 
-client.db = db; // ✅ שורה חשובה מאוד!
-
-// רישום Slash Commands
+// ⬇️ רישום Slash Commands
 const commands = [];
 registerMvpCommand(commands);
-commands.push(soundData); // ← פקודת /סאונד
+commands.push(soundData); // ← כולל /סאונד
 
 client.once('ready', async () => {
   startPresenceRotation(client);
   console.log(`שימי הבוט באוויר! ${client.user.tag}`);
 
-  // ✅ רישום Slash Commands לשרת
+  // ✅ רישום Slash לשרת
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   const guildId = client.guilds.cache.first().id;
 
@@ -50,30 +49,38 @@ client.once('ready', async () => {
     console.error('❌ שגיאה ברישום Slash Commands:', err);
   }
 
+  // ⚙️ הפעלות ראשוניות
   setupMemberTracker(client);
-  startCleanupScheduler(client); // ניקוי חדרים ריקים
-  await validatePresenceOnReady(client); // עדכון תפקידים לפי משחק
+  startCleanupScheduler(client);
+  await validatePresenceOnReady(client);
 
-setInterval(() => {
-  validatePresenceOnReady(client);
-}, 1000 * 60 * 5); // בדיקה כל 5 דקות
+  // 🔁 נוכחות לפי משחק – כל 5 דקות
+  setInterval(() => {
+    validatePresenceOnReady(client);
+  }, 1000 * 60 * 5);
 
-  
-  await checkMVPStatusAndRun(client, db); // MVP שבועי
-    await startMvpReactionWatcher(client, db); // ← כאן!
+  // 🕒 התחלת מנגנון MVP לפי שעון ישראל – פעם בדקה בלבד
+  startMvpScheduler(client, db);
+
+  // 🏅 מעקב ריאקטים ל־MVP
+  await startMvpReactionWatcher(client, db);
 });
 
+// 🎮 נוכחות
 client.on('presenceUpdate', (oldPresence, newPresence) => {
   trackGamePresence(newPresence);
 });
 
+// 🎤 TTS ו־Greeting
 client.on('voiceStateUpdate', (oldState, newState) => {
-  handleVoiceStateUpdate(oldState, newState);       // מערכת TTS שלך
-  handleVoiceJoinGreeter(oldState, newState, client); // שימי החופר
+  handleVoiceStateUpdate(oldState, newState);
+  handleVoiceJoinGreeter(oldState, newState, client);
 });
 
+// 🧼 אנטי־ספאם
 client.on('messageCreate', handleSpam);
 
+// 📩 Slash
 client.on('interactionCreate', interaction => {
   if (interaction.commandName === 'סאונד') return soundExecute(interaction, client);
   if (interaction.commandName === 'mvp') return mvpDisplayExecute(interaction, client);

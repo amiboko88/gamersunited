@@ -115,26 +115,42 @@ async function checkMVPStatusAndRun(client, db) {
   const statusRef = db.doc('mvpSystem/status');
   const statusSnap = await statusRef.get();
 
-  const now = new Date(Date.now() + 3 * 60 * 60 * 1000); // UTC+3 ישראל
-  const day = now.getDay(); // 0 = ראשון
-  const hour = now.getHours(); // מחכים ל־20
+  const now = new Date(Date.now() + 3 * 60 * 60 * 1000); // ישראל
   const todayDate = now.toISOString().split('T')[0];
-
   let lastDate = '1970-01-01';
+
   if (statusSnap.exists) {
     lastDate = statusSnap.data().lastAnnouncedDate || lastDate;
   }
 
-  if (day === 0 && hour === 20 && todayDate !== lastDate) {
+  if (todayDate === lastDate) {
+    log(`⏱️ כבר הוכרז היום (today: ${todayDate}) – לא מכריז שוב`);
+    return;
+  }
+
+  const day = now.getDay(); // 0 = ראשון
+  const hour = now.getHours();
+  const minute = now.getMinutes();
+
+  log(`[MVP] בדיקה: יום=${day}, שעה=${hour}, דקה=${minute}`);
+
+  if (day === 0 && hour === 20 && minute === 0) {
     log('⏳ הגיע הזמן להכריז MVP...');
     await calculateAndAnnounceMVP(client, db);
   } else {
-    log(`⏱️ עדיין לא הזמן או כבר הוכרז היום (today: ${todayDate}, last: ${lastDate})`);
+    log('⌛ עדיין לא הזמן הנכון להכרזה');
   }
+}
+
+function startMvpScheduler(client, db) {
+  setInterval(() => {
+    checkMVPStatusAndRun(client, db);
+  }, 60 * 1000); // כל דקה
 }
 
 module.exports = {
   updateVoiceActivity,
   calculateAndAnnounceMVP,
-  checkMVPStatusAndRun
+  checkMVPStatusAndRun,
+  startMvpScheduler
 };

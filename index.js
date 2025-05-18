@@ -10,6 +10,7 @@ const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
 const { setupMemberTracker } = require('./handlers/memberTracker');
 const { startPresenceRotation } = require('./handlers/presenceRotator');
 const { handleVoiceJoinGreeter } = require('./handlers/interactionGreeter');
+const { handleSpam } = require('./handlers/antiSpam');
 const db = require('./utils/firebase');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
 
@@ -70,6 +71,8 @@ client.on('voiceStateUpdate', (oldState, newState) => {
   handleVoiceStateUpdate(oldState, newState);       // מערכת TTS שלך
   handleVoiceJoinGreeter(oldState, newState, client); // שימי החופר
 });
+
+client.on('messageCreate', handleSpam);
 
 client.on('interactionCreate', interaction => {
   if (interaction.commandName === 'סאונד') return soundExecute(interaction, client);

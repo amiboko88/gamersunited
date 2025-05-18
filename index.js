@@ -10,7 +10,7 @@ const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
 const { setupMemberTracker } = require('./handlers/memberTracker');
 const { startPresenceRotation } = require('./handlers/presenceRotator');
 const { handleVoiceJoinGreeter } = require('./handlers/interactionGreeter');
-const { handleSpam } = require('./handlers/antiSpam');
+const { handleSpam } = require('./handlers/antispam');
 const db = require('./utils/firebase');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
 

@@ -1,4 +1,3 @@
-// 📁 handlers/antiSpam.js
 const { EmbedBuilder, Events } = require('discord.js');
 const db = require('../utils/firebase');
 

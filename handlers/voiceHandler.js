@@ -1,4 +1,3 @@
-// 📁 handlers/voiceHandler.js – כולל קרציות מתוחכמות ו־displayName ל־TTS
 const {
   joinVoiceChannel,
   entersState,
@@ -19,11 +18,24 @@ const voiceJoinTimestamps = new Map();
 const ttsQueue = [];
 const entryHistory = new Map();
 const cooldowns = new Map();
-const recentAnnoyings = new Map(); // קרציות שחזרו מהר – השהיית ניתוק
+const recentAnnoyings = new Map();
 
 let isPlaying = false;
 let connection = null;
 let disconnectTimer = null;
+
+const angryLines = [
+  "תפסיק לשגע אותי, יחתיכת בור של חרא.",
+  "הופה, עוד קרציה. תעשה טובה, שב בשקט.",
+  "אני לא שחקן, אני בוט – אבל אפילו לי נמאס ממך.",
+  "שוב אתה? לך לשתות מים ותחשוב על מעשיך.",
+  "הצטרפת? יצאת? תחליט כבר יא גוש ביצות!",
+  "יא חתיכת נוד מהלך, תן לי לנוח!",
+  "הבוט עייף. אתה מעייף. שילוב קטלני.",
+  "תקשיב, גם לקפה יש פחות כניסות ויציאות ממך.",
+  "השתקה הופעלה. זו לא טעות, זו הצלה.",
+  "יאללה, צא ותיכנס – אבל בשקט, חתיכת ג׳וק!"
+];
 
 function isAnnoying(userId) {
   const now = Date.now();
@@ -55,10 +67,22 @@ async function handleVoiceStateUpdate(oldState, newState) {
       console.log(`🧨 זוהתה קרציה: ${displayName}`);
       enqueueTTS({ channel, userId: 'ANGRY', displayName });
       recentAnnoyings.set(userId, Date.now());
+
+      const member = newState.member;
+      if (member?.voice?.setMute) {
+        try {
+          await member.voice.setMute(true, 'קרציה detected');
+          setTimeout(() => {
+            member.voice.setMute(false, 'השתקה הוסרה אוטומטית');
+          }, 10_000);
+        } catch (err) {
+          console.warn(`⚠️ לא ניתן להשתיק את ${displayName}:`, err.message);
+        }
+      }
+
       return;
     }
 
-    // במידה והבוט בדיוק עמד להתנתק – אל תתנתק
     recentAnnoyings.set(userId, Date.now());
     setTimeout(() => recentAnnoyings.delete(userId), 15_000);
 
@@ -112,7 +136,6 @@ async function processQueue(channel) {
 
     const playNext = async () => {
       if (ttsQueue.length === 0) {
-        // לא להתנתק אם קרציה חזרה תוך 15 שניות
         const someoneRecentlyAnnoying = [...recentAnnoyings.values()].some(
           ts => Date.now() - ts <= 15_000
         );
@@ -198,9 +221,9 @@ async function playTransitionVoice(player, text) {
 }
 
 async function playAngryVoice(player, onComplete) {
-  const angryLine = "די כבר! תבחר – בפנים או בחוץ! הבוט עייף ממך.";
+  const text = angryLines[Math.floor(Math.random() * angryLines.length)];
   try {
-    const buffer = await synthesizeGoogleTTS(angryLine);
+    const buffer = await synthesizeGoogleTTS(text);
     const stream = Readable.from(buffer);
     const resource = createAudioResource(stream, {
       inputType: StreamType.Arbitrary

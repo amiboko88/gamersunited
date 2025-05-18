@@ -1,4 +1,4 @@
-// 📁 tts/ttsEngine.js – גרסה מלאה ומעודכנת ל־Google TTS בלבד
+// 📁 tts/ttsEngine.js – גרסה מלאה עם תמיכה ב־displayName
 const axios = require('axios');
 const { playerProfiles } = require('../data/profiles');
 
@@ -37,12 +37,12 @@ const fallbackLines = [
   "הציפיות ממך כל כך נמוכות... אפילו אתה לא אכזבה יותר."
 ];
 
-function getUserProfileGoogle(userId) {
+function getUserProfileGoogle(userId, displayName = 'שחקן אלמוני') {
   const intro = intros[Math.floor(Math.random() * intros.length)];
   const personalLines = playerProfiles[userId];
   const rawText = personalLines
     ? personalLines[Math.floor(Math.random() * personalLines.length)]
-    : fallbackLines[Math.floor(Math.random() * fallbackLines.length)];
+    : `${displayName}, אתה לא ברשימה, אבל הבוט כבר מזהה בושה מרחוק...`;
 
   const fullText = `${intro} ${rawText}`;
   return fullText;

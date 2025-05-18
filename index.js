@@ -4,6 +4,7 @@ const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const { trackGamePresence, validatePresenceOnReady } = require('./handlers/presenceTracker');
 const { checkMVPStatusAndRun } = require('./handlers/mvpTracker'); // ✅ רק check נשאר פה
 const { registerMvpCommand } = require('./commands/mvpDisplay');   // ✅ עכשיו פה
+const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
 const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
 const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
 const { setupMemberTracker } = require('./handlers/memberTracker');
@@ -58,6 +59,7 @@ setInterval(() => {
 
   
   await checkMVPStatusAndRun(client, db); // MVP שבועי
+    await startMvpReactionWatcher(client, db); // ← כאן!
 });
 
 client.on('presenceUpdate', (oldPresence, newPresence) => {

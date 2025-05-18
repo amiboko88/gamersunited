@@ -6,7 +6,6 @@ const Timestamp = admin.firestore.Timestamp;
 const MVP_ROLE_ID = process.env.ROLE_MVP_ID;
 const MVP_ANNOUNCE_CHANNEL_ID = '583575179880431616';
 
-// ⏱️ עדכון פעילות קולית – כולל lifetime
 async function updateVoiceActivity(memberId, durationMinutes, db) {
   const voiceRef = db.doc(`voiceTime/${memberId}`);
   const voiceSnap = await voiceRef.get();
@@ -31,7 +30,6 @@ async function updateVoiceActivity(memberId, durationMinutes, db) {
   log(`📈 עדכון פעילות ל־${memberId}: ${durationMinutes} דקות`);
 }
 
-// 🏆 חישוב והענקת MVP שבועי
 async function calculateAndAnnounceMVP(client, db) {
   const voiceRef = await db.collection('voiceTime').get();
   if (voiceRef.empty) return;
@@ -82,49 +80,56 @@ async function calculateAndAnnounceMVP(client, db) {
   await statsRef.set({ wins });
 
   const channel = client.channels.cache.get(MVP_ANNOUNCE_CHANNEL_ID);
-  if (channel) {
-    const embed = new EmbedBuilder()
-      .setColor('Gold')
-      .setTitle('🥇 MVP השבועי')
-      .setDescription(`מזל טוב ל־<@${topUser.id}> על **${topUser.minutes} דקות** של נוכחות 🎤!\nסה״כ זכיות: **${wins}**`)
-      .setTimestamp()
-      .setFooter({ text: 'שימי הבוט - מצטייני השבוע' });
+  if (!channel) return;
 
-    await channel.send({ content: '@everyone', embeds: [embed] }).catch(() => {});
+  const embed = new EmbedBuilder()
+    .setColor('Gold')
+    .setTitle('🥇 MVP השבועי')
+    .setDescription(`מזל טוב ל־<@${topUser.id}> על **${topUser.minutes} דקות** של נוכחות 🎤!\nסה״כ זכיות: **${wins}**`)
+    .setTimestamp()
+    .setFooter({ text: 'שמעון הבוט – מצטייני השבוע' });
+
+  const message = await channel.send({
+    content: '@everyone',
+    embeds: [embed]
+  }).catch(() => null);
+
+  if (message) {
+    await message.react('🏅').catch(() => {});
+    await db.doc('mvpSystem/status').set({
+      lastCalculated: Timestamp.now(),
+      lastAnnouncedDate: new Date().toISOString().split('T')[0],
+      messageId: message.id,
+      channelId: channel.id
+    });
   }
 
   for (const docSnap of voiceRef.docs) {
     await db.doc(`voiceTime/${docSnap.id}`).update({ minutes: 0 }).catch(() => {});
   }
 
-  await db.doc('mvpSystem/status').set({ lastCalculated: Timestamp.now() });
+  log(`✅ MVP הוכרז ונשלח – ${topUser.id}`);
 }
 
-// 🕒 הפעלה שבועית
 async function checkMVPStatusAndRun(client, db) {
   const statusRef = db.doc('mvpSystem/status');
   const statusSnap = await statusRef.get();
 
-  const now = Timestamp.now();
-  let shouldRun = false;
+  const now = new Date(Date.now() + 3 * 60 * 60 * 1000); // UTC+3 ישראל
+  const day = now.getDay(); // 0 = ראשון
+  const hour = now.getHours(); // מחכים ל־20
+  const todayDate = now.toISOString().split('T')[0];
 
-  if (!statusSnap.exists) {
-    shouldRun = true;
-  } else {
-    const last = statusSnap.data().lastCalculated?.toDate() || new Date(0);
-    const diff = now.toDate() - last;
-    const oneWeek = 1000 * 60 * 60 * 24 * 7;
-
-    if (diff >= oneWeek || new Date().getDay() === 0) {
-      shouldRun = true;
-    }
+  let lastDate = '1970-01-01';
+  if (statusSnap.exists) {
+    lastDate = statusSnap.data().lastAnnouncedDate || lastDate;
   }
 
-  if (shouldRun) {
-    log('⏳ מחשב MVP שבועי...');
+  if (day === 0 && hour === 20 && todayDate !== lastDate) {
+    log('⏳ הגיע הזמן להכריז MVP...');
     await calculateAndAnnounceMVP(client, db);
   } else {
-    log('✅ MVP כבר חושב השבוע.');
+    log(`⏱️ עדיין לא הזמן או כבר הוכרז היום (today: ${todayDate}, last: ${lastDate})`);
   }
 }
 

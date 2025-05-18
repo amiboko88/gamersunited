@@ -1,4 +1,4 @@
-// 📁 tts/ttsEngine.js – גרסה חדשה עם Google TTS בלבד
+// 📁 tts/ttsEngine.js – גרסה מלאה ומעודכנת ל־Google TTS בלבד
 const axios = require('axios');
 const { playerProfiles } = require('../data/profiles');
 
@@ -37,54 +37,69 @@ const fallbackLines = [
   "הציפיות ממך כל כך נמוכות... אפילו אתה לא אכזבה יותר."
 ];
 
-function getUserProfileSSML(userId) {
+function getUserProfileGoogle(userId) {
   const intro = intros[Math.floor(Math.random() * intros.length)];
   const personalLines = playerProfiles[userId];
   const rawText = personalLines
     ? personalLines[Math.floor(Math.random() * personalLines.length)]
     : fallbackLines[Math.floor(Math.random() * fallbackLines.length)];
-  return `${intro} ${rawText}`;
+
+  const fullText = `${intro} ${rawText}`;
+  return fullText;
 }
 
-async function synthesizeAzureTTS(text) {
+async function synthesizeGoogleTTS(text) {
   const key = process.env.GOOGLE_TTS_API_KEY;
   const endpoint = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${key}`;
+
+  const voiceName = randomGoogleVoice();
+  const rate = randomRate();
+  const pitch = randomPitch();
 
   const payload = {
     input: { text },
     voice: {
       languageCode: 'he-IL',
-      name: randomGoogleVoice()
+      name: voiceName
     },
     audioConfig: {
       audioEncoding: 'MP3',
-      speakingRate: randomRate(),
-      pitch: randomPitch()
+      speakingRate: rate,
+      pitch: pitch
     }
   };
 
-  const response = await axios.post(endpoint, payload);
-  const audioContent = response.data.audioContent;
-  if (!audioContent) throw new Error('❌ Google TTS לא החזיר תוכן קול');
-  return Buffer.from(audioContent, 'base64');
+  try {
+    const response = await axios.post(endpoint, payload);
+    const audioContent = response.data.audioContent;
+    if (!audioContent) throw new Error('❌ Google TTS לא החזיר תוכן קול');
+    return Buffer.from(audioContent, 'base64');
+  } catch (err) {
+    console.error(`❌ שגיאה בבקשת Google TTS:`, err.response?.data || err.message);
+    throw err;
+  }
 }
 
 function randomGoogleVoice() {
-  const voices = ['he-IL-Standard-A', 'he-IL-Standard-B', 'he-IL-Wavenet-A', 'he-IL-Wavenet-B'];
+  const voices = [
+    'he-IL-Standard-A', 'he-IL-Standard-B',
+    'he-IL-Wavenet-A', 'he-IL-Wavenet-B',
+    'he-IL-Wavenet-C', 'he-IL-Wavenet-D'
+  ];
   return voices[Math.floor(Math.random() * voices.length)];
 }
 
 function randomRate() {
-  const rates = [0.9, 1.0, 1.1];
+  const rates = [0.95, 1.0, 1.05, 1.1];
   return rates[Math.floor(Math.random() * rates.length)];
 }
 
 function randomPitch() {
-  const pitches = [-2.0, 0.0, 2.0];
+  const pitches = [-2.0, 0.0, 2.0, 4.0];
   return pitches[Math.floor(Math.random() * pitches.length)];
 }
 
 module.exports = {
-  getUserProfileSSML,
-  synthesizeAzureTTS
+  getUserProfileGoogle,
+  synthesizeGoogleTTS
 };

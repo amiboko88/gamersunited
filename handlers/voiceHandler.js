@@ -1,4 +1,4 @@
-// 📁 handlers/voiceHandler.js – מעודכן ל־Google TTS עם הקסמים
+// 📁 handlers/voiceHandler.js – מעודכן ל־Google TTS עם כל הקסמים
 const {
   joinVoiceChannel,
   entersState,
@@ -24,6 +24,7 @@ let isPlaying = false;
 let connection = null;
 let disconnectTimer = null;
 
+// זיהוי משתמש "קרציה"
 function isAnnoying(userId) {
   const now = Date.now();
   const history = entryHistory.get(userId) || [];
@@ -38,6 +39,7 @@ function isAnnoying(userId) {
   return false;
 }
 
+// ניטור כניסות / יציאות
 async function handleVoiceStateUpdate(oldState, newState) {
   const user = (newState.member || oldState.member)?.user;
   if (!user || user.bot) return;
@@ -46,6 +48,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
   const leftChannel = oldState.channelId;
   const userId = user.id;
 
+  // ✅ כניסה לערוץ TTS
   if (joinedChannel === TEST_CHANNEL && leftChannel !== TEST_CHANNEL) {
     const channel = newState.guild.channels.cache.get(TEST_CHANNEL);
     const username = newState.member.displayName;
@@ -61,6 +64,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
     processQueue(channel);
   }
 
+  // ✅ יציאה מהערוץ
   if (leftChannel === TEST_CHANNEL && joinedChannel !== TEST_CHANNEL) {
     const joinedAt = voiceJoinTimestamps.get(userId);
     if (joinedAt) {
@@ -77,10 +81,12 @@ async function handleVoiceStateUpdate(oldState, newState) {
   }
 }
 
+// תור TTS
 function enqueueTTS(entry) {
   ttsQueue.push(entry);
 }
 
+// הפעלת התור
 async function processQueue(channel) {
   if (isPlaying || ttsQueue.length === 0) return;
   isPlaying = true;
@@ -116,10 +122,12 @@ async function processQueue(channel) {
 
       const { userId } = ttsQueue.shift();
 
+      // קרציה
       if (userId === 'ANGRY') {
         return playAngryVoice(player, playNext);
       }
 
+      // בונוס אם יש יותר מ־2 בתור
       if (ttsQueue.length >= 2) {
         await playTransitionVoice(player, '📢 עומס בתור, תהיו רגועים!');
       }
@@ -163,6 +171,7 @@ async function processQueue(channel) {
   }
 }
 
+// קול מעבר
 async function playTransitionVoice(player, text) {
   try {
     const buffer = await synthesizeGoogleTTS(text);
@@ -179,6 +188,7 @@ async function playTransitionVoice(player, text) {
   }
 }
 
+// קול כועס לקרציות
 async function playAngryVoice(player, onComplete) {
   const angryLine = "די כבר! תבחר – בפנים או בחוץ! הבוט עייף ממך.";
   try {

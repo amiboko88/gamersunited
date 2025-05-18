@@ -136,22 +136,26 @@ async function processQueue(channel) {
 
     const playNext = async () => {
       if (ttsQueue.length === 0) {
+        const channelIsEmpty = channel.members.filter(m => !m.user.bot).size === 0;
         const someoneRecentlyAnnoying = [...recentAnnoyings.values()].some(
           ts => Date.now() - ts <= 15_000
         );
-        if (someoneRecentlyAnnoying) {
-          disconnectTimer = setTimeout(() => {
-            isPlaying = false;
-            processQueue(channel);
-          }, 5000);
+
+        if (channelIsEmpty && !someoneRecentlyAnnoying) {
+          console.log('🔌 הערוץ ריק. הבוט מתנתק.');
+          connection.destroy();
+          connection = null;
+          isPlaying = false;
           return;
         }
 
         disconnectTimer = setTimeout(() => {
+          console.log('⏳ הבוט מנותק אוטומטית אחרי השהייה.');
           connection.destroy();
           connection = null;
           isPlaying = false;
         }, 5000);
+
         return;
       }
 

@@ -1,8 +1,8 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
-const { trackGamePresence, validatePresenceOnReady } = require('./handlers/presenceTracker');
-const { startMvpScheduler } = require('./handlers/mvpTracker'); // ✅ במקום checkMVPStatusAndRun
+const { trackGamePresence, validatePresenceOnReady, softPresenceScan } = require('./handlers/presenceTracker');
+const { startMvpScheduler } = require('./handlers/mvpTracker');
 const { registerMvpCommand } = require('./commands/mvpDisplay');
 const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
 const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
@@ -32,6 +32,8 @@ registerMvpCommand(commands);
 commands.push(soundData); // ← כולל /סאונד
 
 client.once('ready', async () => {
+  await validatePresenceOnReady(client); // ✅ סנכרון פעם אחת
+  setInterval(() => softPresenceScan(client), 1000 * 60 * 10); // כל 10 דק'
   startPresenceRotation(client);
   console.log(`שימי הבוט באוויר! ${client.user.tag}`);
 
@@ -52,12 +54,6 @@ client.once('ready', async () => {
   // ⚙️ הפעלות ראשוניות
   setupMemberTracker(client);
   startCleanupScheduler(client);
-  await validatePresenceOnReady(client);
-
-  // 🔁 נוכחות לפי משחק – כל 5 דקות
-  setInterval(() => {
-    validatePresenceOnReady(client);
-  }, 1000 * 60 * 5);
 
   // 🕒 התחלת מנגנון MVP לפי שעון ישראל – פעם בדקה בלבד
   startMvpScheduler(client, db);

@@ -1,94 +1,80 @@
-// 📁 handlers/presenceTracker.js – גרסה יציבה ושקטה לניטור תפקידים לפי נוכחות
-const { log } = require('../utils/logger');
-
+// 📁 handlers/presenceTracker.js – מערכת תפקידים חכמה ויציבה
 const WARZONE_KEYWORDS = ['Black Ops 6', 'Call Of Duty'];
 const ROLE_WARZONE_ID = process.env.ROLE_WARZONE_ID;
 const ROLE_GENERIC_ID = process.env.ROLE_GENERIC_ID;
 
-// זיהוי פעילות משחק
 function isPlayingWarzone(presence) {
   const gameActivity = presence?.activities?.find(a => a.type === 0);
-  if (!gameActivity) return false;
-  return WARZONE_KEYWORDS.some(keyword =>
+  return gameActivity && WARZONE_KEYWORDS.some(keyword =>
     gameActivity.name?.toLowerCase().includes(keyword.toLowerCase())
   );
 }
 
-// זיהוי משתמש כלא פעיל (אופליין / ללא נוכחות)
+function isPlayingSomething(presence) {
+  return presence?.activities?.some(a => a.type === 0);
+}
+
 function isOffline(presence) {
   return !presence || presence.status === 'offline';
 }
 
-// טיפול בזמן אמת
-async function trackGamePresence(presence) {
-  if (!presence || !presence.member || presence.user?.bot) return;
-  const member = presence.member;
+async function updateMemberRoles(member, presence) {
+  const hasWarzone = isPlayingWarzone(presence);
+  const hasSomething = isPlayingSomething(presence);
 
-  try {
-    if (isOffline(presence)) {
-      await removeRoles(member);
-    } else if (isPlayingWarzone(presence)) {
-      await applyRoles(member, true);
-    } else {
-      await applyRoles(member, false);
-    }
-  } catch (_) {}
+  const hasWarzoneRole = member.roles.cache.has(ROLE_WARZONE_ID);
+  const hasGenericRole = member.roles.cache.has(ROLE_GENERIC_ID);
+
+  if (isOffline(presence) || !hasSomething) {
+    if (hasWarzoneRole) await member.roles.remove(ROLE_WARZONE_ID).catch(() => {});
+    if (hasGenericRole) await member.roles.remove(ROLE_GENERIC_ID).catch(() => {});
+    return;
+  }
+
+  if (hasWarzone) {
+    if (!hasWarzoneRole) await member.roles.add(ROLE_WARZONE_ID).catch(() => {});
+    if (hasGenericRole) await member.roles.remove(ROLE_GENERIC_ID).catch(() => {});
+  } else {
+    if (!hasGenericRole) await member.roles.add(ROLE_GENERIC_ID).catch(() => {});
+    if (hasWarzoneRole) await member.roles.remove(ROLE_WARZONE_ID).catch(() => {});
+  }
 }
 
-// סריקה רכה שקטה לכל משתמשים מחוברים (לא פוגעת בלוג)
+// 1. ריצה בלייב
+async function trackGamePresence(presence) {
+  if (!presence || !presence.member || presence.user?.bot) return;
+  await updateMemberRoles(presence.member, presence);
+}
+
+// 2. סריקה תקופתית רק למחוברים
 async function softPresenceScan(client) {
   for (const guild of client.guilds.cache.values()) {
     for (const member of guild.members.cache.values()) {
       if (member.user.bot) continue;
-
       const presence = member.presence;
-
-      try {
-        if (isOffline(presence)) {
-          await removeRoles(member);
-        } else if (isPlayingWarzone(presence)) {
-          await applyRoles(member, true);
-        } else {
-          await applyRoles(member, false);
-        }
-      } catch (_) {}
+      if (!presence) continue;
+      await updateMemberRoles(member, presence);
     }
   }
 }
 
-// מתן/הסרת תפקידים לפי מצב
-async function applyRoles(member, isWarzone) {
-  const hasWarzone = member.roles.cache.has(ROLE_WARZONE_ID);
-  const hasGeneric = member.roles.cache.has(ROLE_GENERIC_ID);
+// 3. ריצה מלאה בעת עלייה – כולל offline
+async function hardSyncPresenceOnReady(client) {
+  for (const guild of client.guilds.cache.values()) {
+    try {
+      await guild.members.fetch();
+    } catch (_) {}
 
-  if (isWarzone) {
-    if (!hasWarzone && ROLE_WARZONE_ID) {
-      await member.roles.add(ROLE_WARZONE_ID).catch(() => {});
+    for (const member of guild.members.cache.values()) {
+      if (member.user.bot) continue;
+      const presence = member.presence;
+      await updateMemberRoles(member, presence);
     }
-    if (hasGeneric && ROLE_GENERIC_ID) {
-      await member.roles.remove(ROLE_GENERIC_ID).catch(() => {});
-    }
-  } else {
-    if (!hasGeneric && ROLE_GENERIC_ID) {
-      await member.roles.add(ROLE_GENERIC_ID).catch(() => {});
-    }
-    if (hasWarzone && ROLE_WARZONE_ID) {
-      await member.roles.remove(ROLE_WARZONE_ID).catch(() => {});
-    }
-  }
-}
-
-// הסרת כל התפקידים כשהמשתמש אופליין
-async function removeRoles(member) {
-  if (ROLE_WARZONE_ID && member.roles.cache.has(ROLE_WARZONE_ID)) {
-    await member.roles.remove(ROLE_WARZONE_ID).catch(() => {});
-  }
-  if (ROLE_GENERIC_ID && member.roles.cache.has(ROLE_GENERIC_ID)) {
-    await member.roles.remove(ROLE_GENERIC_ID).catch(() => {});
   }
 }
 
 module.exports = {
   trackGamePresence,
-  softPresenceScan
+  softPresenceScan,
+  hardSyncPresenceOnReady
 };

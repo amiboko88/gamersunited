@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
-const { trackGamePresence, validatePresenceOnReady, softPresenceScan } = require('./handlers/presenceTracker');
+const { trackGamePresence, softPresenceScan } = require('./handlers/presenceTracker');
 const { startMvpScheduler } = require('./handlers/mvpTracker');
 const { registerMvpCommand } = require('./commands/mvpDisplay');
 const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
@@ -32,7 +32,7 @@ registerMvpCommand(commands);
 commands.push(soundData); // ← כולל /סאונד
 
 client.once('ready', async () => {
-  await validatePresenceOnReady(client); // ✅ סנכרון פעם אחת
+  
   setInterval(() => softPresenceScan(client), 1000 * 60 * 10); // כל 10 דק'
   startPresenceRotation(client);
   console.log(`שימי הבוט באוויר! ${client.user.tag}`);

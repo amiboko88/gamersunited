@@ -14,7 +14,7 @@ const { execute: soundExecute, data: soundData } = require('./handlers/soundboar
 const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
 const { setupMemberTracker } = require('./handlers/memberTracker');
 const { startPresenceRotation } = require('./handlers/presenceRotator');
-const { handleVoiceJoinGreeter } = require('./handlers/interactionGreeter');
+//const { handleVoiceJoinGreeter } = require('./handlers/interactionGreeter');
 const { handleSpam } = require('./handlers/antispam');
 const db = require('./utils/firebase');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
@@ -75,7 +75,7 @@ client.on('presenceUpdate', (oldPresence, newPresence) => {
 // 🎤 TTS ו־Greeting
 client.on('voiceStateUpdate', (oldState, newState) => {
   handleVoiceStateUpdate(oldState, newState);
-  handleVoiceJoinGreeter(oldState, newState, client);
+  //handleVoiceJoinGreeter(oldState, newState, client);
 });
 
 // 🧼 אנטי־ספאם

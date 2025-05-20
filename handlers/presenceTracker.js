@@ -16,33 +16,32 @@ function isPlayingSomething(presence) {
 }
 
 function isOffline(presence) {
-  return !presence || presence.status === 'offline';
+  return !presence || presence.status === 'offline' || presence.status === 'invisible';
 }
 
-// 🧠 זיכרון לוגים אחרונים – למניעת כפילויות
-const recentLogMap = new Map(); // key: userId-roleName, value: timestamp
+const recentLogMap = new Map();
 
 function shouldLog(memberId, roleName, gameName) {
   const key = `${memberId}-${roleName}-${gameName || ''}`;
   const now = Date.now();
   const last = recentLogMap.get(key) || 0;
 
-  if (now - last < 10 * 60 * 1000) return false; // פחות מ־10 דקות
+  if (now - last < 10 * 60 * 1000) return false;
   recentLogMap.set(key, now);
   return true;
 }
 
 async function updateMemberRoles(member, presence) {
-  const hasWarzone = isPlayingWarzone(presence);
   const hasSomething = isPlayingSomething(presence);
+  const hasWarzone = isPlayingWarzone(presence);
   const gameActivity = presence?.activities?.find(a => a.type === 0);
   const gameName = gameActivity?.name || '';
 
   const hasWarzoneRole = member.roles.cache.has(ROLE_WARZONE_ID);
   const hasGenericRole = member.roles.cache.has(ROLE_GENERIC_ID);
 
-  // 🔻 OFFLINE או ללא פעילות – הסרה רק אם לא DND + משחק
-  if (isOffline(presence) || (!hasSomething && presence.status !== 'dnd')) {
+  // ❌ לא משחק כלום או offline – הסר הכל
+  if (!hasSomething || isOffline(presence)) {
     if (hasWarzoneRole) {
       const removed = await member.roles.remove(ROLE_WARZONE_ID).catch(() => null);
       if (removed && shouldLog(member.id, 'Warzone')) {
@@ -77,7 +76,7 @@ async function updateMemberRoles(member, presence) {
     }
 
   } else {
-    // 🧩 משחק כלשהו שאינו Warzone
+    // ✅ משחק אחר
     if (!hasGenericRole) {
       const added = await member.roles.add(ROLE_GENERIC_ID).catch(() => null);
       if (added && shouldLog(member.id, 'Generic', gameName)) {
@@ -94,13 +93,13 @@ async function updateMemberRoles(member, presence) {
   }
 }
 
-// 🎮 בזמן אמת
+// 🔁 אירוע חי
 async function trackGamePresence(presence) {
   if (!presence || !presence.member || presence.user?.bot) return;
   await updateMemberRoles(presence.member, presence);
 }
 
-// 🔁 סריקה תקופתית
+// ⏱️ כל 2 דקות
 async function softPresenceScan(client) {
   for (const guild of client.guilds.cache.values()) {
     for (const member of guild.members.cache.values()) {
@@ -112,7 +111,7 @@ async function softPresenceScan(client) {
   }
 }
 
-// 🚀 סריקה מלאה בעלייה
+// 🛫 בעלייה
 async function hardSyncPresenceOnReady(client) {
   for (const guild of client.guilds.cache.values()) {
     try {
@@ -134,7 +133,7 @@ async function hardSyncPresenceOnReady(client) {
   }
 }
 
-// ⏱️ לולאה קבועה כל 2 דקות
+// 🌀 ריצה אוטומטית
 function startPresenceLoop(client) {
   setInterval(() => {
     softPresenceScan(client);

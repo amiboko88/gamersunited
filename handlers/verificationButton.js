@@ -10,7 +10,7 @@ const TRACKING_COLLECTION = 'dmTracking';
 const MESSAGE_COLLECTION = 'verificationMessages';
 const DELAY_HOURS = 1;
 
-const embedImageUrl = 'attachment://verification-banner.png'; // 🔁 שימוש בתמונה מהשרת עצמו
+const embedImageUrl = 'attachment://verify.png'; // 🔁 שימוש בתמונה מהשרת עצמו
 
 async function setupVerificationMessage(client) {
   const guild = client.guilds.cache.first();

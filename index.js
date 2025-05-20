@@ -6,16 +6,20 @@ const {
   trackGamePresence,
   softPresenceScan,
   hardSyncPresenceOnReady,
-  startPresenceLoop // ← ✅ חדש
+  startPresenceLoop
 } = require('./handlers/presenceTracker');
 const { startMvpScheduler } = require('./handlers/mvpTracker');
+const {
+  setupVerificationMessage,
+  startDmTracking,
+  handleInteraction: handleVerifyInteraction
+} = require('./handlers/verificationButton');
 const { registerMvpCommand } = require('./commands/mvpDisplay');
 const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
 const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
 const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
 const { setupMemberTracker } = require('./handlers/memberTracker');
 const { startPresenceRotation } = require('./handlers/presenceRotator');
-//const { handleVoiceJoinGreeter } = require('./handlers/interactionGreeter');
 const { handleSpam } = require('./handlers/antispam');
 const db = require('./utils/firebase');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
@@ -36,11 +40,13 @@ client.db = db; // ✅ חשוב מאוד – גישה לפיירסטור
 const commands = [];
 registerMvpCommand(commands);
 commands.push(verifyData);
-commands.push(soundData); // ← כולל /סאונד
+commands.push(soundData);
 
 client.once('ready', async () => {
   await hardSyncPresenceOnReady(client); // ריצה מלאה על כל המשתמשים כולל אופליין
-  startPresenceLoop(client);             // ✅ סריקה כל 2 דק' למחוברים בלבד
+  await setupVerificationMessage(client); // שליחת Embed אם צריך
+  startDmTracking(client); // מעקב DM למשתמשים שלא אומתו
+  startPresenceLoop(client); // סריקה כל 2 דק' למחוברים בלבד
   startPresenceRotation(client);
   console.log(`שימי הבוט באוויר! ${client.user.tag}`);
 
@@ -58,33 +64,24 @@ client.once('ready', async () => {
     console.error('❌ שגיאה ברישום Slash Commands:', err);
   }
 
-  // ⚙️ הפעלות ראשוניות
   setupMemberTracker(client);
   startCleanupScheduler(client);
-
-  // 🕒 התחלת מנגנון MVP לפי שעון ישראל – פעם בדקה בלבד
   startMvpScheduler(client, db);
-
-  // 🏅 מעקב ריאקטים ל־MVP
   await startMvpReactionWatcher(client, db);
 });
 
-// 🎮 נוכחות
 client.on('presenceUpdate', (oldPresence, newPresence) => {
   trackGamePresence(newPresence);
 });
 
-// 🎤 TTS ו־Greeting
 client.on('voiceStateUpdate', (oldState, newState) => {
   handleVoiceStateUpdate(oldState, newState);
-  //handleVoiceJoinGreeter(oldState, newState, client);
 });
 
-// 🧼 אנטי־ספאם
 client.on('messageCreate', handleSpam);
 
-// 📩 Slash
 client.on('interactionCreate', interaction => {
+  handleVerifyInteraction(interaction); // טיפול בלחיצת כפתור אימות
   if (interaction.commandName === 'סאונד') return soundExecute(interaction, client);
   if (interaction.commandName === 'אמת') return verifyExecute(interaction);
   if (interaction.commandName === 'mvp') return mvpDisplayExecute(interaction, client);

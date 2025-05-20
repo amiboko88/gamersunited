@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
+const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const {
   trackGamePresence,
@@ -34,6 +35,7 @@ client.db = db; // ✅ חשוב מאוד – גישה לפיירסטור
 // ⬇️ רישום Slash Commands
 const commands = [];
 registerMvpCommand(commands);
+commands.push(verifyData);
 commands.push(soundData); // ← כולל /סאונד
 
 client.once('ready', async () => {
@@ -84,6 +86,7 @@ client.on('messageCreate', handleSpam);
 // 📩 Slash
 client.on('interactionCreate', interaction => {
   if (interaction.commandName === 'סאונד') return soundExecute(interaction, client);
+  if (interaction.commandName === 'אמת') return verifyExecute(interaction);
   if (interaction.commandName === 'mvp') return mvpDisplayExecute(interaction, client);
 });
 

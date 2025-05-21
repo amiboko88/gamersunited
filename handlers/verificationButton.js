@@ -24,11 +24,11 @@ async function setupVerificationMessage(client) {
   const embed = new EmbedBuilder()
     .setImage(embedImageUrl)
     .setColor('DarkNavy')
-    .setTimestamp();
+    
 
   const button = new ButtonBuilder()
     .setCustomId('verify')
-    .setLabel('✅ לחץ כאן לאימות')
+    .setLabel('➡️  לחץ כאן לאימות  ⬅️')
     .setStyle(ButtonStyle.Danger);
 
   const row = new ActionRowBuilder().addComponents(button);

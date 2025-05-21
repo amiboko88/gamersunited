@@ -19,17 +19,8 @@ function isOffline(presence) {
   return !presence || presence.status === 'offline' || presence.status === 'invisible';
 }
 
-const recentLogMap = new Map();
-
-function shouldLog(memberId, roleName, gameName) {
-  const key = `${memberId}-${roleName}-${gameName || ''}`;
-  const now = Date.now();
-  const last = recentLogMap.get(key) || 0;
-
-  if (now - last < 10 * 60 * 1000) return false;
-  recentLogMap.set(key, now);
-  return true;
-}
+// 🧠 מעקב מצב נוכחי לכל משתמש ('none' | 'generic' | 'warzone')
+const currentRoleState = new Map();
 
 async function updateMemberRoles(member, presence) {
   const hasSomething = isPlayingSomething(presence);
@@ -40,66 +31,63 @@ async function updateMemberRoles(member, presence) {
   const hasWarzoneRole = member.roles.cache.has(ROLE_WARZONE_ID);
   const hasGenericRole = member.roles.cache.has(ROLE_GENERIC_ID);
 
-  // ❌ לא משחק כלום או offline – הסר הכל
+  const prevState = currentRoleState.get(member.id) || 'none';
+
+  // 🔻 אין משחק או Offline → הסר תפקידים רק אם היה תפקיד קודם
   if (!hasSomething || isOffline(presence)) {
-    if (hasWarzoneRole) {
-      const removed = await member.roles.remove(ROLE_WARZONE_ID).catch(() => null);
-      if (removed && shouldLog(member.id, 'Warzone')) {
-        logRoleChange({ member, action: 'remove', roleName: 'Warzone' });
+    if (prevState !== 'none') {
+      if (hasWarzoneRole) {
+        const removed = await member.roles.remove(ROLE_WARZONE_ID).catch(() => null);
+        if (removed) logRoleChange({ member, action: 'remove', roleName: 'Warzone' });
       }
-    }
-
-    if (hasGenericRole) {
-      const removed = await member.roles.remove(ROLE_GENERIC_ID).catch(() => null);
-      if (removed && shouldLog(member.id, 'Generic')) {
-        logRoleChange({ member, action: 'remove', roleName: 'Generic' });
+      if (hasGenericRole) {
+        const removed = await member.roles.remove(ROLE_GENERIC_ID).catch(() => null);
+        if (removed) logRoleChange({ member, action: 'remove', roleName: 'Generic' });
       }
+      currentRoleState.set(member.id, 'none');
     }
-
     return;
   }
 
   // ✅ משחק Warzone
   if (hasWarzone) {
-    if (!hasWarzoneRole) {
-      const added = await member.roles.add(ROLE_WARZONE_ID).catch(() => null);
-      if (added && shouldLog(member.id, 'Warzone', gameName)) {
-        logRoleChange({ member, action: 'add', roleName: 'Warzone', gameName });
+    if (prevState !== 'warzone') {
+      if (!hasWarzoneRole) {
+        const added = await member.roles.add(ROLE_WARZONE_ID).catch(() => null);
+        if (added) logRoleChange({ member, action: 'add', roleName: 'Warzone', gameName });
       }
+      if (hasGenericRole) {
+        const removed = await member.roles.remove(ROLE_GENERIC_ID).catch(() => null);
+        if (removed) logRoleChange({ member, action: 'remove', roleName: 'Generic' });
+      }
+      currentRoleState.set(member.id, 'warzone');
     }
+    return;
+  }
 
-    if (hasGenericRole) {
-      const removed = await member.roles.remove(ROLE_GENERIC_ID).catch(() => null);
-      if (removed && shouldLog(member.id, 'Generic')) {
-        logRoleChange({ member, action: 'remove', roleName: 'Generic' });
+  // 🎮 משחק אחר – רק אם זה שונה מ־generic
+  if (hasSomething && !hasWarzone) {
+    if (prevState !== 'generic') {
+      if (!hasGenericRole) {
+        const added = await member.roles.add(ROLE_GENERIC_ID).catch(() => null);
+        if (added) logRoleChange({ member, action: 'add', roleName: 'Generic', gameName });
       }
-    }
-
-  } else {
-    // ✅ משחק אחר
-    if (!hasGenericRole) {
-      const added = await member.roles.add(ROLE_GENERIC_ID).catch(() => null);
-      if (added && shouldLog(member.id, 'Generic', gameName)) {
-        logRoleChange({ member, action: 'add', roleName: 'Generic', gameName });
+      if (hasWarzoneRole) {
+        const removed = await member.roles.remove(ROLE_WARZONE_ID).catch(() => null);
+        if (removed) logRoleChange({ member, action: 'remove', roleName: 'Warzone' });
       }
-    }
-
-    if (hasWarzoneRole) {
-      const removed = await member.roles.remove(ROLE_WARZONE_ID).catch(() => null);
-      if (removed && shouldLog(member.id, 'Warzone')) {
-        logRoleChange({ member, action: 'remove', roleName: 'Warzone' });
-      }
+      currentRoleState.set(member.id, 'generic');
     }
   }
 }
 
-// 🔁 אירוע חי
+// 🎮 בזמן אמת
 async function trackGamePresence(presence) {
   if (!presence || !presence.member || presence.user?.bot) return;
   await updateMemberRoles(presence.member, presence);
 }
 
-// ⏱️ כל 2 דקות
+// 🔁 כל 2 דקות
 async function softPresenceScan(client) {
   for (const guild of client.guilds.cache.values()) {
     for (const member of guild.members.cache.values()) {
@@ -111,7 +99,7 @@ async function softPresenceScan(client) {
   }
 }
 
-// 🛫 בעלייה
+// 🛫 סנכרון בעלייה
 async function hardSyncPresenceOnReady(client) {
   for (const guild of client.guilds.cache.values()) {
     try {
@@ -133,7 +121,7 @@ async function hardSyncPresenceOnReady(client) {
   }
 }
 
-// 🌀 ריצה אוטומטית
+// ⏱️ לולאת סריקה
 function startPresenceLoop(client) {
   setInterval(() => {
     softPresenceScan(client);

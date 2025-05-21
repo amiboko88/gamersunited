@@ -1,5 +1,5 @@
 // 📁 handlers/verificationButton.js
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Events } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const db = require('../utils/firebase');
 const { logToWebhook } = require('../utils/logger');
 const path = require('path');
@@ -10,7 +10,7 @@ const TRACKING_COLLECTION = 'dmTracking';
 const MESSAGE_COLLECTION = 'verificationMessages';
 const DELAY_HOURS = 1;
 
-const embedImageUrl = 'attachment://verify.png'; // 🔁 שימוש בתמונה מהשרת עצמו
+const embedImageUrl = 'attachment://verify.png';
 
 async function setupVerificationMessage(client) {
   const guild = client.guilds.cache.first();
@@ -19,12 +19,11 @@ async function setupVerificationMessage(client) {
 
   const messageRef = db.collection(MESSAGE_COLLECTION).doc(guild.id);
   const existing = await messageRef.get();
-  if (existing.exists) return; // ⛔ כבר נשלח Embed
+  if (existing.exists) return;
 
   const embed = new EmbedBuilder()
     .setImage(embedImageUrl)
-    .setColor('DarkNavy')
-    
+    .setColor('DarkNavy');
 
   const button = new ButtonBuilder()
     .setCustomId('verify')
@@ -38,6 +37,7 @@ async function setupVerificationMessage(client) {
     components: [row],
     files: [path.join(__dirname, '../assets/verify.png')]
   });
+
   await messageRef.set({ messageId: sent.id });
 }
 
@@ -70,27 +70,50 @@ async function startDmTracking(client) {
     snapshot.forEach(async doc => {
       const data = doc.data();
       const sentTime = new Date(data.sentAt).getTime();
+
       if (now - sentTime >= DELAY_HOURS * 60 * 60 * 1000) {
         try {
           const user = await client.users.fetch(doc.id);
-          const dm = await user.send('👋 היי, שמנו לב שעדיין לא אומתת. לחץ כאן כדי לקבל גישה:\nhttps://discord.com/channels/' + data.guildId + '/' + VERIFICATION_CHANNEL_ID);
+          const dm = await user.send(
+            '👋 היי, שמנו לב שעדיין לא אומתת. לחץ כאן כדי לקבל גישה:\n' +
+            `https://discord.com/channels/${data.guildId}/${VERIFICATION_CHANNEL_ID}`
+          );
 
-          const collector = dm.channel.createMessageCollector({ filter: m => !m.author.bot, time: 1000 * 60 * 60 });
+          const collector = dm.channel.createMessageCollector({
+            filter: m => !m.author.bot,
+            time: 1000 * 60 * 60
+          });
+
           collector.on('collect', async response => {
-            await db.collection(TRACKING_COLLECTION).doc(doc.id).update({ status: 'responded', response: response.content });
+            await db.collection(TRACKING_COLLECTION).doc(doc.id).update({
+              status: 'responded',
+              response: response.content
+            });
             logToWebhook({
               title: '📩 תגובת DM לאימות',
               description: `<@${doc.id}> הגיב: ${response.content}`,
               color: 0x3498db
             });
           });
+
+          collector.on('end', async collected => {
+            if (collected.size === 0) {
+              await db.collection(TRACKING_COLLECTION).doc(doc.id).update({ status: 'ignored' });
+              logToWebhook({
+                title: '⏱️ לא התקבלה תגובה ל־DM (אימות)',
+                description: `<@${doc.id}> לא הגיב להודעת האימות במשך 24 שעות.`,
+                color: 0xf1c40f
+              });
+            }
+          });
+
         } catch (err) {
           console.warn('⚠️ שגיאה בשליחת DM:', err.message);
           await db.collection(TRACKING_COLLECTION).doc(doc.id).update({ status: 'ignored' });
         }
       }
     });
-  }, 1000 * 60 * 10); // רץ כל 10 דק׳
+  }, 1000 * 60 * 10); // כל 10 דקות
 }
 
 module.exports = {

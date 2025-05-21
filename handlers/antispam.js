@@ -62,14 +62,13 @@ async function handleSpam(message) {
     const reply = await message.channel.send({
       content: `<@${userId}> ${publicResponse}`
     });
-
-    // מחיקה אוטומטית של התגובה לאחר 15 שניות
     setTimeout(() => reply.delete().catch(() => {}), 15_000);
   } catch (err) {
     console.warn(`⚠️ שגיאה בשליחת תגובה בערוץ: ${err.message}`);
   }
 
   // 3. שליחת DM
+  let responded = false;
   let dmText = 'נא לא לקלל. אם יש בעיה – דבר איתי כאן.';
   if (type === 'invite') dmText = 'פרסום הזמנות אסור כאן. שמור את זה לפרטי אם צריך.';
 
@@ -79,6 +78,7 @@ async function handleSpam(message) {
     await db.collection(TRACKING_COLLECTION).doc(userId).set({
       sentAt: new Date().toISOString(),
       type,
+      status: 'pending',
       guildId: message.guild.id,
       channelId: message.channel.id,
       originalMessage: message.content
@@ -91,13 +91,23 @@ async function handleSpam(message) {
     });
 
     collector.on('collect', async reply => {
+      responded = true;
+      await db.collection(TRACKING_COLLECTION).doc(userId).update({ status: 'responded', response: reply.content });
       await logDmReplyToStaff(userId, reply.content, message.guild);
     });
+
+    collector.on('end', async () => {
+      if (!responded) {
+        await db.collection(TRACKING_COLLECTION).doc(userId).update({ status: 'ignored' });
+        await logNoReplyToStaff(userId, message.guild);
+      }
+    });
+
   } catch {
     console.log(`📭 לא ניתן לשלוח DM ל־${displayName}`);
   }
 
-  // 4. עדכון במסד
+  // 4. עדכון במסד עבירות
   try {
     const ref = db.collection(INFRACTIONS_COLLECTION).doc(userId);
     const snap = await ref.get();
@@ -126,6 +136,19 @@ async function logDmReplyToStaff(userId, content, guild) {
       { name: 'משתמש', value: `<@${userId}> (${userId})` },
       { name: 'תגובה', value: content }
     )
+    .setTimestamp();
+
+  staffChannel.send({ embeds: [embed] }).catch(() => {});
+}
+
+async function logNoReplyToStaff(userId, guild) {
+  const staffChannel = guild.channels.cache.get(STAFF_CHANNEL_ID);
+  if (!staffChannel?.isTextBased()) return;
+
+  const embed = new EmbedBuilder()
+    .setColor('Yellow')
+    .setTitle('⏱️ לא התקבלה תגובה ל־DM')
+    .setDescription(`<@${userId}> לא הגיב תוך 24 שעות להודעת הבוט.`)
     .setTimestamp();
 
   staffChannel.send({ embeds: [embed] }).catch(() => {});

@@ -4,7 +4,8 @@ const { data: verifyData, execute: verifyExecute } = require('./commands/verify'
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const {
   trackGamePresence,
-  hardSyncPresenceOnReady
+  hardSyncPresenceOnReady,
+  startPresenceLoop
 } = require('./handlers/presenceTracker');
 const { startMvpScheduler } = require('./handlers/mvpTracker');
 const {
@@ -42,6 +43,7 @@ commands.push(soundData);
 
 client.once('ready', async () => {
   await hardSyncPresenceOnReady(client); // ריצה מלאה על כל המשתמשים כולל אופליין
+  startPresenceLoop(client);
   await setupVerificationMessage(client); // שליחת Embed אם צריך
   startDmTracking(client); // מעקב DM למשתמשים שלא אומתו
   startPresenceRotation(client);

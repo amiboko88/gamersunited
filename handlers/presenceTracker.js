@@ -4,7 +4,7 @@ const WARZONE_KEYWORDS = ['Black Ops 6', 'Call Of Duty'];
 const ROLE_WARZONE_ID = process.env.ROLE_WARZONE_ID;
 const ROLE_GENERIC_ID = process.env.ROLE_GENERIC_ID;
 
-// 🔁 מניעת לוגים כפולים – לפי userId-role-type
+// 🧠 למניעת לוגים כפולים
 const recentLogs = new Map();
 
 function isOffline(status) {
@@ -30,12 +30,12 @@ function shouldLog(userId, role, type) {
   const key = `${userId}-${role}-${type}`;
   const now = Date.now();
   const last = recentLogs.get(key) || 0;
-  if (now - last < 5 * 60 * 1000) return false; // הפרדה של 5 דקות
+  if (now - last < 5 * 60 * 1000) return false;
   recentLogs.set(key, now);
   return true;
 }
 
-// 🎮 מאזין לשינויים חיים
+// 🔁 עדכון חכם בזמן אמת
 async function trackGamePresence(presence) {
   if (!presence || !presence.member || presence.user?.bot) return;
 
@@ -48,7 +48,6 @@ async function trackGamePresence(presence) {
   const hasWZ = member.roles.cache.has(ROLE_WARZONE_ID);
   const hasGEN = member.roles.cache.has(ROLE_GENERIC_ID);
 
-  // ❌ לא משחק או offline → הסר תפקידים
   if (!isAny || isOffline(status)) {
     if (hasWZ) {
       await member.roles.remove(ROLE_WARZONE_ID).catch(() => {});
@@ -65,7 +64,6 @@ async function trackGamePresence(presence) {
     return;
   }
 
-  // ✅ משחק Warzone
   if (isWZ) {
     if (!hasWZ) {
       await member.roles.add(ROLE_WARZONE_ID).catch(() => {});
@@ -82,7 +80,6 @@ async function trackGamePresence(presence) {
     return;
   }
 
-  // 🎮 משחק אחר
   if (!hasGEN) {
     await member.roles.add(ROLE_GENERIC_ID).catch(() => {});
     if (shouldLog(member.id, 'Generic', 'add')) {
@@ -98,7 +95,7 @@ async function trackGamePresence(presence) {
   }
 }
 
-// 🛫 בעת עליית הבוט – סריקה מלאה כולל offline
+// 🛫 בעת עלייה – גם למי שאין presence
 async function hardSyncPresenceOnReady(client) {
   for (const guild of client.guilds.cache.values()) {
     try {
@@ -117,7 +114,6 @@ async function hardSyncPresenceOnReady(client) {
       if (presence) {
         await trackGamePresence(presence);
       } else {
-        // ❌ אין presence → ננקה תפקידים אם קיימים
         if (hasWZ) {
           await member.roles.remove(ROLE_WARZONE_ID).catch(() => {});
           if (shouldLog(member.id, 'Warzone', 'remove')) {
@@ -135,7 +131,71 @@ async function hardSyncPresenceOnReady(client) {
   }
 }
 
+// 🕓 כל שעה – גם מוסיף תפקידים אם צריך
+async function startPresenceLoop(client) {
+  setInterval(async () => {
+    for (const guild of client.guilds.cache.values()) {
+      for (const member of guild.members.cache.values()) {
+        if (member.user.bot) continue;
+
+        const presence = member.presence;
+        const status = presence?.status || 'offline';
+        const isAny = isPlaying(presence);
+        const isWZ = isPlayingWarzone(presence);
+        const gameName = getGameName(presence);
+
+        const hasWZ = member.roles.cache.has(ROLE_WARZONE_ID);
+        const hasGEN = member.roles.cache.has(ROLE_GENERIC_ID);
+
+        if (!isAny || isOffline(status)) {
+          if (hasWZ) {
+            await member.roles.remove(ROLE_WARZONE_ID).catch(() => {});
+            if (shouldLog(member.id, 'Warzone', 'remove')) {
+              logRoleChange({ member, action: 'remove', roleName: 'Warzone' });
+            }
+          }
+          if (hasGEN) {
+            await member.roles.remove(ROLE_GENERIC_ID).catch(() => {});
+            if (shouldLog(member.id, 'Generic', 'remove')) {
+              logRoleChange({ member, action: 'remove', roleName: 'Generic' });
+            }
+          }
+          continue;
+        }
+
+        if (isWZ && !hasWZ) {
+          await member.roles.add(ROLE_WARZONE_ID).catch(() => {});
+          if (shouldLog(member.id, 'Warzone', 'add')) {
+            logRoleChange({ member, action: 'add', roleName: 'Warzone', gameName });
+          }
+          if (hasGEN) {
+            await member.roles.remove(ROLE_GENERIC_ID).catch(() => {});
+            if (shouldLog(member.id, 'Generic', 'remove')) {
+              logRoleChange({ member, action: 'remove', roleName: 'Generic' });
+            }
+          }
+          continue;
+        }
+
+        if (!isWZ && isAny && !hasGEN) {
+          await member.roles.add(ROLE_GENERIC_ID).catch(() => {});
+          if (shouldLog(member.id, 'Generic', 'add')) {
+            logRoleChange({ member, action: 'add', roleName: 'Generic', gameName });
+          }
+          if (hasWZ) {
+            await member.roles.remove(ROLE_WARZONE_ID).catch(() => {});
+            if (shouldLog(member.id, 'Warzone', 'remove')) {
+              logRoleChange({ member, action: 'remove', roleName: 'Warzone' });
+            }
+          }
+        }
+      }
+    }
+  }, 60 * 60 * 1000); // כל שעה
+}
+
 module.exports = {
   trackGamePresence,
-  hardSyncPresenceOnReady
+  hardSyncPresenceOnReady,
+  startPresenceLoop
 };

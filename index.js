@@ -4,9 +4,7 @@ const { data: verifyData, execute: verifyExecute } = require('./commands/verify'
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const {
   trackGamePresence,
-  softPresenceScan,
-  hardSyncPresenceOnReady,
-  startPresenceLoop
+  hardSyncPresenceOnReady
 } = require('./handlers/presenceTracker');
 const { startMvpScheduler } = require('./handlers/mvpTracker');
 const {
@@ -46,7 +44,6 @@ client.once('ready', async () => {
   await hardSyncPresenceOnReady(client); // ריצה מלאה על כל המשתמשים כולל אופליין
   await setupVerificationMessage(client); // שליחת Embed אם צריך
   startDmTracking(client); // מעקב DM למשתמשים שלא אומתו
-  startPresenceLoop(client); // סריקה כל 2 דק' למחוברים בלבד
   startPresenceRotation(client);
   console.log(`שימי הבוט באוויר! ${client.user.tag}`);
 

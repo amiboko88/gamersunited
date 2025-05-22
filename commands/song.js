@@ -11,7 +11,7 @@ const {
 const fs = require('fs');
 const path = require('path');
 
-const musicDir = path.join(__dirname, '..', 'music');
+const filePath = path.join(__dirname, '..', 'music', `${songName}.mp3`);
 const guildStates = new Map(); // guildId -> { player, connection, filePath, pausedAt }
 
 module.exports = {

@@ -22,14 +22,15 @@ async function setupVerificationMessage(client) {
   if (existing.exists) return;
 
   const embed = new EmbedBuilder()
-    .setTitle(' ברוכים הבאים ')
+    .setTitle('GAMERS UNITED IL')
 
     .setImage(embedImageUrl)
-    .setColor('#8B0000');
+    .setColor('#ffa500')
+    .setFooter({ text: 'המסע שלך אצלנו מתחיל כאן... ' });
 
   const button = new ButtonBuilder()
     .setCustomId('verify')
-    .setLabel('🚨 לחץ כאן כדי להתחיל את המסע שלך 🚨')
+    .setLabel('לחץ כאן כדי להתחיל את המסע שלך')
     .setStyle(ButtonStyle.Danger);
 
   const row = new ActionRowBuilder().addComponents(button);

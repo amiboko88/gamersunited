@@ -10,7 +10,7 @@ const TRACKING_COLLECTION = 'dmTracking';
 const MESSAGE_COLLECTION = 'verificationMessages';
 const DELAY_HOURS = 1;
 
-const embedImageUrl = 'attachment://verify.gif';
+const embedImageUrl = 'attachment://verify.png';
 
 async function setupVerificationMessage(client) {
   const guild = client.guilds.cache.first();
@@ -23,11 +23,9 @@ async function setupVerificationMessage(client) {
 
   const embed = new EmbedBuilder()
     .setTitle('GAMERS UNITED IL')
-
     .setImage(embedImageUrl)
     .setColor('#ffa500')
-    .setFooter({ text: 'המסע שלך אצלנו מתחיל כאן... ' });
-
+  
   const button = new ButtonBuilder()
     .setCustomId('verify')
     .setLabel('לחץ כאן כדי להתחיל את המסע שלך')
@@ -38,7 +36,7 @@ async function setupVerificationMessage(client) {
   const sent = await channel.send({
     embeds: [embed],
     components: [row],
-    files: [path.join(__dirname, '../assets/verify.gif')]
+    files: [path.join(__dirname, '../assets/verify.png')]
   });
 
   await messageRef.set({ messageId: sent.id });

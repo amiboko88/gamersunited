@@ -1,32 +1,43 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 
+// 📦 פקודות Slash
 const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
 const { data: songData, execute: songExecute, autocomplete: songAutocomplete } = require('./commands/song');
 const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
 const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
 const { registerMvpCommand } = require('./commands/mvpDisplay');
 
+// 🎧 ניהול קולי
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
-const { handleSpam } = require('./handlers/antispam');
 const handleMusicControls = require('./handlers/musicControls');
-const {
-  trackGamePresence,
-  hardSyncPresenceOnReady,
-  startPresenceLoop
-} = require('./handlers/presenceTracker');
+
+// 🔒 ווריפיקציה
 const {
   setupVerificationMessage,
   startDmTracking,
   handleInteraction: handleVerifyInteraction
 } = require('./handlers/verificationButton');
+
+// 📈 נוכחות
+const {
+  trackGamePresence,
+  hardSyncPresenceOnReady,
+  startPresenceLoop
+} = require('./handlers/presenceTracker');
+const { startPresenceRotation } = require('./handlers/presenceRotator');
+
+// 🎯 MVP וסטטיסטיקות
 const { startMvpScheduler } = require('./handlers/mvpTracker');
 const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
+
+// 🧼 ניהול כללי
 const { setupMemberTracker } = require('./handlers/memberTracker');
-const { startPresenceRotation } = require('./handlers/presenceRotator');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
+const { handleSpam } = require('./handlers/antispam');
 const db = require('./utils/firebase');
 
+// 🎮 אתחול הבוט
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -37,21 +48,22 @@ const client = new Client({
   ]
 });
 
-client.db = db; // ✅ גישה לפיירסטור
+client.db = db;
 
-// ⬇️ רישום Slash Commands
+// 🎯 רישום Slash Commands
 const commands = [];
 registerMvpCommand(commands);
 commands.push(verifyData);
 commands.push(songData);
 commands.push(soundData);
 
+// 🔁 אתחול
 client.once('ready', async () => {
-  await hardSyncPresenceOnReady(client);     // ריצה על כל המשתמשים
-  await setupVerificationMessage(client);    // שליחת Embed אם אין
-  startPresenceLoop(client);                 // סריקה מתוזמנת כל 2 דקות
-  startPresenceRotation(client);             // סטטוסים
-  startDmTracking(client);                   // מעקב אחרי משתמשים שלא אומתו
+  await hardSyncPresenceOnReady(client);
+  await setupVerificationMessage(client);
+  startDmTracking(client);
+  startPresenceLoop(client);
+  startPresenceRotation(client);
   setupMemberTracker(client);
   startCleanupScheduler(client);
   startMvpScheduler(client, db);
@@ -59,7 +71,6 @@ client.once('ready', async () => {
 
   console.log(`שימי הבוט באוויר! ${client.user.tag}`);
 
-  // 🔁 רישום Slash Commands לשרת
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   const guildId = client.guilds.cache.first().id;
 
@@ -74,33 +85,33 @@ client.once('ready', async () => {
   }
 });
 
-// 🎮 עדכון תפקיד לפי נוכחות
+// 📡 נוכחות
 client.on('presenceUpdate', (oldPresence, newPresence) => {
   trackGamePresence(newPresence);
 });
 
-// 🎤 ניטור TTS וקולי
+// 🎤 קול
 client.on('voiceStateUpdate', (oldState, newState) => {
   handleVoiceStateUpdate(oldState, newState);
 });
 
-// 🧼 אנטי־ספאם
+// 🧼 ספאם
 client.on('messageCreate', handleSpam);
 
 // ⚙️ אינטראקציות
 client.on('interactionCreate', async interaction => {
-  // השלמה אוטומטית
+  // 🔎 Autocomplete
   if (interaction.isAutocomplete()) {
     return songAutocomplete(interaction);
   }
 
-  // כפתורים
+  // 🔘 כפתורים
   if (interaction.isButton()) {
     handleMusicControls(interaction);
     return handleVerifyInteraction(interaction);
   }
 
-  // Slash
+  // 💬 Slash Commands
   if (!interaction.isCommand()) return;
 
   const { commandName } = interaction;
@@ -111,4 +122,5 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'mvp') return mvpDisplayExecute(interaction, client);
 });
 
+// ▶️ התחברות
 client.login(process.env.DISCORD_TOKEN);

@@ -1,48 +1,27 @@
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const {
-  joinVoiceChannel,
-  createAudioPlayer,
-  createAudioResource,
-  entersState,
-  VoiceConnectionStatus,
-  AudioPlayerStatus,
-  StreamType
-} = require('@discordjs/voice');
+const { SlashCommandBuilder } = require('discord.js');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState, VoiceConnectionStatus, AudioPlayerStatus, StreamType } = require('@discordjs/voice');
 const fs = require('fs');
 const path = require('path');
 
-const filePath = path.join(__dirname, '..', 'music', `${songName}.mp3`);
-const guildStates = new Map(); // guildId -> { player, connection, filePath, pausedAt }
+// נתיב לתיקיית השירים
+const musicDir = path.join(__dirname, '..', 'music');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('שיר')
-    .setDescription('השמע שיר מתיקיית המוזיקה')
-    .addStringOption(opt =>
-      opt
+    .setDescription('השמע שיר מהשרת')
+    .addStringOption(option =>
+      option
         .setName('שם')
-        .setDescription('בחר שם שיר')
+        .setDescription('בחר שיר')
         .setRequired(true)
         .setAutocomplete(true)
     ),
 
-  async autocomplete(interaction) {
-    const focusedValue = interaction.options.getFocused().toLowerCase();
-    const files = fs.readdirSync(musicDir).filter(f => f.endsWith('.mp3'));
-
-    const filtered = files
-      .map(f => f.replace(/\\.mp3$/, ''))
-      .filter(name => name.toLowerCase().includes(focusedValue))
-      .slice(0, 25);
-
-    await interaction.respond(
-      filtered.map(name => ({ name, value: name }))
-    );
-  },
-
   async execute(interaction) {
     const songName = interaction.options.getString('שם');
     const filePath = path.join(musicDir, `${songName}.mp3`);
+
     if (!fs.existsSync(filePath)) {
       return interaction.reply({ content: '❌ הקובץ לא נמצא.', ephemeral: true });
     }
@@ -50,8 +29,10 @@ module.exports = {
     const member = interaction.member;
     const channel = member.voice?.channel;
     if (!channel) {
-      return interaction.reply({ content: '🔇 עליך להיות בערוץ קול כדי לשמוע שיר.', ephemeral: true });
+      return interaction.reply({ content: '🔇 אתה לא בערוץ קולי.', ephemeral: true });
     }
+
+    await interaction.reply({ content: `🎵 מפעיל את: **${songName}**` });
 
     const connection = joinVoiceChannel({
       channelId: channel.id,
@@ -59,77 +40,35 @@ module.exports = {
       adapterCreator: channel.guild.voiceAdapterCreator
     });
 
-    try {
-      await entersState(connection, VoiceConnectionStatus.Ready, 5000);
-    } catch (err) {
-      return interaction.reply({ content: '❌ לא ניתן להתחבר לערוץ.', ephemeral: true });
-    }
+    await entersState(connection, VoiceConnectionStatus.Ready, 5_000);
 
     const player = createAudioPlayer();
     const resource = createAudioResource(fs.createReadStream(filePath), {
       inputType: StreamType.Arbitrary
     });
 
-    connection.subscribe(player);
     player.play(resource);
+    connection.subscribe(player);
 
-    guildStates.set(interaction.guild.id, {
-      connection,
-      player,
-      filePath,
-      pausedAt: 0
+    player.on(AudioPlayerStatus.Idle, () => {
+      connection.destroy();
     });
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('pause').setLabel('⏸️').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('resume').setLabel('▶️').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('stop').setLabel('⏹️').setStyle(ButtonStyle.Danger)
+    player.on('error', err => {
+      console.error('שגיאת נגן:', err);
+      connection.destroy();
+    });
+  },
+
+  async autocomplete(interaction) {
+    const focused = interaction.options.getFocused();
+    const files = fs.readdirSync(musicDir).filter(f => f.endsWith('.mp3'));
+
+    const choices = files.map(file => path.parse(file).name);
+    const filtered = choices.filter(c => c.toLowerCase().includes(focused.toLowerCase()));
+
+    await interaction.respond(
+      filtered.slice(0, 25).map(name => ({ name, value: name }))
     );
-
-    await interaction.reply({ content: `🎶 מנגן כעת: ${songName}`, components: [row] });
-
-    player.once(AudioPlayerStatus.Idle, () => {
-      guildStates.delete(interaction.guild.id);
-      connection.destroy();
-    });
-  },
-
-  getState(guildId) {
-    return guildStates.get(guildId);
-  },
-
-  setPausedAt(guildId, millis) {
-    const state = guildStates.get(guildId);
-    if (state) state.pausedAt = millis;
-  },
-
-  resumePlayback(guildId) {
-    const state = guildStates.get(guildId);
-    if (!state) return;
-
-    const { connection, filePath, pausedAt } = state;
-
-    const player = createAudioPlayer();
-    const resource = createAudioResource(fs.createReadStream(filePath), {
-      inputType: StreamType.Arbitrary,
-      seek: Math.floor(pausedAt / 1000)
-    });
-
-    connection.subscribe(player);
-    player.play(resource);
-
-    state.player = player;
-    state.pausedAt = 0;
-
-    player.once(AudioPlayerStatus.Idle, () => {
-      guildStates.delete(guildId);
-      connection.destroy();
-    });
-  },
-
-  clearState(guildId) {
-    const state = guildStates.get(guildId);
-    if (state?.connection) state.connection.destroy();
-    guildStates.delete(guildId);
   }
 };

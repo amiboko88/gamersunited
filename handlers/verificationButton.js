@@ -10,7 +10,7 @@ const TRACKING_COLLECTION = 'dmTracking';
 const MESSAGE_COLLECTION = 'verificationMessages';
 const DELAY_HOURS = 1;
 
-const embedImageUrl = 'attachment://verify.png';
+const embedImageUrl = 'attachment://verify.gif';
 
 async function setupVerificationMessage(client) {
   const guild = client.guilds.cache.first();
@@ -22,12 +22,14 @@ async function setupVerificationMessage(client) {
   if (existing.exists) return;
 
   const embed = new EmbedBuilder()
+    .setTitle(' ברוכים הבאים ')
+
     .setImage(embedImageUrl)
-    .setColor('DarkNavy');
+    .setColor('#8B0000');
 
   const button = new ButtonBuilder()
     .setCustomId('verify')
-    .setLabel('➡️  לחץ כאן לאימות  ⬅️')
+    .setLabel('🚨 לחץ כאן כדי להתחיל את המסע שלך 🚨')
     .setStyle(ButtonStyle.Danger);
 
   const row = new ActionRowBuilder().addComponents(button);
@@ -35,7 +37,7 @@ async function setupVerificationMessage(client) {
   const sent = await channel.send({
     embeds: [embed],
     components: [row],
-    files: [path.join(__dirname, '../assets/verify.png')]
+    files: [path.join(__dirname, '../assets/verify.gif')]
   });
 
   await messageRef.set({ messageId: sent.id });

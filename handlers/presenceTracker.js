@@ -4,8 +4,6 @@ const WARZONE_KEYWORDS = ['Black Ops 6', 'Call Of Duty'];
 const ROLE_WARZONE_ID = process.env.ROLE_WARZONE_ID;
 const ROLE_GENERIC_ID = process.env.ROLE_GENERIC_ID;
 
-const recentLogs = new Map();
-
 function isPlayingWarzone(presence) {
   const game = presence?.activities?.find(a => a.type === 0);
   return game && WARZONE_KEYWORDS.some(k =>
@@ -25,15 +23,6 @@ function isOffline(status) {
   return status === 'offline' || status === 'invisible';
 }
 
-function shouldLog(userId, role, type) {
-  const key = `${userId}-${role}-${type}`;
-  const now = Date.now();
-  const last = recentLogs.get(key) || 0;
-  if (now - last < 5 * 60 * 1000) return false;
-  recentLogs.set(key, now);
-  return true;
-}
-
 async function handleMemberPresence(member, presence) {
   const hasWZ = member.roles.cache.has(ROLE_WARZONE_ID);
   const hasGEN = member.roles.cache.has(ROLE_GENERIC_ID);
@@ -43,60 +32,75 @@ async function handleMemberPresence(member, presence) {
   const isWZ = isPlayingWarzone(presence);
   const gameName = getGameName(presence);
 
+  // ❌ לא משחק או offline
   if (!isAny || isOffline(status)) {
     if (hasWZ) {
+      const before = member.roles.cache.has(ROLE_WARZONE_ID);
       await member.roles.remove(ROLE_WARZONE_ID).catch(() => {});
-      if (shouldLog(member.id, 'Warzone', 'remove')) {
+      const after = member.roles.cache.has(ROLE_WARZONE_ID);
+      if (before && !after) {
         logRoleChange({ member, action: 'remove', roleName: 'Warzone' });
       }
     }
     if (hasGEN) {
+      const before = member.roles.cache.has(ROLE_GENERIC_ID);
       await member.roles.remove(ROLE_GENERIC_ID).catch(() => {});
-      if (shouldLog(member.id, 'Generic', 'remove')) {
+      const after = member.roles.cache.has(ROLE_GENERIC_ID);
+      if (before && !after) {
         logRoleChange({ member, action: 'remove', roleName: 'Generic' });
       }
     }
     return;
   }
 
+  // ✅ משחק Warzone
   if (isWZ) {
     if (!hasWZ) {
+      const before = member.roles.cache.has(ROLE_WARZONE_ID);
       await member.roles.add(ROLE_WARZONE_ID).catch(() => {});
-      if (shouldLog(member.id, 'Warzone', 'add')) {
+      const after = member.roles.cache.has(ROLE_WARZONE_ID);
+      if (!before && after) {
         logRoleChange({ member, action: 'add', roleName: 'Warzone', gameName });
       }
     }
     if (hasGEN) {
+      const before = member.roles.cache.has(ROLE_GENERIC_ID);
       await member.roles.remove(ROLE_GENERIC_ID).catch(() => {});
-      if (shouldLog(member.id, 'Generic', 'remove')) {
+      const after = member.roles.cache.has(ROLE_GENERIC_ID);
+      if (before && !after) {
         logRoleChange({ member, action: 'remove', roleName: 'Generic' });
       }
     }
     return;
   }
 
+  // 🎮 משחק אחר (לא Warzone)
   if (!hasGEN) {
+    const before = member.roles.cache.has(ROLE_GENERIC_ID);
     await member.roles.add(ROLE_GENERIC_ID).catch(() => {});
-    if (shouldLog(member.id, 'Generic', 'add')) {
+    const after = member.roles.cache.has(ROLE_GENERIC_ID);
+    if (!before && after) {
       logRoleChange({ member, action: 'add', roleName: 'Generic', gameName });
     }
   }
 
   if (hasWZ) {
+    const before = member.roles.cache.has(ROLE_WARZONE_ID);
     await member.roles.remove(ROLE_WARZONE_ID).catch(() => {});
-    if (shouldLog(member.id, 'Warzone', 'remove')) {
+    const after = member.roles.cache.has(ROLE_WARZONE_ID);
+    if (before && !after) {
       logRoleChange({ member, action: 'remove', roleName: 'Warzone' });
     }
   }
 }
 
-// 🟢 נועד להרצה ע"י presenceUpdate בלבד
+// 🎯 משמש ל־presenceUpdate
 async function trackGamePresence(presence) {
   if (!presence || !presence.member || presence.user?.bot) return;
   await handleMemberPresence(presence.member, presence);
 }
 
-// 🔁 ריצה אחת בעלייה
+// 🟢 סריקה ראשונית לאחר עלייה
 async function hardSyncPresenceOnReady(client) {
   for (const guild of client.guilds.cache.values()) {
     try {
@@ -112,7 +116,7 @@ async function hardSyncPresenceOnReady(client) {
   }
 }
 
-// ⏱️ סריקה חכמה כל 5 דקות
+// ⏱️ סריקה מחזורית כל 5 דקות
 async function startPresenceLoop(client) {
   setInterval(async () => {
     for (const guild of client.guilds.cache.values()) {

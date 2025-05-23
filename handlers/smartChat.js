@@ -1,7 +1,9 @@
 // 📁 handlers/smartChat.js
-const { Configuration, OpenAIApi } = require('openai');
-const configuration = new Configuration({ apiKey: process.env.OPENAI_API_KEY });
-const openai = new OpenAIApi(configuration);
+const OpenAI = require('openai');
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 const moods = [
   'סרקסטי', 'גס רוח', 'רגיש', 'מאוהב', 'כועס', 'שובב', 'מפרגן'
@@ -49,15 +51,17 @@ module.exports = async function smartChat(message) {
 "${content}"`;
 
   try {
-    const response = await openai.createChatCompletion({
+    const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 100,
       temperature: 0.9
     });
 
-    const reply = response.data.choices[0].message.content;
-    await message.reply(reply);
+    const reply = response.choices[0]?.message?.content;
+    if (reply) {
+      await message.reply(reply);
+    }
   } catch (err) {
     console.error('❌ smartChat Error:', err);
   }

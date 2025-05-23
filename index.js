@@ -4,7 +4,7 @@ const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 
 // 📦 פקודות Slash
 const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
-const { data: songData, execute: songExecute, autocomplete: songAutocomplete } = require('./commands/שיר');
+const { data: songData, execute: songExecute, autocomplete: songAutocomplete } = require('./commands/song');
 const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
 const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
 const { registerMvpCommand } = require('./commands/mvpDisplay');

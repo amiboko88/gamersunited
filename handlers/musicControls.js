@@ -1,5 +1,6 @@
+// 📁 handlers/musicControls.js
 const { ButtonInteraction } = require('discord.js');
-const songCommand = require('../commands/song');
+const songCommand = require('../commands/שיר');
 
 const pauseRoasts = [
   "נראה לך אני פה בשביל קונצרטים פרטיים? 🤡",
@@ -37,12 +38,12 @@ module.exports = async function handleMusicControls(interaction) {
       const msg = await interaction.fetchReply();
       const timer = setTimeout(async () => {
         try {
-          await msg.delete();
+          await msg.delete().catch(() => {});
           const roast = pauseRoasts[Math.floor(Math.random() * pauseRoasts.length)];
           await interaction.channel.send({ content: `💬 ${roast}` });
         } catch {}
         pauseTimers.delete(guildId);
-      }, 60000);
+      }, 60_000);
 
       pauseTimers.set(guildId, timer);
     } else {

@@ -1,16 +1,22 @@
+// 📁 index.js
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 
 // 📦 פקודות Slash
 const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
-const { data: songData, execute: songExecute, autocomplete: songAutocomplete } = require('./commands/song');
+const { data: songData, execute: songExecute, autocomplete: songAutocomplete } = require('./commands/שיר');
 const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
 const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
 const { registerMvpCommand } = require('./commands/mvpDisplay');
+const { startMiniGameScheduler } = require('./handlers/miniGames');
 
 // 🎧 ניהול קולי
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const handleMusicControls = require('./handlers/musicControls');
+
+// 🤖 אינטראקציות חברתיות חכמות
+const smartChat = require('./handlers/smartChat');
+const { startActivityScheduler } = require('./handlers/activityScheduler');
 
 // 🔒 ווריפיקציה
 const {
@@ -64,7 +70,9 @@ client.once('ready', async () => {
   startDmTracking(client);
   startPresenceLoop(client);
   startPresenceRotation(client);
+  startActivityScheduler(client);
   setupMemberTracker(client);
+  startMiniGameScheduler(client);
   startCleanupScheduler(client);
   startMvpScheduler(client, db);
   await startMvpReactionWatcher(client, db);
@@ -72,7 +80,7 @@ client.once('ready', async () => {
   console.log(`שימי הבוט באוויר! ${client.user.tag}`);
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-  const guildId = client.guilds.cache.first().id;
+  const guildId = client.guilds.cache.first()?.id;
 
   try {
     await rest.put(
@@ -95,8 +103,12 @@ client.on('voiceStateUpdate', (oldState, newState) => {
   handleVoiceStateUpdate(oldState, newState);
 });
 
-// 🧼 ספאם
-client.on('messageCreate', handleSpam);
+// 💬 הודעות טקסט: ספאם + בינה חכמה
+client.on('messageCreate', async message => {
+  if (message.author.bot) return;
+  await handleSpam(message);
+  await smartChat(message);
+});
 
 // ⚙️ אינטראקציות
 client.on('interactionCreate', async interaction => {
@@ -107,7 +119,9 @@ client.on('interactionCreate', async interaction => {
 
   // 🔘 כפתורים
   if (interaction.isButton()) {
-    handleMusicControls(interaction);
+    if (['pause', 'resume', 'stop'].includes(interaction.customId)) {
+      return handleMusicControls(interaction);
+    }
     return handleVerifyInteraction(interaction);
   }
 

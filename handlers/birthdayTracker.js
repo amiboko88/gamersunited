@@ -1,5 +1,5 @@
 const { EmbedBuilder, ChannelType } = require('discord.js');
-const { synthesizeGoogleTTS } = require('./ttsEngine');
+const { synthesizeGoogleTTS } = require('../tts/ttsEngine');
 const db = require('../utils/firebase');
 const fs = require('fs');
 const path = require('path');

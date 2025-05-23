@@ -19,11 +19,11 @@ const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayRemind
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const handleMusicControls = require('./handlers/musicControls');
 
-// 🤖 אינטראקציות חברתיות חכמות
+// 🤖 אינטראקציות חכמות
 const smartChat = require('./handlers/smartChat');
 const { startActivityScheduler } = require('./handlers/activityScheduler');
 
-// 🔒 ווריפיקציה
+// 🔒 אימות
 const {
   setupVerificationMessage,
   startDmTracking,
@@ -38,11 +38,11 @@ const {
 } = require('./handlers/presenceTracker');
 const { startPresenceRotation } = require('./handlers/presenceRotator');
 
-// 🎯 MVP וסטטיסטיקות
+// 🎯 MVP
 const { startMvpScheduler } = require('./handlers/mvpTracker');
 const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
 
-// 🧼 ניהול כללי
+// 🧼 כללי
 const { setupMemberTracker } = require('./handlers/memberTracker');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
 const { handleSpam } = require('./handlers/antispam');
@@ -55,19 +55,20 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildPresences,
     GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers
   ]
 });
 
 client.db = db;
 
-// 🎯 רישום Slash Commands
+// פקודות
 const commands = [];
 registerMvpCommand(commands);
 commands.push(verifyData, songData, soundData);
-commands.push(...birthdayCommands); // ← ימי הולדת
+commands.push(...birthdayCommands);
 
-// 🔁 אתחול
+// ▶️ התחברות
 client.once('ready', async () => {
   await hardSyncPresenceOnReady(client);
   await setupVerificationMessage(client);
@@ -86,7 +87,7 @@ client.once('ready', async () => {
   console.log(`שימי הבוט באוויר! ${client.user.tag}`);
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-  const guildId = client.guilds.cache.first()?.id;
+  const guildId = process.env.GUILD_ID;
 
   try {
     await rest.put(
@@ -109,7 +110,7 @@ client.on('voiceStateUpdate', (oldState, newState) => {
   handleVoiceStateUpdate(oldState, newState);
 });
 
-// 💬 הודעות טקסט: ספאם + אינטראקציה חכמה
+// 💬 טקסט
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
   await handleSpam(message);
@@ -118,12 +119,8 @@ client.on('messageCreate', async message => {
 
 // ⚙️ אינטראקציות
 client.on('interactionCreate', async interaction => {
-  // 🔎 Autocomplete
-  if (interaction.isAutocomplete()) {
-    return songAutocomplete(interaction);
-  }
+  if (interaction.isAutocomplete()) return songAutocomplete(interaction);
 
-  // 🔘 כפתורים
   if (interaction.isButton()) {
     if (['pause', 'resume', 'stop'].includes(interaction.customId)) {
       return handleMusicControls(interaction);
@@ -131,7 +128,6 @@ client.on('interactionCreate', async interaction => {
     return handleVerifyInteraction(interaction);
   }
 
-  // 💬 Slash Commands
   if (!interaction.isCommand()) return;
   const { commandName } = interaction;
 
@@ -150,5 +146,5 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// ▶️ התחברות
+// 🚀 הפעלה
 client.login(process.env.DISCORD_TOKEN);

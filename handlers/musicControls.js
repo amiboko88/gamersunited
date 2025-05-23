@@ -1,6 +1,6 @@
 // 📁 handlers/musicControls.js
 const { ButtonInteraction } = require('discord.js');
-const songCommand = require('../commands/שיר');
+const songCommand = require('../commands/song');
 
 const pauseRoasts = [
   "נראה לך אני פה בשביל קונצרטים פרטיים? 🤡",

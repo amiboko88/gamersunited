@@ -1,5 +1,9 @@
-// 📁 handlers/verificationButton.js
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder
+} = require('discord.js');
 const db = require('../utils/firebase');
 const { logToWebhook } = require('../utils/logger');
 const path = require('path');
@@ -8,6 +12,8 @@ const VERIFIED_ROLE_ID = '1120787309432938607';
 const VERIFICATION_CHANNEL_ID = '1120791404583587971';
 const TRACKING_COLLECTION = 'dmTracking';
 const MESSAGE_COLLECTION = 'verificationMessages';
+const BIRTHDAY_COLLECTION = 'birthdays';
+const FRIEND_ROLE_ID = '1375383831015723100';
 const DELAY_HOURS = 1;
 
 const embedImageUrl = 'attachment://verify.png';
@@ -24,8 +30,8 @@ async function setupVerificationMessage(client) {
   const embed = new EmbedBuilder()
     .setTitle('GAMERS UNITED IL')
     .setImage(embedImageUrl)
-    .setColor('#ffa500')
-  
+    .setColor('#ffa500');
+
   const button = new ButtonBuilder()
     .setCustomId('verify')
     .setLabel('לחץ כאן כדי להתחיל את המסע שלך')
@@ -42,7 +48,17 @@ async function setupVerificationMessage(client) {
   await messageRef.set({ messageId: sent.id });
 }
 
-function handleInteraction(interaction) {
+function isValidDate(input) {
+  const regex = /^(\d{1,2})[\/\.](\d{1,2})$/;
+  const match = input.match(regex);
+  if (!match) return null;
+  const day = parseInt(match[1]);
+  const month = parseInt(match[2]);
+  if (day < 1 || day > 31 || month < 1 || month > 12) return null;
+  return `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+async function handleInteraction(interaction) {
   if (!interaction.isButton()) return;
   if (interaction.customId !== 'verify') return;
 
@@ -51,13 +67,56 @@ function handleInteraction(interaction) {
     return interaction.reply({ content: 'רק משתמשים חדשים יכולים לאמת את עצמם כאן.', ephemeral: true });
   }
 
-  member.roles.add(VERIFIED_ROLE_ID).then(() => {
-    interaction.reply({ content: '✅ אומתת בהצלחה! ברוך הבא 🎉', ephemeral: true });
-    logToWebhook({
-      title: '🟢 אימות באמצעות כפתור',
-      description: `<@${member.id}> אומת דרך כפתור האימות.`
-    });
+  await member.roles.add(VERIFIED_ROLE_ID);
+  await interaction.reply({ content: '✅ אומתת בהצלחה! ברוך הבא 🎉', ephemeral: true });
+  logToWebhook({
+    title: '🟢 אימות באמצעות כפתור',
+    description: `<@${member.id}> אומת דרך כפתור האימות.`
   });
+
+  // בדוק אם יש לו יום הולדת
+  const bdayDoc = await db.collection(BIRTHDAY_COLLECTION).doc(member.id).get();
+  if (bdayDoc.exists) return;
+
+  try {
+    const dm = await member.send({
+      content: `🎉 היי ${member.displayName}! עכשיו שאתה חבר קהילה – אתה יכול לקבל פינוק מיוחד ביום הולדת 🎂\n\nשלח לי את התאריך שלך בפורמט: \`31/12\` או \`31.12\`, ואני אדאג להכל!`
+    });
+
+    const collector = dm.channel.createMessageCollector({
+      filter: m => !m.author.bot,
+      time: 1000 * 60 * 5,
+      max: 1
+    });
+
+    collector.on('collect', async msg => {
+      const parsed = isValidDate(msg.content.trim());
+      if (!parsed) {
+        await dm.send('❌ לא הבנתי את התאריך... נסה שוב בצורה כמו `13/5` או `28.11` 🙏');
+        return;
+      }
+
+      await db.collection(BIRTHDAY_COLLECTION).doc(member.id).set({
+        birthday: parsed,
+        fullName: member.displayName,
+        addedBy: member.id,
+        createdAt: new Date().toISOString()
+      });
+
+      await member.roles.add(FRIEND_ROLE_ID).catch(() => {});
+      setTimeout(() => member.roles.remove(FRIEND_ROLE_ID).catch(() => {}), 1000 * 60 * 60 * 24);
+
+      await dm.send('🎁 מעולה! שמעון שמר את התאריך 🎉 מחכה לחגוג איתך ביום הגדול!');
+      logToWebhook({
+        title: '🎈 נרשם יום הולדת חדש',
+        description: `<@${member.id}> הוסיף תאריך: **${parsed}**`,
+        color: 0x00c853
+      });
+    });
+
+  } catch (err) {
+    console.warn('⚠️ לא ניתן לשלוח DM:', err.message);
+  }
 }
 
 async function startDmTracking(client) {
@@ -114,7 +173,7 @@ async function startDmTracking(client) {
         }
       }
     });
-  }, 1000 * 60 * 10); // כל 10 דקות
+  }, 1000 * 60 * 10);
 }
 
 module.exports = {

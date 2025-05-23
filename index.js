@@ -6,9 +6,14 @@ const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
 const { data: songData, execute: songExecute, autocomplete: songAutocomplete } = require('./commands/song');
 const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
+const { data: birthdayCommands, execute: birthdayExecute } = require('./commands/birthdayCommands');
 const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
 const { registerMvpCommand } = require('./commands/mvpDisplay');
+
+// 🧠 משחקים וחגים
 const { startMiniGameScheduler } = require('./handlers/miniGames');
+const { startBirthdayTracker } = require('./handlers/birthdayTracker');
+const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayReminder');
 
 // 🎧 ניהול קולי
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
@@ -59,9 +64,8 @@ client.db = db;
 // 🎯 רישום Slash Commands
 const commands = [];
 registerMvpCommand(commands);
-commands.push(verifyData);
-commands.push(songData);
-commands.push(soundData);
+commands.push(verifyData, songData, soundData);
+commands.push(...birthdayCommands); // ← ימי הולדת
 
 // 🔁 אתחול
 client.once('ready', async () => {
@@ -72,6 +76,8 @@ client.once('ready', async () => {
   startPresenceRotation(client);
   startActivityScheduler(client);
   setupMemberTracker(client);
+  startBirthdayTracker(client);
+  startWeeklyBirthdayReminder(client);
   startMiniGameScheduler(client);
   startCleanupScheduler(client);
   startMvpScheduler(client, db);
@@ -103,7 +109,7 @@ client.on('voiceStateUpdate', (oldState, newState) => {
   handleVoiceStateUpdate(oldState, newState);
 });
 
-// 💬 הודעות טקסט: ספאם + בינה חכמה
+// 💬 הודעות טקסט: ספאם + אינטראקציה חכמה
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
   await handleSpam(message);
@@ -127,13 +133,21 @@ client.on('interactionCreate', async interaction => {
 
   // 💬 Slash Commands
   if (!interaction.isCommand()) return;
-
   const { commandName } = interaction;
 
   if (commandName === 'שיר') return songExecute(interaction, client);
   if (commandName === 'סאונד') return soundExecute(interaction, client);
   if (commandName === 'אמת') return verifyExecute(interaction);
   if (commandName === 'mvp') return mvpDisplayExecute(interaction, client);
+
+  if ([
+    'הוסף_יום_הולדת',
+    'ימי_הולדת',
+    'היום_הולדת_הבא',
+    'ימי_הולדת_חסרים'
+  ].includes(commandName)) {
+    return birthdayExecute(interaction);
+  }
 });
 
 // ▶️ התחברות

@@ -6,27 +6,46 @@ const {
 const db = require('../utils/firebase');
 
 const ADMIN_ROLE_ID = '1133753472966201555';
+const VERIFIED_ROLE_ID = '1120787309432938607';
 const BIRTHDAY_COLLECTION = 'birthdays';
 
-function isValidDate(input) {
-  const regex = /^(\d{1,2})[\/\.](\d{1,2})$/;
+function parseBirthdayInput(input) {
+  const regex = /^(\d{1,2})[\/\.](\d{1,2})[\/\.](\d{2,4})$/;
   const match = input.match(regex);
   if (!match) return null;
-  const day = parseInt(match[1]);
-  const month = parseInt(match[2]);
-  if (day < 1 || day > 31 || month < 1 || month > 12) return null;
-  return `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+  let [_, day, month, year] = match;
+  day = parseInt(day);
+  month = parseInt(month);
+  year = parseInt(year.length === 2 ? `19${year}` : year);
+
+  const testDate = new Date(year, month - 1, day);
+  if (
+    testDate.getFullYear() !== year ||
+    testDate.getMonth() !== month - 1 ||
+    testDate.getDate() !== day
+  ) return null;
+
+  const now = new Date();
+  let age = now.getFullYear() - year;
+  const hasBirthdayPassedThisYear =
+    now.getMonth() + 1 > month ||
+    (now.getMonth() + 1 === month && now.getDate() >= day);
+  if (!hasBirthdayPassedThisYear) age--;
+
+  if (age < 5 || age > 120) return null;
+  return { day, month, year, age };
 }
 
 module.exports = {
   data: [
     new SlashCommandBuilder()
       .setName('הוסף_יום_הולדת')
-      .setDescription('🎂 הוסף את יום ההולדת שלך לקבלת ברכה מ־שמעון!')
+      .setDescription('🎂 הוסף את יום ההולדת שלך (כולל שנה) כדי לקבל ברכה עם גיל!')
       .addStringOption(option =>
         option
           .setName('תאריך')
-          .setDescription('📅 כתוב תאריך בפורמט 31/12 או 1.1')
+          .setDescription('📅 כתוב תאריך בפורמט 31/12/1990 או 1.1.88')
           .setRequired(true)
       ),
 
@@ -49,24 +68,24 @@ module.exports = {
 
     if (commandName === 'הוסף_יום_הולדת') {
       const input = interaction.options.getString('תאריך');
-      const parsed = isValidDate(input);
-
+      const parsed = parseBirthdayInput(input);
       if (!parsed) {
         return interaction.reply({
-          content: '❌ תאריך לא תקין. נסה משהו כמו `31/12` או `1.1`',
+          content: '❌ תאריך לא תקין. נסה פורמט כמו 31/12/1990 או 1.1.88',
           ephemeral: true
         });
       }
 
+      const { day, month, year, age } = parsed;
       await db.collection(BIRTHDAY_COLLECTION).doc(member.id).set({
-        birthday: parsed,
+        birthday: { day, month, year, age },
         fullName: member.displayName,
         addedBy: member.id,
         createdAt: new Date().toISOString()
       });
 
       return interaction.reply({
-        content: `🎉 נשמר! נרשמת ליום הולדת ב־${parsed}`,
+        content: `🎉 נרשמת ליום הולדת ב־${day}.${month}.${year} (גיל ${age})!`,
         ephemeral: true
       });
     }
@@ -78,8 +97,8 @@ module.exports = {
       const months = Array.from({ length: 12 }, () => []);
       snapshot.forEach(doc => {
         const data = doc.data();
-        const [month, day] = data.birthday.split('-');
-        months[parseInt(month) - 1].push(`📅 ${day}.${month} — ${data.fullName}`);
+        const { day, month, year, age } = data.birthday;
+        months[month - 1].push(`📅 ${day}.${month}.${year} — ${data.fullName} (${age})`);
       });
 
       const embed = new EmbedBuilder()
@@ -106,16 +125,16 @@ module.exports = {
       const upcoming = snapshot.docs
         .map(doc => {
           const { birthday, fullName } = doc.data();
-          const [month, day] = birthday.split('-').map(Number);
+          const { day, month, year, age } = birthday;
           const date = new Date(today.getFullYear(), month - 1, day);
           if (month < nowMonth || (month === nowMonth && day < nowDay)) {
             date.setFullYear(today.getFullYear() + 1);
           }
-          return { fullName, date };
+          return { fullName, date, age };
         })
         .sort((a, b) => a.date - b.date)[0];
 
-      return interaction.reply(`🎉 הקרוב ביותר לחגוג יום הולדת הוא **${upcoming.fullName}** בתאריך ${upcoming.date.toLocaleDateString('he-IL')}`);
+      return interaction.reply(`🎉 הקרוב ביותר לחגוג יום הולדת הוא **${upcoming.fullName}** ב־${upcoming.date.toLocaleDateString('he-IL')} (גיל ${upcoming.age})`);
     }
 
     if (commandName === 'ימי_הולדת_חסרים') {

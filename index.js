@@ -22,6 +22,7 @@ const handleMusicControls = require('./handlers/musicControls');
 // 🤖 אינטראקציות חכמות
 const smartChat = require('./handlers/smartChat');
 const { startActivityScheduler } = require('./handlers/activityScheduler');
+const { showBirthdayModal, handleBirthdayModalSubmit } = require('./handlers/birthdayModal');
 
 // 🔒 אימות
 const {
@@ -125,8 +126,20 @@ client.on('interactionCreate', async interaction => {
     if (['pause', 'resume', 'stop'].includes(interaction.customId)) {
       return handleMusicControls(interaction);
     }
+
+    if (interaction.customId === 'open_birthday_modal') {
+      return showBirthdayModal(interaction);
+    }
+
     return handleVerifyInteraction(interaction);
   }
+
+  if (interaction.isModalSubmit() && interaction.customId === 'birthday_modal') {
+    return handleBirthdayModalSubmit(interaction, client);
+  }
+
+  if (!interaction.isCommand()) return;
+
 
   if (!interaction.isCommand()) return;
   const { commandName } = interaction;

@@ -16,6 +16,9 @@
   ],
   "author": "Shimon Bot",
   "license": "MIT",
+  "config": {
+    "production": false
+  },
   "dependencies": {
     "@discordjs/voice": "^0.18.0",
     "axios": "^1.9.0",

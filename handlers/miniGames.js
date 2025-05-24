@@ -1,162 +1,224 @@
-const { TextChannel } = require('discord.js');
+// 📁 handlers/miniGames.js
+const {
+  TextChannel,
+  EmbedBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ActionRowBuilder,
+  ComponentType
+} = require('discord.js');
+const { smartRespond } = require('./smartChat');
 
 const TARGET_TEXT_CHANNEL_ID = '583575179880431616';
+let lastGameMessageId = null;
 
 const winMessages = [
   '🎉 יש לנו זוכה! איזה חיה אתה 💪',
-  '🏆 נכון מאוד! אתה לא רק גיימר, אתה גם נביא',
   '🥳 בול בפוני! שמעון מצדיע לך',
-  '🎯 ככה עושים את זה! ניחוש חד כמו סנייפר',
-  '😎 חזק! עכשיו תנסה ככה גם במשחק אמיתי',
   '🔥 זה היה מהיר! כמו שאתה נופל בגולאג',
-  '😏 שיחקת אותה. עכשיו תבוא לערוץ קול ותראה שגם שם אתה חד',
-  '🤖 אולי אתה בעצם בוט? ככה מדויקים רק AI',
-  '💡 הברקה של המאה! אפילו שמעון לא ציפה לזה',
-  '😱 איזה ניחוש! אני מרגיש מובך בשם שאר המשתתפים',
   '👑 מלך הרגע! רוצים לראות אם אתה גם תותח במשחק?',
-  '🥷 שקט שקט... באת, ניחשת, ניצחת. סטייל של אלופים',
-  '📢 תעצרו הכל! יש לנו נביא בשרת',
-  '🧠 מוח על. תן קצת אינטואיציה לשאר',
-  '🍗 קיבלת את זה בול, כאילו היה על האש',
-  '⚔️ ניצחון כזה לא רואים כל יום. כנראה זה הצד שלך בלובי',
-  '🏹 צליפה מדויקת במספר – שחקן רמות גבוהות',
-  '📈 מאז שאתה פה, השרת עלה רמה',
-  '💬 קיבלת ניקוד מלא! עכשיו אל תיעלם, תישאר ותשפיל אחרים',
-  '🥁 תופים בבקשה... יש לנו שחקן הערב!'
+  '😎 חזק! עכשיו תנסה ככה גם במשחק אמיתי'
 ];
 
-
-const triviaQuestions = [
-  {
-    question: '🎮 מהו שם המפה הכי מוכרת ב־Warzone 1?',
-    answer: 'verdansk'
-  },
-  {
-    question: '🕹️ איזה משחק ישראלי עשה באזז עם עגבניות מתפוצצות?',
-    answer: 'ברדק'
-  },
-  {
-    question: '💣 כמה שחקנים יש בלובי של Battle Royale קלאסי?',
-    answer: '150'
-  }
+const fakeQuotes = [
+  { quote: 'אני סוחב ת׳קבוצה כל ערב לבד!', author: 'יוגי' },
+  { quote: 'מי עוד משחק Warzone בשנת 2025?', author: 'מתן' },
+  { quote: 'שמעון, שים אותי MVP או שאני עוזב', author: 'רועי' },
+  { quote: 'כל פעם שאני עולה, אתה נופל – דיל?', author: 'עומרי' }
 ];
 
-const trueFalseQuestions = [
-  {
-    statement: '👻 שמועה: אם תצעק "שמעון תביא UAV" שלוש פעמים – זה באמת קורה.',
-    answer: false
-  },
-  {
-    statement: '💀 במשחק Warzone הראשון הייתה רכבת שזזה בזמן אמת.',
-    answer: true
-  },
-  {
-    statement: '🎧 אם יש לך פינג גבוה מ־100, אתה בעצם שחקן מקצוען.',
-    answer: false
-  }
+const serverHistory = [
+  { fact: '🎮 מישהו הביא טריפל קיל עם סכין בלבד.', answer: true },
+  { fact: '🚁 שחקן נזרק מהשרת בגלל שהרג יותר מדי.', answer: false },
+  { fact: '🐐 פעם שחקן חיכה 25 דקות בסקווד לבד.', answer: true }
 ];
 
 function isGameTime() {
-  const now = new Date();
-  const hour = now.getUTCHours() + 3; // UTC+3 = שעון ישראל
-  return hour >= 20 || hour < 3;
+  const hour = new Date().getUTCHours() + 3;
+  return hour >= 18 && hour < 24;
 }
 
-function getRandomWinMessage() {
-  return winMessages[Math.floor(Math.random() * winMessages.length)];
+function getRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function getRandomTrivia() {
-  return triviaQuestions[Math.floor(Math.random() * triviaQuestions.length)];
-}
-
-function getRandomTrueFalse() {
-  return trueFalseQuestions[Math.floor(Math.random() * trueFalseQuestions.length)];
-}
-
-function startMiniGameScheduler(client) {
+async function startMiniGameScheduler(client) {
   setInterval(async () => {
     if (!isGameTime()) return;
 
     const guild = client.guilds.cache.first();
-    if (!guild) return;
-
     const channel = guild.channels.cache.get(TARGET_TEXT_CHANNEL_ID);
     if (!(channel instanceof TextChannel)) return;
 
-    const gameType = Math.floor(Math.random() * 3); // 0 = מספר, 1 = אמת/שקר, 2 = טריוויה
+    const gameType = Math.floor(Math.random() * 5); // כולל משחקים חדשים
 
+    let embed, row, answer, message;
+
+    // ניחוש מספר
     if (gameType === 0) {
-      // ניחוש מספר
-      const number = Math.floor(Math.random() * 20) + 1;
-      await channel.send('🎲 נחשו מספר בין **1** ל־**20**! מי שפוגע – זוכה!');
+      answer = Math.floor(Math.random() * 20) + 1;
+      embed = new EmbedBuilder()
+        .setTitle('🎲 ניחוש מספר')
+        .setDescription('נחשו מספר בין **1** ל־**20**!\nמי שפוגע – זוכה!')
+        .setColor('Green');
 
-      const filter = m =>
-        !m.author.bot && !isNaN(m.content) && Number(m.content) >= 1 && Number(m.content) <= 20;
+      message = await channel.send({ embeds: [embed] });
+      lastGameMessageId = message.id;
 
-      const collector = channel.createMessageCollector({ filter, time: 30_000 });
+      const collector = channel.createMessageCollector({
+        filter: m => !m.author.bot && /^\d+$/.test(m.content),
+        time: 30_000
+      });
+
+      let found = false;
 
       collector.on('collect', msg => {
-        if (Number(msg.content) === number) {
-          channel.send(`${msg.author} ${getRandomWinMessage()} (התשובה הייתה ${number})`);
+        if (parseInt(msg.content) === answer) {
+          channel.send(`${msg.author} ${getRandom(winMessages)} (התשובה הייתה ${answer})`);
+          found = true;
           collector.stop();
         }
       });
 
-      collector.on('end', collected => {
-        if (!collected.some(m => Number(m.content) === number)) {
-          channel.send(`⏱️ נגמר הזמן! אף אחד לא פגע... המספר היה **${number}**.`);
+      collector.on('end', async () => {
+        if (!found) {
+          await message.delete().catch(() => {});
+          channel.send('😢 אף אחד לא פגע הפעם... אולי בפעם הבאה!');
         }
       });
     }
 
+    // אמת או שקר
     if (gameType === 1) {
-      // אמת או שקר
-      const tf = getRandomTrueFalse();
-      await channel.send(`🤔 אמת או שקר?\n${tf.statement}\n(כתבו "אמת" או "שקר")`);
+      const tf = getRandom([
+        { statement: '💀 הייתה רכבת ב־Warzone הראשון.', answer: true },
+        { statement: '🎧 פינג גבוה זה סמל מקצוענות.', answer: false }
+      ]);
+      embed = new EmbedBuilder()
+        .setTitle('🤔 אמת או שקר?')
+        .setDescription(tf.statement)
+        .setColor('Yellow');
 
-      const filter = m =>
-        !m.author.bot && ['אמת', 'שקר'].includes(m.content.trim());
+      row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('true').setLabel('✅ אמת').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('false').setLabel('❌ שקר').setStyle(ButtonStyle.Danger)
+      );
 
-      const collector = channel.createMessageCollector({ filter, time: 30_000 });
+      message = await channel.send({ embeds: [embed], components: [row] });
+      lastGameMessageId = message.id;
 
-      collector.on('collect', msg => {
-        const guess = msg.content.trim() === 'אמת';
-        if (guess === tf.answer) {
-          channel.send(`✅ ${msg.author} צדק! בינגו.`);
-        } else {
-          channel.send(`❌ ${msg.author} טועה. יפה שניסית.`); // לא עוצרים – אפשר כמה נסיונות
-        }
+      const collector = message.createMessageComponentCollector({
+        componentType: ComponentType.Button,
+        time: 30_000
       });
 
-      collector.on('end', () => {
-        channel.send('🛑 משחק אמת/שקר הסתיים.');
+      let anyClick = false;
+
+      collector.on('collect', i => {
+        if (i.user.bot) return;
+        anyClick = true;
+        const isCorrect = i.customId === (tf.answer ? 'true' : 'false');
+        i.reply({
+          content: isCorrect
+            ? `🎉 נכון, ${i.user.username}!`
+            : `😬 שגוי, ${i.user.username}...`,
+          ephemeral: true
+        });
+      });
+
+      collector.on('end', async () => {
+        if (!anyClick) {
+          await message.delete().catch(() => {});
+          channel.send('📉 אף אחד לא השתתף... תחזרו כשיש יותר מצב רוח!');
+        }
       });
     }
 
+    // טריוויה על השרת
     if (gameType === 2) {
-      // טריוויה
-      const trivia = getRandomTrivia();
-      await channel.send(`📢 שאלה לקהילה:\n${trivia.question}`);
+      const q = getRandom(serverHistory);
+      embed = new EmbedBuilder()
+        .setTitle('📚 קרה או לא קרה?')
+        .setDescription(q.fact)
+        .setColor('Purple');
 
-      const filter = m =>
-        !m.author.bot && m.content.toLowerCase().includes(trivia.answer.toLowerCase());
+      row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('true').setLabel('📗 קרה').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('false').setLabel('📕 לא קרה').setStyle(ButtonStyle.Danger)
+      );
 
-      const collector = channel.createMessageCollector({ filter, time: 30_000 });
+      message = await channel.send({ embeds: [embed], components: [row] });
+      lastGameMessageId = message.id;
 
-      collector.on('collect', msg => {
-        channel.send(`🏆 ${msg.author} ענה נכון! (${trivia.answer})`);
-        collector.stop();
+      const collector = message.createMessageComponentCollector({
+        componentType: ComponentType.Button,
+        time: 30_000
       });
 
-      collector.on('end', collected => {
-        if (!collected.size) {
-          channel.send(`📉 אף אחד לא ידע... התשובה הייתה: **${trivia.answer}**`);
+      collector.on('collect', i => {
+        const correct = i.customId === (q.answer ? 'true' : 'false');
+        i.reply({
+          content: correct
+            ? `💡 נכון, ${i.user.username}! אתה בעניינים.`
+            : `❌ לא נכון... התשובה הייתה ${q.answer ? 'כן' : 'לא'}.`,
+          ephemeral: true
+        });
+      });
+
+      collector.on('end', async c => {
+        if (c.size === 0) {
+          await message.delete().catch(() => {});
+          channel.send('👻 אף אחד לא שיחק... השרת ישנוני היום.');
         }
       });
     }
 
-  }, 1000 * 60 * 60 * 3); // כל 3 שעות בלילה
+    // מי אמר את זה?
+    if (gameType === 3) {
+      const q = getRandom(fakeQuotes);
+      embed = new EmbedBuilder()
+        .setTitle('🗣️ מי אמר את זה?')
+        .setDescription(`"${q.quote}"`)
+        .setColor('Blue');
+
+      message = await channel.send({ embeds: [embed] });
+      lastGameMessageId = message.id;
+
+      const collector = channel.createMessageCollector({
+        filter: m => !m.author.bot,
+        time: 30_000
+      });
+
+      collector.on('collect', msg => {
+        if (msg.content.toLowerCase().includes(q.author.toLowerCase())) {
+          channel.send(`🏅 יפה ${msg.author}, קלטת את זה!`);
+          collector.stop();
+        }
+      });
+
+      collector.on('end', async c => {
+        if (!c.size) {
+          await message.delete().catch(() => {});
+          channel.send('🫠 אין ניחושים? טוב, נחכה לפעם הבאה.');
+        }
+      });
+    }
+
+    // תגובה למי שמתעורר מאוחר
+    setTimeout(() => {
+      channel.messages.fetch({ limit: 5 }).then(messages => {
+        const lateResponse = messages.find(m =>
+          m.reference?.messageId === lastGameMessageId ||
+          /שמעון|משחק|ניחוש|טריוויה|שאלה/i.test(m.content)
+        );
+
+        if (lateResponse) {
+          smartRespond(lateResponse, 'רגיש');
+        }
+      }).catch(() => {});
+    }, 45_000);
+
+  }, 1000 * 60 * 60 * 3); // כל 3 שעות
 }
 
 module.exports = { startMiniGameScheduler };

@@ -114,6 +114,18 @@ client.on('voiceStateUpdate', (oldState, newState) => {
 // 💬 טקסט
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
+
+  // 1. קודם כל — אם יש קללה לשמעון, smartChat יגיב וידלג על antispam
+  const lowered = message.content.toLowerCase();
+  const targetBot = lowered.includes('שמעון') || lowered.includes('bot') || lowered.includes('shim');
+  const curseWords = require('./handlers/antispam').allCurseWords;
+  const hasCurse = curseWords.some(w => lowered.includes(w));
+
+  if (targetBot && hasCurse) {
+    return smartChat(message); // תגובה בלבד
+  }
+
+  // 2. אחרת — רגיל
   await handleSpam(message);
   await smartChat(message);
 });
@@ -137,9 +149,6 @@ client.on('interactionCreate', async interaction => {
   if (interaction.isModalSubmit() && interaction.customId === 'birthday_modal') {
     return handleBirthdayModalSubmit(interaction, client);
   }
-
-  if (!interaction.isCommand()) return;
-
 
   if (!interaction.isCommand()) return;
   const { commandName } = interaction;

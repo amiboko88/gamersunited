@@ -1,5 +1,7 @@
+// 📁 handlers/antispam.js
 const { EmbedBuilder } = require('discord.js');
 const db = require('../utils/firebase');
+const { smartRespond } = require('./smartChat');
 
 const STAFF_CHANNEL_ID = '881445829100060723';
 const TRACKING_COLLECTION = 'dmTracking';
@@ -7,14 +9,16 @@ const INFRACTIONS_COLLECTION = 'infractions';
 const WARNING_TTL_MS = 1000 * 60 * 60 * 24; // 24 שעות
 
 const badWordsHe = [
-  'בן זונה', 'יא חתיכת', 'זין', 'שטן', 'קוסאמק', 'שייגעץ',
-  'מניאק', 'חרא', 'דביל', 'מפגר', 'טמבל', 'אידיוט', 'מטומטם',
-  'עצלן', 'שרמוטה', 'שמנה', 'כלבה', 'זונה', 'נבלה', 'בהמה',
-  'מכוער', 'נודניק', 'מסריח', 'עלוב', 'נפול', 'כושילאמאשך',
-  'קוקסינל', 'הומו', 'לסבית', 'זבל', 'מת', 'עקום', 'קללה',
-  'יא אפס', 'יא עלוב', 'אמא שלך', 'אבא שלך', 'בושה',
-  'מגעיל', 'מטונף', 'אנטי', 'חלאה', 'נאצי', 'זבל אנושי',
-  'סמרטוט', 'קרציה', 'פח אשפה', 'כישלון'
+  'תזדיין', 'תמות', 'זדיין', 'מפגר', 'מטומטם', 'בן זונה', 'בן אלף זונות',
+  'אמא שלך', 'אבא שלך', 'זין', 'זיונר', 'מזדיין', 'מתרומם', 'מתומתם',
+  'יא חתיכת', 'חלאה', 'כלב', 'כלבה', 'כלבתא', 'מניאק', 'קוקסינל',
+  'הומו', 'לסבית', 'זונה', 'זונות', 'שרמוטה', 'שרמוטות', 'יא אפס',
+  'יא עלוב', 'אידיוט', 'אפס', 'פסיכי', 'טמבל', 'מפגר', 'מסריח', 'מגעיל',
+  'דביל', 'חרא', 'נבלה', 'נודניק', 'בהמה', 'בהמתי', 'עקום', 'עלוב',
+  'שטן', 'נאצי', 'נאצית', 'נאציים', 'כושילאמאשך', 'חרא של בן אדם',
+  'זבל', 'זבל אנושי', 'סמרטוט', 'פח אשפה', 'קללה', 'לוזר', 'נפול',
+  'מטונף', 'שייגעץ', 'שמנה', 'גועל', 'דוחה', 'מעפן', 'מכוער',
+  'קקה', 'חסרת כבוד', 'חסר כבוד', 'קללה קשה', 'קללות', 'סתום', 'שתוק'
 ];
 
 const badWordsEn = [
@@ -40,13 +44,20 @@ function checkMessageType(content) {
 async function handleSpam(message) {
   if (message.author.bot || !message.guild) return;
 
-  const type = checkMessageType(message.content);
+  const content = message.content;
+  const type = checkMessageType(content);
   if (!type) return;
 
   const userId = message.author.id;
   const displayName = message.member?.displayName || message.author.username;
 
-  // 1. מחיקת ההודעה
+  // אם מדובר בקללה על שמעון
+  const isTowardBot = /שמעון|shim|bot/i.test(content);
+  if (type === 'curse' && isTowardBot) {
+    return smartRespond(message, 'כועס');
+  }
+
+  // המשך אנטי-ספאם רגיל
   try {
     await message.delete();
   } catch (err) {
@@ -54,20 +65,16 @@ async function handleSpam(message) {
     return;
   }
 
-  // 2. תגובה בערוץ
   let publicResponse = '🚫 ההודעה שלך נחסמה – לא יפה לדבר ככה.';
   if (type === 'invite') publicResponse = '🚫 פרסום הזמנות אסור כאן.';
 
   try {
-    const reply = await message.channel.send({
-      content: `<@${userId}> ${publicResponse}`
-    });
+    const reply = await message.channel.send({ content: `<@${userId}> ${publicResponse}` });
     setTimeout(() => reply.delete().catch(() => {}), 15_000);
   } catch (err) {
     console.warn(`⚠️ שגיאה בשליחת תגובה בערוץ: ${err.message}`);
   }
 
-  // 3. שליחת DM
   let responded = false;
   let dmText = 'נא לא לקלל. אם יש בעיה – דבר איתי כאן.';
   if (type === 'invite') dmText = 'פרסום הזמנות אסור כאן. שמור את זה לפרטי אם צריך.';
@@ -81,14 +88,10 @@ async function handleSpam(message) {
       status: 'pending',
       guildId: message.guild.id,
       channelId: message.channel.id,
-      originalMessage: message.content
+      originalMessage: content
     });
 
-    const collector = dm.channel.createMessageCollector({
-      filter: m => !m.author.bot,
-      time: WARNING_TTL_MS,
-      max: 1
-    });
+    const collector = dm.channel.createMessageCollector({ filter: m => !m.author.bot, time: WARNING_TTL_MS, max: 1 });
 
     collector.on('collect', async reply => {
       responded = true;
@@ -102,12 +105,10 @@ async function handleSpam(message) {
         await logNoReplyToStaff(userId, message.guild);
       }
     });
-
   } catch {
     console.log(`📭 לא ניתן לשלוח DM ל־${displayName}`);
   }
 
-  // 4. עדכון במסד עבירות
   try {
     const ref = db.collection(INFRACTIONS_COLLECTION).doc(userId);
     const snap = await ref.get();
@@ -122,7 +123,7 @@ async function handleSpam(message) {
     console.error('❌ שגיאה בשמירת אזהרה:', err.message);
   }
 
-  await logViolationToStaff(userId, displayName, type, message.content, message.guild);
+  await logViolationToStaff(userId, displayName, type, content, message.guild);
 }
 
 async function logDmReplyToStaff(userId, content, guild) {
@@ -132,10 +133,7 @@ async function logDmReplyToStaff(userId, content, guild) {
   const embed = new EmbedBuilder()
     .setColor('Orange')
     .setTitle('📬 תגובה לאזהרת DM')
-    .addFields(
-      { name: 'משתמש', value: `<@${userId}> (${userId})` },
-      { name: 'תגובה', value: content }
-    )
+    .addFields({ name: 'משתמש', value: `<@${userId}> (${userId})` }, { name: 'תגובה', value: content })
     .setTimestamp();
 
   staffChannel.send({ embeds: [embed] }).catch(() => {});
@@ -171,4 +169,7 @@ async function logViolationToStaff(userId, displayName, type, original, guild) {
   staffChannel.send({ embeds: [embed] }).catch(() => {});
 }
 
-module.exports = { handleSpam };
+module.exports = {
+  handleSpam,
+  allCurseWords: badWordsHe.concat(badWordsEn)
+};

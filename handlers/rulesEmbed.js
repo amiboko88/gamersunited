@@ -19,32 +19,49 @@ const RULES_META_PATH = 'rulesMeta/config';
 const rulesPages = [
   {
     title: '🎮 כללי',
-    description: 'אין פרסום, אין גזענות, אין טרולים. שמור על כבוד הדדי והומור בגבול הטעם הטוב.'
+    lines: [
+      'אין פרסום, אין גזענות, אין טרולים.',
+      'שמור על כבוד הדדי והומור בגבול הטעם הטוב.'
+    ]
   },
   {
     title: '💬 צ׳אט',
-    description: 'שפה מכבדת בלבד. בלי קללות, ספאם, או שליחת לינקים מזיקים. זיהוי ספאם מנוטר.'
+    lines: [
+      'שפה מכבדת בלבד.',
+      'בלי קללות, ספאם, או שליחת לינקים מזיקים.',
+      'זיהוי ספאם מופעל אוטומטית.'
+    ]
   },
   {
     title: '🎧 חדרי קול',
-    description: 'נא לא להשמיע מוזיקה או רעש מטריד. הימנע מהפרעות. השתמש ב־Push-to-Talk אם צריך.'
+    lines: [
+      'לא להשמיע מוזיקה או רעש מטריד.',
+      'השתמש ב־Push-to-Talk או השתק עצמך כשצריך.'
+    ]
   },
   {
-    title: '🤖 בוטים ופיצ׳רים',
-    description: 'שימוש הוגן בלבד. אין להציף פקודות, להפעיל TTS ללא צורך, או לנצל חולשות במערכת.'
+    title: '🤖 שימוש בבוטים',
+    lines: [
+      'השתמשו בפיצ׳רים בחוכמה.',
+      'אין להציף פקודות, להפעיל TTS סתם, או לנצל חולשות.'
+    ]
   },
   {
     title: '⚠️ ענישה ודיווחים',
-    description: 'כל הפרה תתועד. אזהרות → חסימה זמנית → קיק/באן. דיווחים בערוץ התמיכה בלבד.'
+    lines: [
+      'הפרות יתועדו בלוג.',
+      'שלבים: אזהרה → חסימה זמנית → קיק/באן.',
+      'דיווחים יבוצעו בערוץ התמיכה בלבד.'
+    ]
   }
 ];
 
 function buildRulesEmbed(pageIndex = 0) {
   const page = rulesPages[pageIndex];
   return new EmbedBuilder()
-    .setColor('#00AEEF')
+    .setColor('#5865F2')
     .setTitle(`📘 חוקי הקהילה – ${page.title}`)
-    .setDescription(page.description)
+    .setDescription(page.lines.map(line => `• ${line}`).join('\n'))
     .setImage('attachment://banner.png')
     .setThumbnail('attachment://logo.png')
     .setFooter({ text: `עמוד ${pageIndex + 1} מתוך ${rulesPages.length}`, iconURL: 'attachment://logo.png' })
@@ -73,20 +90,23 @@ async function setupRulesMessage(client) {
   const embed = buildRulesEmbed(0);
   const row = buildActionRow(0);
 
-  if (!metaSnap.exists || !metaSnap.data().messageId) {
-    const sent = await channel.send({ embeds: [embed], components: [row], files: [bannerFile, logoFile] });
-    await rulesMetaRef.set({ messageId: sent.id, lastImageUpdate: new Date().toISOString() });
-    console.log('✅ הודעת חוקים נשלחה לראשונה.');
-  } else {
-    const msgId = metaSnap.data().messageId;
+  let message;
+  const msgId = metaSnap.exists ? metaSnap.data().messageId : null;
+
+  if (msgId) {
     try {
-      const message = await channel.messages.fetch(msgId);
+      message = await channel.messages.fetch(msgId);
       await message.edit({ embeds: [embed], components: [row], files: [bannerFile, logoFile] });
-      console.log('🔁 הודעת החוקים עודכנה (עמוד 1 + תמונה).');
+      console.log('🔁 הודעת החוקים עודכנה.');
+      return;
     } catch (err) {
       console.warn('⚠️ לא ניתן לערוך את הודעת החוקים:', err.message);
     }
   }
+
+  const sent = await channel.send({ embeds: [embed], components: [row], files: [bannerFile, logoFile] });
+  await rulesMetaRef.set({ messageId: sent.id, lastImageUpdate: new Date().toISOString() });
+  console.log('✅ הודעת חוקים חדשה נשלחה.');
 }
 
 function startWeeklyRulesUpdate(client) {
@@ -97,44 +117,50 @@ function startWeeklyRulesUpdate(client) {
 }
 
 async function handleRulesInteraction(interaction) {
-  const rulesMetaRef = db.doc(RULES_META_PATH);
-  const metaSnap = await rulesMetaRef.get();
-  const bannerFile = new AttachmentBuilder(BANNER_PATH).setName('banner.png');
-  const logoFile = new AttachmentBuilder(LOGO_PATH).setName('logo.png');
+  try {
+    const rulesMetaRef = db.doc(RULES_META_PATH);
+    const metaSnap = await rulesMetaRef.get();
+    const bannerFile = new AttachmentBuilder(BANNER_PATH).setName('banner.png');
+    const logoFile = new AttachmentBuilder(LOGO_PATH).setName('logo.png');
 
-  if (interaction.customId === 'accept_rules') {
-    await interaction.reply({ content: '📬 תודה שקראת את החוקים! נשלחה אליך הודעה פרטית.', ephemeral: true });
-    try {
-      await interaction.user.send({
-        content: `✅ היי ${interaction.user.username}!
+    if (interaction.customId === 'accept_rules') {
+      await interaction.reply({ content: '📬 תודה שקראת את החוקים! נשלחה אליך הודעה פרטית.', ephemeral: true });
+      try {
+        await interaction.user.send({
+          content: `✅ היי ${interaction.user.username}!
 תודה שקראת את חוקי הקהילה שלנו.
 אנחנו שמחים שאתה כאן 🙌\n\nצוות **GAMERS UNITED IL**`
-      });
-    } catch {
-      console.warn(`⚠️ לא ניתן לשלוח DM ל־${interaction.user.tag}`);
+        });
+      } catch {
+        console.warn(`⚠️ לא ניתן לשלוח DM ל־${interaction.user.tag}`);
+      }
+      return;
     }
-    return;
+
+    const msgId = metaSnap.data().messageId;
+    if (!msgId) return;
+
+    const message = await interaction.channel.messages.fetch(msgId);
+    const currentEmbed = message.embeds[0];
+    const footerText = currentEmbed.footer?.text || '';
+    const match = footerText.match(/עמוד (\d+)/);
+    let pageIndex = match ? parseInt(match[1]) - 1 : 0;
+
+    switch (interaction.customId) {
+      case 'rules_first': pageIndex = 0; break;
+      case 'rules_prev': pageIndex = Math.max(0, pageIndex - 1); break;
+      case 'rules_next': pageIndex = Math.min(rulesPages.length - 1, pageIndex + 1); break;
+      case 'rules_last': pageIndex = rulesPages.length - 1; break;
+    }
+
+    await interaction.deferUpdate();
+    const newEmbed = buildRulesEmbed(pageIndex);
+    const newRow = buildActionRow(pageIndex);
+
+    await message.edit({ embeds: [newEmbed], components: [newRow], files: [bannerFile, logoFile] });
+  } catch (err) {
+    console.error('❌ שגיאה בטיפול בכפתור חוקים:', err);
   }
-
-  const message = await interaction.channel.messages.fetch(metaSnap.data().messageId);
-  if (!message) return;
-
-  const currentEmbed = message.embeds[0];
-  const footerText = currentEmbed.footer?.text || '';
-  const match = footerText.match(/עמוד (\d+)/);
-  let pageIndex = match ? parseInt(match[1]) - 1 : 0;
-
-  switch (interaction.customId) {
-    case 'rules_first': pageIndex = 0; break;
-    case 'rules_prev': pageIndex = Math.max(0, pageIndex - 1); break;
-    case 'rules_next': pageIndex = Math.min(rulesPages.length - 1, pageIndex + 1); break;
-    case 'rules_last': pageIndex = rulesPages.length - 1; break;
-  }
-
-  const newEmbed = buildRulesEmbed(pageIndex);
-  const newRow = buildActionRow(pageIndex);
-
-  await interaction.update({ embeds: [newEmbed], components: [newRow], files: [bannerFile, logoFile] });
 }
 
 module.exports = {

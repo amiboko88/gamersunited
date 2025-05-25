@@ -1,3 +1,5 @@
+// 📁 handlers/verificationButton.js
+
 const {
   ActionRowBuilder,
   ButtonBuilder,
@@ -10,12 +12,12 @@ const path = require('path');
 
 const VERIFIED_ROLE_ID = '1120787309432938607';
 const VERIFICATION_CHANNEL_ID = '1120791404583587971';
+const STAFF_CHANNEL_ID = '881445829100060723';
 const TRACKING_COLLECTION = 'dmTracking';
 const MESSAGE_COLLECTION = 'verificationMessages';
 const BIRTHDAY_COLLECTION = 'birthdays';
 const FRIEND_ROLE_ID = '1375383831015723100';
 const DELAY_HOURS = 1;
-
 const embedImageUrl = 'attachment://verify.png';
 
 async function setupVerificationMessage(client) {
@@ -34,7 +36,7 @@ async function setupVerificationMessage(client) {
 
   const button = new ButtonBuilder()
     .setCustomId('verify')
-    .setLabel('לחץ כאן כדי להתחיל את המסע שלך')
+    .setLabel('✅ לחץ כאן לאימות')
     .setStyle(ButtonStyle.Danger);
 
   const row = new ActionRowBuilder().addComponents(button);
@@ -63,25 +65,33 @@ async function handleInteraction(interaction) {
   if (interaction.customId !== 'verify') return;
 
   const member = interaction.member;
-  if (!member || member.roles.cache.size > 1) {
-    return interaction.reply({ content: 'רק משתמשים חדשים יכולים לאמת את עצמם כאן.', ephemeral: true });
+  const user = interaction.user;
+  const roles = member.roles.cache;
+
+  const allowed = roles.size === 1 && roles.has(interaction.guild.roles.everyone.id);
+  if (!allowed) {
+    return interaction.reply({
+      content: 'רק משתמשים חדשים יכולים לאמת את עצמם כאן.',
+      ephemeral: true
+    });
   }
 
   await member.roles.add(VERIFIED_ROLE_ID);
   await interaction.reply({ content: '✅ אומתת בהצלחה! ברוך הבא 🎉', ephemeral: true });
+
   logToWebhook({
     title: '🟢 אימות באמצעות כפתור',
     description: `<@${member.id}> אומת דרך כפתור האימות.`
   });
 
-  // בדוק אם יש לו יום הולדת
   const bdayDoc = await db.collection(BIRTHDAY_COLLECTION).doc(member.id).get();
   if (bdayDoc.exists) return;
 
   try {
-    const dm = await member.send({
-      content: `🎉 היי ${member.displayName}! עכשיו שאתה חבר קהילה – אתה יכול לקבל פינוק מיוחד ביום הולדת 🎂\n\nשלח לי את התאריך שלך בפורמט: \`31/12\` או \`31.12\`, ואני אדאג להכל!`
-    });
+    const dm = await user.send(
+      `🎉 היי ${member.displayName}! עכשיו שאתה חבר קהילה – תוכל לקבל פינוק מיוחד ביום ההולדת 🎂\n\n` +
+      `שלח לי את התאריך שלך בפורמט: \`31/12\` או \`31.12\`, ואני אדאג להכל!`
+    );
 
     const collector = dm.channel.createMessageCollector({
       filter: m => !m.author.bot,
@@ -112,6 +122,14 @@ async function handleInteraction(interaction) {
         description: `<@${member.id}> הוסיף תאריך: **${parsed}**`,
         color: 0x00c853
       });
+    });
+
+    // ✍️ הוספה ל־tracking
+    await db.collection(TRACKING_COLLECTION).doc(member.id).set({
+      type: 'verification',
+      status: 'pending',
+      sentAt: new Date().toISOString(),
+      guildId: interaction.guild.id
     });
 
   } catch (err) {

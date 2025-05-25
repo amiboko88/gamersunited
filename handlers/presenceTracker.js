@@ -1,4 +1,6 @@
 const { log, logRoleChange } = require('../utils/logger');
+const { updateGameStats } = require('./statTracker');
+const db = require('../utils/firebase'); // ← נדרש לצורך עדכון Firestore
 
 const WARZONE_KEYWORDS = ['Black Ops 6', 'Call Of Duty'];
 const ROLE_WARZONE_ID = process.env.ROLE_WARZONE_ID;
@@ -71,25 +73,35 @@ async function handleMemberPresence(member, presence) {
         logRoleChange({ member, action: 'remove', roleName: 'Generic' });
       }
     }
-    return;
   }
 
   // 🎮 משחק אחר (לא Warzone)
-  if (!hasGEN) {
-    const before = member.roles.cache.has(ROLE_GENERIC_ID);
-    await member.roles.add(ROLE_GENERIC_ID).catch(() => {});
-    const after = member.roles.cache.has(ROLE_GENERIC_ID);
-    if (!before && after) {
-      logRoleChange({ member, action: 'add', roleName: 'Generic', gameName });
+  else {
+    if (!hasGEN) {
+      const before = member.roles.cache.has(ROLE_GENERIC_ID);
+      await member.roles.add(ROLE_GENERIC_ID).catch(() => {});
+      const after = member.roles.cache.has(ROLE_GENERIC_ID);
+      if (!before && after) {
+        logRoleChange({ member, action: 'add', roleName: 'Generic', gameName });
+      }
+    }
+
+    if (hasWZ) {
+      const before = member.roles.cache.has(ROLE_WARZONE_ID);
+      await member.roles.remove(ROLE_WARZONE_ID).catch(() => {});
+      const after = member.roles.cache.has(ROLE_WARZONE_ID);
+      if (before && !after) {
+        logRoleChange({ member, action: 'remove', roleName: 'Warzone' });
+      }
     }
   }
 
-  if (hasWZ) {
-    const before = member.roles.cache.has(ROLE_WARZONE_ID);
-    await member.roles.remove(ROLE_WARZONE_ID).catch(() => {});
-    const after = member.roles.cache.has(ROLE_WARZONE_ID);
-    if (before && !after) {
-      logRoleChange({ member, action: 'remove', roleName: 'Warzone' });
+  // 📊 תיעוד סטטיסטיקה לפי משחק (5 דקות לסריקה)
+  if (isAny && !isOffline(status)) {
+    try {
+      await updateGameStats(member.id, gameName, 5, db);
+    } catch (err) {
+      console.warn(`⚠️ שגיאה בעדכון סטטיסטיקה עבור ${member.user.tag}:`, err.message);
     }
   }
 }

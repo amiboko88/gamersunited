@@ -148,5 +148,21 @@ function getScriptByUserId(userId) {
   }
   return fallbackScripts[Math.floor(Math.random() * fallbackScripts.length)];
 }
-module.exports = { getScriptByUserId, personalPodcastScripts, fallbackScripts };
+
+/**
+ * האם המשתמש הזה נדיר (מעט פודקאסטים)
+ * נשתמש בזה כדי להעדיף אותו בעת בחירת fallback או לוגיקת חשיפה
+ */
+function isRareUser(userId, userStats) {
+  if (!userStats) return false;
+  const { podcastAppearances = 0 } = userStats;
+  return podcastAppearances < 3;
+}
+
+module.exports = {
+  getScriptByUserId,
+  personalPodcastScripts,
+  fallbackScripts,
+  isRareUser // ✅ הוספנו תמיכה מתקדמת
+};
 

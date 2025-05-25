@@ -1,173 +1,108 @@
 // 📁 handlers/memberTracker.js
-const { EmbedBuilder } = require('discord.js');
+const cron = require('node-cron');
 const db = require('../utils/firebase');
+const statTracker = require('./statTracker');
+const { smartRespond } = require('./smartChat');
 
 const STAFF_CHANNEL_ID = '881445829100060723';
-const TRACKING_COLLECTION = 'memberTracking';
-const VOICE_ACTIVITY_COLLECTION = 'voiceActivity';
-const DM_STATUS_COLLECTION = 'memberDMs';
+const GUILD_ID = process.env.GUILD_ID;
+const INACTIVITY_DAYS = 30;
 
-const NEW_USER_DAYS = 30;   // כמה ימים מאז הכניסה נחשב חדש
-const CHECK_INTERVAL_MIN = 60; // כל כמה דקות תרוץ בדיקה
-const NO_ACTIVITY_DAYS = 30; // כמה זמן ללא פעילות יחשב "מת"
-
-function nowIso() {
-  return new Date().toISOString();
-}
-
-// עוזר – קבל רשימת משתמשים חדשים מהשרת שלא ב־tracking
-async function fetchNewMembersToTrack(guild) {
-  const tracked = await db.collection(TRACKING_COLLECTION).get();
-  const trackedIds = new Set(tracked.docs.map(doc => doc.id));
-
-  const joinedThreshold = Date.now() - NEW_USER_DAYS * 24 * 60 * 60 * 1000;
-  const candidates = [];
-
-  await guild.members.fetch(); // ודא שכל החברים זמינים בזיכרון
-
-  for (const member of guild.members.cache.values()) {
-    if (member.user.bot) continue;
-    if (trackedIds.has(member.id)) continue;
-    if (member.joinedTimestamp && member.joinedTimestamp >= joinedThreshold) {
-      candidates.push(member);
-    }
-  }
-  return candidates;
-}
-
-// מאזין קבוע לחיבור לערוץ קול – רושם "פעילות" למשתמש
-async function logVoiceActivity(userId, guildId) {
-  await db.collection(VOICE_ACTIVITY_COLLECTION).doc(`${guildId}_${userId}`).set({
-    userId,
-    guildId,
-    lastSeen: nowIso(),
-    lastMonthSeen: Date.now()
-  }, { merge: true });
-}
-
-// בעת עליית הבוט – ודא שכל משתמש שנכנס ב־30 יום האחרונים מתועד ב־tracking
-async function syncAllRecentMembers(guild) {
-  const toTrack = await fetchNewMembersToTrack(guild);
-  for (const member of toTrack) {
-    await db.collection(TRACKING_COLLECTION).doc(member.id).set({
-      joinedAt: member.joinedAt?.toISOString?.() || nowIso(),
-      guildId: guild.id,
-      status: 'active'
-    }, { merge: true });
-  }
-}
-
-// הפעלה מתוזמנת – כל X דקות: סרוק מי צריך לקבל DM/בדיקה
-async function scheduledCheck(client) {
-  for (const [guildId, guild] of client.guilds.cache) {
-    await syncAllRecentMembers(guild);
-
-    const trackingSnap = await db.collection(TRACKING_COLLECTION).get();
-
-    for (const doc of trackingSnap.docs) {
-      const data = doc.data();
-      const userId = doc.id;
-      const member = guild.members.cache.get(userId);
-
-      if (!member) continue;
-
-      // נבדוק אם עברה תקופה בלי פעילות (ערוץ קול)
-      const voiceDoc = await db.collection(VOICE_ACTIVITY_COLLECTION).doc(`${guildId}_${userId}`).get();
-      let lastVoiceTs = voiceDoc.exists && voiceDoc.data().lastMonthSeen
-        ? voiceDoc.data().lastMonthSeen
-        : new Date(data.joinedAt).getTime();
-
-      const daysSinceLastActivity = (Date.now() - lastVoiceTs) / (1000 * 60 * 60 * 24);
-
-      // לא שלחנו DM למשתמש הזה לאחרונה?
-      const dmStatus = await db.collection(DM_STATUS_COLLECTION).doc(`${guildId}_${userId}`).get();
-      if (daysSinceLastActivity >= NO_ACTIVITY_DAYS && (!dmStatus.exists || !dmStatus.data().sentAt || Date.now() - new Date(dmStatus.data().sentAt).getTime() > NO_ACTIVITY_DAYS * 24 * 60 * 60 * 1000)) {
-        try {
-          // שלח DM
-          const user = await client.users.fetch(userId);
-          const dm = await user.send("היי 👋 שמנו לב שלא היית פעיל/ה לאחרונה בשרת. אם את/ה עדיין מעוניין להישאר, אשמח שתשלח לי הודעה כאן (אפילו סתם אימוג'י)! אחרת ננקה משתמשים לא פעילים בקרוב. תודה!");
-
-          // לוג
-          await logDMToStaff(userId, guild, dm.url);
-
-          // עדכן שליחה במסד
-          await db.collection(DM_STATUS_COLLECTION).doc(`${guildId}_${userId}`).set({
-            sentAt: nowIso(),
-            status: 'pending'
-          });
-
-          // מאזין לתגובה
-          const collector = dm.channel.createMessageCollector({ filter: m => !m.author.bot, time: 1000 * 60 * 60 * 24, max: 1 });
-          collector.on('collect', async reply => {
-            await db.collection(DM_STATUS_COLLECTION).doc(`${guildId}_${userId}`).set({
-              sentAt: nowIso(),
-              status: 'replied',
-              reply: reply.content
-            }, { merge: true });
-            await logDMReplyToStaff(userId, guild, reply.content);
-          });
-          collector.on('end', async collected => {
-            if (collected.size === 0) {
-              await db.collection(DM_STATUS_COLLECTION).doc(`${guildId}_${userId}`).set({
-                sentAt: nowIso(),
-                status: 'ignored'
-              }, { merge: true });
-              await logDMNoReplyToStaff(userId, guild);
-            }
-          });
-        } catch (err) {
-          // לא הצלחנו לשלוח DM
-        }
-      }
-    }
-  }
-}
-
-async function logDMToStaff(userId, guild, url) {
-  const staffChannel = guild.channels.cache.get(STAFF_CHANNEL_ID);
-  if (!staffChannel?.isTextBased()) return;
-  const embed = new EmbedBuilder()
-    .setColor('Blue')
-    .setTitle('📩 נשלחה בקשת אישור משתמש לא פעיל')
-    .setDescription(`<@${userId}> קיבל DM לבדוק אם הוא מעוניין להישאר.\n[מעבר ל־DM](${url})`)
-    .setTimestamp();
-  staffChannel.send({ embeds: [embed] }).catch(() => {});
-}
-
-async function logDMReplyToStaff(userId, guild, reply) {
-  const staffChannel = guild.channels.cache.get(STAFF_CHANNEL_ID);
-  if (!staffChannel?.isTextBased()) return;
-  const embed = new EmbedBuilder()
-    .setColor('Green')
-    .setTitle('✅ תגובה לאישור משתמש')
-    .setDescription(`<@${userId}> הגיב:\n${reply}`)
-    .setTimestamp();
-  staffChannel.send({ embeds: [embed] }).catch(() => {});
-}
-
-async function logDMNoReplyToStaff(userId, guild) {
-  const staffChannel = guild.channels.cache.get(STAFF_CHANNEL_ID);
-  if (!staffChannel?.isTextBased()) return;
-  const embed = new EmbedBuilder()
-    .setColor('Red')
-    .setTitle('⏱️ לא התקבלה תגובה ממשתמש')
-    .setDescription(`<@${userId}> לא ענה לבוט במשך 24 שעות לאחר בקשת אישור.`)
-    .setTimestamp();
-  staffChannel.send({ embeds: [embed] }).catch(() => {});
-}
-
-// מאזין אוטומטי לחיבור לערוץ קול
 function setupMemberTracker(client) {
+  // כל משתמש חדש – נשמר למסד הנתונים
+  client.on('guildMemberAdd', async member => {
+    if (member.user.bot) return;
+    const joinedAt = new Date().toISOString();
+    await db.collection('memberTracking').doc(member.id).set({ joinedAt });
+    console.log(`👤 נוסף משתמש חדש: ${member.displayName}`);
+  });
+
+  // רושם פעילות קולית לכל משתמש שמתחבר
   client.on('voiceStateUpdate', (oldState, newState) => {
-    const user = newState.member?.user;
-    if (!user || user.bot) return;
-    if (newState.channelId && (!oldState.channelId || newState.channelId !== oldState.channelId)) {
-      logVoiceActivity(user.id, newState.guild.id);
+    const member = newState.member;
+    if (member?.user?.bot) return;
+    if (!newState.channelId) return;
+    db.collection('voiceActivity').doc(member.id).set({ lastSeen: new Date().toISOString() });
+  });
+
+  // זיהוי תגובות ל-DM
+  client.on('messageCreate', async message => {
+    if (!message.guild && !message.author.bot) {
+      const userId = message.author.id;
+      const dmTrackRef = db.collection('memberDMs').doc(userId);
+      const dmTrack = await dmTrackRef.get();
+
+      if (dmTrack.exists && !dmTrack.data().replied) {
+        await dmTrackRef.set({
+          replied: true,
+          replyAt: new Date().toISOString(),
+          replyText: message.content
+        }, { merge: true });
+
+        const staff = await client.channels.fetch(STAFF_CHANNEL_ID);
+        if (staff && staff.isTextBased()) {
+          await staff.send(`📨 המשתמש <@${userId}> הגיב להודעת ה-DM:
+"${message.content}"`);
+        }
+
+        const autoResponse = await smartRespond(message, 'מפרגן');
+        await message.channel.send(autoResponse);
+      }
     }
   });
 
-  // ריצה אוטומטית כל שעה
-  setInterval(() => scheduledCheck(client), CHECK_INTERVAL_MIN * 60 * 1000);
+  // סריקה יומית לאיתור משתמשים לא פעילים
+  cron.schedule('0 3 * * *', async () => {
+    console.log('📋 סריקת משתמשים לא פעילים...');
+    const guild = await client.guilds.fetch(GUILD_ID);
+    const members = await guild.members.fetch();
+
+    const now = Date.now();
+    const allTracked = await db.collection('memberTracking').get();
+    const alreadyMessaged = (await db.collection('memberDMs').get()).docs.map(d => d.id);
+    const allStats = await db.collection('activityStats').get();
+
+    for (const doc of allTracked.docs) {
+      const userId = doc.id;
+      if (alreadyMessaged.includes(userId)) continue;
+
+      const joined = new Date(doc.data().joinedAt);
+      const daysSinceJoin = (now - joined.getTime()) / 86400000;
+      if (daysSinceJoin < INACTIVITY_DAYS) continue;
+
+      const voiceDoc = await db.collection('voiceActivity').doc(userId).get();
+      const lastVoice = voiceDoc.exists ? new Date(voiceDoc.data().lastSeen) : null;
+      const daysSinceVoice = lastVoice ? (now - lastVoice.getTime()) / 86400000 : Infinity;
+
+      const userStats = allStats.docs.find(d => d.id === userId)?.data() || {};
+      const totalMessages = userStats.messagesSent || 0;
+      const totalSlash = userStats.slashUsed || 0;
+
+      const isActive = daysSinceVoice < INACTIVITY_DAYS || totalMessages > 0 || totalSlash > 0;
+      if (isActive) continue;
+
+      // שליחת DM עם GPT
+      const user = await client.users.fetch(userId);
+      try {
+        const prompt = `אתה שמעון, בוט גיימרים ישראלי. כתוב הודעה משעשעת בעברית עבור משתמש שנמצא בקהילה אבל לא היה פעיל חודש. תשאל אותו אם הוא עדיין מעוניין להיות חלק מהקהילה.`;
+        const message = await smartRespond({ content: '', author: user }, 'שובב', prompt);
+        await user.send(message);
+        console.log(`📨 נשלחה הודעת DM למשתמש ${user.username}`);
+      } catch (err) {
+        console.warn(`⚠️ שגיאה בשליחת DM ל־${userId}:`, err.message);
+      }
+
+      // שלח לוג ל־STAFF
+      const staff = await client.channels.fetch(STAFF_CHANNEL_ID);
+      if (staff && staff.isTextBased()) {
+        await staff.send(`🚨 משתמש <@${userId}> לא פעיל מעל חודש. נשלחה לו הודעה לבדוק אם הוא עדיין איתנו.`);
+      }
+
+      // תעד ב־DB
+      await db.collection('memberDMs').doc(userId).set({ sentAt: new Date().toISOString(), replied: false });
+      await statTracker.trackInactivity(userId);
+    }
+  });
 }
 
 module.exports = { setupMemberTracker };

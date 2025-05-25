@@ -43,7 +43,7 @@ module.exports.trackMessage = async message => {
   }
 };
 
-// 📊 שימוש ב‏Slash
+// 📊 
 module.exports.trackSlash = async interaction => {
   if (!interaction.user || interaction.user.bot) return;
   await incrementStat(interaction.user.id, 'slashUsed');

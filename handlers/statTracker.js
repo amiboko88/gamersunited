@@ -43,7 +43,7 @@ module.exports.trackMessage = async message => {
   }
 };
 
-// 📊 
+// 📊 שימוש ב
 module.exports.trackSlash = async interaction => {
   if (!interaction.user || interaction.user.bot) return;
   await incrementStat(interaction.user.id, 'slashUsed');
@@ -108,14 +108,18 @@ module.exports.trackPodcast = async userId => {
 
 // 📊 סטטיסטיקות לפי משחק
 async function updateGameStats(userId, gameName, minutes, db) {
-  if (!gameName) return;
-  const ref = db.collection('gameStats').doc(userId);
-  const doc = await ref.get();
-  const current = doc.exists ? doc.data() : {};
-  const existing = current[gameName]?.minutes || 0;
-  await ref.set({
-    [gameName]: { minutes: existing + minutes }
-  }, { merge: true });
+  try {
+    if (!gameName) return;
+    const ref = db.collection('gameStats').doc(userId);
+    const doc = await ref.get();
+    const current = doc.exists ? doc.data() : {};
+    const existing = current[gameName]?.minutes || 0;
+    await ref.set({
+      [gameName]: { minutes: existing + minutes }
+    }, { merge: true });
+  } catch (err) {
+    console.warn(`⚠️ updateGameStats נכשל עבור ${userId}: ${err.message}`);
+  }
 }
 
 module.exports.updateGameStats = updateGameStats;

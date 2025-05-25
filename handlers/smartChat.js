@@ -1,6 +1,7 @@
-// 📁 handlers/smartChat.js
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const STAFF_CHANNEL_ID = '881445829100060723'; // ערוץ STAFF
 
 const moods = ['סרקסטי', 'גס רוח', 'רגיש', 'מאוהב', 'כועס', 'שובב', 'מפרגן'];
 const confusedTriggers = [
@@ -18,10 +19,6 @@ function getMoodFromContent(text) {
   if (complimentTriggers.some(w => lower.includes(w))) return 'מפרגן';
   if (teasingTriggers.some(w => lower.includes(w))) return 'שובב';
   if (lower.includes('בן זונה') || lower.includes('תמות') || lower.includes('זין')) return 'כועס';
-  return getRandomMood();
-}
-
-function getRandomMood() {
   return moods[Math.floor(Math.random() * moods.length)];
 }
 
@@ -57,6 +54,17 @@ function minutesSince(date) {
   return (Date.now() - date.getTime()) / 60000;
 }
 
+// 🧠 שימוש ב־GPT לפי מודל
+async function tryModel({ model, prompt }) {
+  const response = await openai.chat.completions.create({
+    model,
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: 100,
+    temperature: 0.9
+  });
+  return response.choices[0]?.message?.content;
+}
+
 async function smartRespond(message, moodOverride = null) {
   const content = message.content.trim();
   const mood = moodOverride || getMoodFromContent(content);
@@ -68,18 +76,34 @@ async function smartRespond(message, moodOverride = null) {
 
 תגיב בעברית, כאילו אתה אחד מהחבר'ה. קצר, סרקסטי, מצחיק או מקורי.`
 
-  try {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 100,
-      temperature: 0.9
-    });
+  let reply = null;
 
-    const reply = response.choices[0]?.message?.content;
-    if (reply) await message.reply(reply);
+  try {
+    reply = await tryModel({ model: 'gpt-4o', prompt });
   } catch (err) {
-    console.error('❌ smartRespond Error:', err);
+    console.error('❌ GPT-4o נכשל:', err.message);
+
+    // שלח שגיאה ל־STAFF
+    const channel = message.client.channels.cache.get(STAFF_CHANNEL_ID);
+    if (channel) {
+      channel.send(`⚠️ GPT-4o נפל: \`${err.code || err.status}\` – מנסה gpt-3.5-turbo...`);
+    }
+
+    try {
+      reply = await tryModel({ model: 'gpt-3.5-turbo', prompt });
+    } catch (err2) {
+      console.error('❌ גם GPT-3.5 נכשל:', err2.message);
+
+      if (channel) {
+        channel.send(`🚨 גם GPT-3.5-turbo נפל: \`${err2.code || err2.status}\``);
+      }
+
+      return; // לא מגיב – גם 3.5 נפל
+    }
+  }
+
+  if (reply) {
+    await message.reply(reply);
   }
 }
 

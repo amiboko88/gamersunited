@@ -10,6 +10,7 @@ const {
 const { Readable } = require('stream');
 const { getUserProfileGoogle, synthesizeGoogleTTS } = require('../tts/ttsEngine');
 const { updateVoiceActivity } = require('./mvpTracker');
+const statTracker = require('./statTracker');
 const db = require('../utils/firebase');
 const { log } = require('../utils/logger');
 
@@ -63,6 +64,9 @@ async function handleVoiceStateUpdate(oldState, newState) {
   if (joinedChannel === TEST_CHANNEL && leftChannel !== TEST_CHANNEL) {
     const channel = newState.guild.channels.cache.get(TEST_CHANNEL);
 
+    await statTracker.trackJoinCount(userId);
+    await statTracker.trackActiveHour(userId);
+
     if (isAnnoying(userId)) {
       console.log(`🧨 זוהתה קרציה: ${displayName}`);
       enqueueTTS({ channel, userId: 'ANGRY', displayName });
@@ -72,6 +76,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
       if (member?.voice?.setMute) {
         try {
           await member.voice.setMute(true, 'קרציה detected');
+          await statTracker.trackMuted(userId);
           setTimeout(() => {
             member.voice.setMute(false, 'השתקה הוסרה אוטומטית');
           }, 10_000);
@@ -98,6 +103,8 @@ async function handleVoiceStateUpdate(oldState, newState) {
       const durationMinutes = Math.max(1, Math.floor(durationMs / 1000 / 60));
       try {
         await updateVoiceActivity(userId, durationMinutes, db);
+        await statTracker.trackVoiceMinutes(userId, durationMinutes);
+        await statTracker.trackJoinDuration(userId, durationMinutes);
         console.log(`⏱️ ${userId} היה מחובר ${durationMinutes} דקות – נשלח ל־Firestore`);
       } catch (err) {
         console.error(`❌ שגיאה בשמירת זמן קול למשתמש ${userId}:`, err);

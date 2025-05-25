@@ -2,6 +2,7 @@ const { SlashCommandBuilder } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState, VoiceConnectionStatus, AudioPlayerStatus, StreamType } = require('@discordjs/voice');
 const fs = require('fs');
 const path = require('path');
+const statTracker = require('./statTracker'); // ✅ חדש
 
 // נתיב לתיקיית הסאונדים
 const soundsDir = path.join(__dirname, '..', 'sounds');
@@ -63,6 +64,7 @@ module.exports = {
     }
 
     lastUsedTimestamps.set(userId, now);
+    await statTracker.trackSoundUse(userId); // ✅ רישום שימוש בסאונד
     await interaction.reply({ content: `🎵 משמיע: ${soundName}` });
 
     const guildId = interaction.guild.id;

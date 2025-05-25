@@ -44,10 +44,12 @@ const { startMvpScheduler } = require('./handlers/mvpTracker');
 const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
 
 // 🧼 כללי
+const { startLeaderboardUpdater } = require('./handlers/leaderboardUpdater');
 const { setupMemberTracker } = require('./handlers/memberTracker');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
 const { handleSpam } = require('./handlers/antispam');
 const db = require('./utils/firebase');
+const statTracker = require('./handlers/statTracker'); // ✅ חדש
 
 // 🎮 אתחול הבוט
 const client = new Client({
@@ -74,6 +76,7 @@ client.once('ready', async () => {
   await hardSyncPresenceOnReady(client);
   await setupVerificationMessage(client);
   startDmTracking(client);
+  startLeaderboardUpdater(client);
   startPresenceLoop(client);
   startPresenceRotation(client);
   startActivityScheduler(client);
@@ -115,17 +118,17 @@ client.on('voiceStateUpdate', (oldState, newState) => {
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
 
-  // 1. קודם כל — אם יש קללה לשמעון, smartChat יגיב וידלג על antispam
+  await statTracker.trackMessage(message); // ✅ חדש
+
   const lowered = message.content.toLowerCase();
   const targetBot = lowered.includes('שמעון') || lowered.includes('bot') || lowered.includes('shim');
   const curseWords = require('./handlers/antispam').allCurseWords;
   const hasCurse = curseWords.some(w => lowered.includes(w));
 
   if (targetBot && hasCurse) {
-    return smartChat(message); // תגובה בלבד
+    return smartChat(message);
   }
 
-  // 2. אחרת — רגיל
   await handleSpam(message);
   await smartChat(message);
 });
@@ -151,6 +154,9 @@ client.on('interactionCreate', async interaction => {
   }
 
   if (!interaction.isCommand()) return;
+
+  await statTracker.trackSlash(interaction); // ✅ חדש
+
   const { commandName } = interaction;
 
   if (commandName === 'שיר') return songExecute(interaction, client);

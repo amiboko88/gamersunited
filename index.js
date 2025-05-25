@@ -2,6 +2,13 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 
+// 📘 חוקים
+const {
+  setupRulesMessage,
+  startWeeklyRulesUpdate,
+  handleRulesInteraction
+} = require('./handlers/rulesEmbed');
+
 // 📦 פקודות Slash
 const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
 const { data: songData, execute: songExecute, autocomplete: songAutocomplete } = require('./commands/song');
@@ -75,6 +82,8 @@ commands.push(...birthdayCommands);
 client.once('ready', async () => {
   await hardSyncPresenceOnReady(client);
   await setupVerificationMessage(client);
+  await setupRulesMessage(client); // ✅ חדש
+  startWeeklyRulesUpdate(client);  // ✅ חדש
   startDmTracking(client);
   startLeaderboardUpdater(client);
   startPresenceLoop(client);
@@ -144,6 +153,10 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.customId === 'open_birthday_modal') {
       return showBirthdayModal(interaction);
+    }
+
+    if (interaction.customId.startsWith('rules_') || interaction.customId === 'accept_rules') {
+      return handleRulesInteraction(interaction); // ✅ חדש
     }
 
     return handleVerifyInteraction(interaction);

@@ -2,7 +2,7 @@
 const db = require('../utils/firebase');
 const admin = require('firebase-admin');
 
-// 🧠 עדכון חכם לערכים סטטיסטיים
+// 🧐 עדכון חכם לערכים סטטיסטיים
 async function incrementStat(userId, field, amount = 1) {
   const ref = db.collection('userStats').doc(userId);
   await ref.set({ [field]: amount }, { merge: true });
@@ -14,7 +14,7 @@ async function setStat(userId, field, value) {
   await ref.set({ [field]: value }, { merge: true });
 }
 
-// 🧠 פונקציית חישוב ממוצע מדויק
+// 🤓 פונקציית חישוב ממוצע מדויק
 function calcNewAverage(currentAvg, totalCount, newValue) {
   return parseFloat(((currentAvg * (totalCount - 1) + newValue) / totalCount).toFixed(2));
 }
@@ -43,7 +43,7 @@ module.exports.trackMessage = async message => {
   }
 };
 
-// 📊 שימוש ב־Slash
+// 📊 שימוש ב‏Slash
 module.exports.trackSlash = async interaction => {
   if (!interaction.user || interaction.user.bot) return;
   await incrementStat(interaction.user.id, 'slashUsed');
@@ -105,3 +105,17 @@ module.exports.trackActiveHour = async userId => {
 module.exports.trackPodcast = async userId => {
   await incrementStat(userId, 'podcastAppearances');
 };
+
+// 📊 סטטיסטיקות לפי משחק
+async function updateGameStats(userId, gameName, minutes, db) {
+  if (!gameName) return;
+  const ref = db.collection('gameStats').doc(userId);
+  const doc = await ref.get();
+  const current = doc.exists ? doc.data() : {};
+  const existing = current[gameName]?.minutes || 0;
+  await ref.set({
+    [gameName]: { minutes: existing + minutes }
+  }, { merge: true });
+}
+
+module.exports.updateGameStats = updateGameStats;

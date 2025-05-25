@@ -13,7 +13,8 @@ async function generateRulesImage() {
   const response = await openai.images.generate({
     prompt,
     n: 1,
-    size: "1024x768",
+    size: "1024x1024",
+
     response_format: "b64_json"
   });
 

@@ -82,8 +82,8 @@ async function handleInteraction(interaction) {
 
     try {
       await user.send(
-        '🎮 היי! קיבלת גישה לקהילה, אך עדיין לא ראינו ממך שום תגובה.\n' +
-        'אם יש שאלה או בעיה – תוכל לכתוב כאן, ונעקוב אחרי התגובה שלך.'
+        '🎉 ברוך הבא ל־ Gamers United IL!\n' +
+        'אם אתה רואה רק אפור או מרגיש אבוד – תכתוב לי פה ואעזור לך 💬'
       );
     } catch (err) {
       console.warn('⚠️ לא ניתן לשלוח DM למשתמש לאחר אימות:', err.message);
@@ -129,9 +129,8 @@ async function startDmTracking(client) {
         try {
           const user = await client.users.fetch(userId);
           const dm = await user.send(
-            '👋 היי, שמנו לב שעדיין לא הגבת אחרי האימות.\n' +
-            `אם נתקלת בבעיה – שלח כאן הודעה ונעזור.\n\n` +
-            `לכל שאלה – זה הלינק לאימות שוב (אם צריך):\n` +
+            '👋 היי, רק מזכירים שאם הסתבכת – אפשר פשוט לכתוב לי פה.\n' +
+            'אם אתה עדיין רואה אפור, או משהו לא עובד – הנה הקישור חזרה לאימות:\n' +
             `https://discord.com/channels/${data.guildId}/${VERIFICATION_CHANNEL_ID}`
           );
 

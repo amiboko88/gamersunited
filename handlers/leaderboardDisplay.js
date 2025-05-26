@@ -62,7 +62,7 @@ async function sendLeaderboardEmbed(client) {
   const fileImage = new AttachmentBuilder(imagePath);
   const fileLogo = new AttachmentBuilder(path.join(__dirname, '../assets/logo.png'));
 
-  const channel = client.channels.cache.get(CHANNEL_ID);
+  const channel = await client.channels.fetch(CHANNEL_ID);
   if (channel) {
     await channel.send({ embeds: [embed], files: [fileImage, fileLogo] });
   }

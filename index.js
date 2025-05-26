@@ -86,8 +86,7 @@ commands.push(refreshRulesData);
 client.once('ready', async () => {
   await hardSyncPresenceOnReady(client);
   await setupVerificationMessage(client);
-  await sendRulesToUser(member);
-  await sendPublicRulesEmbed(client); // ✅ חדש
+   await sendPublicRulesEmbed(client); // ✅ חדש
   startWeeklyRulesUpdate(client);  // ✅ חדש
   startDmTracking(client);
   startLeaderboardUpdater(client);
@@ -127,6 +126,11 @@ client.on('presenceUpdate', (oldPresence, newPresence) => {
 client.on('voiceStateUpdate', (oldState, newState) => {
   handleVoiceStateUpdate(oldState, newState);
 });
+
+client.on('guildMemberAdd', async member => {
+  await sendRulesToUser(member); // ✅ שולח DM רק למי שצריך
+});
+
 
 // 💬 טקסט
 client.on('messageCreate', async message => {

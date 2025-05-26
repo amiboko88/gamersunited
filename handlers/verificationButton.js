@@ -15,8 +15,6 @@ const VERIFICATION_CHANNEL_ID = '1120791404583587971';
 const STAFF_CHANNEL_ID = '881445829100060723';
 const TRACKING_COLLECTION = 'dmTracking';
 const MESSAGE_COLLECTION = 'verificationMessages';
-const BIRTHDAY_COLLECTION = 'birthdays';
-const FRIEND_ROLE_ID = '1375383831015723100';
 const DELAY_HOURS = 1;
 const embedImageUrl = 'attachment://verify.png';
 
@@ -50,16 +48,6 @@ async function setupVerificationMessage(client) {
   await messageRef.set({ messageId: sent.id });
 }
 
-function isValidDate(input) {
-  const regex = /^(\d{1,2})[\/\.](\d{1,2})$/;
-  const match = input.match(regex);
-  if (!match) return null;
-  const day = parseInt(match[1]);
-  const month = parseInt(match[2]);
-  if (day < 1 || day > 31 || month < 1 || month > 12) return null;
-  return `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-}
-
 async function handleInteraction(interaction) {
   if (!interaction.isButton()) return;
   if (interaction.customId !== 'verify') return;
@@ -76,55 +64,15 @@ async function handleInteraction(interaction) {
     });
   }
 
-  await member.roles.add(VERIFIED_ROLE_ID);
-  await interaction.reply({ content: '✅ אומתת בהצלחה! ברוך הבא 🎉', ephemeral: true });
-
-  logToWebhook({
-    title: '🟢 אימות באמצעות כפתור',
-    description: `<@${member.id}> אומת דרך כפתור האימות.`
-  });
-
-  const bdayDoc = await db.collection(BIRTHDAY_COLLECTION).doc(member.id).get();
-  if (bdayDoc.exists) return;
-
   try {
-    const dm = await user.send(
-      `🎉 היי ${member.displayName}! עכשיו שאתה חבר קהילה – תוכל לקבל פינוק מיוחד ביום ההולדת 🎂\n\n` +
-      `שלח לי את התאריך שלך בפורמט: \`31/12\` או \`31.12\`, ואני אדאג להכל!`
-    );
+    await member.roles.add(VERIFIED_ROLE_ID);
+    await interaction.reply({ content: '✅ אומתת בהצלחה! ברוך הבא 🎉', ephemeral: true });
 
-    const collector = dm.channel.createMessageCollector({
-      filter: m => !m.author.bot,
-      time: 1000 * 60 * 5,
-      max: 1
+    logToWebhook({
+      title: '🟢 אימות באמצעות כפתור',
+      description: `<@${member.id}> אומת דרך כפתור האימות.`
     });
 
-    collector.on('collect', async msg => {
-      const parsed = isValidDate(msg.content.trim());
-      if (!parsed) {
-        await dm.send('❌ לא הבנתי את התאריך... נסה שוב בצורה כמו `13/5` או `28.11` 🙏');
-        return;
-      }
-
-      await db.collection(BIRTHDAY_COLLECTION).doc(member.id).set({
-        birthday: parsed,
-        fullName: member.displayName,
-        addedBy: member.id,
-        createdAt: new Date().toISOString()
-      });
-
-      await member.roles.add(FRIEND_ROLE_ID).catch(() => {});
-      setTimeout(() => member.roles.remove(FRIEND_ROLE_ID).catch(() => {}), 1000 * 60 * 60 * 24);
-
-      await dm.send('🎁 מעולה! שמעון שמר את התאריך 🎉 מחכה לחגוג איתך ביום הגדול!');
-      logToWebhook({
-        title: '🎈 נרשם יום הולדת חדש',
-        description: `<@${member.id}> הוסיף תאריך: **${parsed}**`,
-        color: 0x00c853
-      });
-    });
-
-    // ✍️ הוספה ל־tracking
     await db.collection(TRACKING_COLLECTION).doc(member.id).set({
       type: 'verification',
       status: 'pending',
@@ -132,8 +80,20 @@ async function handleInteraction(interaction) {
       guildId: interaction.guild.id
     });
 
+    try {
+      await user.send(
+        '🎮 היי! קיבלת גישה לקהילה, אך עדיין לא ראינו ממך שום תגובה.\n' +
+        'אם יש שאלה או בעיה – תוכל לכתוב כאן, ונעקוב אחרי התגובה שלך.'
+      );
+    } catch (err) {
+      console.warn('⚠️ לא ניתן לשלוח DM למשתמש לאחר אימות:', err.message);
+    }
   } catch (err) {
-    console.warn('⚠️ לא ניתן לשלוח DM:', err.message);
+    console.error('❌ שגיאה באימות:', err);
+    await interaction.reply({
+      content: '❌ משהו השתבש, נסה שוב או פנה למנהל.',
+      ephemeral: true
+    });
   }
 }
 
@@ -145,53 +105,63 @@ async function startDmTracking(client) {
       .where('status', '==', 'pending')
       .get();
 
-    snapshot.forEach(async doc => {
+    for (const doc of snapshot.docs) {
       const data = doc.data();
       const sentTime = new Date(data.sentAt).getTime();
+      const userId = doc.id;
 
-      if (now - sentTime >= DELAY_HOURS * 60 * 60 * 1000) {
+      const oneHour = 60 * 60 * 1000;
+      const twentyFourHours = 24 * oneHour;
+
+      if (data.reminderSent) {
+        if (now - sentTime >= twentyFourHours) {
+          await db.collection(TRACKING_COLLECTION).doc(userId).update({ status: 'ignored' });
+          logToWebhook({
+            title: '⏱️ לא התקבלה תגובה ל־DM (אימות)',
+            description: `<@${userId}> לא הגיב להודעת האימות במשך 24 שעות.`,
+            color: 0xf1c40f
+          });
+        }
+        continue;
+      }
+
+      if (now - sentTime >= oneHour) {
         try {
-          const user = await client.users.fetch(doc.id);
+          const user = await client.users.fetch(userId);
           const dm = await user.send(
-            '👋 היי, שמנו לב שעדיין לא אומתת. לחץ כאן כדי לקבל גישה:\n' +
+            '👋 היי, שמנו לב שעדיין לא הגבת אחרי האימות.\n' +
+            `אם נתקלת בבעיה – שלח כאן הודעה ונעזור.\n\n` +
+            `לכל שאלה – זה הלינק לאימות שוב (אם צריך):\n` +
             `https://discord.com/channels/${data.guildId}/${VERIFICATION_CHANNEL_ID}`
           );
 
+          await db.collection(TRACKING_COLLECTION).doc(userId).update({ reminderSent: true });
+
           const collector = dm.channel.createMessageCollector({
             filter: m => !m.author.bot,
-            time: 1000 * 60 * 60
+            time: oneHour
           });
 
           collector.on('collect', async response => {
-            await db.collection(TRACKING_COLLECTION).doc(doc.id).update({
+            await db.collection(TRACKING_COLLECTION).doc(userId).update({
               status: 'responded',
               response: response.content
             });
+
             logToWebhook({
-              title: '📩 תגובת DM לאימות',
-              description: `<@${doc.id}> הגיב: ${response.content}`,
+              title: '📩 תגובת DM לאחר אימות',
+              description: `<@${userId}> הגיב: ${response.content}`,
               color: 0x3498db
             });
           });
 
-          collector.on('end', async collected => {
-            if (collected.size === 0) {
-              await db.collection(TRACKING_COLLECTION).doc(doc.id).update({ status: 'ignored' });
-              logToWebhook({
-                title: '⏱️ לא התקבלה תגובה ל־DM (אימות)',
-                description: `<@${doc.id}> לא הגיב להודעת האימות במשך 24 שעות.`,
-                color: 0xf1c40f
-              });
-            }
-          });
-
         } catch (err) {
-          console.warn('⚠️ שגיאה בשליחת DM:', err.message);
-          await db.collection(TRACKING_COLLECTION).doc(doc.id).update({ status: 'ignored' });
+          console.warn(`⚠️ לא ניתן לשלוח תזכורת ל־${userId}:`, err.message);
+          await db.collection(TRACKING_COLLECTION).doc(userId).update({ status: 'ignored' });
         }
       }
-    });
-  }, 1000 * 60 * 10);
+    }
+  }, 1000 * 60 * 10); // כל 10 דקות
 }
 
 module.exports = {

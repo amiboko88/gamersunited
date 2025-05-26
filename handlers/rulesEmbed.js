@@ -143,32 +143,48 @@ async function handleRulesInteraction(interaction) {
     const acceptedAt = acceptedSnap.exists ? new Date(acceptedSnap.data().acceptedAt) : null;
     const alreadyAccepted = acceptedSnap.exists && acceptedAt && joinedAt <= acceptedAt;
 
+    // 🟢 אישור חוקים
     if (interaction.customId === 'accept_rules') {
       if (alreadyAccepted) {
-        return interaction.reply({ content: '❗ כבר אישרת את החוקים. הכל טוב 😎', ephemeral: true });
+        await interaction.reply({ content: '❗ כבר אישרת את החוקים. הכל טוב 😎', ephemeral: true });
+      } else {
+        await acceptedRef.set({
+          userId,
+          displayName: interaction.member?.displayName || interaction.user.username,
+          acceptedAt: new Date().toISOString(),
+          joinedAt: joinedAt.toISOString()
+        }, { merge: true });
+
+        await interaction.reply({ content: '📬 תודה שקראת את החוקים! נשלחה אליך הודעה פרטית.', ephemeral: true });
+
+        try {
+          await interaction.user.send({
+            content: `✅ היי ${interaction.user.username}!\nתודה שקראת את חוקי הקהילה שלנו.\nאנחנו שמחים שאתה כאן 🙌\n\nצוות **GAMERS UNITED IL**`
+          });
+        } catch {
+          console.warn(`⚠️ לא ניתן לשלוח DM ל־${interaction.user.tag}`);
+        }
       }
 
-      await acceptedRef.set({
-        userId,
-        displayName: interaction.member?.displayName || interaction.user.username,
-        acceptedAt: new Date().toISOString(),
-        joinedAt: joinedAt.toISOString()
-      }, { merge: true });
-
-      await interaction.reply({ content: '📬 תודה שקראת את החוקים! נשלחה אליך הודעה פרטית.', ephemeral: true });
-
-      try {
-        await interaction.user.send({
-          content: `✅ היי ${interaction.user.username}!\nתודה שקראת את חוקי הקהילה שלנו.\nאנחנו שמחים שאתה כאן 🙌\n\nצוות **GAMERS UNITED IL**`
-        });
-      } catch {
-        console.warn(`⚠️ לא ניתן לשלוח DM ל־${interaction.user.tag}`);
+      // עדכון ההודעה והכפתור גם אם המשתמש לא דפדף
+      const msgId = metaSnap.data().messageId;
+      if (msgId) {
+        const message = await interaction.channel.messages.fetch(msgId);
+        const embed = buildRulesEmbed(0);
+        const newRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setLabel('✅ כבר אישרת את החוקים')
+            .setStyle(ButtonStyle.Success)
+            .setCustomId('disabled')
+            .setDisabled(true)
+        );
+        await message.edit({ embeds: [embed], components: [newRow], files: [bannerFile, logoFile] });
       }
 
       return;
     }
 
-    // דפדוף
+    // ⏮️ ◀️ ▶️ ⏭️ דפדוף עמודים
     const msgId = metaSnap.data().messageId;
     if (!msgId) return;
 

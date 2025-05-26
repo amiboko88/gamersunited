@@ -34,6 +34,7 @@ module.exports = {
         .setColor('Green')
         .setTitle('✅ משתמשים שאישרו את חוקי הקהילה')
         .setDescription(recent.join('\n'))
+        .addFields({ name: '\u200B', value: '\u200B' }) // מרווח בין טקסטים
         .addFields({ name: 'סה״כ מאושרים', value: `${total.toLocaleString()} משתמשים`, inline: true })
         .setFooter({ text: 'נתוני חוקי הקהילה (שולף מ־Firestore)' })
         .setTimestamp();

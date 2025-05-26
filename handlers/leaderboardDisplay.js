@@ -1,11 +1,11 @@
-// 📁 handlers/leaderboardDisplay.js
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const db = require('../utils/firebase');
-const { generateLeaderboardImage } = require('../utils/dalleLeaderboardImage');
 const fs = require('fs');
 const path = require('path');
 
-const CHANNEL_ID = '1375415570937151519'; // 🔁 החלף לערוץ הנכון
+const CHANNEL_ID = '1375415570937151519';
+const IMAGES_DIR = path.join(__dirname, '../images/leaderboard');
+const TOTAL_IMAGES = 10; // שים כאן את כמות הקבצים הקיימים בתיקיה (leaderboard1.png ...)
 
 function calculateScore(data) {
   return (
@@ -29,6 +29,14 @@ async function fetchTopUsers(limit = 10) {
   return users.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
+function getImageForCurrentWeek() {
+  const now = new Date();
+  const oneJan = new Date(now.getFullYear(), 0, 1);
+  const week = Math.ceil((((now - oneJan) / 86400000) + oneJan.getDay() + 1) / 7);
+  const index = ((week - 1) % TOTAL_IMAGES) + 1;
+  return path.join(IMAGES_DIR, `leaderboard${index}.png`);
+}
+
 async function sendLeaderboardEmbed(client) {
   const topUsers = await fetchTopUsers();
   if (!topUsers.length) return;
@@ -39,18 +47,17 @@ async function sendLeaderboardEmbed(client) {
   const lines = topUsers.map((user, i) => {
     const member = members.get(user.userId);
     const name = member?.displayName || 'Unknown';
-    return `**${i + 1}.** ${name} — ${user.score} pts`;
+    return `**${i + 1}.** ${name} — ${user.score} נק׳`;
   });
 
-  const imagePath = path.join(__dirname, `../images/leaderboard/leaderboard-${new Date().toISOString().split('T')[0]}.png`);
-  await generateLeaderboardImage(topUsers.map(u => members.get(u.userId)?.displayName || 'Unknown'), imagePath);
-
+  const imagePath = getImageForCurrentWeek();
   const embed = new EmbedBuilder()
-    .setTitle('🏆 מצטייני השבוע 🏆')
+    .setTitle('🏆 מצטייני השבוע בקהילה 🏆')
     .setDescription(lines.join('\n'))
     .setColor(0xffcc00)
     .setImage(`attachment://${path.basename(imagePath)}`)
-    .setThumbnail('attachment://logo.png');
+    .setThumbnail('attachment://logo.png')
+    .setTimestamp();
 
   const fileImage = new AttachmentBuilder(imagePath);
   const fileLogo = new AttachmentBuilder(path.join(__dirname, '../assets/logo.png'));

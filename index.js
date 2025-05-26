@@ -53,6 +53,7 @@ const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
 
 // 🧼 כללי
 const { startLeaderboardUpdater } = require('./handlers/leaderboardUpdater');
+const { data: leaderboardData, execute: leaderboardExecute } = require('./commands/leaderboard');
 const { setupMemberTracker } = require('./handlers/memberTracker');
 const { data: refreshRulesData, execute: refreshRulesExecute } = require('./commands/refreshRules');
 const { data: rulesStatsData, execute: rulesStatsExecute } = require('./commands/rulesStats');
@@ -80,6 +81,7 @@ const commands = [];
 registerMvpCommand(commands);
 commands.push(verifyData, songData, soundData);
 commands.push(...birthdayCommands);
+commands.push(leaderboardData);
 commands.push(rulesStatsData);
 commands.push(refreshRulesData);
 
@@ -185,6 +187,7 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'שיר') return songExecute(interaction, client);
   if (commandName === 'עדכן_חוקים') return refreshRulesExecute(interaction);
   if (commandName === 'אישרו_חוקים') return rulesStatsExecute(interaction);
+  if (commandName === 'לוח_פעילות') return leaderboardExecute(interaction);
   if (commandName === 'סאונד') return soundExecute(interaction, client);  
   if (commandName === 'אמת') return verifyExecute(interaction);
   if (commandName === 'mvp') return mvpDisplayExecute(interaction, client);

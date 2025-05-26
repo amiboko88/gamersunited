@@ -25,7 +25,7 @@ function buildRulesEmbed() {
   return new EmbedBuilder()
     .setColor('#2f3136')
     .setTitle('חוקי  GAMERS UNITED IL')
-    .setDescription(' הקפד לקרוא את הכללים. בלחיצה על הכפתור אתה מאשר שקראת והסכמת להם.')
+    
     .addFields(
       {
         name: '**כללי** 🎮',
@@ -49,7 +49,7 @@ function buildRulesEmbed() {
       { name: '\u200B', value: '\u200B' },
       {
         name: '**ענישה ודיווחים** ⚠️',
-        value: '• הפרות יתועדו ויטופלו בהתאם\n• באן / קיק ← השעיה ← אזהרה\n• דיווחים בערוץ התמיכה בלבד'
+        value: '• הפרות יתועדו ויטופלו בהתאם\n• באן / קיק ➡️ השעיה ➡️ אזהרה\n• דיווחים בערוץ התמיכה בלבד'
       }
     )
     .setThumbnail('attachment://logo.png')

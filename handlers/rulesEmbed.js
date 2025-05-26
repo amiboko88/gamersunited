@@ -9,7 +9,6 @@ const path = require('path');
 const fs = require('fs');
 const db = require('../utils/firebase');
 
-// מזהים
 const RULES_CHANNEL_ID = '1375414950683607103';
 const LOGO_PATH = path.join(__dirname, '../assets/logo.png');
 const BANNERS_DIR = path.join(__dirname, '../assets');
@@ -24,52 +23,45 @@ function getBannerPath() {
   return path.join(BANNERS_DIR, banners[index]);
 }
 
-// 📘 יצירת Embed עם חוקי הקהילה
+// 📘 Embed עשיר ומעוצב בעברית
 function buildRulesEmbed() {
-  const description = `
-
- חוקי הקהילת 
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-כללי 🎮  
-אין פרסום, אין גזענות, אין טרולים  
-שמור על כבוד הדדי והומור בגבול הטעם הטוב  
-
-צ׳אט 💬  
-שפה מכבדת בלבד  
-בלי קללות, ספאם או קישורים מזיקים  
-זיהוי ספאם פועל אוטומטית  
-
-חדרי קול 🎧  
-אין להשמיע מוזיקה או רעש מטריד  
-
-שימוש בבוטים 🤖  
-שימוש הוגן בלבד  
-אין להציף פקודות או לנצל תכונות לרעה  
-TTS – לשימוש חיובי ומצחיק בלבד  
-
-ענישה ודיווחים ⚠️  
-כל הפרה תתועד בלוג הפנימי  
-שלבי ענישה: אזהרה → חסימה זמנית → קיק / באן  
-ניתן לדווח בערוץ התמיכה בלבד  
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-בלחיצה על הכפתור למטה אתה מאשר שקראת והסכמת לכללי הקהילה ✅
-`;
-
   return new EmbedBuilder()
     .setColor('#2f3136')
-    .setTitle('GAMERS UNITED IL')
-    .setDescription(description)
-    .setImage('attachment://banner.png')
+    .setTitle('חוקי קהילת GAMERS UNITED IL')
+    .setDescription('🔒 הקפד לקרוא את כל הכללים. בלחיצה על הכפתור למטה אתה מאשר שקראת והסכמת אליהם.')
+    .addFields(
+      {
+        name: '**כללי** 🎮',
+        value: `• אין פרסום, אין גזענות, אין טרולים\n• שמור על כבוד הדדי והומור בגבול הטעם הטוב`
+      },
+      { name: '\u200B', value: '\u200B' },
+      {
+        name: '**צ׳אט** 💬',
+        value: `• שפה מכבדת בלבד\n• בלי קללות, ספאם או קישורים מזיקים\n• זיהוי ספאם פועל אוטומטית`
+      },
+      { name: '\u200B', value: '\u200B' },
+      {
+        name: '**חדרי קול** 🎧',
+        value: `• אין להשמיע מוזיקה או רעש מטריד\n• להשתמש ב־Push-to-Talk או להשתיק את עצמך כשצריך`
+      },
+      { name: '\u200B', value: '\u200B' },
+      {
+        name: '**שימוש בבוטים** 🤖',
+        value: `• שימוש הוגן בלבד\n• אין להציף פקודות או לנצל תכונות לרעה\n• TTS – לשימוש חיובי בלבד`
+      },
+      { name: '\u200B', value: '\u200B' },
+      {
+        name: '**ענישה ודיווחים** ⚠️',
+        value: `• כל הפרה תתועד בלוג הפנימי\n• שלבים: אזהרה → חסימה זמנית → קיק / באן\n• לדיווחים – פנו בערוץ התמיכה בלבד`
+      }
+    )
     .setThumbnail('attachment://logo.png')
+    .setImage('attachment://banner.png')
     .setFooter({ text: 'עודכן אוטומטית', iconURL: 'attachment://logo.png' })
     .setTimestamp();
 }
 
-// 🎯 יצירת כפתור אימות אישי
+// יצירת כפתור אימות לפי המשתמש
 async function buildAcceptButton(userId) {
   const doc = await db.collection(ACCEPTED_COLLECTION).doc(userId).get();
   const accepted = doc.exists;
@@ -83,7 +75,7 @@ async function buildAcceptButton(userId) {
   );
 }
 
-// 📤 יצירת / עדכון הודעת חוקי הקהילה
+// יצירת / עדכון הודעת החוקים
 async function setupRulesMessage(client) {
   const channel = await client.channels.fetch(RULES_CHANNEL_ID);
   const embed = buildRulesEmbed();
@@ -109,7 +101,7 @@ async function setupRulesMessage(client) {
   await metaRef.set({ messageId: sent.id });
 }
 
-// 🔁 עדכון שבועי של הבאנר
+// עדכון שבועי של הבאנר
 function startWeeklyRulesUpdate(client) {
   const cron = require('node-cron');
   cron.schedule('0 5 * * 0', async () => {
@@ -118,7 +110,7 @@ function startWeeklyRulesUpdate(client) {
   });
 }
 
-// 🧠 תגובת כפתור אישור חוקים
+// טיפול בלחיצה על כפתור "אשר חוקים"
 async function handleRulesInteraction(interaction) {
   const userId = interaction.user.id;
 
@@ -128,7 +120,10 @@ async function handleRulesInteraction(interaction) {
   const snap = await ref.get();
 
   if (snap.exists) {
-    return interaction.reply({ content: '🔒 כבר אישרת את החוקים בעבר.', ephemeral: true });
+    return interaction.reply({
+      content: '🔒 כבר אישרת את החוקים בעבר.',
+      flags: 64
+    });
   }
 
   await ref.set({
@@ -148,7 +143,17 @@ async function handleRulesInteraction(interaction) {
   const logoFile = new AttachmentBuilder(LOGO_PATH).setName('logo.png');
   const row = await buildAcceptButton(userId);
 
-  await interaction.update({ embeds: [embed], components: [row], files: [bannerFile, logoFile] });
+  try {
+    await interaction.update({ embeds: [embed], components: [row], files: [bannerFile, logoFile] });
+  } catch (err) {
+    console.error('❌ שגיאה בעדכון הכפתור לאחר אישור:', err);
+    if (!interaction.replied) {
+      await interaction.reply({
+        content: '✅ החוקים אושרו! (אך לא ניתן היה לעדכן את ההודעה)',
+        flags: 64
+      });
+    }
+  }
 }
 
 module.exports = {

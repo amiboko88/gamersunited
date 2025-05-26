@@ -2,17 +2,16 @@ const {
   EmbedBuilder,
   ButtonBuilder,
   ActionRowBuilder,
-  ButtonStyle,
-  AttachmentBuilder
+  ButtonStyle
 } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
+const { AttachmentBuilder } = require('discord.js');
 const db = require('../utils/firebase');
 
 const RULES_CHANNEL_ID = '1375414950683607103';
 const LOGO_PATH = path.join(__dirname, '../assets/logo.png');
 const BANNERS_DIR = path.join(__dirname, '../assets');
-const RULES_META_PATH = 'rulesMeta/config';
 const ACCEPTED_COLLECTION = 'rulesAccepted';
 
 function getBannerPath() {
@@ -25,8 +24,8 @@ function getBannerPath() {
 function buildRulesEmbed() {
   return new EmbedBuilder()
     .setColor('#2f3136')
-    .setTitle('חוקי GAMERS UNITED IL')
-    .setDescription('הקפד לקרוא את הכללים. בלחיצה על הכפתור אתה מאשר שקראת והסכמת להם.')
+    .setTitle('חוקי  GAMERS UNITED IL')
+    .setDescription(' הקפד לקרוא את הכללים. בלחיצה על הכפתור אתה מאשר שקראת והסכמת להם.')
     .addFields(
       {
         name: '**כללי** 🎮',
@@ -72,69 +71,70 @@ async function buildAcceptButton(userId) {
   );
 }
 
-// שליחה כפולה: Embed ואז כפתור
-async function setupRulesMessage(client) {
+// Embed ציבורי אחד לכל השרת
+async function sendPublicRulesEmbed(client) {
   const channel = await client.channels.fetch(RULES_CHANNEL_ID);
+  const embed = buildRulesEmbed();
   const banner = new AttachmentBuilder(getBannerPath()).setName('banner.png');
   const logo = new AttachmentBuilder(LOGO_PATH).setName('logo.png');
 
-  const embed = buildRulesEmbed();
-  const embedMsg = await channel.send({ embeds: [embed], files: [banner, logo] });
-
-  // שמירת ID לצורך תחזוקה
-  const metaRef = db.doc(RULES_META_PATH);
-  await metaRef.set({ messageId: embedMsg.id });
-
-  // שליחת כפתור לכל אחד שיוצג כפי יכולתו
-  const row = await buildAcceptButton(client.user.id);
-  await channel.send({ components: [row] });
+  await channel.send({ embeds: [embed], files: [banner, logo] });
 }
 
-function startWeeklyRulesUpdate(client) {
-  const cron = require('node-cron');
-  cron.schedule('0 5 * * 0', async () => {
-    console.log('📆 עדכון שבועי של הבאנר...');
-    await setupRulesMessage(client);
-  });
+// הודעת כפתור אישית לכל משתמש שלא אישר
+async function sendRulesToUser(member) {
+  const ref = db.collection(ACCEPTED_COLLECTION).doc(member.id);
+  const snap = await ref.get();
+
+  if (snap.exists) return; // כבר אישר
+
+  const row = await buildAcceptButton(member.id);
+
+  try {
+    await member.send({
+      content: '📘 כדי להשלים את ההצטרפות, אשר שקראת את חוקי הקהילה:',
+      components: [row]
+    });
+  } catch {
+    console.warn(`⚠️ לא ניתן לשלוח DM ל־${member.user?.username || member.id}`);
+  }
 }
 
+// תגובת כפתור
 async function handleRulesInteraction(interaction) {
-  const userId = interaction.user.id;
   if (interaction.customId !== 'accept_rules') return;
-
-  await interaction.deferUpdate();
-
+  const userId = interaction.user.id;
   const ref = db.collection(ACCEPTED_COLLECTION).doc(userId);
   const snap = await ref.get();
 
-  if (!snap.exists) {
-    await ref.set({
-      userId,
-      displayName: interaction.member?.displayName || interaction.user.username,
-      acceptedAt: new Date().toISOString()
+  if (snap.exists) {
+    return interaction.reply({
+      content: '🔒 כבר אישרת את החוקים בעבר.',
+      ephemeral: true
     });
-
-    try {
-      await interaction.user.send('📘 תודה שאישרת את חוקי הקהילה!');
-    } catch {
-      console.warn(`⚠️ לא ניתן לשלוח DM ל־${interaction.user.username}`);
-    }
   }
 
-  // שליחת כפתור אישי מעודכן
-  const row = await buildAcceptButton(userId);
+  await ref.set({
+    userId,
+    displayName: interaction.member?.displayName || interaction.user.username,
+    acceptedAt: new Date().toISOString()
+  });
 
-  setTimeout(async () => {
-    try {
-      await interaction.message.edit({ components: [row] });
-    } catch (err) {
-      console.error('❌ שגיאה בעדכון כפתור אישי:', err);
-    }
-  }, 500);
+  try {
+    await interaction.user.send('📘 תודה שאישרת את חוקי הקהילה!');
+  } catch {
+    console.warn(`⚠️ לא ניתן לשלוח DM ל־${interaction.user.username}`);
+  }
+
+  const row = await buildAcceptButton(userId);
+  await interaction.update({
+    content: '✅ החוקים אושרו!',
+    components: [row]
+  });
 }
 
 module.exports = {
-  setupRulesMessage,
-  startWeeklyRulesUpdate,
+  sendPublicRulesEmbed,
+  sendRulesToUser,
   handleRulesInteraction
 };

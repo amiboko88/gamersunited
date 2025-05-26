@@ -1,4 +1,3 @@
-// 📁 handlers/rulesEmbed.js
 const {
   EmbedBuilder,
   ButtonBuilder,
@@ -8,12 +7,11 @@ const {
 } = require('discord.js');
 const cron = require('node-cron');
 const path = require('path');
+const fs = require('fs');
 const db = require('../utils/firebase');
-const { generateRulesImage } = require('../utils/generateRulesImage');
 
 const RULES_CHANNEL_ID = '1375414950683607103';
 const LOGO_PATH = path.join(__dirname, '../assets/logo.png');
-const BANNER_PATH = path.join(__dirname, '../assets/banner.png');
 const RULES_META_PATH = 'rulesMeta/config';
 
 const rulesPages = [
@@ -56,12 +54,28 @@ const rulesPages = [
   }
 ];
 
+function getRotatingBannerPath() {
+  const assetDir = path.join(__dirname, '../assets');
+  const banners = fs.readdirSync(assetDir).filter(f => f.startsWith('banner') && f.endsWith('.png'));
+  if (banners.length === 0) return path.join(assetDir, 'banner.png');
+
+  const weekIndex = Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000));
+  const chosen = banners[weekIndex % banners.length];
+  return path.join(assetDir, chosen);
+}
+
+function buildBannerFile() {
+  const bannerPath = getRotatingBannerPath();
+  return new AttachmentBuilder(bannerPath).setName('banner.png');
+}
+
 function buildRulesEmbed(pageIndex = 0) {
   const page = rulesPages[pageIndex];
+  const formatted = page.lines.map(line => `‏\n**•** ${line}\n`).join('');
   return new EmbedBuilder()
     .setColor('#5865F2')
     .setTitle(`📘 חוקי הקהילה – ${page.title}`)
-    .setDescription(page.lines.map(line => `• ${line}`).join('\n'))
+    .setDescription(formatted)
     .setImage('attachment://banner.png')
     .setThumbnail('attachment://logo.png')
     .setFooter({ text: `עמוד ${pageIndex + 1} מתוך ${rulesPages.length}`, iconURL: 'attachment://logo.png' })
@@ -79,12 +93,10 @@ function buildActionRow(pageIndex = 0) {
 }
 
 async function setupRulesMessage(client) {
-  await generateRulesImage();
-
   const rulesMetaRef = db.doc(RULES_META_PATH);
   const metaSnap = await rulesMetaRef.get();
   const channel = await client.channels.fetch(RULES_CHANNEL_ID);
-  const bannerFile = new AttachmentBuilder(BANNER_PATH).setName('banner.png');
+  const bannerFile = buildBannerFile();
   const logoFile = new AttachmentBuilder(LOGO_PATH).setName('logo.png');
 
   const embed = buildRulesEmbed(0);
@@ -120,16 +132,14 @@ async function handleRulesInteraction(interaction) {
   try {
     const rulesMetaRef = db.doc(RULES_META_PATH);
     const metaSnap = await rulesMetaRef.get();
-    const bannerFile = new AttachmentBuilder(BANNER_PATH).setName('banner.png');
+    const bannerFile = buildBannerFile();
     const logoFile = new AttachmentBuilder(LOGO_PATH).setName('logo.png');
 
     if (interaction.customId === 'accept_rules') {
       await interaction.reply({ content: '📬 תודה שקראת את החוקים! נשלחה אליך הודעה פרטית.', ephemeral: true });
       try {
         await interaction.user.send({
-          content: `✅ היי ${interaction.user.username}!
-תודה שקראת את חוקי הקהילה שלנו.
-אנחנו שמחים שאתה כאן 🙌\n\nצוות **GAMERS UNITED IL**`
+          content: `✅ היי ${interaction.user.username}!\nתודה שקראת את חוקי הקהילה שלנו.\nאנחנו שמחים שאתה כאן 🙌\n\nצוות **GAMERS UNITED IL**`
         });
       } catch {
         console.warn(`⚠️ לא ניתן לשלוח DM ל־${interaction.user.tag}`);
@@ -164,6 +174,12 @@ async function handleRulesInteraction(interaction) {
 }
 
 module.exports = {
+  RULES_CHANNEL_ID,
+  LOGO_PATH,
+  RULES_META_PATH,
+  buildRulesEmbed,
+  buildBannerFile,
+  buildActionRow,
   setupRulesMessage,
   startWeeklyRulesUpdate,
   handleRulesInteraction

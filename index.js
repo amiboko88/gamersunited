@@ -3,11 +3,7 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 
 // 📘 חוקים
-const {
-  setupRulesMessage,
-  startWeeklyRulesUpdate,
-  handleRulesInteraction
-} = require('./handlers/rulesEmbed');
+const { setupRulesMessage, handleRulesInteraction } = require('./handlers/rulesEmbed');
 
 // 📦 פקודות Slash
 const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
@@ -86,7 +82,7 @@ commands.push(refreshRulesData);
 client.once('ready', async () => {
   await hardSyncPresenceOnReady(client);
   await setupVerificationMessage(client);
-  await setupRulesMessage(client); // ✅ חדש
+  await sendPublicRulesEmbed(client); // ✅ חדש
   startWeeklyRulesUpdate(client);  // ✅ חדש
   startDmTracking(client);
   startLeaderboardUpdater(client);

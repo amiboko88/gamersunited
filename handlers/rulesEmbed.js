@@ -133,8 +133,17 @@ async function handleRulesInteraction(interaction) {
   });
 }
 
+function startWeeklyRulesUpdate(client) {
+  const cron = require('node-cron');
+  cron.schedule('0 5 * * 0', async () => {
+    console.log('📆 עדכון שבועי של הבאנר...');
+    await sendPublicRulesEmbed(client);
+  });
+}
+
 module.exports = {
   sendPublicRulesEmbed,
   sendRulesToUser,
-  handleRulesInteraction
+  handleRulesInteraction,
+  startWeeklyRulesUpdate 
 };

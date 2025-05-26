@@ -6,7 +6,8 @@ const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const {
   sendPublicRulesEmbed,
   sendRulesToUser,
-  handleRulesInteraction
+  handleRulesInteraction,
+  startWeeklyRulesUpdate
 } = require('./handlers/rulesEmbed');
 
 // 📦 פקודות Slash

@@ -54,6 +54,7 @@ const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
 const { startLeaderboardUpdater } = require('./handlers/leaderboardUpdater');
 const { setupMemberTracker } = require('./handlers/memberTracker');
 const { data: refreshRulesData, execute: refreshRulesExecute } = require('./commands/refreshRules');
+const { data: rulesStatsData, execute: rulesStatsExecute } = require('./commands/rulesStats');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
 const { handleSpam } = require('./handlers/antispam');
 const db = require('./utils/firebase');
@@ -78,6 +79,7 @@ const commands = [];
 registerMvpCommand(commands);
 commands.push(verifyData, songData, soundData);
 commands.push(...birthdayCommands);
+commands.push(rulesStatsData);
 commands.push(refreshRulesData);
 
 // ▶️ התחברות
@@ -176,7 +178,8 @@ client.on('interactionCreate', async interaction => {
 
   if (commandName === 'שיר') return songExecute(interaction, client);
   if (commandName === 'עדכן_חוקים') return refreshRulesExecute(interaction);
-  if (commandName === 'סאונד') return soundExecute(interaction, client);
+  if (commandName === 'אישרו_חוקים') return rulesStatsExecute(interaction);
+  if (commandName === 'סאונד') return soundExecute(interaction, client);  
   if (commandName === 'אמת') return verifyExecute(interaction);
   if (commandName === 'mvp') return mvpDisplayExecute(interaction, client);
 

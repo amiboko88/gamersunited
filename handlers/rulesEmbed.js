@@ -135,8 +135,32 @@ async function handleRulesInteraction(interaction) {
     const bannerFile = buildBannerFile();
     const logoFile = new AttachmentBuilder(LOGO_PATH).setName('logo.png');
 
+    const userId = interaction.user.id;
+    const acceptedRef = db.collection('rulesAccepted').doc(userId);
+    const acceptedSnap = await acceptedRef.get();
+
+    const joinedAt = interaction.member?.joinedAt?.toDate?.() || new Date();
+    const acceptedAt = acceptedSnap.exists ? new Date(acceptedSnap.data().acceptedAt) : null;
+    const alreadyAccepted = acceptedSnap.exists && acceptedAt && joinedAt <= acceptedAt;
+
+    // אם לחץ על הכפתור הראשי "קיבלתי את החוקים"
     if (interaction.customId === 'accept_rules') {
+      if (alreadyAccepted) {
+        return interaction.reply({
+          content: '❗ כבר אישרת את החוקים. הכל טוב 😎',
+          ephemeral: true
+        });
+      }
+
+      await acceptedRef.set({
+        userId,
+        displayName: interaction.member?.displayName || interaction.user.username,
+        acceptedAt: new Date().toISOString(),
+        joinedAt: joinedAt.toISOString()
+      }, { merge: true });
+
       await interaction.reply({ content: '📬 תודה שקראת את החוקים! נשלחה אליך הודעה פרטית.', ephemeral: true });
+
       try {
         await interaction.user.send({
           content: `✅ היי ${interaction.user.username}!\nתודה שקראת את חוקי הקהילה שלנו.\nאנחנו שמחים שאתה כאן 🙌\n\nצוות **GAMERS UNITED IL**`
@@ -144,9 +168,11 @@ async function handleRulesInteraction(interaction) {
       } catch {
         console.warn(`⚠️ לא ניתן לשלוח DM ל־${interaction.user.tag}`);
       }
+
       return;
     }
 
+    // דפדוף בין עמודים
     const msgId = metaSnap.data().messageId;
     if (!msgId) return;
 
@@ -164,14 +190,25 @@ async function handleRulesInteraction(interaction) {
     }
 
     await interaction.deferUpdate();
+
     const newEmbed = buildRulesEmbed(pageIndex);
-    const newRow = buildActionRow(pageIndex);
+    let newRow;
+
+    if (alreadyAccepted) {
+      // הצגת תגית במקום כפתור
+      newRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setLabel('✅ כבר אישרת את החוקים').setStyle(ButtonStyle.Success).setCustomId('disabled').setDisabled(true)
+      );
+    } else {
+      newRow = buildActionRow(pageIndex);
+    }
 
     await message.edit({ embeds: [newEmbed], components: [newRow], files: [bannerFile, logoFile] });
   } catch (err) {
     console.error('❌ שגיאה בטיפול בכפתור חוקים:', err);
   }
 }
+
 
 module.exports = {
   RULES_CHANNEL_ID,

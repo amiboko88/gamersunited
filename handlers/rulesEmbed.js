@@ -1,3 +1,4 @@
+// 📁 handlers/rulesEmbed.js
 const {
   EmbedBuilder,
   ButtonBuilder,
@@ -71,7 +72,7 @@ function buildBannerFile() {
 
 function buildRulesEmbed(pageIndex = 0) {
   const page = rulesPages[pageIndex];
-  const formatted = page.lines.map(line => `‏\n**•** ${line}\n`).join('');
+  const formatted = page.lines.map(line => `**•** ${line}`).join('\n\n');
   return new EmbedBuilder()
     .setColor('#5865F2')
     .setTitle(`📘 חוקי הקהילה – ${page.title}`)
@@ -102,18 +103,17 @@ async function setupRulesMessage(client) {
   const embed = buildRulesEmbed(0);
   const row = buildActionRow(0);
 
-  let message;
   const msgId = metaSnap.exists ? metaSnap.data().messageId : null;
 
-  if (msgId) {
-    try {
-      message = await channel.messages.fetch(msgId);
+  try {
+    if (msgId) {
+      const message = await channel.messages.fetch(msgId);
       await message.edit({ embeds: [embed], components: [row], files: [bannerFile, logoFile] });
       console.log('🔁 הודעת החוקים עודכנה.');
       return;
-    } catch (err) {
-      console.warn('⚠️ לא ניתן לערוך את הודעת החוקים:', err.message);
     }
+  } catch (err) {
+    console.warn('⚠️ לא ניתן לערוך את הודעת החוקים:', err.message);
   }
 
   const sent = await channel.send({ embeds: [embed], components: [row], files: [bannerFile, logoFile] });
@@ -130,12 +130,12 @@ function startWeeklyRulesUpdate(client) {
 
 async function handleRulesInteraction(interaction) {
   try {
+    const userId = interaction.user.id;
     const rulesMetaRef = db.doc(RULES_META_PATH);
     const metaSnap = await rulesMetaRef.get();
     const bannerFile = buildBannerFile();
     const logoFile = new AttachmentBuilder(LOGO_PATH).setName('logo.png');
 
-    const userId = interaction.user.id;
     const acceptedRef = db.collection('rulesAccepted').doc(userId);
     const acceptedSnap = await acceptedRef.get();
 
@@ -143,13 +143,9 @@ async function handleRulesInteraction(interaction) {
     const acceptedAt = acceptedSnap.exists ? new Date(acceptedSnap.data().acceptedAt) : null;
     const alreadyAccepted = acceptedSnap.exists && acceptedAt && joinedAt <= acceptedAt;
 
-    // אם לחץ על הכפתור הראשי "קיבלתי את החוקים"
     if (interaction.customId === 'accept_rules') {
       if (alreadyAccepted) {
-        return interaction.reply({
-          content: '❗ כבר אישרת את החוקים. הכל טוב 😎',
-          ephemeral: true
-        });
+        return interaction.reply({ content: '❗ כבר אישרת את החוקים. הכל טוב 😎', ephemeral: true });
       }
 
       await acceptedRef.set({
@@ -172,7 +168,7 @@ async function handleRulesInteraction(interaction) {
       return;
     }
 
-    // דפדוף בין עמודים
+    // דפדוף
     const msgId = metaSnap.data().messageId;
     if (!msgId) return;
 
@@ -190,25 +186,24 @@ async function handleRulesInteraction(interaction) {
     }
 
     await interaction.deferUpdate();
-
     const newEmbed = buildRulesEmbed(pageIndex);
-    let newRow;
+    const components = [
+      alreadyAccepted
+        ? new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setLabel('✅ כבר אישרת את החוקים')
+              .setStyle(ButtonStyle.Success)
+              .setCustomId('disabled')
+              .setDisabled(true)
+          )
+        : buildActionRow(pageIndex)
+    ];
 
-    if (alreadyAccepted) {
-      // הצגת תגית במקום כפתור
-      newRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setLabel('✅ כבר אישרת את החוקים').setStyle(ButtonStyle.Success).setCustomId('disabled').setDisabled(true)
-      );
-    } else {
-      newRow = buildActionRow(pageIndex);
-    }
-
-    await message.edit({ embeds: [newEmbed], components: [newRow], files: [bannerFile, logoFile] });
+    await message.edit({ embeds: [newEmbed], components, files: [bannerFile, logoFile] });
   } catch (err) {
     console.error('❌ שגיאה בטיפול בכפתור חוקים:', err);
   }
 }
-
 
 module.exports = {
   RULES_CHANNEL_ID,

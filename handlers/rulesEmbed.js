@@ -23,36 +23,36 @@ function getBannerPath() {
   return path.join(BANNERS_DIR, banners[index]);
 }
 
-// 📘 Embed עשיר ומעוצב בעברית
+// 📘 Embed עשיר ומעודכן
 function buildRulesEmbed() {
   return new EmbedBuilder()
     .setColor('#2f3136')
-    .setTitle('חוקי קהילת GAMERS UNITED IL')
+    .setTitle('📘 חוקי קהילת GAMERS UNITED IL')
     .setDescription('🔒 הקפד לקרוא את כל הכללים. בלחיצה על הכפתור למטה אתה מאשר שקראת והסכמת אליהם.')
     .addFields(
       {
         name: '**כללי** 🎮',
-        value: `• אין פרסום, אין גזענות, אין טרולים\n• שמור על כבוד הדדי והומור בגבול הטעם הטוב`
+        value: '• יש לשמור על תקשורת מכבדת ועניינית\n• שיח פוגעני או מתסיס לא יתקבל'
       },
       { name: '\u200B', value: '\u200B' },
       {
         name: '**צ׳אט** 💬',
-        value: `• שפה מכבדת בלבד\n• בלי קללות, ספאם או קישורים מזיקים\n• זיהוי ספאם פועל אוטומטית`
+        value: '• לא נאפשר קללות, ספאם או קישורים מזיקים\n• כתיבה בשפה נאותה – חובה'
       },
       { name: '\u200B', value: '\u200B' },
       {
         name: '**חדרי קול** 🎧',
-        value: `• אין להשמיע מוזיקה או רעש מטריד\n• להשתמש ב־Push-to-Talk או להשתיק את עצמך כשצריך`
+        value: '• אין להשמיע רעשים או מוזיקה ללא הסכמה\n• מומלץ להשתמש ב־Push-to-Talk או להשתיק את עצמך בעת הצורך'
       },
       { name: '\u200B', value: '\u200B' },
       {
         name: '**שימוש בבוטים** 🤖',
-        value: `• שימוש הוגן בלבד\n• אין להציף פקודות או לנצל תכונות לרעה\n• TTS – לשימוש חיובי בלבד`
+        value: '• יש להשתמש בתכונות הבוט בצורה הוגנת\n• אין להציף פקודות או לנצל אותן לרעה'
       },
       { name: '\u200B', value: '\u200B' },
       {
         name: '**ענישה ודיווחים** ⚠️',
-        value: `• כל הפרה תתועד בלוג הפנימי\n• שלבים: אזהרה → חסימה זמנית → קיק / באן\n• לדיווחים – פנו בערוץ התמיכה בלבד`
+        value: '• הפרות יתועדו ויטופלו בהתאם\n• שלבי תגובה: באן / קיק ← השעיה זמנית ← אזהרה\n• ניתן לדווח בערוץ התמיכה בלבד'
       }
     )
     .setThumbnail('attachment://logo.png')
@@ -61,7 +61,7 @@ function buildRulesEmbed() {
     .setTimestamp();
 }
 
-// יצירת כפתור אימות לפי המשתמש
+// יצירת כפתור לפי סטטוס המשתמש
 async function buildAcceptButton(userId) {
   const doc = await db.collection(ACCEPTED_COLLECTION).doc(userId).get();
   const accepted = doc.exists;
@@ -78,23 +78,23 @@ async function buildAcceptButton(userId) {
 // יצירת / עדכון הודעת החוקים
 async function setupRulesMessage(client) {
   const channel = await client.channels.fetch(RULES_CHANNEL_ID);
-  const embed = buildRulesEmbed();
-  const bannerFile = new AttachmentBuilder(getBannerPath()).setName('banner.png');
-  const logoFile = new AttachmentBuilder(LOGO_PATH).setName('logo.png');
-  const row = await buildAcceptButton('default');
-
   const metaRef = db.doc(RULES_META_PATH);
   const metaSnap = await metaRef.get();
+  const bannerFile = new AttachmentBuilder(getBannerPath()).setName('banner.png');
+  const logoFile = new AttachmentBuilder(LOGO_PATH).setName('logo.png');
+
+  // הודעה ציבורית נשלחת עם כפתור כללי (יוחלף בלחיצה לפי המשתמש)
+  const embed = buildRulesEmbed();
+  const row = await buildAcceptButton(client.user.id); // לא משנה – ציבורי
 
   try {
     if (metaSnap.exists) {
-      const msgId = metaSnap.data().messageId;
-      const message = await channel.messages.fetch(msgId);
-      await message.edit({ embeds: [embed], components: [row], files: [bannerFile, logoFile] });
+      const msg = await channel.messages.fetch(metaSnap.data().messageId);
+      await msg.edit({ embeds: [embed], components: [row], files: [bannerFile, logoFile] });
       return;
     }
-  } catch (err) {
-    console.warn('⚠️ ההודעה לא קיימת או לא ניתנת לעריכה. שולח חדשה.');
+  } catch (e) {
+    console.warn('⚠️ לא ניתן לערוך את ההודעה הקיימת. שולח חדשה.');
   }
 
   const sent = await channel.send({ embeds: [embed], components: [row], files: [bannerFile, logoFile] });
@@ -110,19 +110,18 @@ function startWeeklyRulesUpdate(client) {
   });
 }
 
-// טיפול בלחיצה על כפתור "אשר חוקים"
+// לחיצה על כפתור "אשר חוקים"
 async function handleRulesInteraction(interaction) {
   const userId = interaction.user.id;
-
   if (interaction.customId !== 'accept_rules') return;
 
   const ref = db.collection(ACCEPTED_COLLECTION).doc(userId);
   const snap = await ref.get();
 
   if (snap.exists) {
-    return interaction.reply({
-      content: '🔒 כבר אישרת את החוקים בעבר.',
-      flags: 64
+    const row = await buildAcceptButton(userId);
+    return interaction.update({
+      components: [row]
     });
   }
 
@@ -138,22 +137,11 @@ async function handleRulesInteraction(interaction) {
     console.warn(`⚠️ לא ניתן לשלוח DM ל־${interaction.user.username}`);
   }
 
-  const embed = buildRulesEmbed();
-  const bannerFile = new AttachmentBuilder(getBannerPath()).setName('banner.png');
-  const logoFile = new AttachmentBuilder(LOGO_PATH).setName('logo.png');
   const row = await buildAcceptButton(userId);
 
-  try {
-    await interaction.update({ embeds: [embed], components: [row], files: [bannerFile, logoFile] });
-  } catch (err) {
-    console.error('❌ שגיאה בעדכון הכפתור לאחר אישור:', err);
-    if (!interaction.replied) {
-      await interaction.reply({
-        content: '✅ החוקים אושרו! (אך לא ניתן היה לעדכן את ההודעה)',
-        flags: 64
-      });
-    }
-  }
+  await interaction.update({
+    components: [row]
+  });
 }
 
 module.exports = {

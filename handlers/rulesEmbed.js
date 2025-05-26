@@ -6,9 +6,9 @@ const {
   ButtonStyle,
   AttachmentBuilder
 } = require('discord.js');
-const cron = require('node-cron');
 const path = require('path');
 const fs = require('fs');
+const cron = require('node-cron');
 const db = require('../utils/firebase');
 
 const RULES_CHANNEL_ID = '1375414950683607103';
@@ -55,6 +55,7 @@ const rulesPages = [
   }
 ];
 
+// 🔁 סיבוב בין תמונות banner.png, banner1.png וכו'
 function getRotatingBannerPath() {
   const assetDir = path.join(__dirname, '../assets');
   const banners = fs.readdirSync(assetDir).filter(f => f.startsWith('banner') && f.endsWith('.png'));
@@ -63,53 +64,51 @@ function getRotatingBannerPath() {
   return path.join(assetDir, banners[weekIndex % banners.length]);
 }
 
-function buildBannerFile() {
-  return new AttachmentBuilder(getRotatingBannerPath()).setName('banner.png');
-}
-
 function buildRulesEmbed(pageIndex = 0) {
   const page = rulesPages[pageIndex];
-  const formatted = page.lines.map(line => `**•** ${line}`).join('\n\n');
+  const description = page.lines.map(line => `**•** ${line}`).join('\n\n');
   return new EmbedBuilder()
     .setColor('#5865F2')
     .setTitle(`📘 חוקי הקהילה – ${page.title}`)
-    .setDescription(formatted)
+    .setDescription(description)
     .setImage('attachment://banner.png')
     .setThumbnail('attachment://logo.png')
     .setFooter({ text: `עמוד ${pageIndex + 1} מתוך ${rulesPages.length}`, iconURL: 'attachment://logo.png' })
     .setTimestamp();
 }
 
-function buildActionRow(pageIndex = 0, disableAccept = false) {
-  const row = new ActionRowBuilder().addComponents(
+function buildPageRow(pageIndex = 0) {
+  return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('rules_first').setLabel('⏮️').setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === 0),
     new ButtonBuilder().setCustomId('rules_prev').setLabel('◀️').setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === 0),
     new ButtonBuilder().setCustomId('rules_next').setLabel('▶️').setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === rulesPages.length - 1),
-    new ButtonBuilder().setCustomId('rules_last').setLabel('⏭️').setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === rulesPages.length - 1),
-    new ButtonBuilder()
-      .setCustomId(disableAccept ? 'accepted' : 'accept_rules')
-      .setLabel(disableAccept ? '✅ כבר אישרת את החוקים' : '📥 קיבלתי את החוקים')
-      .setStyle(ButtonStyle.Success)
-      .setDisabled(disableAccept)
+    new ButtonBuilder().setCustomId('rules_last').setLabel('⏭️').setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === rulesPages.length - 1)
   );
-  return row;
 }
 
+function buildConfirmRow(hasConfirmed = false) {
+  return new ActionRowBuilder().addComponents(
+    hasConfirmed
+      ? new ButtonBuilder().setLabel('✅ כבר אישרת את החוקים').setStyle(ButtonStyle.Success).setCustomId('confirmed').setDisabled(true)
+      : new ButtonBuilder().setCustomId('accept_rules').setLabel('📥 קיבלתי את החוקים').setStyle(ButtonStyle.Success)
+  );
+}
+
+// 📤 שליחת הודעת החוק הראשונית לערוץ
 async function setupRulesMessage(client) {
   const rulesMetaRef = db.doc(RULES_META_PATH);
   const metaSnap = await rulesMetaRef.get();
   const channel = await client.channels.fetch(RULES_CHANNEL_ID);
-  const bannerFile = buildBannerFile();
-  const logoFile = new AttachmentBuilder(LOGO_PATH).setName('logo.png');
 
+  const bannerFile = new AttachmentBuilder(getRotatingBannerPath()).setName('banner.png');
+  const logoFile = new AttachmentBuilder(LOGO_PATH).setName('logo.png');
   const embed = buildRulesEmbed(0);
-  const row = buildActionRow(0);
+  const row = buildConfirmRow(false); // רק כפתור אישור
 
   try {
     if (metaSnap.exists && metaSnap.data().messageId) {
       const msg = await channel.messages.fetch(metaSnap.data().messageId);
       await msg.edit({ embeds: [embed], components: [row], files: [bannerFile, logoFile] });
-      console.log('🔁 הודעת החוקים עודכנה.');
       return;
     }
   } catch (err) {
@@ -117,10 +116,10 @@ async function setupRulesMessage(client) {
   }
 
   const sent = await channel.send({ embeds: [embed], components: [row], files: [bannerFile, logoFile] });
-  await rulesMetaRef.set({ messageId: sent.id, lastImageUpdate: new Date().toISOString() });
-  console.log('✅ הודעת חוקים נשלחה מחדש.');
+  await rulesMetaRef.set({ messageId: sent.id });
 }
 
+// 🕒 עדכון שבועי אוטומטי של הבאנר
 function startWeeklyRulesUpdate(client) {
   cron.schedule('0 5 * * 0', async () => {
     console.log('📆 עדכון שבועי של תמונת החוקים...');
@@ -128,51 +127,48 @@ function startWeeklyRulesUpdate(client) {
   });
 }
 
+// 🧠 אינטראקציה אישית לפי כפתורים
 async function handleRulesInteraction(interaction) {
-  try {
-    const userId = interaction.user.id;
-    const rulesMetaRef = db.doc(RULES_META_PATH);
-    const metaSnap = await rulesMetaRef.get();
-    const acceptedRef = db.collection('rulesAccepted').doc(userId);
-    const acceptedSnap = await acceptedRef.get();
+  const userId = interaction.user.id;
+  const acceptedRef = db.collection('rulesAccepted').doc(userId);
+  const acceptedSnap = await acceptedRef.get();
 
-    const joinedAt = interaction.member?.joinedAt?.toDate?.() || new Date();
-    const acceptedAt = acceptedSnap.exists ? new Date(acceptedSnap.data().acceptedAt) : null;
-    const alreadyAccepted = acceptedSnap.exists && acceptedAt && joinedAt <= acceptedAt;
+  const joinedAt = interaction.member?.joinedAt?.toDate?.() || new Date();
+  const acceptedAt = acceptedSnap.exists ? new Date(acceptedSnap.data().acceptedAt) : null;
+  const alreadyAccepted = acceptedSnap.exists && acceptedAt && joinedAt <= acceptedAt;
 
-    if (interaction.customId === 'accept_rules') {
-      if (alreadyAccepted) {
-        return interaction.reply({ content: '❗ כבר אישרת את החוקים. הכל טוב 😎', ephemeral: true });
-      }
-
-      await acceptedRef.set({
-        userId,
-        displayName: interaction.member?.displayName || interaction.user.username,
-        acceptedAt: new Date().toISOString(),
-        joinedAt: joinedAt.toISOString()
-      });
-
-      await interaction.reply({ content: '📬 תודה שקראת את החוקים! נשלחה אליך הודעה פרטית.', ephemeral: true });
-      try {
-        await interaction.user.send({
-          content: `✅ היי ${interaction.user.username}!\nתודה שקראת את חוקי הקהילה שלנו.\nאנחנו שמחים שאתה כאן 🙌\n\nצוות **GAMERS UNITED IL**`
-        });
-      } catch {
-        console.warn(`⚠️ לא ניתן לשלוח DM ל־${interaction.user.tag}`);
-      }
-
-      return setTimeout(() => interaction.message.edit({
-        components: [buildActionRow(0, true)]
-      }).catch(() => {}), 5000);
+  if (interaction.customId === 'accept_rules') {
+    if (alreadyAccepted) {
+      return interaction.reply({ content: '❗ כבר אישרת את החוקים. הכל טוב 😎', ephemeral: true });
     }
 
-    // דפדוף
-    const msgId = metaSnap.exists && metaSnap.data().messageId;
-    if (!msgId) return;
+    await acceptedRef.set({
+      userId,
+      displayName: interaction.member?.displayName || interaction.user.username,
+      acceptedAt: new Date().toISOString(),
+      joinedAt: joinedAt.toISOString()
+    }, { merge: true });
 
-    const message = await interaction.channel.messages.fetch(msgId);
-    const currentEmbed = message.embeds[0];
-    const match = currentEmbed.footer?.text?.match(/עמוד (\d+)/);
+    await interaction.reply({
+      content: '📬 תודה שקראת את החוקים! נשלחה אליך הודעה פרטית.',
+      ephemeral: true
+    });
+
+    try {
+      await interaction.user.send({
+        content: `✅ היי ${interaction.user.username}!\nתודה שקראת את חוקי הקהילה שלנו.\nאנחנו שמחים שאתה כאן 🙌\n\nצוות **GAMERS UNITED IL**`
+      });
+    } catch {
+      console.warn(`⚠️ לא ניתן לשלוח DM ל־${interaction.user.tag}`);
+    }
+
+    return;
+  }
+
+  // דפדוף – רק בתגובה אישית
+  if (interaction.customId.startsWith('rules_')) {
+    const footerText = interaction.message?.embeds?.[0]?.footer?.text || '';
+    const match = footerText.match(/עמוד (\d+)/);
     let pageIndex = match ? parseInt(match[1]) - 1 : 0;
 
     switch (interaction.customId) {
@@ -182,23 +178,26 @@ async function handleRulesInteraction(interaction) {
       case 'rules_last': pageIndex = rulesPages.length - 1; break;
     }
 
-    await interaction.deferUpdate();
-    const newEmbed = buildRulesEmbed(pageIndex);
-    const newRow = buildActionRow(pageIndex, alreadyAccepted);
+    const embed = buildRulesEmbed(pageIndex);
+    const components = [buildPageRow(pageIndex), buildConfirmRow(alreadyAccepted)];
 
-    await message.edit({ embeds: [newEmbed], components: [newRow], files: [buildBannerFile(), new AttachmentBuilder(LOGO_PATH).setName('logo.png')] });
-  } catch (err) {
-    console.error('❌ שגיאה בטיפול בכפתור חוקים:', err);
+    return interaction.update({ embeds: [embed], components, ephemeral: true });
+  }
+
+  // אם מדובר בכפתור חדש "ראה את החוקים"
+  if (interaction.commandName === 'חוקים') {
+    const embed = buildRulesEmbed(0);
+    const row1 = buildPageRow(0);
+    const row2 = buildConfirmRow(alreadyAccepted);
+    return interaction.reply({
+      embeds: [embed],
+      components: [row1, row2],
+      ephemeral: true
+    });
   }
 }
 
 module.exports = {
-  RULES_CHANNEL_ID,
-  LOGO_PATH,
-  RULES_META_PATH,
-  buildRulesEmbed,
-  buildBannerFile,
-  buildActionRow,
   setupRulesMessage,
   startWeeklyRulesUpdate,
   handleRulesInteraction

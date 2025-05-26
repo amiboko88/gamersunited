@@ -1,24 +1,25 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { setupRulesMessage } = require('../handlers/rulesEmbed');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('עדכן_חוקים')
-    .setDescription('🔄 עדכון חוקי הקהילה והתמונה השבועית (למנהלים בלבד)'),
+    .setDescription('🔁 מרענן את הודעת חוקי הקהילה (רק למנהלים)')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator), // ✅ מגביל למנהלים
 
   async execute(interaction) {
-    if (!interaction.member.permissions.has('Administrator')) {
-      return interaction.reply({ content: '⛔ הפקודה זמינה למנהלים בלבד.', ephemeral: true });
-    }
-
-    await interaction.deferReply({ ephemeral: true });
-
     try {
       await setupRulesMessage(interaction.client);
-      await interaction.editReply('✅ הודעת החוקים עודכנה בהצלחה.');
+      await interaction.reply({
+        content: '✅ הודעת החוקים עודכנה בהצלחה!',
+        ephemeral: true
+      });
     } catch (err) {
-      console.error('❌ שגיאה בעדכון חוקי הקהילה:', err);
-      await interaction.editReply('❌ שגיאה בעדכון חוקי הקהילה. בדוק את הלוגים.');
+      console.error('❌ שגיאה בהרצת עדכון חוקי הקהילה:', err);
+      await interaction.reply({
+        content: '⚠️ שגיאה בעדכון הודעת החוקים. ראה לוג.',
+        ephemeral: true
+      });
     }
   }
 };

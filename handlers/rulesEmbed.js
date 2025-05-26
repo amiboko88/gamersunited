@@ -15,7 +15,7 @@ const BANNERS_DIR = path.join(__dirname, '../assets');
 const RULES_META_PATH = 'rulesMeta/config';
 const ACCEPTED_COLLECTION = 'rulesAccepted';
 
-// 🖼️ שליפת באנר שבועי
+// 🖼️ באנר שבועי
 function getBannerPath() {
   const banners = fs.readdirSync(BANNERS_DIR).filter(f => f.startsWith('banner') && f.endsWith('.png'));
   if (!banners.length) return path.join(BANNERS_DIR, 'banner.png');
@@ -23,12 +23,12 @@ function getBannerPath() {
   return path.join(BANNERS_DIR, banners[index]);
 }
 
-// 📘 Embed עשיר ומעודכן
+// 📘 Embed מעוצב
 function buildRulesEmbed() {
   return new EmbedBuilder()
     .setColor('#2f3136')
-    .setTitle('📘 חוקי קהילת GAMERS UNITED IL')
-    .setDescription('🔒 הקפד לקרוא את כל הכללים. בלחיצה על הכפתור למטה אתה מאשר שקראת והסכמת אליהם.')
+    .setTitle('חוקי GAMERS UNITED IL')
+    .setDescription('הקפד לקרוא את כל הכללים. בלחיצה על הכפתור למטה אתה מאשר שקראת והסכמת אליהם.')
     .addFields(
       {
         name: '**כללי** 🎮',
@@ -61,7 +61,7 @@ function buildRulesEmbed() {
     .setTimestamp();
 }
 
-// יצירת כפתור לפי סטטוס המשתמש
+// כפתור אימות אישי
 async function buildAcceptButton(userId) {
   const doc = await db.collection(ACCEPTED_COLLECTION).doc(userId).get();
   const accepted = doc.exists;
@@ -75,26 +75,25 @@ async function buildAcceptButton(userId) {
   );
 }
 
-// יצירת / עדכון הודעת החוקים
+// יצירת / עדכון הודעה
 async function setupRulesMessage(client) {
   const channel = await client.channels.fetch(RULES_CHANNEL_ID);
   const metaRef = db.doc(RULES_META_PATH);
   const metaSnap = await metaRef.get();
+
+  const embed = buildRulesEmbed();
   const bannerFile = new AttachmentBuilder(getBannerPath()).setName('banner.png');
   const logoFile = new AttachmentBuilder(LOGO_PATH).setName('logo.png');
-
-  // הודעה ציבורית נשלחת עם כפתור כללי (יוחלף בלחיצה לפי המשתמש)
-  const embed = buildRulesEmbed();
-  const row = await buildAcceptButton(client.user.id); // לא משנה – ציבורי
+  const row = await buildAcceptButton(client.user.id); // הצגה כללית
 
   try {
     if (metaSnap.exists) {
-      const msg = await channel.messages.fetch(metaSnap.data().messageId);
-      await msg.edit({ embeds: [embed], components: [row], files: [bannerFile, logoFile] });
+      const message = await channel.messages.fetch(metaSnap.data().messageId);
+      await message.edit({ embeds: [embed], components: [row], files: [bannerFile, logoFile] });
       return;
     }
-  } catch (e) {
-    console.warn('⚠️ לא ניתן לערוך את ההודעה הקיימת. שולח חדשה.');
+  } catch {
+    console.warn('⚠️ ההודעה לא קיימת או לא ניתנת לעריכה. שולח חדשה.');
   }
 
   const sent = await channel.send({ embeds: [embed], components: [row], files: [bannerFile, logoFile] });
@@ -110,38 +109,38 @@ function startWeeklyRulesUpdate(client) {
   });
 }
 
-// לחיצה על כפתור "אשר חוקים"
+// טיפול בלחיצה
 async function handleRulesInteraction(interaction) {
   const userId = interaction.user.id;
   if (interaction.customId !== 'accept_rules') return;
 
+  await interaction.deferUpdate(); // מחזיק את האינטראקציה בחיים
+
   const ref = db.collection(ACCEPTED_COLLECTION).doc(userId);
   const snap = await ref.get();
 
-  if (snap.exists) {
-    const row = await buildAcceptButton(userId);
-    return interaction.update({
-      components: [row]
+  if (!snap.exists) {
+    await ref.set({
+      userId,
+      displayName: interaction.member?.displayName || interaction.user.username,
+      acceptedAt: new Date().toISOString()
     });
+
+    try {
+      await interaction.user.send('📘 תודה שאישרת את חוקי הקהילה!');
+    } catch {
+      console.warn(`⚠️ לא ניתן לשלוח DM ל־${interaction.user.username}`);
+    }
   }
 
-  await ref.set({
-    userId,
-    displayName: interaction.member?.displayName || interaction.user.username,
-    acceptedAt: new Date().toISOString()
-  });
-
-  try {
-    await interaction.user.send('📘 תודה שאישרת את חוקי הקהילה!');
-  } catch {
-    console.warn(`⚠️ לא ניתן לשלוח DM ל־${interaction.user.username}`);
-  }
-
-  const row = await buildAcceptButton(userId);
-
-  await interaction.update({
-    components: [row]
-  });
+  setTimeout(async () => {
+    const row = await buildAcceptButton(userId);
+    try {
+      await interaction.message.edit({ components: [row] });
+    } catch (err) {
+      console.error('❌ שגיאה בעדכון הכפתור:', err);
+    }
+  }, 500); // עיכוב קצר למניעת שגיאות race
 }
 
 module.exports = {

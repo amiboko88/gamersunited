@@ -3,6 +3,7 @@ const {
   ButtonBuilder,
   ActionRowBuilder,
   ButtonStyle,
+  AttachmentBuilder // ← זה מה שהיה חסר!
 } = require('discord.js');
 const db = require('../utils/firebase');
 const path = require('path');

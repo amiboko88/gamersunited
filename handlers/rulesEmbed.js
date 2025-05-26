@@ -15,7 +15,6 @@ const ACCEPTED_COLLECTION = 'rulesAccepted';
 
 const LOGO_PATH = path.join(__dirname, '../assets/logo.png');
 
-// עמודי חוקים
 const rulesPages = [
   {
     title: '🎮 כללי',
@@ -56,10 +55,9 @@ const rulesPages = [
   }
 ];
 
-// עמוד לפי index
 function getRulesEmbed(index = 0) {
   const page = rulesPages[index];
-  const description = page.lines.map(line => `• ${line}`).join('\n\n');
+  const description = page.lines.map(line => `• ${line}`).join('\n\n') + `\n\n🔒 **הכפתור בתחתית ההודעה פועל רק עבורך.**`;
 
   return new EmbedBuilder()
     .setColor('#5865F2')
@@ -71,7 +69,6 @@ function getRulesEmbed(index = 0) {
     .setTimestamp();
 }
 
-// כפתורי דפדוף
 function getPageButtons(index = 0) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -88,7 +85,6 @@ function getPageButtons(index = 0) {
   );
 }
 
-// כפתור אימות אישי לפי מצב
 async function getAcceptButton(userId) {
   const acceptedRef = db.collection(ACCEPTED_COLLECTION).doc(userId);
   const acceptedSnap = await acceptedRef.get();
@@ -102,7 +98,6 @@ async function getAcceptButton(userId) {
   );
 }
 
-// באנר שבועי
 function getBannerPath() {
   const assetDir = path.join(__dirname, '../assets');
   const banners = fs.readdirSync(assetDir).filter(f => f.startsWith('banner') && f.endsWith('.png'));
@@ -111,7 +106,6 @@ function getBannerPath() {
   return path.join(assetDir, banners[index]);
 }
 
-// שליחה/עדכון הודעת חוקים
 async function setupRulesMessage(client) {
   const rulesMetaRef = db.doc(RULES_META_PATH);
   const channel = await client.channels.fetch(RULES_CHANNEL_ID);
@@ -140,18 +134,14 @@ async function setupRulesMessage(client) {
   console.log('✅ הודעת חוקים חדשה נשלחה.');
 }
 
-// דפדוף + אישור חוקים
 async function handleRulesInteraction(interaction) {
   const { customId, user } = interaction;
   const userId = user.id;
 
-  // ניהול זיכרון אישי זמני
-  if (!interaction.member) return;
-  if (!interaction.channel) return;
+  if (!interaction.member || !interaction.channel) return;
 
   const session = interaction.client.rulesSession || new Map();
   interaction.client.rulesSession = session;
-
   const currentIndex = session.get(userId) ?? 0;
 
   if (customId === 'rules_next' || customId === 'rules_prev') {
@@ -167,12 +157,16 @@ async function handleRulesInteraction(interaction) {
     const bannerFile = new AttachmentBuilder(getBannerPath()).setName('banner.png');
     const logoFile = new AttachmentBuilder(LOGO_PATH).setName('logo.png');
 
-    await interaction.reply({
-      embeds: [embed],
-      components: [nav, btn],
-      files: [bannerFile, logoFile],
-      ephemeral: true
-    });
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply({ embeds: [embed], components: [nav, btn], files: [bannerFile, logoFile] });
+    } else {
+      await interaction.reply({
+        embeds: [embed],
+        components: [nav, btn],
+        files: [bannerFile, logoFile],
+        ephemeral: true
+      });
+    }
     return;
   }
 
@@ -200,14 +194,22 @@ async function handleRulesInteraction(interaction) {
       console.warn(`⚠️ לא ניתן לשלוח DM ל־${user.username}`);
     }
 
-    return interaction.reply({
+    const embed = getRulesEmbed(currentIndex);
+    const nav = getPageButtons(currentIndex);
+    const btn = await getAcceptButton(userId);
+    const bannerFile = new AttachmentBuilder(getBannerPath()).setName('banner.png');
+    const logoFile = new AttachmentBuilder(LOGO_PATH).setName('logo.png');
+
+    await interaction.reply({
       content: '✅ החוקים אושרו! שמחים שאתה איתנו.',
+      embeds: [embed],
+      components: [nav, btn],
+      files: [bannerFile, logoFile],
       ephemeral: true
     });
   }
 }
 
-// עדכון שבועי
 function startWeeklyRulesUpdate(client) {
   const cron = require('node-cron');
   cron.schedule('0 5 * * 0', async () => {

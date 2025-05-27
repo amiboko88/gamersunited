@@ -29,7 +29,6 @@
     "firebase-admin": "^13.4.0",
     "google-tts-api": "^2.0.2",
     "node-cron": "^4.0.7",
-    "node-fetch": "^3.3.2",
     "openai": "^4.28.3",
     "opusscript": "^0.0.8",
     "play-dl": "^1.9.7",

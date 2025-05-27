@@ -2,7 +2,7 @@
 <html lang="he">
 <head>
   <meta charset="UTF-8" />
-  <title>GAMERS UNITED IL - לוח מצטיינים</title>
+  <title>UNITED IL - לוח מצטיינים</title>
   <style>
     html, body {
       margin: 0;
@@ -26,7 +26,7 @@
     }
 
     h1 {
-      font-size: 72px;
+      font-size: 76px;
       text-align: center;
       color: #ffcc00;
       margin-bottom: 60px;
@@ -37,33 +37,33 @@
       flex-grow: 1;
       display: flex;
       flex-direction: column;
-      gap: 36px;
+      gap: 42px; /* ⬆ ריווח בין שחקנים */
     }
 
     .player {
       display: flex;
       align-items: center;
       background: #111;
-      border: 2px solid #333;
-      padding: 36px 48px;
-      border-radius: 20px;
-      box-shadow: 0 0 35px rgba(255, 204, 0, 0.25);
-      font-size: 30px;
+      border: 3px solid #333;
+      padding: 48px 64px; /* ⬆ יותר ריווח */
+      border-radius: 24px;
+      box-shadow: 0 0 45px rgba(255, 204, 0, 0.3);
+      font-size: 36px; /* ⬆ גודל בסיס */
       position: relative;
     }
 
     .player.gold {
       border-color: gold;
       background: #1f1f1f;
-      box-shadow: 0 0 45px rgba(255, 215, 0, 0.4);
+      box-shadow: 0 0 55px rgba(255, 215, 0, 0.5);
     }
 
     .avatar {
-      width: 108px;
-      height: 108px;
+      width: 128px; /* ⬆ אוואטר גדול יותר */
+      height: 128px;
       border-radius: 50%;
       border: 4px solid #444;
-      margin-left: 32px;
+      margin-left: 40px;
       background-size: cover;
       background-position: center;
     }
@@ -74,40 +74,40 @@
     }
 
     .name {
-      font-size: 38px;
+      font-size: 52px; /* ⬆ שדרוג משמעותי לשם */
       font-weight: bold;
       color: #fff;
     }
 
     .details {
-      font-size: 26px;
+      font-size: 36px; /* ⬆ יותר בולט */
       color: #ccc;
-      margin-top: 8px;
+      margin-top: 12px;
     }
 
     .position {
-      margin-right: 20px;
+      margin-right: 24px;
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 60px;
-      height: 60px;
+      width: 72px;
+      height: 72px;
     }
 
     .position img {
-      width: 48px;
-      height: 48px;
+      width: 64px; /* ⬆ מדליה גדולה יותר */
+      height: 64px;
     }
 
     .position span {
-      font-size: 30px;
+      font-size: 40px;
       font-weight: bold;
       color: #999;
     }
 
     footer {
       text-align: center;
-      font-size: 22px;
+      font-size: 24px;
       color: #777;
       margin-top: 40px;
     }
@@ -115,9 +115,9 @@
 </head>
 <body>
   <div class="container">
-    <h1>מצטייני השבוע - GAMERS UNITED IL</h1>
+    <h1>מצטייני השבוע - UNITED IL</h1>
     <div class="leaderboard">
-      <!-- שורות המשתמשים מוזרקות כאן ע"י renderLeaderboardImage -->
+      <!-- שורות המשתמשים מוזרקות כאן -->
     </div>
     <footer>נוצר אוטומטית על ידי שמעון הבוט – שבת ב־20:00</footer>
   </div>

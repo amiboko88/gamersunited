@@ -1,2 +1,5 @@
+[phases.setup]
+nixpkgs = ["nodejs-20_x", "npm"]
+
 [variables]
-RAILWAY_NODE_VERSION = "20.18.1"
+NODE_VERSION = "20.18.1"

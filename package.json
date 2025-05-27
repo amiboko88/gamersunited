@@ -4,7 +4,7 @@
   "description": "FIFO Discord Bot - Gamers United IL",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js & node shimonTelegram.js"
   },
   "keywords": [
     "discord",

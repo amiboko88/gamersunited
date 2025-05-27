@@ -13,7 +13,9 @@ function calculateScore(data) {
     (data.slashUsed || 0) * 3 +
     (data.soundsUsed || 0) * 2 +
     (data.smartReplies || 0) * 1 +
-    (data.rsvpCount || 0) * 2
+    (data.rsvpCount || 0) * 2 +
+    (data.mvpWins || 0) * 5 +
+    (data.joinStreak || 0) * 3
   );
 }
 
@@ -23,7 +25,10 @@ async function fetchTopUsers(limit = 10) {
   const users = [];
   snapshot.forEach(doc => {
     const data = doc.data();
-    users.push({ userId: doc.id, score: calculateScore(data), ...data });
+    const score = calculateScore(data);
+    if (score > 0) {
+      users.push({ userId: doc.id, score, ...data });
+    }
   });
 
   return users.sort((a, b) => b.score - a.score).slice(0, limit);
@@ -75,17 +80,17 @@ async function sendLeaderboardEmbed(client) {
     const member = members.get(user.userId);
     const name = member?.displayName || 'Unknown';
     const prefix = medals[i] || `**${i + 1}.**`;
-    const pointsText = `— ${user.score} נקודות`;
-    return `${prefix} ${name} ${pointsText}`;
+    const pointsText = `${user.score} pts`;
+    return `${prefix} ${pointsText} — ${name}`;
   });
 
   const description =
+    `🏆 **מצטייני השבוע בקהילה** 🏆\n\n` +
     `💥 השבוע צברו המשתמשים הפעילים יחד סך של ${totalPoints} נקודות! 💥\n\n` +
     `🎮 המשתמשים הפעילים ביותר השבוע בקהילת GAMERS UNITED IL:\n\n` +
     lines.join('\n\n');
 
   const embed = new EmbedBuilder()
-    .setTitle('🏆 מצטייני השבוע בקהילה 🏆')
     .setDescription(description)
     .setColor(0xffcc00)
     .setImage(`attachment://${path.basename(imagePath)}`)
@@ -103,7 +108,7 @@ async function sendLeaderboardEmbed(client) {
 
   const sentMessage = await channel.send({ embeds: [embed], files: [fileImage, fileLogo] });
 
-  // 🎯 ריאקשן אוטומטי של מדליה
+  // 🏅 ריאקשן אוטומטי
   await sentMessage.react('🏅');
 
   return true;

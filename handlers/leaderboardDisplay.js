@@ -3,7 +3,8 @@ const db = require('../utils/firebase');
 const { renderLeaderboardImage } = require('./leaderboardRenderer');
 const path = require('path');
 
-const CHANNEL_ID = '1375415570937151519'; // עדכן אם ישתנה
+// עדכן את מזהה הערוץ שלך כאן
+const CHANNEL_ID = '1375415570937151519';
 
 function calculateScore(data) {
   return (
@@ -21,6 +22,7 @@ function calculateScore(data) {
 async function fetchTopUsers(limit = 10) {
   const snapshot = await db.collection('userStats').get();
   const users = [];
+
   snapshot.forEach(doc => {
     const data = doc.data();
     const score = calculateScore(data);
@@ -28,51 +30,61 @@ async function fetchTopUsers(limit = 10) {
       users.push({ userId: doc.id, score, ...data });
     }
   });
+
   return users.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
 async function sendLeaderboardEmbed(client) {
-  const topUsers = await fetchTopUsers();
-  if (!topUsers.length) {
-    console.log('ℹ️ אין משתמשים פעילים ל־Leaderboard.');
+  try {
+    const topUsers = await fetchTopUsers();
+
+    if (!topUsers.length) {
+      console.log('ℹ️ אין משתמשים פעילים ל־Leaderboard.');
+      return false;
+    }
+
+    const guild = await client.guilds.fetch(process.env.GUILD_ID);
+    const members = await guild.members.fetch();
+
+    const enrichedUsers = topUsers.map(user => {
+      const member = members.get(user.userId);
+      return {
+        name: member?.displayName || 'Unknown',
+        avatarURL: member?.displayAvatarURL({ extension: 'png', size: 128 }) || '',
+        score: user.score,
+        mvpWins: user.mvpWins || 0,
+        joinStreak: user.joinStreak || 0
+      };
+    });
+
+    const imagePath = await renderLeaderboardImage(enrichedUsers);
+    const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
+
+    if (!channel) {
+      console.error('❌ לא נמצא ערוץ עם ID:', CHANNEL_ID);
+      return false;
+    }
+
+    // 🖼️ שליחת תמונת פתיחה
+    const introImagePath = path.join(__dirname, '../assets/leaderboard_intro.png');
+    const introImage = new AttachmentBuilder(introImagePath);
+    await channel.send({ files: [introImage] });
+
+    // 🖼️ שליחת לוח הפעילות
+    const leaderboardImage = new AttachmentBuilder(imagePath);
+    const message = await channel.send({
+      content: 'לוח הפעילות השבועי 📸',
+      files: [leaderboardImage]
+    });
+
+    await message.react('🏅');
+    console.log('✅ לוח הפעילות נשלח בהצלחה.');
+    return true;
+
+  } catch (error) {
+    console.error('❌ שגיאה בשליחת Leaderboard:', error);
     return false;
   }
-
-  const guild = await client.guilds.fetch(process.env.GUILD_ID);
-  const members = await guild.members.fetch();
-
-  const enrichedUsers = topUsers.map(user => {
-    const member = members.get(user.userId);
-    return {
-      name: member?.displayName || 'Unknown',
-      avatarURL: member?.displayAvatarURL({ extension: 'png', size: 128 }) || '',
-      score: user.score,
-      mvpWins: user.mvpWins || 0,
-      joinStreak: user.joinStreak || 0
-    };
-  });
-
-  const imagePath = await renderLeaderboardImage(enrichedUsers);
-  const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
-  if (!channel) {
-    console.error('❌ לא נמצא ערוץ עם ID:', CHANNEL_ID);
-    return false;
-  }
-
-  // 🖼️ שליחת תמונת פתיחה קבועה
-  const introImagePath = path.join(__dirname, '../assets/leaderboard_intro.png');
-  const introImage = new AttachmentBuilder(introImagePath);
-  await channel.send({ files: [introImage] });
-
-  // 🖼️ שליחת לוח הפעילות
-  const leaderboardImage = new AttachmentBuilder(imagePath);
-  const message = await channel.send({
-    content: 'לוח הפעילות השבועי 📸',
-    files: [leaderboardImage]
-  });
-
-  await message.react('🏅');
-  return true;
 }
 
 module.exports = { sendLeaderboardEmbed };

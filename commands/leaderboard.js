@@ -1,26 +1,31 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+// 📁 commands/leaderboard.js
+
+const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const { sendLeaderboardEmbed } = require('../handlers/leaderboardDisplay');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('לוח_פעילות')
     .setDescription('🏆 מציג את לוח הפעילות השבועי של הקהילה')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator), // ✅ מנהלים בלבד
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator), // ✅ למנהלים בלבד
 
   async execute(interaction) {
     try {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-      const sent = await sendLeaderboardEmbed(interaction.client);
+      const success = await sendLeaderboardEmbed(interaction.client);
 
-      if (sent) {
-        await interaction.editReply('✅ לוח הפעילות נשלח בהצלחה לערוץ המיועד.');
+      if (success) {
+        await interaction.editReply('✅ לוח הפעילות נשלח בהצלחה לערוץ הפעילות!');
+        console.log(`🟢 Slash /לוח_פעילות הופעל ע"י ${interaction.user.tag}`);
       } else {
-        await interaction.editReply('⚠️ לוח הפעילות לא נשלח – ייתכן שאין נתונים או בעיה בקובץ.');
+        await interaction.editReply('⚠️ אין מספיק נתונים השבוע ליצירת לוח פעילות.');
+        console.log(`ℹ️ Slash /לוח_פעילות הופעל – אך אין משתמשים פעילים להצגה.`);
       }
+
     } catch (err) {
-      console.error('❌ שגיאה בשליחת לוח פעילות:', err);
-      await interaction.editReply('❌ שגיאה בשליחת לוח הפעילות. בדוק את הלוג.');
+      console.error('❌ שגיאה בעת ביצוע /לוח_פעילות:', err);
+      await interaction.editReply('❌ אירעה שגיאה בשליחת לוח הפעילות. ראה לוג לפרטים.');
     }
   }
 };

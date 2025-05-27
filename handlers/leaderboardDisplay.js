@@ -5,7 +5,6 @@ const path = require('path');
 
 const CHANNEL_ID = '1375415570937151519';
 const IMAGES_DIR = path.join(__dirname, '../images/leaderboard');
-const TOTAL_IMAGES = 10;
 
 function calculateScore(data) {
   return (
@@ -33,8 +32,24 @@ async function fetchTopUsers(limit = 10) {
 function getImageForCurrentWeek() {
   const now = new Date();
   const week = Math.ceil((((now - new Date(now.getFullYear(), 0, 1)) / 86400000) + 1) / 7);
-  const index = ((week - 1) % TOTAL_IMAGES) + 1;
-  return path.join(IMAGES_DIR, `leaderboard${index}.png`);
+
+  const availableImages = fs.readdirSync(IMAGES_DIR)
+    .filter(file => /^leaderboard\d+\.png$/.test(file))
+    .sort((a, b) => {
+      const numA = parseInt(a.match(/\d+/)[0], 10);
+      const numB = parseInt(b.match(/\d+/)[0], 10);
+      return numA - numB;
+    });
+
+  if (!availableImages.length) {
+    console.warn('⚠️ אין בכלל תמונות בתיקיית Leaderboard.');
+    return null;
+  }
+
+  const index = (week - 1) % availableImages.length;
+  const chosenFile = availableImages[index];
+  console.log(`🖼️ תמונת Leaderboard שנבחרה לשבוע ${week}: ${chosenFile}`);
+  return path.join(IMAGES_DIR, chosenFile);
 }
 
 async function sendLeaderboardEmbed(client) {
@@ -45,8 +60,8 @@ async function sendLeaderboardEmbed(client) {
   }
 
   const imagePath = getImageForCurrentWeek();
-  if (!fs.existsSync(imagePath)) {
-    console.warn('⚠️ תמונת Leaderboard לא נמצאה:', imagePath);
+  if (!imagePath || !fs.existsSync(imagePath)) {
+    console.warn('⚠️ תמונת Leaderboard לא נמצאה או לא קיימת:', imagePath);
     return false;
   }
 

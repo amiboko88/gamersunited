@@ -2,10 +2,16 @@ const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
 
-const medalPaths = {
-  gold: path.join(__dirname, '../assets/gold_medal.png'),
-  silver: path.join(__dirname, '../assets/silver_medal.png'),
-  bronze: path.join(__dirname, '../assets/bronze_medal.png')
+// פונקציה להמרת קובץ PNG ל־Base64
+function imageToBase64(filePath) {
+  const file = fs.readFileSync(filePath);
+  return `data:image/png;base64,${file.toString('base64')}`;
+}
+
+const medalBase64 = {
+  gold: imageToBase64(path.join(__dirname, '../assets/gold_medal.png')),
+  silver: imageToBase64(path.join(__dirname, '../assets/silver_medal.png')),
+  bronze: imageToBase64(path.join(__dirname, '../assets/bronze_medal.png')),
 };
 
 async function renderLeaderboardImage(users) {
@@ -14,9 +20,9 @@ async function renderLeaderboardImage(users) {
 
   const userBlocks = users.map((user, index) => {
     let medalImg = '';
-    if (index === 0) medalImg = `<img src="file://${medalPaths.gold}" alt="🥇" />`;
-    else if (index === 1) medalImg = `<img src="file://${medalPaths.silver}" alt="🥈" />`;
-    else if (index === 2) medalImg = `<img src="file://${medalPaths.bronze}" alt="🥉" />`;
+    if (index === 0) medalImg = `<img src="${medalBase64.gold}" alt="🥇" />`;
+    else if (index === 1) medalImg = `<img src="${medalBase64.silver}" alt="🥈" />`;
+    else if (index === 2) medalImg = `<img src="${medalBase64.bronze}" alt="🥉" />`;
     else medalImg = `<span>#${index + 1}</span>`;
 
     const goldClass = index === 0 ? ' gold' : '';
@@ -48,6 +54,7 @@ async function renderLeaderboardImage(users) {
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: 'networkidle0' });
   await page.setViewport({ width: 1920, height: 1400 });
+
   const imagePath = path.join(__dirname, '../assets/leaderboard.png');
   await page.screenshot({ path: imagePath, fullPage: true });
   await browser.close();

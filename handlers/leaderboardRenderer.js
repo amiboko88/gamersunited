@@ -29,7 +29,10 @@ async function renderLeaderboardImage(users) {
   html = html.replace(/<div class="leaderboard">[\s\S]*?<\/div>\n\s*<footer>/, `<div class="leaderboard">\n${userBlocks}\n</div>\n  <footer>`);
 
   // פתיחת דפדפן ויצירת התמונה
-  const browser = await puppeteer.launch({ headless: "new" });
+  const browser = await puppeteer.launch({
+  headless: "new",
+  args: ['--no-sandbox', '--disable-setuid-sandbox']
+});
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: 'networkidle0' });
   await page.setViewport({ width: 1000, height: 1000 });

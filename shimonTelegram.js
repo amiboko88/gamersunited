@@ -10,9 +10,10 @@ const registerTelegramCommands = require("./telegramCommands");
 const bot = new Bot(process.env.TELEGRAM_TOKEN || "7208539571:AAHMHg2K6-pa1FgmNoeY4627c49hxgFdBHU");
 
 // אתחול Firestore
+
 if (!admin.apps.length) {
   admin.initializeApp({
-    credential: admin.credential.cert(JSON.parse(process.env.GOOGLE_CREDENTIALS))
+    credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_CREDENTIAL))
   });
 }
 const db = admin.firestore();

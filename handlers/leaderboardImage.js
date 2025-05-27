@@ -1,11 +1,6 @@
-const { createCanvas, loadImage, registerFont } = require('@napi-rs/canvas');
+const { createCanvas, loadImage } = require('@napi-rs/canvas');
 const { request } = require('undici');
 const path = require('path');
-
-// 📥 טעינת פונט מתוך assets
-registerFont(path.join(__dirname, '../assets/NotoSansHebrew-Bold.ttf'), {
-  family: 'NotoSansHebrew',
-});
 
 async function generateLeaderboardImage(users, members) {
   const width = 900;
@@ -20,7 +15,7 @@ async function generateLeaderboardImage(users, members) {
   ctx.fillRect(0, 0, width, height);
 
   // 🟡 כותרת עליונה
-  ctx.font = '32px NotoSansHebrew';
+  ctx.font = 'bold 32px sans-serif';
   ctx.fillStyle = '#ffcc00';
   ctx.fillText('🏆 מצטייני השבוע – GAMERS UNITED IL 🏆', 40, 50);
 
@@ -33,7 +28,7 @@ async function generateLeaderboardImage(users, members) {
     const name = member?.displayName || 'Unknown';
     const medal = medals[i] || `${i + 1}.`;
 
-    // 🖼️ ציור אוואטר
+    // 🖼️ אוואטר
     try {
       const avatarURL = member?.displayAvatarURL({ extension: 'png', size: 128 }) || '';
       const { body } = await request(avatarURL);
@@ -50,22 +45,22 @@ async function generateLeaderboardImage(users, members) {
     }
 
     // 👤 שם + ניקוד
-    ctx.font = '24px NotoSansHebrew';
+    ctx.font = 'bold 24px sans-serif';
     ctx.fillStyle = '#ffffff';
     ctx.fillText(`${medal} ${name} — ${user.score} pts`, 140, y + 35);
 
-    // 🏷️ תגיות נוספות
+    // 🏷️ תגיות
     const tags = [];
     if (user.mvpWins) tags.push(`🏆 x${user.mvpWins}`);
     if (user.joinStreak) tags.push(`🔥 ${user.joinStreak}d`);
     if (tags.length) {
-      ctx.font = '20px NotoSansHebrew';
+      ctx.font = '20px sans-serif';
       ctx.fillStyle = '#dddddd';
       ctx.fillText(tags.join('   '), 140, y + 65);
     }
   }
 
-  // 🖼️ לוגו בפינה הימנית התחתונה
+  // 🖼️ לוגו קטן בפינה
   try {
     const logoPath = path.join(__dirname, '../assets/logo.png');
     const logo = await loadImage(logoPath);
@@ -74,7 +69,7 @@ async function generateLeaderboardImage(users, members) {
     ctx.drawImage(logo, width - size - 20, height - size - 20, size, size);
     ctx.globalAlpha = 1;
   } catch (err) {
-    console.warn('⚠️ לא נמצא לוגו בפינה');
+    console.warn('⚠️ לוגו לא נטען בפינה');
   }
 
   return canvas.toBuffer('image/png');

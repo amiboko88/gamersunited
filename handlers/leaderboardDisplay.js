@@ -1,8 +1,7 @@
-const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
+const { AttachmentBuilder } = require('discord.js');
 const db = require('../utils/firebase');
-const fs = require('fs');
+const { renderLeaderboardImage } = require('./leaderboardRenderer');
 const path = require('path');
-const { generateLeaderboardImage } = require('./leaderboardImage');
 
 const CHANNEL_ID = '1375415570937151519';
 
@@ -41,44 +40,33 @@ async function sendLeaderboardEmbed(client) {
 
   const guild = await client.guilds.fetch(process.env.GUILD_ID);
   const members = await guild.members.fetch();
-  const totalPoints = topUsers.reduce((sum, u) => sum + u.score, 0);
 
-  const medals = ['🥇', '🥈', '🥉'];
-  const lines = topUsers.map((user, i) => {
+  // יצירת רשימת משתמשים עם אוואטרים
+  const enrichedUsers = topUsers.map(user => {
     const member = members.get(user.userId);
-    const name = member?.displayName || 'Unknown';
-    const prefix = medals[i] || `**${i + 1}.**`;
-    const pointsText = `${user.score} pts`;
-    return `${prefix} ${name} — ${pointsText}`;
+    return {
+      name: member?.displayName || 'Unknown',
+      avatarURL: member?.displayAvatarURL({ extension: 'png', size: 128 }) || '',
+      score: user.score,
+      mvpWins: user.mvpWins || 0,
+      joinStreak: user.joinStreak || 0
+    };
   });
 
-  const canvasBuffer = await generateLeaderboardImage(topUsers, members);
-  const canvasAttachment = new AttachmentBuilder(canvasBuffer, { name: 'leaderboard.png' });
+  // יצירת התמונה דרך Puppeteer
+  const imagePath = await renderLeaderboardImage(enrichedUsers);
 
-  const embed = new EmbedBuilder()
-    .setColor(0xffcc00)
-    .setImage('attachment://leaderboard.png')
-    .setThumbnail('attachment://logo.png')
-    .setTimestamp()
-    .setDescription(
-      `🏆 **מצטייני השבוע בקהילה** 🏆\n\n` +
-      `💥 המשתמשים הפעילים צברו השבוע **${totalPoints}** נקודות! 💥\n\n` +
-      `🎮 המשתמשים הבולטים ביותר בקהילת **GAMERS UNITED IL**:\n\n` +
-      lines.join('\n\n')
-    );
-
-  const logoPath = path.join(__dirname, '../assets/logo.png');
-  const logoAttachment = new AttachmentBuilder(logoPath);
-
+  const image = new AttachmentBuilder(imagePath);
   const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
+
   if (!channel) {
     console.error('❌ לא נמצא ערוץ עם ID:', CHANNEL_ID);
     return false;
   }
 
   const message = await channel.send({
-    embeds: [embed],
-    files: [canvasAttachment, logoAttachment]
+    content: '🏆 לוח פעילות שבועי 📸',
+    files: [image]
   });
 
   await message.react('🏅');

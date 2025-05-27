@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+  <meta charset="UTF-8" />
+  <title>מצטייני השבוע - GAMERS UNITED IL</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 40px;
+      font-family: 'Segoe UI', sans-serif;
+      direction: rtl;
+      background: linear-gradient(145deg, #0e0e0e, #1a1a1a);
+      color: #fff;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: auto;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 36px;
+      color: #ffcc00;
+      margin-bottom: 40px;
+    }
+
+    .leaderboard {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .player {
+      display: flex;
+      align-items: center;
+      background: #111;
+      border: 2px solid #333;
+      padding: 16px 24px;
+      border-radius: 12px;
+      box-shadow: 0 0 15px rgba(255, 204, 0, 0.2);
+    }
+
+    .player.gold {
+      border-color: gold;
+      background: #222;
+    }
+
+    .avatar {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: 2px solid #444;
+      margin-left: 16px;
+      background-size: cover;
+      background-position: center;
+    }
+
+    .info {
+      text-align: right;
+      flex: 1;
+    }
+
+    .name {
+      font-size: 20px;
+      font-weight: bold;
+    }
+
+    .details {
+      font-size: 16px;
+      color: #ccc;
+    }
+
+    .badge {
+      font-size: 18px;
+      margin-right: 12px;
+    }
+
+    footer {
+      margin-top: 50px;
+      font-size: 14px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🏆 מצטייני השבוע - GAMERS UNITED IL</h1>
+    <div class="leaderboard">
+      <div class="player gold">
+        <div class="avatar" style="background-image: url('https://via.placeholder.com/64x64?text=1');"></div>
+        <div class="info">
+          <div class="name">Kalimero</div>
+          <div class="details">64 נקודות • MVP x2 • 🔥 רצף: 5 ימים</div>
+        </div>
+        <div class="badge">🥇</div>
+      </div>
+      <div class="player">
+        <div class="avatar" style="background-image: url('https://via.placeholder.com/64x64?text=2');"></div>
+        <div class="info">
+          <div class="name">Matan</div>
+          <div class="details">42 נקודות • 🔥 רצף: 3 ימים</div>
+        </div>
+        <div class="badge">🥈</div>
+      </div>
+      <div class="player">
+        <div class="avatar" style="background-image: url('https://via.placeholder.com/64x64?text=3');"></div>
+        <div class="info">
+          <div class="name">Gili</div>
+          <div class="details">37 נקודות</div>
+        </div>
+        <div class="badge">🥉</div>
+      </div>
+    </div>
+    <footer>נוצר אוטומטית על ידי שמעון הבוט • שבת ב-20:00</footer>
+  </div>
+</body>
+</html>

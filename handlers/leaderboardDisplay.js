@@ -2,9 +2,9 @@ const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const db = require('../utils/firebase');
 const fs = require('fs');
 const path = require('path');
+const { generateLeaderboardImage } = require('./leaderboardImage');
 
 const CHANNEL_ID = '1375415570937151519';
-const IMAGES_DIR = path.join(__dirname, '../images/leaderboard');
 
 function calculateScore(data) {
   return (
@@ -21,7 +21,6 @@ function calculateScore(data) {
 
 async function fetchTopUsers(limit = 10) {
   const snapshot = await db.collection('userStats').get();
-
   const users = [];
   snapshot.forEach(doc => {
     const data = doc.data();
@@ -30,31 +29,7 @@ async function fetchTopUsers(limit = 10) {
       users.push({ userId: doc.id, score, ...data });
     }
   });
-
   return users.sort((a, b) => b.score - a.score).slice(0, limit);
-}
-
-function getImageForCurrentWeek() {
-  const now = new Date();
-  const week = Math.ceil((((now - new Date(now.getFullYear(), 0, 1)) / 86400000) + 1) / 7);
-
-  const availableImages = fs.readdirSync(IMAGES_DIR)
-    .filter(file => /^leaderboard\d+\.png$/.test(file))
-    .sort((a, b) => {
-      const numA = parseInt(a.match(/\d+/)[0], 10);
-      const numB = parseInt(b.match(/\d+/)[0], 10);
-      return numA - numB;
-    });
-
-  if (!availableImages.length) {
-    console.warn('⚠️ אין בכלל תמונות בתיקיית Leaderboard.');
-    return null;
-  }
-
-  const index = (week - 1) % availableImages.length;
-  const chosenFile = availableImages[index];
-  console.log(`🖼️ תמונת Leaderboard שנבחרה לשבוע ${week}: ${chosenFile}`);
-  return path.join(IMAGES_DIR, chosenFile);
 }
 
 async function sendLeaderboardEmbed(client) {
@@ -64,18 +39,11 @@ async function sendLeaderboardEmbed(client) {
     return false;
   }
 
-  const imagePath = getImageForCurrentWeek();
-  if (!imagePath || !fs.existsSync(imagePath)) {
-    console.warn('⚠️ תמונת Leaderboard לא נמצאה או לא קיימת:', imagePath);
-    return false;
-  }
-
   const guild = await client.guilds.fetch(process.env.GUILD_ID);
   const members = await guild.members.fetch();
-
-  const medals = ['🥇', '🥈', '🥉'];
   const totalPoints = topUsers.reduce((sum, u) => sum + u.score, 0);
 
+  const medals = ['🥇', '🥈', '🥉'];
   const lines = topUsers.map((user, i) => {
     const member = members.get(user.userId);
     const name = member?.displayName || 'Unknown';
@@ -84,21 +52,23 @@ async function sendLeaderboardEmbed(client) {
     return `${prefix} ${pointsText} — ${name}`;
   });
 
-  const description =
-    `🏆 **מצטייני השבוע בקהילה** 🏆\n\n` +
-    `💥 השבוע צברו המשתמשים הפעילים יחד סך של ${totalPoints} נקודות! 💥\n\n` +
-    `🎮 המשתמשים הפעילים ביותר השבוע בקהילת GAMERS UNITED IL:\n\n` +
-    lines.join('\n\n');
+  const canvasBuffer = await generateLeaderboardImage(topUsers, members);
+  const canvasAttachment = new AttachmentBuilder(canvasBuffer, { name: 'leaderboard.png' });
 
   const embed = new EmbedBuilder()
-    .setDescription(description)
     .setColor(0xffcc00)
-    .setImage(`attachment://${path.basename(imagePath)}`)
+    .setImage('attachment://leaderboard.png')
     .setThumbnail('attachment://logo.png')
-    .setTimestamp();
+    .setTimestamp()
+    .setDescription(
+      `🏆 **מצטייני השבוע בקהילה** 🏆\n\n` +
+      `💥 השבוע צברו המשתמשים הפעילים יחד סך של ${totalPoints} נקודות! 💥\n\n` +
+      `🎮 המשתמשים הפעילים ביותר בקהילת GAMERS UNITED IL:\n\n` +
+      lines.join('\n\n')
+    );
 
-  const fileImage = new AttachmentBuilder(imagePath);
-  const fileLogo = new AttachmentBuilder(path.join(__dirname, '../assets/logo.png'));
+  const logoPath = path.join(__dirname, '../assets/logo.png');
+  const logoAttachment = new AttachmentBuilder(logoPath);
 
   const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
   if (!channel) {
@@ -106,11 +76,12 @@ async function sendLeaderboardEmbed(client) {
     return false;
   }
 
-  const sentMessage = await channel.send({ embeds: [embed], files: [fileImage, fileLogo] });
+  const message = await channel.send({
+    embeds: [embed],
+    files: [canvasAttachment, logoAttachment]
+  });
 
-  // 🏅 ריאקשן אוטומטי
-  await sentMessage.react('🏅');
-
+  await message.react('🏅');
   return true;
 }
 

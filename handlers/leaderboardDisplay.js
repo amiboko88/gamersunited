@@ -19,7 +19,8 @@ function calculateScore(data) {
 }
 
 async function fetchTopUsers(limit = 10) {
-  const snapshot = await db.collection('activityStats').get();
+  const snapshot = await db.collection('userStats').get();
+
   const users = [];
   snapshot.forEach(doc => {
     const data = doc.data();

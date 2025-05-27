@@ -10,11 +10,17 @@ module.exports = {
   async execute(interaction) {
     try {
       await interaction.deferReply({ ephemeral: true });
-      await sendLeaderboardEmbed(interaction.client);
-      await interaction.editReply('✅ לוח הפעילות נשלח בהצלחה לערוץ המיועד.');
+
+      const sent = await sendLeaderboardEmbed(interaction.client);
+
+      if (sent) {
+        await interaction.editReply('✅ לוח הפעילות נשלח בהצלחה לערוץ המיועד.');
+      } else {
+        await interaction.editReply('⚠️ לוח הפעילות לא נשלח – ייתכן שאין נתונים או בעיה בקובץ.');
+      }
     } catch (err) {
       console.error('❌ שגיאה בשליחת לוח פעילות:', err);
-      await interaction.editReply('⚠️ שגיאה בשליחת לוח הפעילות. ראה לוג.');
+      await interaction.editReply('❌ שגיאה בשליחת לוח הפעילות. בדוק את הלוג.');
     }
   }
 };

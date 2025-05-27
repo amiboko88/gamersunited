@@ -204,3 +204,20 @@ client.on('interactionCreate', async interaction => {
 
 // 🚀 הפעלה
 client.login(process.env.DISCORD_TOKEN);
+
+// 🧪 ניטור קריסות והודעות מערכת
+process.on('exit', (code) => {
+  console.log(`[EXIT] התהליך הסתיים עם קוד: ${code}`);
+});
+
+process.on('SIGTERM', () => {
+  console.log('[SIGTERM] התקבלה בקשת סיום מהמערכת');
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT EXCEPTION]', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[UNHANDLED REJECTION]', reason);
+});

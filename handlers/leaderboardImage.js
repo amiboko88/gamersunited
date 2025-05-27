@@ -10,12 +10,11 @@ async function generateLeaderboardImage(users, members) {
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext('2d');
 
-  // 🖼️ רקע מהתמונה שלך
-  const backgroundPath = path.join(__dirname, '../assets/logo.png');
-  const background = await loadImage(backgroundPath);
-  ctx.drawImage(background, 0, 0, width, height);
+  // 🎨 רקע כהה בהשראת צבעי הלוגו (אש/זהב)
+  ctx.fillStyle = '#140C04';
+  ctx.fillRect(0, 0, width, height);
 
-  // 🔤 כותרת
+  // 🟡 כותרת עליונה
   ctx.font = 'bold 32px Arial';
   ctx.fillStyle = '#ffcc00';
   ctx.fillText('🏆 מצטייני השבוע – GAMERS UNITED IL 🏆', 40, 50);
@@ -29,45 +28,49 @@ async function generateLeaderboardImage(users, members) {
     const name = member?.displayName || 'Unknown';
     const medal = medals[i] || `${i + 1}.`;
 
-    // 🖼️ אוואטר
-    const avatarURL = member?.displayAvatarURL({ extension: 'png', size: 128 }) || '';
-    const { body } = await request(avatarURL);
-    const avatar = await loadImage(await body.arrayBuffer());
+    // 🎭 אוואטר
+    try {
+      const avatarURL = member?.displayAvatarURL({ extension: 'png', size: 128 }) || '';
+      const { body } = await request(avatarURL);
+      const avatar = await loadImage(await body.arrayBuffer());
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(80, y + 40, 35, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.drawImage(avatar, 45, y + 5, 70, 70);
-    ctx.restore();
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(80, y + 40, 35, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(avatar, 45, y + 5, 70, 70);
+      ctx.restore();
+    } catch (err) {
+      console.warn(`⚠️ שגיאה בטעינת אוואטר עבור ${name}`);
+    }
 
-    // 👤 שם
+    // 👤 שם + ניקוד
     ctx.font = 'bold 24px Arial';
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(`${medal} ${name}`, 140, y + 35);
+    ctx.fillText(`${medal} ${name} — ${user.score} pts`, 140, y + 35);
 
-    // 🟢 ניקוד
-    ctx.font = '20px Arial';
-    ctx.fillStyle = '#00ff88';
-    ctx.fillText(`${user.score} pts`, 140, y + 65);
-
-    // 🏆 תגיות
+    // 🏷️ תגיות נוספות
     const tags = [];
     if (user.mvpWins) tags.push(`🏆 x${user.mvpWins}`);
     if (user.joinStreak) tags.push(`🔥 ${user.joinStreak}d`);
     if (tags.length) {
       ctx.font = '18px Arial';
       ctx.fillStyle = '#dddddd';
-      ctx.fillText(tags.join('  '), 320, y + 65);
+      ctx.fillText(tags.join('   '), 140, y + 65);
     }
   }
 
-  // 🖼️ Watermark – לוגו בפינה
-  const logo = await loadImage(backgroundPath);
-  const logoSize = 50;
-  ctx.globalAlpha = 0.6;
-  ctx.drawImage(logo, width - logoSize - 20, height - logoSize - 20, logoSize, logoSize);
-  ctx.globalAlpha = 1;
+  // 🖼️ לוגו קטן בפינה הימנית התחתונה
+  try {
+    const logoPath = path.join(__dirname, '../assets/logo.png');
+    const logo = await loadImage(logoPath);
+    const size = 50;
+    ctx.globalAlpha = 0.7;
+    ctx.drawImage(logo, width - size - 20, height - size - 20, size, size);
+    ctx.globalAlpha = 1;
+  } catch (err) {
+    console.warn('⚠️ לא נמצא לוגו בפינה');
+  }
 
   return canvas.toBuffer('image/png');
 }

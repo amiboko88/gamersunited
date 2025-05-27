@@ -68,15 +68,25 @@ async function sendLeaderboardEmbed(client) {
   const guild = await client.guilds.fetch(process.env.GUILD_ID);
   const members = await guild.members.fetch();
 
+  const medals = ['🥇', '🥈', '🥉'];
+  const totalPoints = topUsers.reduce((sum, u) => sum + u.score, 0);
+
   const lines = topUsers.map((user, i) => {
     const member = members.get(user.userId);
     const name = member?.displayName || 'Unknown';
-    return `**${i + 1}.** ${name} — ${user.score} נק׳`;
+    const prefix = medals[i] || `**${i + 1}.**`;
+    const pointsText = `— ${user.score} נקודות`;
+    return `${prefix} ${name} ${pointsText}`;
   });
+
+  const description =
+    `💥 השבוע צברו המשתמשים הפעילים יחד סך של ${totalPoints} נקודות! 💥\n\n` +
+    `🎮 המשתמשים הפעילים ביותר השבוע בקהילת GAMERS UNITED IL:\n\n` +
+    lines.join('\n\n');
 
   const embed = new EmbedBuilder()
     .setTitle('🏆 מצטייני השבוע בקהילה 🏆')
-    .setDescription(lines.join('\n'))
+    .setDescription(description)
     .setColor(0xffcc00)
     .setImage(`attachment://${path.basename(imagePath)}`)
     .setThumbnail('attachment://logo.png')
@@ -91,7 +101,11 @@ async function sendLeaderboardEmbed(client) {
     return false;
   }
 
-  await channel.send({ embeds: [embed], files: [fileImage, fileLogo] });
+  const sentMessage = await channel.send({ embeds: [embed], files: [fileImage, fileLogo] });
+
+  // 🎯 ריאקשן אוטומטי של מדליה
+  await sentMessage.react('🏅');
+
   return true;
 }
 

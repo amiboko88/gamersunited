@@ -7,7 +7,7 @@ async function renderLeaderboardImage(users) {
   let html = fs.readFileSync(templatePath, 'utf8');
 
   const userBlocks = users.map((user, index) => {
-    const badge = ['🥇', '🥈', '🥉'][index] || '';
+    const medal = ['🥇', '🥈', '🥉'][index] || `#${index + 1}`;
     const goldClass = index === 0 ? ' gold' : '';
     const streak = user.joinStreak ? `• 🔥 רצף: ${user.joinStreak} ימים` : '';
     const mvp = user.mvpWins ? `• MVP x${user.mvpWins}` : '';
@@ -20,7 +20,7 @@ async function renderLeaderboardImage(users) {
           <div class="name">${user.name}</div>
           <div class="details">${details}</div>
         </div>
-        <div class="badge">${badge}</div>
+        <div class="position">${medal}</div>
       </div>`;
   }).join('\n');
 
@@ -33,7 +33,7 @@ async function renderLeaderboardImage(users) {
 
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: 'networkidle0' });
-  await page.setViewport({ width: 1920, height: 1080 });
+  await page.setViewport({ width: 1920, height: 1400 });
 
   const imagePath = path.join(__dirname, '../assets/leaderboard.png');
   await page.screenshot({ path: imagePath, fullPage: true });

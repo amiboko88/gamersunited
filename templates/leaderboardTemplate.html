@@ -8,7 +8,7 @@
       margin: 0;
       padding: 0;
       width: 1920px;
-      height: 1080px;
+      height: 1400px;
       font-family: 'Segoe UI', sans-serif;
       direction: rtl;
       background: linear-gradient(135deg, #0d0d0d, #1a1a1a);
@@ -18,7 +18,7 @@
     .container {
       width: 100%;
       height: 100%;
-      padding: 60px 100px;
+      padding: 80px 100px;
       box-sizing: border-box;
       display: flex;
       flex-direction: column;
@@ -26,18 +26,18 @@
     }
 
     h1 {
-      font-size: 64px;
+      font-size: 72px;
       text-align: center;
       color: #ffcc00;
-      margin-bottom: 40px;
-      text-shadow: 2px 2px 10px #000;
+      margin-bottom: 60px;
+      text-shadow: 3px 3px 12px #000;
     }
 
     .leaderboard {
       flex-grow: 1;
       display: flex;
       flex-direction: column;
-      gap: 32px;
+      gap: 36px;
     }
 
     .player {
@@ -45,24 +45,25 @@
       align-items: center;
       background: #111;
       border: 2px solid #333;
-      padding: 30px 40px;
-      border-radius: 16px;
-      box-shadow: 0 0 25px rgba(255, 204, 0, 0.2);
-      font-size: 28px;
+      padding: 36px 48px;
+      border-radius: 20px;
+      box-shadow: 0 0 35px rgba(255, 204, 0, 0.25);
+      font-size: 30px;
+      position: relative;
     }
 
     .player.gold {
       border-color: gold;
       background: #1f1f1f;
-      box-shadow: 0 0 35px rgba(255, 215, 0, 0.4);
+      box-shadow: 0 0 45px rgba(255, 215, 0, 0.4);
     }
 
     .avatar {
-      width: 96px;
-      height: 96px;
+      width: 108px;
+      height: 108px;
       border-radius: 50%;
-      border: 3px solid #444;
-      margin-left: 24px;
+      border: 4px solid #444;
+      margin-left: 32px;
       background-size: cover;
       background-position: center;
     }
@@ -73,26 +74,27 @@
     }
 
     .name {
-      font-size: 32px;
+      font-size: 38px;
       font-weight: bold;
       color: #fff;
     }
 
     .details {
-      font-size: 24px;
+      font-size: 26px;
       color: #ccc;
+      margin-top: 8px;
     }
 
-    .badge {
-      font-size: 36px;
-      margin-right: 16px;
+    .position {
+      font-size: 48px;
+      margin-right: 20px;
     }
 
     footer {
       text-align: center;
-      font-size: 20px;
-      color: #666;
-      margin-top: 20px;
+      font-size: 22px;
+      color: #777;
+      margin-top: 40px;
     }
   </style>
 </head>
@@ -100,30 +102,7 @@
   <div class="container">
     <h1>🏆 מצטייני השבוע - GAMERS UNITED IL</h1>
     <div class="leaderboard">
-      <div class="player gold">
-        <div class="avatar" style="background-image: url('https://via.placeholder.com/96x96?text=1');"></div>
-        <div class="info">
-          <div class="name">Kalimero</div>
-          <div class="details">64 נקודות • MVP x2 • 🔥 רצף: 5 ימים</div>
-        </div>
-        <div class="badge">🥇</div>
-      </div>
-      <div class="player">
-        <div class="avatar" style="background-image: url('https://via.placeholder.com/96x96?text=2');"></div>
-        <div class="info">
-          <div class="name">Matan</div>
-          <div class="details">42 נקודות • 🔥 רצף: 3 ימים</div>
-        </div>
-        <div class="badge">🥈</div>
-      </div>
-      <div class="player">
-        <div class="avatar" style="background-image: url('https://via.placeholder.com/96x96?text=3');"></div>
-        <div class="info">
-          <div class="name">Gili</div>
-          <div class="details">37 נקודות</div>
-        </div>
-        <div class="badge">🥉</div>
-      </div>
+      <!-- המשתמשים יוזרקו כאן על ידי renderLeaderboardImage -->
     </div>
     <footer>📅 נוצר אוטומטית על ידי שמעון הבוט – שבת ב־20:00</footer>
   </div>

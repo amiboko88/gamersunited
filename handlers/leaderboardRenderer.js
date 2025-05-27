@@ -6,10 +6,16 @@ async function renderLeaderboardImage(users) {
   const templatePath = path.join(__dirname, '../templates/leaderboardTemplate.html');
   let html = fs.readFileSync(templatePath, 'utf8');
 
+  const medalImages = [
+    'assets/gold_medal.png',
+    'assets/silver_medal.png',
+    'assets/bronze_medal.png'
+  ];
+
   const userBlocks = users.map((user, index) => {
-    const medal = ['🥇', '🥈', '🥉'][index] || `#${index + 1}`;
+    const medalPath = medalImages[index] ? `../${medalImages[index]}` : '';
     const goldClass = index === 0 ? ' gold' : '';
-    const streak = user.joinStreak ? `• 🔥 רצף: ${user.joinStreak} ימים` : '';
+    const streak = user.joinStreak ? `• רצף: ${user.joinStreak} ימים` : '';
     const mvp = user.mvpWins ? `• MVP x${user.mvpWins}` : '';
     const details = `${user.score} נקודות ${mvp} ${streak}`.trim();
 
@@ -20,11 +26,16 @@ async function renderLeaderboardImage(users) {
           <div class="name">${user.name}</div>
           <div class="details">${details}</div>
         </div>
-        <div class="position">${medal}</div>
+        <div class="position">
+          ${medalPath ? `<img src="${medalPath}" alt="medal" />` : `<span>#${index + 1}</span>`}
+        </div>
       </div>`;
   }).join('\n');
 
-  html = html.replace(/<div class="leaderboard">[\s\S]*?<\/div>\n\s*<footer>/, `<div class="leaderboard">\n${userBlocks}\n</div>\n  <footer>`);
+  html = html.replace(
+    /<div class="leaderboard">[\s\S]*?<\/div>\n\s*<footer>/,
+    `<div class="leaderboard">\n${userBlocks}\n</div>\n  <footer>`
+  );
 
   const browser = await puppeteer.launch({
     headless: "new",

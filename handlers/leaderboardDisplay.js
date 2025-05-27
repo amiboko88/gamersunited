@@ -3,7 +3,7 @@ const db = require('../utils/firebase');
 const { renderLeaderboardImage } = require('./leaderboardRenderer');
 const path = require('path');
 
-const CHANNEL_ID = '1375415570937151519';
+const CHANNEL_ID = '1375415570937151519'; // עדכן אם ישתנה
 
 function calculateScore(data) {
   return (
@@ -52,19 +52,23 @@ async function sendLeaderboardEmbed(client) {
     };
   });
 
-  // יצירת התמונה
   const imagePath = await renderLeaderboardImage(enrichedUsers);
-  const image = new AttachmentBuilder(imagePath);
   const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
-
   if (!channel) {
     console.error('❌ לא נמצא ערוץ עם ID:', CHANNEL_ID);
     return false;
   }
 
+  // 🖼️ שליחת תמונת פתיחה קבועה
+  const introImagePath = path.join(__dirname, '../assets/leaderboard_intro.png');
+  const introImage = new AttachmentBuilder(introImagePath);
+  await channel.send({ files: [introImage] });
+
+  // 🖼️ שליחת לוח הפעילות
+  const leaderboardImage = new AttachmentBuilder(imagePath);
   const message = await channel.send({
-    content: '🏆 לוח פעילות שבועי 📸',
-    files: [image]
+    content: 'לוח הפעילות השבועי 📸',
+    files: [leaderboardImage]
   });
 
   await message.react('🏅');

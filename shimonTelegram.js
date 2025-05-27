@@ -1,7 +1,12 @@
 const { Bot, InlineKeyboard } = require("grammy");
+const { run } = require("@grammyjs/runner");
 const admin = require("firebase-admin");
 
-// יצירת הבוט עם טוקן
+const { handleTrigger } = require("./telegramTriggers");
+const { detectAndRespondToSwear } = require("./telegramCurses");
+const registerTelegramCommands = require("./telegramCommands");
+
+// יצירת הבוט עם טוקן מהסביבה
 const bot = new Bot(process.env.TELEGRAM_TOKEN || "7208539571:AAHMHg2K6-pa1FgmNoeY4627c49hxgFdBHU");
 
 // אתחול Firestore
@@ -10,14 +15,9 @@ if (!admin.apps.length) {
 }
 const db = admin.firestore();
 
-// בדיקה זמנית – להוציא chat_id
-bot.on("message", async (ctx) => {
-  console.log("✅ CHAT ID IS:", ctx.chat.id);
-});
-
-// פקודת פתיחה
+// פקודת פתיחה /start
 bot.command("start", async (ctx) => {
-  const name = ctx.from.first_name || "חבר";
+  const name = ctx.from?.first_name || "חבר";
   await ctx.reply(`שלום ${name} וברוך הבא לבוט שמעון בטלגרם 🎮`, {
     reply_markup: new InlineKeyboard()
       .text("🔥 עדכן אותי ב־MVP השבועי", "mvp_update")
@@ -32,17 +32,25 @@ bot.command("start", async (ctx) => {
   });
 });
 
-// תגובה לכפתור MVP
+// תגובות לכפתורי Inline
 bot.callbackQuery("mvp_update", async (ctx) => {
   await ctx.answerCallbackQuery();
   await ctx.reply("🏆 כרגע אין MVP זמין... בקרוב!");
 });
 
-// תגובה לכפתור סטטיסטיקות
 bot.callbackQuery("stats", async (ctx) => {
   await ctx.answerCallbackQuery();
   await ctx.reply("📊 הנתונים מהדיסקורד עוד לא מחוברים... תתכונן!");
 });
 
-// הפעלת הבוט
-bot.start();
+// זיהוי הודעות רגילות
+bot.on("message", async (ctx) => {
+  if (detectAndRespondToSwear(ctx)) return; // קללות
+  if (handleTrigger(ctx)) return;           // לינקים + מילים
+});
+
+// רישום פקודות כמו /נבואה, /צחוק וכו'
+registerTelegramCommands(bot);
+
+// הפעלת הבוט (Webhook / Polling אוטומטי לפי סביבה)
+run(bot);

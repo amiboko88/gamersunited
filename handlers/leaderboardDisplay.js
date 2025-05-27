@@ -49,7 +49,7 @@ async function sendLeaderboardEmbed(client) {
     const name = member?.displayName || 'Unknown';
     const prefix = medals[i] || `**${i + 1}.**`;
     const pointsText = `${user.score} pts`;
-    return `${prefix} ${pointsText} — ${name}`;
+    return `${prefix} ${name} — ${pointsText}`;
   });
 
   const canvasBuffer = await generateLeaderboardImage(topUsers, members);
@@ -62,8 +62,8 @@ async function sendLeaderboardEmbed(client) {
     .setTimestamp()
     .setDescription(
       `🏆 **מצטייני השבוע בקהילה** 🏆\n\n` +
-      `💥 השבוע צברו המשתמשים הפעילים יחד סך של ${totalPoints} נקודות! 💥\n\n` +
-      `🎮 המשתמשים הפעילים ביותר בקהילת GAMERS UNITED IL:\n\n` +
+      `💥 המשתמשים הפעילים צברו השבוע **${totalPoints}** נקודות! 💥\n\n` +
+      `🎮 המשתמשים הבולטים ביותר בקהילת **GAMERS UNITED IL**:\n\n` +
       lines.join('\n\n')
     );
 

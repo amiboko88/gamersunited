@@ -11,7 +11,9 @@ const bot = new Bot(process.env.TELEGRAM_TOKEN || "7208539571:AAHMHg2K6-pa1FgmNo
 
 // אתחול Firestore
 if (!admin.apps.length) {
-  admin.initializeApp();
+  admin.initializeApp({
+    credential: admin.credential.cert(JSON.parse(process.env.GOOGLE_CREDENTIALS))
+  });
 }
 const db = admin.firestore();
 

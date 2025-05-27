@@ -41,7 +41,6 @@ async function sendLeaderboardEmbed(client) {
   const guild = await client.guilds.fetch(process.env.GUILD_ID);
   const members = await guild.members.fetch();
 
-  // יצירת רשימת משתמשים עם אוואטרים
   const enrichedUsers = topUsers.map(user => {
     const member = members.get(user.userId);
     return {
@@ -53,9 +52,8 @@ async function sendLeaderboardEmbed(client) {
     };
   });
 
-  // יצירת התמונה דרך Puppeteer
+  // יצירת התמונה
   const imagePath = await renderLeaderboardImage(enrichedUsers);
-
   const image = new AttachmentBuilder(imagePath);
   const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
 

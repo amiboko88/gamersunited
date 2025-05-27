@@ -2,33 +2,42 @@
 <html lang="he">
 <head>
   <meta charset="UTF-8" />
-  <title>מצטייני השבוע - GAMERS UNITED IL</title>
+  <title>GAMERS UNITED IL - לוח מצטיינים</title>
   <style>
-    body {
+    html, body {
       margin: 0;
-      padding: 40px;
+      padding: 0;
+      width: 1920px;
+      height: 1080px;
       font-family: 'Segoe UI', sans-serif;
       direction: rtl;
-      background: linear-gradient(145deg, #0e0e0e, #1a1a1a);
-      color: #fff;
+      background: linear-gradient(135deg, #0d0d0d, #1a1a1a);
+      color: #ffffff;
     }
 
     .container {
-      max-width: 1000px;
-      margin: auto;
-      text-align: center;
+      width: 100%;
+      height: 100%;
+      padding: 60px 100px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
     }
 
     h1 {
-      font-size: 36px;
+      font-size: 64px;
+      text-align: center;
       color: #ffcc00;
       margin-bottom: 40px;
+      text-shadow: 2px 2px 10px #000;
     }
 
     .leaderboard {
+      flex-grow: 1;
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 32px;
     }
 
     .player {
@@ -36,22 +45,24 @@
       align-items: center;
       background: #111;
       border: 2px solid #333;
-      padding: 16px 24px;
-      border-radius: 12px;
-      box-shadow: 0 0 15px rgba(255, 204, 0, 0.2);
+      padding: 30px 40px;
+      border-radius: 16px;
+      box-shadow: 0 0 25px rgba(255, 204, 0, 0.2);
+      font-size: 28px;
     }
 
     .player.gold {
       border-color: gold;
-      background: #222;
+      background: #1f1f1f;
+      box-shadow: 0 0 35px rgba(255, 215, 0, 0.4);
     }
 
     .avatar {
-      width: 64px;
-      height: 64px;
+      width: 96px;
+      height: 96px;
       border-radius: 50%;
-      border: 2px solid #444;
-      margin-left: 16px;
+      border: 3px solid #444;
+      margin-left: 24px;
       background-size: cover;
       background-position: center;
     }
@@ -62,24 +73,26 @@
     }
 
     .name {
-      font-size: 20px;
+      font-size: 32px;
       font-weight: bold;
+      color: #fff;
     }
 
     .details {
-      font-size: 16px;
+      font-size: 24px;
       color: #ccc;
     }
 
     .badge {
-      font-size: 18px;
-      margin-right: 12px;
+      font-size: 36px;
+      margin-right: 16px;
     }
 
     footer {
-      margin-top: 50px;
-      font-size: 14px;
+      text-align: center;
+      font-size: 20px;
       color: #666;
+      margin-top: 20px;
     }
   </style>
 </head>
@@ -88,7 +101,7 @@
     <h1>🏆 מצטייני השבוע - GAMERS UNITED IL</h1>
     <div class="leaderboard">
       <div class="player gold">
-        <div class="avatar" style="background-image: url('https://via.placeholder.com/64x64?text=1');"></div>
+        <div class="avatar" style="background-image: url('https://via.placeholder.com/96x96?text=1');"></div>
         <div class="info">
           <div class="name">Kalimero</div>
           <div class="details">64 נקודות • MVP x2 • 🔥 רצף: 5 ימים</div>
@@ -96,7 +109,7 @@
         <div class="badge">🥇</div>
       </div>
       <div class="player">
-        <div class="avatar" style="background-image: url('https://via.placeholder.com/64x64?text=2');"></div>
+        <div class="avatar" style="background-image: url('https://via.placeholder.com/96x96?text=2');"></div>
         <div class="info">
           <div class="name">Matan</div>
           <div class="details">42 נקודות • 🔥 רצף: 3 ימים</div>
@@ -104,7 +117,7 @@
         <div class="badge">🥈</div>
       </div>
       <div class="player">
-        <div class="avatar" style="background-image: url('https://via.placeholder.com/64x64?text=3');"></div>
+        <div class="avatar" style="background-image: url('https://via.placeholder.com/96x96?text=3');"></div>
         <div class="info">
           <div class="name">Gili</div>
           <div class="details">37 נקודות</div>
@@ -112,7 +125,7 @@
         <div class="badge">🥉</div>
       </div>
     </div>
-    <footer>נוצר אוטומטית על ידי שמעון הבוט • שבת ב-20:00</footer>
+    <footer>📅 נוצר אוטומטית על ידי שמעון הבוט – שבת ב־20:00</footer>
   </div>
 </body>
 </html>

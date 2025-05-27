@@ -28,6 +28,7 @@
     "ffmpeg-static": "^5.2.0",
     "firebase-admin": "^13.4.0",
     "google-tts-api": "^2.0.2",
+    "grammy": "^1.36.3",
     "node-cron": "^4.0.7",
     "openai": "^4.28.3",
     "opusscript": "^0.0.8",

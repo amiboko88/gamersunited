@@ -3,7 +3,7 @@
 require("dotenv").config();
 const { Bot, webhookCallback } = require("grammy");
 const express = require("express");
-
+const handleSmartReply = require("./shimonSmart");
 const db = require("./utils/firebase");
 const registerCommands = require("./telegramCommands");
 const { handleCurses } = require("./telegramCurses");
@@ -26,14 +26,23 @@ bot.on("message", async (ctx) => {
 
   const text = ctx.message.text?.toLowerCase() || "";
 
+  // 1. קללות
   const cursed = await handleCurses(ctx, text);
   if (cursed) return;
 
-  const triggered = handleTrigger(ctx);
-  if (triggered) return;
+  // 2. טריגרים רגילים
+  const triggerResult = handleTrigger(ctx);
+  if (triggerResult.triggered) return;
 
-
+  // 3. תגובה חכמה אם אין תגובה אחרת
+  const smart = await handleSmartReply(ctx, triggerResult);
+  if (smart) return;
 });
+
+
+
+const smart = await handleSmartReply(ctx);
+if (smart) return;
 
 // ⏰ תזכורת אם שקט 24 שעות
 setInterval(() => {

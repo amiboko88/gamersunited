@@ -1,10 +1,12 @@
-// 📁 telegramCommands.js – גרסה מעוצבת עם RTL + HTML
+// 📁 telegramCommands.js – גרסה מלאה, כל פקודה נרשמת במפורש
+
+const replies = require("./commandsData");
 
 module.exports = function registerTelegramCommands(bot) {
   const getRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
   const nameOf = (ctx) => ctx.from?.first_name || "חבר";
 
-  // 📌 רישום Slash Commands
+  // 📌 רישום Slash Commands אחד־אחד
   bot.api.setMyCommands([
     { command: "start", description: "התחלה וברוך הבא" },
     { command: "help", description: "הצג את כל האפשרויות של הבוט" },
@@ -16,111 +18,79 @@ module.exports = function registerTelegramCommands(bot) {
     { command: "shimon", description: "משפט השראה מרושע" },
     { command: "excuse", description: "תירוץ מביך להפסד שלך" },
     { command: "rage", description: "התפרצות זעם של גיימר מתוסכל" },
-    { command: "daily", description: "משפט יומי אכזרי משמעון" }
-  ]).catch((err) => console.error("❌ שגיאה ברישום פקודות בטלגרם:", err));
+    { command: "daily", description: "משפט יומי אכזרי משמעון" },
+    { command: "insult", description: "העלבה ישירה" },
+    { command: "legend", description: "כבוד לגיימר מיתולוגי" },
+    { command: "status", description: "מצב חברתי אכזרי" },
+    { command: "roast_me", description: "צלייה אישית" },
+    { command: "honest", description: "אמת כואבת" },
+    { command: "toxic", description: "מצב טוקסיות" },
+    { command: "yogi", description: "משפטי יוגי" },
+    { command: "punishment", description: "עונש על ביצועים חלשים" },
+    { command: "joke", description: "בדיחה גרועה במיוחד" },
+    { command: "sound", description: "צליל FIFO מדומיין" }
+  ]).catch((err) => {
+    console.error("❌ שגיאה ברישום פקודות בטלגרם:", err);
+  });
 
-  const replies = {
-    prophecy: [
-      "היום תמות בגולאג תוך 17 שניות 🤯",
-      "הפינג שלך יעלה ל־999 ברגע הכי קריטי 😵‍💫",
-      "תתחבר – וכולם יתנתקו 🤡",
-      "הגורל שלך: Spectator Mode 🪦",
-      "הנבואה: Rage quit תוך 6 דקות 🔮"
-    ],
-    laugh: [
-      "נפלת כמו טונה בלי שמן 🤣",
-      "תמחוק את המשחק ותחזור לתיכון 🏫",
-      "גם בוטים ב־Easy היו עושים יותר 😬",
-      "MVP של התבוסה, כל הכבוד 👏",
-      "RIP גאווה גיימרית ⚰️"
-    ],
-    compliment: [
-      "רועי, למרות שאתה רוסי עם שם תימני – אני גאה בך. קצת 🙃",
-      "יוגב, אתה לא MVP, אבל לפחות אתה בא לערוצים 👌",
-      "מתן, לא הכי טוב, אבל גם לא הכי גרוע. אולי 🤷‍♂️",
-      "שמעון – אתה אלוף. ברור, זה אני כותב את זה 😎"
-    ],
-    nextmvp: [
-      "יוגב – כי הוא היחיד שבא 🙃",
-      "גילי – בזכות AFK 📉",
-      "אביחי – בטעות 🫣",
-      "אם מתן לא יירדם – אולי הוא 🛌",
-      "פשוט תנו לי את הכתר 👑"
-    ],
-    why: [
-      "כי אתה משחק כמו סבתא בלי משקפיים 👵",
-      "זה לא אתה. זו הדינמיקה הקבוצתית (סתם, זה אתה) 🧠",
-      "כי אתה לא חבר FIFO רשמית 🪪",
-      "כי אתה נעלם תמיד ברגעים החשובים ⛔",
-      "כי אתה מת בתפריט של הנשק 🔫"
-    ],
-    shimon: [
-      "לא כל מי שמחובר – מחובר באמת 🧘",
-      "תשתוק ותתחבר – אולי תשתפר 📶",
-      "אם לא היית כזה גרוע, אולי היית MVP 🏅",
-      "שמעון רואה הכל. אפילו את ה־AFK שלך 👀",
-      "תשקול לפרוש. או לפחות לשתוק 🤐"
-    ],
-    excuse: [
-      "הנתב קפץ, נשבע 🤞",
-      "הכלב דרך לי על המקלדת 🐶",
-      "העכבר נתקע, באמת 🖱️",
-      "אני משחק עם יד אחת כרגע ✋",
-      "הייתי באמצע לאכול בורקס 🥐"
-    ],
-    rage: [
-      "מה זה החרא הזה?! איך זה פגע בי?! 🤬",
-      "אין מצב! שקר של המערכת! 😡",
-      "אני פורש מהמשחק הזה לנצח! 💥",
-      "מי יצר את המפה הזאת?! עיוור?! 👨‍🦯",
-      "לא שיחקתי ככה מאז שנות ה־2000 🤯"
-    ],
-    daily: [
-      "דוד, יום ראשון – אין רחמים, רק הפסדים 😤",
-      "רועי, יום שני – קמים בשביל להפסיד 😴",
-      "יוגב, יום שלישי – שוב אף אחד לא בערוץ 📉",
-      "אביחי, יום חמישי – אולי תתחבר היום? 🤨",
-      "מתן, שבת – רק שחקנים עם כבוד נשארו 🫡"
-    ]
-  };
+  // 🧠 פקודות אחת־אחת
+  bot.command("prophecy", (ctx) => ctx.reply(format(ctx, replies.prophecy)));
+  bot.command("laugh", (ctx) => ctx.reply(format(ctx, replies.laugh)));
+  bot.command("compliment", (ctx) => ctx.reply(format(ctx, replies.compliment)));
+  bot.command("nextmvp", (ctx) => ctx.reply(format(ctx, replies.nextmvp)));
+  bot.command("why", (ctx) => ctx.reply(format(ctx, replies.why)));
+  bot.command("shimon", (ctx) => ctx.reply(format(ctx, replies.shimon)));
+  bot.command("excuse", (ctx) => ctx.reply(format(ctx, replies.excuse)));
+  bot.command("rage", (ctx) => ctx.reply(format(ctx, replies.rage)));
+  bot.command("daily", (ctx) => ctx.reply(format(ctx, replies.daily)));
+  bot.command("insult", (ctx) => ctx.reply(format(ctx, replies.insult)));
+  bot.command("legend", (ctx) => ctx.reply(format(ctx, replies.legend)));
+  bot.command("status", (ctx) => ctx.reply(format(ctx, replies.status)));
+  bot.command("roast_me", (ctx) => ctx.reply(format(ctx, replies.roast_me)));
+  bot.command("honest", (ctx) => ctx.reply(format(ctx, replies.honest)));
+  bot.command("toxic", (ctx) => ctx.reply(format(ctx, replies.toxic)));
+  bot.command("yogi", (ctx) => ctx.reply(format(ctx, replies.yogi)));
+  bot.command("punishment", (ctx) => ctx.reply(format(ctx, replies.punishment)));
+  bot.command("joke", (ctx) => ctx.reply(format(ctx, replies.joke)));
+  bot.command("sound", (ctx) => ctx.reply(format(ctx, replies.sound)));
 
-  // 📢 תגובה לכל פקודה
-  for (const command in replies) {
-    bot.command(command, async (ctx) => {
-      try {
-        const name = nameOf(ctx);
-        const sentence = getRandom(replies[command]);
-        await ctx.reply(`\u200F<b>${name}</b> – ${sentence}`, {
-          parse_mode: "HTML"
-        });
-      } catch (err) {
-        console.error(`❌ שגיאה בביצוע /${command}:`, err);
-      }
-    });
+  // 🆘 /help
+  bot.command("help", (ctx) => {
+    const name = nameOf(ctx);
+    const list = `
+/prophecy – תחזית פסימית
+/laugh – ירידה אכזרית
+/compliment – מחמאה סרקסטית
+/nextmvp – ניחוש MVP
+/why – למה אתה גרוע
+/shimon – משפט השראה
+/excuse – תירוץ מביך
+/rage – התפרצות זעם
+/daily – משפט יומי
+/insult – העלבה
+/legend – גיימר אגדי
+/status – מצב FIFO
+/roast_me – צלייה
+/honest – אמת כואבת
+/toxic – רעל
+/yogi – משפטי יוגי
+/punishment – עונש
+/joke – בדיחה גרועה
+/sound – סאונד דמיוני
+    `.trim();
+    ctx.reply(`\u200F<b>${name}</b>, שמעון יודע לעשות את הדברים הבאים:\n\n${list}`, { parse_mode: "HTML" });
+  });
+
+  // 🚀 /start
+  bot.command("start", (ctx) => {
+    const name = nameOf(ctx);
+    ctx.reply(`\u200F<b>${name}</b>, ברוך הבא לשמעון הבוט. הקלד /help כדי לראות מה אני יודע לעשות 🤖`, { parse_mode: "HTML" });
+  });
+
+  // 🔧 פורמט אחיד
+  function format(ctx, list) {
+    const name = nameOf(ctx);
+    const text = getRandom(list);
+    return `\u200F<b>${name}</b> – ${text}`;
   }
-
-  // 🆘 פקודת /help
-  bot.command("help", async (ctx) => {
-    const name = nameOf(ctx);
-    await ctx.reply(`\u200F<b>${name}</b>, שמעון יודע לעשות את הדברים הבאים:\n
-/prophecy – קבל תחזית פסימית מהבוט  
-/laugh – שמעון יורד עליך  
-/compliment – מחמאה גסה במיוחד  
-/nextmvp – ניחוש מגוחך של שמעון  
-/why – למה אני כזה גרוע?  
-/shimon – משפט השראה מרושע  
-/excuse – תירוץ מביך להפסד שלך  
-/rage – התפרצות זעם של גיימר מתוסכל  
-/daily – משפט יומי אכזרי משמעון`, {
-      parse_mode: "HTML"
-    });
-  });
-
-  // ✅ פקודת /start ברורה
-  bot.command("start", async (ctx) => {
-    const name = nameOf(ctx);
-    await ctx.reply(`\u200F<b>${name}</b>, ברוך הבא לשמעון הבוט. הקלד /help כדי לראות מה אני יודע לעשות 🤖`, {
-      parse_mode: "HTML"
-    });
-  });
 };

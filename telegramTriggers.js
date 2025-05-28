@@ -1,4 +1,4 @@
-// 📁 telegramTriggers.js – שמירה מלאה על כל התגובות המקוריות + סדר חכם
+// 📁 telegramTriggers.js – גרסה מלאה עם שמירה על RTL וזיהוי שמות
 
 const linkRegex = /(https?:\/\/[^\s]+)/i;
 
@@ -23,6 +23,20 @@ const linkReplies = [
   "נו באמת, לינק במקום לתייג?",
   "כנראה יש לך יותר לינקים ממילים.",
   "יאללה באמא שלך, די כבר."
+];
+
+const mentionTriggers = ["שמעון", "bot", "בוט", "@שמעון", "@shimon", "@shimon_bot"];
+const mentionReplies = [
+  "מה אתה רוצה ממני עכשיו?",
+  "שמעון עסוק. תבוא מאוחר יותר.",
+  "נו באמת, תן לשמעון לנוח.",
+  "שוב אתה קורא לי? כמה אפשר?",
+  "כן כן, אני פה. מה אתה רוצה בדיוק?",
+  "תגיד מה שצריך, לא סתם לקרוא לי.",
+  "אתה לא לבד פה, גם אחרים רוצים את תשומת הלב שלי.",
+  "רק שתדע שאני רושם נקודות כל פעם שאתה אומר את השם שלי.",
+  "אתה אוהב אותי אה? תכתוב מכתב כבר.",
+  "זה שאני בוט לא אומר שאני שלך."
 ];
 
 const keywordTriggers = {
@@ -87,9 +101,18 @@ function handleTrigger(ctx) {
   const text = ctx.message?.text?.toLowerCase() || "";
   const name = ctx.from?.first_name || "חבר";
 
+  // 🔊 אזכור של שמעון או המילה "בוט"
+  for (const word of mentionTriggers) {
+    if (text.includes(word)) {
+      ctx.reply(`🤖 ${getRandom(mentionReplies)} ${name}`);
+      lastMessageTimestamp = Date.now();
+      return true;
+    }
+  }
+
   // 🔗 לינק
   if (linkRegex.test(text)) {
-    ctx.reply(`🔗 ${name}, ${getRandom(linkReplies)}`);
+    ctx.reply(`${getRandom(linkReplies)} ${name} 🔗`);
     lastMessageTimestamp = Date.now();
     return true;
   }
@@ -97,7 +120,7 @@ function handleTrigger(ctx) {
   // 🧠 מילות מפתח
   for (const keyword in keywordTriggers) {
     if (text.includes(keyword)) {
-      ctx.reply(`🤖 ${name}, ${getRandom(keywordTriggers[keyword])}`);
+      ctx.reply(`${getRandom(keywordTriggers[keyword])} ${name} 🤖`);
       lastMessageTimestamp = Date.now();
       return true;
     }
@@ -105,14 +128,14 @@ function handleTrigger(ctx) {
 
   // 🖼️ תמונה
   if (ctx.message?.photo) {
-    ctx.reply("📸 שלחת תמונה – אבל למה? תסביר.");
+    ctx.reply(`📸 ${name}, שלחת תמונה – אבל למה? תסביר.`);
     lastMessageTimestamp = Date.now();
     return true;
   }
 
   // 🎭 סטיקר
   if (ctx.message?.sticker) {
-    ctx.reply("🎭 סטיקר במקום טקסט? שמעון שוקל קיק.");
+    ctx.reply(`🎭 ${name}, סטיקר במקום טקסט? שמעון שוקל קיק.`);
     lastMessageTimestamp = Date.now();
     return true;
   }

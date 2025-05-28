@@ -1,10 +1,10 @@
-// 📁 telegramCommands.js – גרסה סופית תואמת Webhook + RAILWAY
+// 📁 telegramCommands.js – גרסה סופית תואמת Webhook + Firestore + Railway
 
 module.exports = function registerTelegramCommands(bot) {
   const getRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
   const nameOf = (ctx) => ctx.from?.first_name || "חבר";
 
-  // 📌 רישום הפקודות לבוט
+  // 📌 רישום Slash Commands ב־BotFather
   bot.api.setMyCommands([
     { command: "start", description: "התחלה וברוך הבא" },
     { command: "help", description: "הצג את כל האפשרויות של הבוט" },
@@ -17,15 +17,9 @@ module.exports = function registerTelegramCommands(bot) {
     { command: "excuse", description: "תירוץ מביך להפסד שלך" },
     { command: "rage", description: "התפרצות זעם של גיימר מתוסכל" },
     { command: "daily", description: "משפט יומי אכזרי משמעון" }
-  ]);
+  ]).catch((err) => console.error("❌ שגיאה ברישום פקודות בטלגרם:", err));
 
   const replies = {
-    start: [
-      "ברוך הבא לשמעון הבוט 💀",
-      "הצטרפת לעולם שבו אין רחמים – רק תגובות סרקסטיות 🤖",
-      "כנס לערוצים, תתייג, ותתכונן להיעלב 🎯",
-      "אני כאן כדי להרים... או לרמוס אותך 🪓"
-    ],
     prophecy: [
       "היום תמות בגולאג תוך 17 שניות 🤯",
       "הפינג שלך יעלה ל־999 ברגע הכי קריטי 😵‍💫",
@@ -82,27 +76,28 @@ module.exports = function registerTelegramCommands(bot) {
       "לא שיחקתי ככה מאז שנות ה־2000 🤯"
     ],
     daily: [
-      "יום ראשון – אין רחמים, רק הפסדים 😤",
-      "יום שני – קמים בשביל להפסיד 😴",
-      "יום שלישי – שוב אף אחד לא בערוץ 📉",
-      "יום חמישי – אולי תתחבר היום? 🤨",
-      "שבת – רק שחקנים עם כבוד נשארו 🫡"
+      "דוד, יום ראשון – אין רחמים, רק הפסדים 😤",
+      "רועי, יום שני – קמים בשביל להפסיד 😴",
+      "יוגב, יום שלישי – שוב אף אחד לא בערוץ 📉",
+      "אביחי, יום חמישי – אולי תתחבר היום? 🤨",
+      "מתן, שבת – רק שחקנים עם כבוד נשארו 🫡"
     ]
   };
 
-  // 🎯 הרשמת פקודות בפועל
+  // 📢 תגובה לכל פקודה
   for (const command in replies) {
-    bot.command(command, (ctx) => {
-      const name = nameOf(ctx);
-      const message = getRandom(replies[command]);
-      ctx.reply(`${name}, ${message}`);
+    bot.command(command, async (ctx) => {
+      try {
+        await ctx.reply(`${nameOf(ctx)}, ${getRandom(replies[command])}`);
+      } catch (err) {
+        console.error(`❌ שגיאה בביצוע /${command}:`, err);
+      }
     });
   }
 
-  // 🆘 פקודת /help מעוצבת
+  // 🆘 פקודת /help
   bot.command("help", async (ctx) => {
-    const name = nameOf(ctx);
-    await ctx.reply(`📋 ${name}, שמעון יודע לעשות את הדברים הבאים:
+    await ctx.reply(`📋 ${nameOf(ctx)}, שמעון יודע לעשות את הדברים הבאים:
 
 /prophecy – קבל תחזית פסימית מהבוט  
 /laugh – שמעון יורד עליך  
@@ -113,5 +108,10 @@ module.exports = function registerTelegramCommands(bot) {
 /excuse – תירוץ מביך להפסד שלך  
 /rage – התפרצות זעם של גיימר מתוסכל  
 /daily – משפט יומי אכזרי משמעון`);
+  });
+
+  // ✅ פקודת /start ברורה
+  bot.command("start", async (ctx) => {
+    await ctx.reply(`${nameOf(ctx)}, ברוך הבא לשמעון הבוט. הקלד /help כדי לראות מה אני יודע לעשות 🤖`);
   });
 };

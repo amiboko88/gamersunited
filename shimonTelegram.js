@@ -1,45 +1,35 @@
-// 📁 shimonTelegram.js – גרסה חכמה עם Webhook ל־Railway, כולל Slash + טריגרים + קללות + Firebase
-require('dotenv').config();
+// 📁 shimonTelegram.js – גרסה מאוחדת יציבה ל־Webhook (RAILWAY + Firestore)
+
+require("dotenv").config();
 const { Bot, webhookCallback } = require("grammy");
 const express = require("express");
-const { handleTrigger, checkDailySilence } = require("./telegramTriggers");
-const { setupTelegramCommands, handleSlashCommand } = require("./telegramCommands");
+
 const db = require("./utils/firebase");
+const registerCommands = require("./telegramCommands");
+const { handleCurses } = require("./telegramCurses");
+const { handleTrigger, checkDailySilence } = require("./telegramTriggers");
+const { handleMention } = require("./telegramBridge");
 
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
 bot.context.db = db;
 
-// 🔌 API Monitoring
-bot.api.config.use((prev, method, payload, signal) => {
-  console.log("📡 TELEGRAM API:", method);
-  return prev(method, payload, signal);
-});
+// 📌 רישום Slash
+registerCommands(bot);
 
-// 💬 הודעות רגילות עם טריגרים + קללות
-bot.on("message", async ctx => {
-  const chatId = ctx.chat.id;
-  if (await handleTrigger(ctx)) return;
+// 🧠 ניתוח הודעות
+bot.on("message", async (ctx) => {
+  if (!ctx.message || ctx.message.from?.is_bot) return;
 
-  // ניתן להוסיף לוג או ניתוח טקסט נוסף כאן
-});
+  const text = ctx.message.text?.toLowerCase() || "";
 
-// 🧵 Slash Commands — כולל /start וכל הקיימים
-bot.command([
-  "start", "עזרה", "חוקים", "מה_הולך",
-  "פיפו", "תנו_כבוד", "בדוק"
-], async ctx => {
-  await handleSlashCommand(ctx);
-});
+  const cursed = await handleCurses(ctx, text);
+  if (cursed) return;
 
-// 🔘 Callback Query (כפתורים)
-bot.on("callback_query:data", async ctx => {
-  const data = ctx.callbackQuery.data;
-  await ctx.answerCallbackQuery();
-  if (data === "rules_accept") {
-    await ctx.reply("✅ קיבלת את חוקי שמעון. בהצלחה 🍀");
-  } else {
-    await ctx.reply(`🔘 לחצת על: ${data}`);
-  }
+  const triggered = handleTrigger(ctx);
+  if (triggered) return;
+
+  const mentioned = await handleMention(ctx, text);
+  if (mentioned) return;
 });
 
 // ⏰ תזכורת אם שקט 24 שעות
@@ -47,31 +37,25 @@ setInterval(() => {
   checkDailySilence(bot, process.env.TELEGRAM_CHAT_ID);
 }, 10 * 60 * 1000); // כל 10 דקות בדיקה
 
-// 🛠️ הגדרת פקודות Slash ברגע עלייה
-setupTelegramCommands(bot);
+// 🌐 Webhook ל־Railway
+if (process.env.RAILWAY_STATIC_URL) {
+  const app = express();
+  const path = "/telegram";
 
-// 🌐 Webhook Listener (Express) – חובה ל־Railway
-const app = express();
-app.use(express.json());
-app.use("/telegram", webhookCallback(bot, "express"));
+  app.use(express.json());
+  app.use(path, webhookCallback(bot, "express"));
 
-// 🚀 הפעלה
-const PORT = Number(process.env.PORT) || 3000;
-app.listen(PORT, async () => {
-  const fullUrl = `${process.env.RAILWAY_STATIC_URL}/telegram`;
-  try {
-    await bot.api.setWebhook(fullUrl);
-    console.log("✅ Webhook עודכן:", fullUrl);
-  } catch (e) {
-    console.error("❌ שגיאה בהגדרת Webhook:", e.message);
-  }
-  console.log(`🚀 שמעון טלגרם מאזין דרך Webhook על פורט ${PORT}`);
-});
+  const fullUrl = `${process.env.RAILWAY_STATIC_URL}${path}`;
+  bot.api.setWebhook(fullUrl).then(() => {
+    console.log(`✅ Webhook נרשם בהצלחה: ${fullUrl}`);
+  }).catch((err) => {
+    console.error("❌ שגיאה בהרשמת Webhook:", err);
+  });
 
-// 🧪 ניטור שגיאות
-process.on("unhandledRejection", (reason) => {
-  console.error("[UNHANDLED REJECTION]", reason);
-});
-process.on("uncaughtException", (err) => {
-  console.error("[UNCAUGHT EXCEPTION]", err);
-});
+  const port = process.env.PORT || 8080;
+  app.listen(port, () => {
+    console.log(`🚀 האזנה ל־Webhook בטלגרם בפורט ${port}`);
+  });
+} else {
+  console.error("❌ חסר RAILWAY_STATIC_URL במשתני סביבה");
+}

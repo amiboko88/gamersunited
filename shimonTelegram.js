@@ -11,7 +11,11 @@ const { handleTrigger, checkDailySilence } = require("./telegramTriggers");
 const { handleMention } = require("./telegramBridge");
 
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
-bot.context.db = db;
+bot.use(async (ctx, next) => {
+  ctx.db = db;
+  await next();
+});
+
 
 // 📌 רישום Slash
 registerCommands(bot);

@@ -1,3 +1,4 @@
+// 📁 shimonTelegram.js
 const { Bot, InlineKeyboard } = require("grammy");
 const { run } = require("@grammyjs/runner");
 const admin = require("firebase-admin");
@@ -9,7 +10,7 @@ const registerTelegramCommands = require("./telegramCommands");
 // יצירת הבוט
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
 
-// התחברות ל־Firestore
+// התחברות ל־Firestore (מניעת כפילות יוזמות)
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_CREDENTIAL))
@@ -17,7 +18,7 @@ if (!admin.apps.length) {
 }
 const db = admin.firestore();
 
-// פקודת /start עם כפתורים
+// פקודת /start עם כפתורי פעולה
 bot.command("start", async (ctx) => {
   const name = ctx.from?.first_name || "חבר";
   await ctx.reply(`שלום ${name}, שמעון מחובר.`, {
@@ -26,6 +27,7 @@ bot.command("start", async (ctx) => {
       .text("📊 סטטיסטיקות מהדיסקורד", "stats")
   });
 
+  // לוג ראשוני
   await db.collection("telegram_logs").add({
     telegram_id: ctx.from.id,
     username: ctx.from.username,
@@ -34,11 +36,12 @@ bot.command("start", async (ctx) => {
   });
 });
 
-// תגובות ללחיצות כפתור
+// כפתורי אינליין
 bot.callbackQuery("mvp_update", async (ctx) => {
   await ctx.answerCallbackQuery();
   await ctx.reply("🏆 כרגע אין MVP זמין... בקרוב!");
 });
+
 bot.callbackQuery("stats", async (ctx) => {
   await ctx.answerCallbackQuery();
   await ctx.reply("📊 הנתונים מהדיסקורד עוד לא מחוברים... תתכונן!");
@@ -50,8 +53,10 @@ bot.on("message", async (ctx) => {
   if (handleTrigger(ctx)) return;
 });
 
-// פקודות
+// פקודות נוספות (חוץ מ־start/help)
 registerTelegramCommands(bot);
 
-// הפעלה
-run(bot);
+// מניעת הפעלה כפולה ב־Railway
+if (require.main === module) {
+  run(bot);
+}

@@ -1,16 +1,18 @@
-// telegramCurses.js
+// 📁 telegramCurses.js – זיהוי קללות בעברית ואנגלית עם תגובה עוקצנית מותאמת
 
 const badWords = [
   // עברית
-  "זונה", "בן זונה", "בת זונה", "דפוק", "דפוקה", "מטומטם", "אידיוט", "מפגר", "כוסעמק", 
-  "כוסאמאשך", "כוסאמאשלה", "זין", "חרא", "שטן", "פח", "סתום", "פדופיל", "גועל נפש", 
-  "ערבי", "ערסים", "שונא", "שרמוטה", "סמולנים", "נאצים", "נאצי", "נאצית", "מת", "תמות", 
-  "שרמוט", "סנוב", "עקום", "זבל", "מניאק", "כוסאחטא", "מגעיל", "פח אשפה", "תת רמה", 
+  "זונה", "בן זונה", "בת זונה", "דפוק", "דפוקה", "מטומטם", "אידיוט", "מפגר",
+  "כוסעמק", "כוסאמאשך", "כוסאמאשלה", "זין", "חרא", "שטן", "פח", "סתום",
+  "פדופיל", "גועל נפש", "ערבי", "ערסים", "שונא", "שרמוטה", "סמולנים", "נאצים",
+  "נאצי", "נאצית", "מת", "תמות", "שרמוט", "סנוב", "עקום", "זבל", "מניאק",
+  "כוסאחטא", "מגעיל", "פח אשפה", "תת רמה",
 
   // אנגלית
-  "fuck", "shit", "bitch", "asshole", "motherfucker", "fucker", "cunt", "nigger", "nigga", 
-  "dick", "suck", "bastard", "moron", "retard", "loser", "jerk", "pussy", "whore", "slut", 
-  "crap", "stupid", "dumb", "hell", "damn", "faggot", "gaylord", "cock", "twat"
+  "fuck", "shit", "bitch", "asshole", "motherfucker", "fucker", "cunt", "nigger",
+  "nigga", "dick", "suck", "bastard", "moron", "retard", "loser", "jerk",
+  "pussy", "whore", "slut", "crap", "stupid", "dumb", "hell", "damn",
+  "faggot", "gaylord", "cock", "twat"
 ];
 
 const fireBackResponses = [
@@ -37,10 +39,15 @@ const fireBackResponses = [
   "איבדת שליטה? תשלח תמונה של התעודת זהות."
 ];
 
+// פונקציית זיהוי ותגובה לקללות
 function detectAndRespondToSwear(ctx) {
   const text = ctx.message?.text?.toLowerCase() || "";
   const name = ctx.from?.first_name || "חבר";
 
+  // בוטים לא נענים
+  if (ctx.from?.is_bot) return false;
+
+  // מעבר על כל קללה מוכרת
   for (const word of badWords) {
     if (text.includes(word)) {
       const reply = fireBackResponses[Math.floor(Math.random() * fireBackResponses.length)];
@@ -52,4 +59,7 @@ function detectAndRespondToSwear(ctx) {
   return false;
 }
 
-module.exports = { detectAndRespondToSwear };
+module.exports = {
+  detectAndRespondToSwear,
+  allCurseWords: badWords // לטובת שימוש פנימי ב־Discord (smartChat למשל)
+};

@@ -1,7 +1,7 @@
-// telegramTriggers.js
+// 📁 telegramTriggers.js – שמירה מלאה על כל התגובות המקוריות + סדר חכם
 
 const linkRegex = /(https?:\/\/[^\s]+)/i;
-const triggerWords = ["שמעון", "עולה", "משחק", "מחובר", "בא לי"];
+
 const linkReplies = [
   "מה זה הלינק הזה יא נואש?",
   "עוד פעם לינק? תלמד לחיות בעולם האמיתי",
@@ -87,14 +87,14 @@ function handleTrigger(ctx) {
   const text = ctx.message?.text?.toLowerCase() || "";
   const name = ctx.from?.first_name || "חבר";
 
-  // 🔗 תגובה ללינק
+  // 🔗 לינק
   if (linkRegex.test(text)) {
-    ctx.reply(`🤖 ${name}, ${getRandom(linkReplies)}`);
+    ctx.reply(`🔗 ${name}, ${getRandom(linkReplies)}`);
     lastMessageTimestamp = Date.now();
     return true;
   }
 
-  // 🧠 טריגרים למילים מוגדרות
+  // 🧠 מילות מפתח
   for (const keyword in keywordTriggers) {
     if (text.includes(keyword)) {
       ctx.reply(`🤖 ${name}, ${getRandom(keywordTriggers[keyword])}`);
@@ -103,16 +103,16 @@ function handleTrigger(ctx) {
     }
   }
 
-  // 🧷 תגובה לסטיקר
-  if (ctx.message?.sticker) {
-    ctx.reply("סטיקר במקום מילה? שמעון מזועזע.");
+  // 🖼️ תמונה
+  if (ctx.message?.photo) {
+    ctx.reply("📸 שלחת תמונה – אבל למה? תסביר.");
     lastMessageTimestamp = Date.now();
     return true;
   }
 
-  // 🖼️ תגובה לתמונה
-  if (ctx.message?.photo) {
-    ctx.reply("תמונה? לפחות תסביר מה אנחנו רואים.");
+  // 🎭 סטיקר
+  if (ctx.message?.sticker) {
+    ctx.reply("🎭 סטיקר במקום טקסט? שמעון שוקל קיק.");
     lastMessageTimestamp = Date.now();
     return true;
   }
@@ -121,11 +121,11 @@ function handleTrigger(ctx) {
   return false;
 }
 
-// ⏰ תזכורת שקט יומי
+// ⏰ תזכורת אם לא כתבו כלום מעל 24 שעות
 function checkDailySilence(bot, chatId) {
   const hours = (Date.now() - lastMessageTimestamp) / 1000 / 60 / 60;
   if (hours > 24 && !dailyReminderSent) {
-    bot.api.sendMessage(chatId, "שקט כזה לא היה מאז שהאינטרנט נפל. מישהו חי פה?");
+    bot.api.sendMessage(chatId, "📢 שקט כזה לא היה מאז שיוגי שבר שלט. מישהו כאן?");
     dailyReminderSent = true;
   }
 }

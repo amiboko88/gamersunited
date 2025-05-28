@@ -1,5 +1,8 @@
+// 📁 telegramBridge.js – שליחת הודעות יזומות לטלגרם מבלי לפגוע ברעיון הקיים
+
 const fetch = require("node-fetch");
 
+// פונקציית שליחת הודעה רגילה
 async function sendTelegramMessage(message, options = {}) {
   const token = process.env.TELEGRAM_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -12,8 +15,8 @@ async function sendTelegramMessage(message, options = {}) {
   const payload = {
     chat_id: chatId,
     text: `📢 ${message}`,
-    parse_mode: options.parse_mode || "Markdown", // או "HTML"
-    disable_web_page_preview: options.disablePreview || true,
+    parse_mode: options.parse_mode || "Markdown", // ניתן לשנות ל־"HTML"
+    disable_web_page_preview: options.disablePreview !== false,
     reply_markup: options.reply_markup || undefined
   };
 
@@ -36,4 +39,28 @@ async function sendTelegramMessage(message, options = {}) {
   }
 }
 
-module.exports = { sendTelegramMessage };
+// 🆕 שליחת הודעת Embed-like (מחקה עיצוב מובנה)
+async function sendStyledTelegramAlert(title, body, emoji = "📢") {
+  const message = `*${emoji} ${title}*\n\n${body}`;
+  await sendTelegramMessage(message, { parse_mode: "Markdown" });
+}
+
+// 🆕 שליחת לחצן אינליין
+async function sendTelegramWithButton(message, buttonText, buttonUrl) {
+  const reply_markup = {
+    inline_keyboard: [
+      [{ text: buttonText, url: buttonUrl }]
+    ]
+  };
+
+  await sendTelegramMessage(message, {
+    parse_mode: "Markdown",
+    reply_markup
+  });
+}
+
+module.exports = {
+  sendTelegramMessage,
+  sendStyledTelegramAlert,    // 🆕 שימוש לדוחות/התראות
+  sendTelegramWithButton      // 🆕 שליחה עם כפתור
+};

@@ -99,10 +99,14 @@ function handleTrigger(ctx) {
   const text = ctx.message?.text?.toLowerCase() || "";
   const name = ctx.from?.first_name || "חבר";
 
-  // 📛 תיוג ישיר של הבוט
-  const isMention =
-    ctx.message?.entities?.some(e => e.type === 'mention') ||
-    text.includes('שמעון') || text.includes('בוט') || text.includes('bot') || text.includes('שימי') || text.includes('שמשון');
+// ✅ זיהוי מתוחכם: לא כל מופע של "שמעון" יפעיל טריגר
+const triggerWords = ['שמעון', 'bot', 'בוט', 'שימי', 'שמשון'];
+const isMention = triggerWords.some(word => {
+  const isAlone = text.trim() === word;
+  const isShortPing = text.trim().startsWith(word) && text.split(" ").length <= 3;
+  return isAlone || isShortPing;
+});
+
 
   if (isMention) {
     ctx.reply(`\u200F<b>${name}</b> – ${getRandom(mentionTriggers)}`, { parse_mode: "HTML" });

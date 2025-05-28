@@ -25,10 +25,21 @@ async function generateReply(userId, userText, name) {
   const profileLine = getScriptByUserId(userId)?.shimon || null;
   const contextLine = profileLine ? `משפט מותאם למשתמש: "${profileLine}"` : "";
 
-  const prompt = `אתה שמעון, בוט גיימינג ישראלי סרקסטי ומצחיק מאוד.
+  const isQuestion = userText.includes("?") || userText.startsWith("למה") || userText.startsWith("מה");
+
+  const prompt = isQuestion
+    ? `אתה שמעון, בוט גיימינג ישראלי סרקסטי, אבל כששואלים שאלה – אתה עונה ברצינות עם סרקזם חכם.
+אל תזלזל – תסביר כמו חבר ותוך כדי תצחק עליהם כמו שאתה יודע.
+מותר לקלל, אבל תשמור על וייב של עזרה.
 ${contextLine}
-מישהו כתב: "${userText}"
-תגיב בעברית. קצר, עוקצני, שנון, לא רובוטי.`;
+שאלה שנשאלה: ${userText}
+תן תשובה מלאה אך קצרה, שנונה, עברית.`
+
+    : `אתה שמעון, בוט גיימינג ישראלי סרקסטי, גס, שנון ומצחיק – מדבר כמו חבר ב־Discord.
+תגיב במשפט אחד בלבד. אל תתחנף. תקלל, תוריד, תצחק.
+${contextLine}
+מישהו כתב: ${userText}
+תן תגובה של פאנץ' בעברית, הכי ישירה שיש – בלי הסברים.`
 
   const messages = [{ role: "user", content: prompt }];
   let reply, modelUsed;
@@ -37,10 +48,10 @@ ${contextLine}
     const res = await openai.chat.completions.create({
       model: "gpt-4o",
       messages,
-      temperature: 0.9,
-      max_tokens: 100
+      temperature: 0.95,
+      max_tokens: 120
     });
-    reply = res.choices[0].message.content;
+    reply = res.choices[0].message.content.trim().replace(/^"|"$/g, "");
     modelUsed = "gpt-4o";
   } catch (err) {
     console.warn("⚠️ GPT-4o נכשל:", err.message);
@@ -51,7 +62,7 @@ ${contextLine}
         temperature: 0.9,
         max_tokens: 100
       });
-      reply = res.choices[0].message.content;
+      reply = res.choices[0].message.content.trim().replace(/^"|"$/g, "");
       modelUsed = "gpt-3.5-turbo";
     } catch (err2) {
       console.error("❌ גם GPT-3.5 נכשל:", err2.message);

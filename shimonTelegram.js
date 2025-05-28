@@ -9,15 +9,15 @@ const registerCommands = require("./telegramCommands");
 const { handleCurses } = require("./telegramCurses");
 const { handleTrigger, checkDailySilence } = require("./telegramTriggers");
 
-
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
+
+// 🗄️ חיבור בסיס נתונים
 bot.use(async (ctx, next) => {
   ctx.db = db;
   await next();
 });
 
-
-// 📌 רישום Slash
+// 📌 רישום Slash Commands
 registerCommands(bot);
 
 // 🧠 ניתוח הודעות
@@ -30,24 +30,19 @@ bot.on("message", async (ctx) => {
   const cursed = await handleCurses(ctx, text);
   if (cursed) return;
 
-  // 2. טריגרים רגילים
+  // 2. טריגרים
   const triggerResult = handleTrigger(ctx);
   if (triggerResult.triggered) return;
 
-  // 3. תגובה חכמה אם אין תגובה אחרת
+  // 3. תגובה חכמה
   const smart = await handleSmartReply(ctx, triggerResult);
   if (smart) return;
 });
 
-
-
-const smart = await handleSmartReply(ctx);
-if (smart) return;
-
-// ⏰ תזכורת אם שקט 24 שעות
+// ⏰ תזכורת שקט
 setInterval(() => {
   checkDailySilence(bot, process.env.TELEGRAM_CHAT_ID);
-}, 10 * 60 * 1000); // כל 10 דקות בדיקה
+}, 10 * 60 * 1000); // כל 10 דקות
 
 // 🌐 Webhook ל־Railway
 if (process.env.RAILWAY_STATIC_URL) {

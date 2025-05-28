@@ -34,25 +34,100 @@ module.exports = function registerTelegramCommands(bot) {
   });
 
   // 🧠 פקודות אחת־אחת
-  bot.command("prophecy", (ctx) => ctx.reply(format(ctx, replies.prophecy)));
-  bot.command("laugh", (ctx) => ctx.reply(format(ctx, replies.laugh)));
-  bot.command("compliment", (ctx) => ctx.reply(format(ctx, replies.compliment)));
-  bot.command("nextmvp", (ctx) => ctx.reply(format(ctx, replies.nextmvp)));
-  bot.command("why", (ctx) => ctx.reply(format(ctx, replies.why)));
-  bot.command("shimon", (ctx) => ctx.reply(format(ctx, replies.shimon)));
-  bot.command("excuse", (ctx) => ctx.reply(format(ctx, replies.excuse)));
-  bot.command("rage", (ctx) => ctx.reply(format(ctx, replies.rage)));
-  bot.command("daily", (ctx) => ctx.reply(format(ctx, replies.daily)));
-  bot.command("insult", (ctx) => ctx.reply(format(ctx, replies.insult)));
-  bot.command("legend", (ctx) => ctx.reply(format(ctx, replies.legend)));
-  bot.command("status", (ctx) => ctx.reply(format(ctx, replies.status)));
-  bot.command("roast_me", (ctx) => ctx.reply(format(ctx, replies.roast_me)));
-  bot.command("honest", (ctx) => ctx.reply(format(ctx, replies.honest)));
-  bot.command("toxic", (ctx) => ctx.reply(format(ctx, replies.toxic)));
-  bot.command("yogi", (ctx) => ctx.reply(format(ctx, replies.yogi)));
-  bot.command("punishment", (ctx) => ctx.reply(format(ctx, replies.punishment)));
-  bot.command("joke", (ctx) => ctx.reply(format(ctx, replies.joke)));
-  bot.command("sound", (ctx) => ctx.reply(format(ctx, replies.sound)));
+  bot.command("prophecy", (ctx) => {
+    const { text, options } = format(ctx, replies.prophecy);
+    ctx.reply(text, options);
+  });
+
+  bot.command("laugh", (ctx) => {
+    const { text, options } = format(ctx, replies.laugh);
+    ctx.reply(text, options);
+  });
+
+  bot.command("compliment", (ctx) => {
+    const { text, options } = format(ctx, replies.compliment);
+    ctx.reply(text, options);
+  });
+
+  bot.command("nextmvp", (ctx) => {
+    const { text, options } = format(ctx, replies.nextmvp);
+    ctx.reply(text, options);
+  });
+
+  bot.command("why", (ctx) => {
+    const { text, options } = format(ctx, replies.why);
+    ctx.reply(text, options);
+  });
+
+  bot.command("shimon", (ctx) => {
+    const { text, options } = format(ctx, replies.shimon);
+    ctx.reply(text, options);
+  });
+
+  bot.command("excuse", (ctx) => {
+    const { text, options } = format(ctx, replies.excuse);
+    ctx.reply(text, options);
+  });
+
+  bot.command("rage", (ctx) => {
+    const { text, options } = format(ctx, replies.rage);
+    ctx.reply(text, options);
+  });
+
+  bot.command("daily", (ctx) => {
+    const { text, options } = format(ctx, replies.daily);
+    ctx.reply(text, options);
+  });
+
+  bot.command("insult", (ctx) => {
+    const { text, options } = format(ctx, replies.insult);
+    ctx.reply(text, options);
+  });
+
+  bot.command("legend", (ctx) => {
+    const { text, options } = format(ctx, replies.legend);
+    ctx.reply(text, options);
+  });
+
+  bot.command("status", (ctx) => {
+    const { text, options } = format(ctx, replies.status);
+    ctx.reply(text, options);
+  });
+
+  bot.command("roast_me", (ctx) => {
+    const { text, options } = format(ctx, replies.roast_me);
+    ctx.reply(text, options);
+  });
+
+  bot.command("honest", (ctx) => {
+    const { text, options } = format(ctx, replies.honest);
+    ctx.reply(text, options);
+  });
+
+  bot.command("toxic", (ctx) => {
+    const { text, options } = format(ctx, replies.toxic);
+    ctx.reply(text, options);
+  });
+
+  bot.command("yogi", (ctx) => {
+    const { text, options } = format(ctx, replies.yogi);
+    ctx.reply(text, options);
+  });
+
+  bot.command("punishment", (ctx) => {
+    const { text, options } = format(ctx, replies.punishment);
+    ctx.reply(text, options);
+  });
+
+  bot.command("joke", (ctx) => {
+    const { text, options } = format(ctx, replies.joke);
+    ctx.reply(text, options);
+  });
+
+  bot.command("sound", (ctx) => {
+    const { text, options } = format(ctx, replies.sound);
+    ctx.reply(text, options);
+  });
 
   // 🆘 /help
   bot.command("help", (ctx) => {
@@ -89,11 +164,12 @@ module.exports = function registerTelegramCommands(bot) {
 
   // 🔧 פורמט אחיד
 function format(ctx, list) {
-  const name = nameOf(ctx);
-  const text = getRandom(list);
+  const name = nameOf(ctx); // שולף את שם המשתמש או "חבר"
+  const text = getRandom(list); // בוחר משפט רנדומלי מהמאגר
   return {
-    text: `\u200F<b>${name}</b> – ${text}`,
-    options: { parse_mode: "HTML" }
+    text: `\u200F<b>${name}</b> – ${text}`, // טקסט מעוצב עם RTL
+    options: { parse_mode: "HTML" } // הגדרה לתמיכה בעיצוב
   };
 }
+
 };

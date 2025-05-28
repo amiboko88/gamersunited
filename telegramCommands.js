@@ -1,10 +1,10 @@
-// 📁 telegramCommands.js – גרסה סופית תואמת Webhook + Firestore + Railway
+// 📁 telegramCommands.js – גרסה מעוצבת עם RTL + HTML
 
 module.exports = function registerTelegramCommands(bot) {
   const getRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
   const nameOf = (ctx) => ctx.from?.first_name || "חבר";
 
-  // 📌 רישום Slash Commands ב־BotFather
+  // 📌 רישום Slash Commands
   bot.api.setMyCommands([
     { command: "start", description: "התחלה וברוך הבא" },
     { command: "help", description: "הצג את כל האפשרויות של הבוט" },
@@ -88,7 +88,11 @@ module.exports = function registerTelegramCommands(bot) {
   for (const command in replies) {
     bot.command(command, async (ctx) => {
       try {
-        await ctx.reply(`${nameOf(ctx)}, ${getRandom(replies[command])}`);
+        const name = nameOf(ctx);
+        const sentence = getRandom(replies[command]);
+        await ctx.reply(`\u200F<b>${name}</b> – ${sentence}`, {
+          parse_mode: "HTML"
+        });
       } catch (err) {
         console.error(`❌ שגיאה בביצוע /${command}:`, err);
       }
@@ -97,8 +101,8 @@ module.exports = function registerTelegramCommands(bot) {
 
   // 🆘 פקודת /help
   bot.command("help", async (ctx) => {
-    await ctx.reply(`📋 ${nameOf(ctx)}, שמעון יודע לעשות את הדברים הבאים:
-
+    const name = nameOf(ctx);
+    await ctx.reply(`\u200F<b>${name}</b>, שמעון יודע לעשות את הדברים הבאים:\n
 /prophecy – קבל תחזית פסימית מהבוט  
 /laugh – שמעון יורד עליך  
 /compliment – מחמאה גסה במיוחד  
@@ -107,11 +111,16 @@ module.exports = function registerTelegramCommands(bot) {
 /shimon – משפט השראה מרושע  
 /excuse – תירוץ מביך להפסד שלך  
 /rage – התפרצות זעם של גיימר מתוסכל  
-/daily – משפט יומי אכזרי משמעון`);
+/daily – משפט יומי אכזרי משמעון`, {
+      parse_mode: "HTML"
+    });
   });
 
   // ✅ פקודת /start ברורה
   bot.command("start", async (ctx) => {
-    await ctx.reply(`${nameOf(ctx)}, ברוך הבא לשמעון הבוט. הקלד /help כדי לראות מה אני יודע לעשות 🤖`);
+    const name = nameOf(ctx);
+    await ctx.reply(`\u200F<b>${name}</b>, ברוך הבא לשמעון הבוט. הקלד /help כדי לראות מה אני יודע לעשות 🤖`, {
+      parse_mode: "HTML"
+    });
   });
 };

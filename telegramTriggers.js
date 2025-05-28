@@ -1,4 +1,4 @@
-// 📁 telegramTriggers.js – כולל mentionTriggers ושיפורים לעברית
+// 📁 telegramTriggers.js – כולל mentionTriggers ושיפורים לעברית + עיצוב HTML
 
 const linkRegex = /(https?:\/\/[^\s]+)/i;
 
@@ -103,17 +103,17 @@ function handleTrigger(ctx) {
   // 📛 תיוג ישיר של הבוט
   const isMention =
     ctx.message?.entities?.some(e => e.type === 'mention') ||
-    text.includes('שמעון') || text.includes('bot');
+    text.includes('שמעון') || text.includes('בוט') || text.includes('bot') || text.includes('שימי') || text.includes('שמשון');
 
   if (isMention) {
-    ctx.reply(`${name}, ${getRandom(mentionTriggers)}`);
+    ctx.reply(`\u200F<b>${name}</b> – ${getRandom(mentionTriggers)}`, { parse_mode: "HTML" });
     lastMessageTimestamp = Date.now();
     return true;
   }
 
   // 🔗 לינק
   if (linkRegex.test(text)) {
-    ctx.reply(`${name}, ${getRandom(linkReplies)}`);
+    ctx.reply(`\u200F<b>${name}</b> – ${getRandom(linkReplies)}`, { parse_mode: "HTML" });
     lastMessageTimestamp = Date.now();
     return true;
   }
@@ -121,7 +121,7 @@ function handleTrigger(ctx) {
   // 🧠 מילות מפתח
   for (const keyword in keywordTriggers) {
     if (text.includes(keyword)) {
-      ctx.reply(`${name}, ${getRandom(keywordTriggers[keyword])}`);
+      ctx.reply(`\u200F<b>${name}</b> – ${getRandom(keywordTriggers[keyword])}`, { parse_mode: "HTML" });
       lastMessageTimestamp = Date.now();
       return true;
     }
@@ -129,14 +129,14 @@ function handleTrigger(ctx) {
 
   // 🖼️ תמונה
   if (ctx.message?.photo) {
-    ctx.reply(`${name}, שלחת תמונה – אבל למה? 🖼️`);
+    ctx.reply(`\u200F<b>${name}</b> – שלחת תמונה – אבל למה? 🖼️`, { parse_mode: "HTML" });
     lastMessageTimestamp = Date.now();
     return true;
   }
 
   // 🎭 סטיקר
   if (ctx.message?.sticker) {
-    ctx.reply(`${name}, סטיקר במקום טקסט? שמעון שוקל קיק 🎭`);
+    ctx.reply(`\u200F<b>${name}</b> – סטיקר במקום טקסט? שמעון שוקל קיק 🎭`, { parse_mode: "HTML" });
     lastMessageTimestamp = Date.now();
     return true;
   }

@@ -38,4 +38,6 @@ function handleCurses(ctx) {
   return false;
 }
 
-module.exports = handleCurses;
+module.exports = {
+  handleCurses,
+};

@@ -88,9 +88,12 @@ module.exports = function registerTelegramCommands(bot) {
   });
 
   // 🔧 פורמט אחיד
-  function format(ctx, list) {
-    const name = nameOf(ctx);
-    const text = getRandom(list);
-    return `\u200F<b>${name}</b> – ${text}`;
-  }
+function format(ctx, list) {
+  const name = nameOf(ctx);
+  const text = getRandom(list);
+  return {
+    text: `\u200F<b>${name}</b> – ${text}`,
+    options: { parse_mode: "HTML" }
+  };
+}
 };

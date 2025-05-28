@@ -56,7 +56,5 @@ bot.on("message", async (ctx) => {
 // פקודות נוספות (חוץ מ־start/help)
 registerTelegramCommands(bot);
 
-// מניעת הפעלה כפולה ב־Railway
-if (require.main === module) {
-  run(bot);
-}
+// תמיד תריץ את הבוט (אתה נטען כמודול מתוך index.js)
+run(bot);

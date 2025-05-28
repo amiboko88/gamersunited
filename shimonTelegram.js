@@ -8,7 +8,7 @@ const db = require("./utils/firebase");
 const registerCommands = require("./telegramCommands");
 const { handleCurses } = require("./telegramCurses");
 const { handleTrigger, checkDailySilence } = require("./telegramTriggers");
-const { handleMention } = require("./telegramBridge");
+
 
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
 bot.use(async (ctx, next) => {
@@ -32,8 +32,7 @@ bot.on("message", async (ctx) => {
   const triggered = handleTrigger(ctx);
   if (triggered) return;
 
-  const mentioned = await handleMention(ctx, text);
-  if (mentioned) return;
+
 });
 
 // ⏰ תזכורת אם שקט 24 שעות

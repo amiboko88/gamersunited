@@ -1,15 +1,12 @@
-// 📁 shimonSmart.js – תגובה חכמה בטלגרם עם GPT, Firestore ו־FIFO
+// 📁 shimonSmart.js – תגובה חכמה בטלגרם עם OpenAI v4, Firestore ו־FIFO
 
-const { Configuration, OpenAIApi } = require("openai");
+const { OpenAI } = require("openai");
 const { getScriptByUserId } = require("./data/fifoLines");
 const db = require("./utils/firebase");
 
-const openai = new OpenAIApi(new Configuration({
-  apiKey: process.env.OPENAI_API_KEY,
-}));
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const userCooldowns = new Map(); // userId -> timestamp
-
 
 function estimateTokens(text) {
   return Math.ceil(text.length / 4);
@@ -24,38 +21,37 @@ function updateCooldown(userId) {
   userCooldowns.set(userId, Date.now());
 }
 
-async function generateReply(userId, text) {
+async function generateReply(userId, userText, name) {
   const profileLine = getScriptByUserId(userId)?.shimon || null;
   const contextLine = profileLine ? `משפט מותאם למשתמש: "${profileLine}"` : "";
 
-  const prompt = `אתה שמעון, בוט גיימינג ישראלי סרקסטי ומצחיק.
+  const prompt = `אתה שמעון, בוט גיימינג ישראלי סרקסטי ומצחיק מאוד.
 ${contextLine}
-מישהו כתב: "${text}"
-תגיב בעברית. קצר, עוקצני, שנון, לא רובוטי.`
+מישהו כתב: "${userText}"
+תגיב בעברית. קצר, עוקצני, שנון, לא רובוטי.`;
 
   const messages = [{ role: "user", content: prompt }];
-  let reply = null;
-  let modelUsed = null;
+  let reply, modelUsed;
 
   try {
-    const res = await openai.createChatCompletion({
+    const res = await openai.chat.completions.create({
       model: "gpt-4o",
       messages,
       temperature: 0.9,
       max_tokens: 100
     });
-    reply = res.data.choices[0].message.content;
+    reply = res.choices[0].message.content;
     modelUsed = "gpt-4o";
   } catch (err) {
     console.warn("⚠️ GPT-4o נכשל:", err.message);
     try {
-      const res = await openai.createChatCompletion({
+      const res = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages,
         temperature: 0.9,
         max_tokens: 100
       });
-      reply = res.data.choices[0].message.content;
+      reply = res.choices[0].message.content;
       modelUsed = "gpt-3.5-turbo";
     } catch (err2) {
       console.error("❌ גם GPT-3.5 נכשל:", err2.message);
@@ -64,8 +60,7 @@ ${contextLine}
   }
 
   return {
-   formatted: `\u200F<b>${ctx.from?.first_name || 'חבר'}</b> – ${reply}`,
-
+    formatted: `\u200F<b>${name}</b> – ${reply}`,
     plain: reply,
     model: modelUsed,
     tokens: estimateTokens(prompt + reply)
@@ -91,17 +86,17 @@ async function logToFirestore(ctx, replyInfo, triggerText, triggerType) {
   }
 }
 
-// 📞 פונקציה ראשית (export)
+// 📞 פונקציה ראשית
 module.exports = async function handleSmartReply(ctx, triggerResult = { triggered: false }) {
   if (!ctx.message || !ctx.message.text || ctx.message.from?.is_bot) return false;
 
-  const userId = ctx.from?.id;
+  const userId = ctx.from.id;
   const text = ctx.message.text;
+  const name = ctx.from.first_name || "חבר";
 
-  // הגבלת תזמון לפי משתמש
   if (hasCooldown(userId)) return false;
 
-  const replyInfo = await generateReply(userId, text);
+  const replyInfo = await generateReply(userId, text, name);
   if (!replyInfo) return false;
 
   await ctx.reply(replyInfo.formatted, { parse_mode: "HTML" });

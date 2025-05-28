@@ -6,11 +6,10 @@ const { handleTrigger } = require("./telegramTriggers");
 const { detectAndRespondToSwear } = require("./telegramCurses");
 const registerTelegramCommands = require("./telegramCommands");
 
-// יצירת הבוט עם טוקן מהסביבה
-const bot = new Bot(process.env.TELEGRAM_TOKEN || "7208539571:AAHMHg2K6-pa1FgmNoeY4627c49hxgFdBHU");
+// יצירת הבוט עם הטוקן מהסביבה
+const bot = new Bot(process.env.TELEGRAM_TOKEN);
 
-// אתחול Firestore
-
+// התחברות ל-Firebase
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_CREDENTIAL))
@@ -35,7 +34,7 @@ bot.command("start", async (ctx) => {
   });
 });
 
-// תגובות לכפתורי Inline
+// תגובות ללחיצה על כפתורי Inline
 bot.callbackQuery("mvp_update", async (ctx) => {
   await ctx.answerCallbackQuery();
   await ctx.reply("🏆 כרגע אין MVP זמין... בקרוב!");
@@ -46,14 +45,14 @@ bot.callbackQuery("stats", async (ctx) => {
   await ctx.reply("📊 הנתונים מהדיסקורד עוד לא מחוברים... תתכונן!");
 });
 
-// זיהוי הודעות רגילות
+// תגובה לכל הודעה נכנסת
 bot.on("message", async (ctx) => {
-  if (detectAndRespondToSwear(ctx)) return; // קללות
-  if (handleTrigger(ctx)) return;           // לינקים + מילים
+  if (detectAndRespondToSwear(ctx)) return; // זיהוי קללות
+  if (handleTrigger(ctx)) return;          // לינקים, תיוגים, מילים
 });
 
-// רישום פקודות כמו /נבואה, /צחוק וכו'
+// רישום הפקודות /prophecy, /laugh וכו'
 registerTelegramCommands(bot);
 
-// הפעלת הבוט (Webhook / Polling אוטומטי לפי סביבה)
+// הפעלת הבוט (Polling / Webhook לפי הסביבה)
 run(bot);

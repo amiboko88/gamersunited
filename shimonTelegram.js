@@ -1,60 +1,77 @@
-// 📁 shimonTelegram.js
-const { Bot, InlineKeyboard } = require("grammy");
-const { run } = require("@grammyjs/runner");
-const admin = require("firebase-admin");
+// 📁 shimonTelegram.js – גרסה חכמה עם Webhook ל־Railway, כולל Slash + טריגרים + קללות + Firebase
+require('dotenv').config();
+const { Bot, webhookCallback } = require("grammy");
+const express = require("express");
+const { handleTrigger, checkDailySilence } = require("./telegramTriggers");
+const { setupTelegramCommands, handleSlashCommand } = require("./telegramCommands");
+const db = require("./utils/firebase");
 
-const { handleTrigger } = require("./telegramTriggers");
-const { detectAndRespondToSwear } = require("./telegramCurses");
-const registerTelegramCommands = require("./telegramCommands");
-
-// יצירת הבוט
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
+bot.context.db = db;
 
-// התחברות ל־Firestore (מניעת כפילות יוזמות)
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_CREDENTIAL))
-  });
-}
-const db = admin.firestore();
-
-// פקודת /start עם כפתורי פעולה
-bot.command("start", async (ctx) => {
-  const name = ctx.from?.first_name || "חבר";
-  await ctx.reply(`שלום ${name}, שמעון מחובר.`, {
-    reply_markup: new InlineKeyboard()
-      .text("🔥 עדכן אותי ב־MVP השבועי", "mvp_update")
-      .text("📊 סטטיסטיקות מהדיסקורד", "stats")
-  });
-
-  // לוג ראשוני
-  await db.collection("telegram_logs").add({
-    telegram_id: ctx.from.id,
-    username: ctx.from.username,
-    action: "start",
-    timestamp: Date.now()
-  });
+// 🔌 API Monitoring
+bot.api.config.use((prev, method, payload, signal) => {
+  console.log("📡 TELEGRAM API:", method);
+  return prev(method, payload, signal);
 });
 
-// כפתורי אינליין
-bot.callbackQuery("mvp_update", async (ctx) => {
+// 💬 הודעות רגילות עם טריגרים + קללות
+bot.on("message", async ctx => {
+  const chatId = ctx.chat.id;
+  if (await handleTrigger(ctx)) return;
+
+  // ניתן להוסיף לוג או ניתוח טקסט נוסף כאן
+});
+
+// 🧵 Slash Commands — כולל /start וכל הקיימים
+bot.command([
+  "start", "עזרה", "חוקים", "מה_הולך",
+  "פיפו", "תנו_כבוד", "בדוק"
+], async ctx => {
+  await handleSlashCommand(ctx);
+});
+
+// 🔘 Callback Query (כפתורים)
+bot.on("callback_query:data", async ctx => {
+  const data = ctx.callbackQuery.data;
   await ctx.answerCallbackQuery();
-  await ctx.reply("🏆 כרגע אין MVP זמין... בקרוב!");
+  if (data === "rules_accept") {
+    await ctx.reply("✅ קיבלת את חוקי שמעון. בהצלחה 🍀");
+  } else {
+    await ctx.reply(`🔘 לחצת על: ${data}`);
+  }
 });
 
-bot.callbackQuery("stats", async (ctx) => {
-  await ctx.answerCallbackQuery();
-  await ctx.reply("📊 הנתונים מהדיסקורד עוד לא מחוברים... תתכונן!");
+// ⏰ תזכורת אם שקט 24 שעות
+setInterval(() => {
+  checkDailySilence(bot, process.env.TELEGRAM_CHAT_ID);
+}, 10 * 60 * 1000); // כל 10 דקות בדיקה
+
+// 🛠️ הגדרת פקודות Slash ברגע עלייה
+setupTelegramCommands(bot);
+
+// 🌐 Webhook Listener (Express) – חובה ל־Railway
+const app = express();
+app.use(express.json());
+app.use("/telegram", webhookCallback(bot, "express"));
+
+// 🚀 הפעלה
+const PORT = Number(process.env.PORT) || 3000;
+app.listen(PORT, async () => {
+  const fullUrl = `${process.env.RAILWAY_STATIC_URL}/telegram`;
+  try {
+    await bot.api.setWebhook(fullUrl);
+    console.log("✅ Webhook עודכן:", fullUrl);
+  } catch (e) {
+    console.error("❌ שגיאה בהגדרת Webhook:", e.message);
+  }
+  console.log(`🚀 שמעון טלגרם מאזין דרך Webhook על פורט ${PORT}`);
 });
 
-// הודעות רגילות
-bot.on("message", async (ctx) => {
-  if (detectAndRespondToSwear(ctx)) return;
-  if (handleTrigger(ctx)) return;
+// 🧪 ניטור שגיאות
+process.on("unhandledRejection", (reason) => {
+  console.error("[UNHANDLED REJECTION]", reason);
 });
-
-// פקודות נוספות (חוץ מ־start/help)
-registerTelegramCommands(bot);
-
-// תמיד תריץ את הבוט (אתה נטען כמודול מתוך index.js)
-run(bot);
+process.on("uncaughtException", (err) => {
+  console.error("[UNCAUGHT EXCEPTION]", err);
+});

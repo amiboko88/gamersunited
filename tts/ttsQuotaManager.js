@@ -1,4 +1,4 @@
-// 📁 ttsQuotaManager.js – מעקב מגבלות TTS ו־Fallback ל־Gemini Flash
+// 📁 tts/ttsQuotaManager.js – מעקב מגבלות TTS ו־Fallback ל־Gemini Flash
 
 const admin = require('firebase-admin');
 
@@ -7,8 +7,7 @@ const DAILY_CALL_LIMIT = 15;
 const MONTHLY_CHAR_LIMIT = 300000;
 
 function getDateKey() {
-  const now = new Date();
-  return now.toISOString().split('T')[0];
+  return new Date().toISOString().split('T')[0];
 }
 
 function getMonthKey() {
@@ -16,55 +15,54 @@ function getMonthKey() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
-async function getTTSUsage() {
-  const db = admin.firestore();
-  const dateKey = getDateKey();
-  const monthKey = getMonthKey();
-
-  const dailyRef = db.doc(`geminiTtsUsage/daily/${dateKey}`);
-  const monthlyRef = db.doc(`geminiTtsUsage/monthly/${monthKey}`);
-
-  const [dailySnap, monthlySnap] = await Promise.all([dailyRef.get(), monthlyRef.get()]);
-  const daily = dailySnap.exists ? dailySnap.data() : { totalCharacters: 0, totalCalls: 0 };
-  const monthly = monthlySnap.exists ? monthlySnap.data() : { totalCharacters: 0 };
-
-  return { daily, monthly };
-}
-
-function getUsageStatus(used, limit) {
-  const percent = (used / limit) * 100;
-  if (percent >= 99) return '🔴 מלא';
-  if (percent >= 90) return '🟠 כמעט מלא';
-  if (percent >= 80) return '🟡 גבוה';
-  if (percent >= 50) return '🟢 בינוני';
-  return '🟢 תקין';
-}
-
 async function getTTSQuotaReport() {
-  const { daily, monthly } = await getTTSUsage();
+  try {
+    const db = admin.firestore();
+    const dateKey = getDateKey();
+    const monthKey = getMonthKey();
 
-  return {
-    dailyCharacters: {
-      used: daily.totalCharacters || 0,
-      limit: DAILY_CHAR_LIMIT,
-      status: getUsageStatus(daily.totalCharacters || 0, DAILY_CHAR_LIMIT)
-    },
-    dailyCalls: {
-      used: daily.totalCalls || 0,
-      limit: DAILY_CALL_LIMIT,
-      status: getUsageStatus(daily.totalCalls || 0, DAILY_CALL_LIMIT)
-    },
-    monthlyCharacters: {
-      used: monthly.totalCharacters || 0,
-      limit: MONTHLY_CHAR_LIMIT,
-      status: getUsageStatus(monthly.totalCharacters || 0, MONTHLY_CHAR_LIMIT)
-    }
-  };
+    const dailyRef = db.doc(`geminiTtsUsage/daily/${dateKey}`);
+    const monthlyRef = db.doc(`geminiTtsUsage/monthly/${monthKey}`);
+
+    const [dailySnap, monthlySnap] = await Promise.all([
+      dailyRef.get(),
+      monthlyRef.get()
+    ]);
+
+    const daily = dailySnap.exists ? dailySnap.data() : {};
+    const monthly = monthlySnap.exists ? monthlySnap.data() : {};
+
+    const dailyCharacters = typeof daily.totalCharacters === 'number' ? daily.totalCharacters : 0;
+    const dailyCalls = typeof daily.totalCalls === 'number' ? daily.totalCalls : 0;
+    const monthlyCharacters = typeof monthly.totalCharacters === 'number' ? monthly.totalCharacters : 0;
+
+    return {
+      dailyCharacters: {
+        used: dailyCharacters,
+        limit: DAILY_CHAR_LIMIT
+      },
+      dailyCalls: {
+        used: dailyCalls,
+        limit: DAILY_CALL_LIMIT
+      },
+      monthlyCharacters: {
+        used: monthlyCharacters,
+        limit: MONTHLY_CHAR_LIMIT
+      }
+    };
+  } catch (err) {
+    console.error('❌ שגיאה ב־getTTSQuotaReport:', err);
+    return null;
+  }
 }
 
-function shouldUseFallback(report) {
-  const nearingLimit = report.dailyCharacters.used >= DAILY_CHAR_LIMIT * 0.9
-    || report.monthlyCharacters.used >= MONTHLY_CHAR_LIMIT * 0.9;
+async function shouldUseFallback() {
+  const report = await getTTSQuotaReport();
+  if (!report) return true;
+
+  const nearingLimit = report.dailyCharacters.used >= report.dailyCharacters.limit * 0.9 ||
+                       report.monthlyCharacters.used >= report.monthlyCharacters.limit * 0.9 ||
+                       report.dailyCalls.used >= report.dailyCalls.limit * 0.9;
   return nearingLimit;
 }
 

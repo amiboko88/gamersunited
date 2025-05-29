@@ -26,6 +26,8 @@ const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayRemind
 // 🎧 ניהול קולי
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const handleMusicControls = require('./handlers/musicControls');
+const ttsCommand = require('./commands/ttsCommand');
+
 
 // 🤖 אינטראקציות חכמות
 const smartChat = require('./handlers/smartChat');
@@ -83,6 +85,7 @@ commands.push(verifyData, songData, soundData);
 commands.push(...birthdayCommands);
 commands.push(leaderboardData);
 commands.push(rulesStatsData);
+commands.push(ttsCommand.data); // ✅ חדש
 commands.push(refreshRulesData);
 
 // ▶️ התחברות
@@ -187,6 +190,7 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'שיר') return songExecute(interaction, client);
   if (commandName === 'עדכן_חוקים') return refreshRulesExecute(interaction);
   if (commandName === 'אישרו_חוקים') return rulesStatsExecute(interaction);
+  if (commandName === 'tts') return ttsCommand.execute(interaction);
   if (commandName === 'לוח_פעילות') return leaderboardExecute(interaction);
   if (commandName === 'סאונד') return soundExecute(interaction, client);  
   if (commandName === 'אמת') return verifyExecute(interaction);

@@ -21,8 +21,9 @@ async function getTTSQuotaReport() {
     const dateKey = getDateKey();
     const monthKey = getMonthKey();
 
-    const dailyRef = db.doc(`geminiTtsUsage/daily/${dateKey}`);
-    const monthlyRef = db.doc(`geminiTtsUsage/monthly/${monthKey}`);
+const dailyRef = db.collection('geminiTtsUsage').doc(`daily-${dateKey}`);
+const monthlyRef = db.collection('geminiTtsUsage').doc(`monthly-${monthKey}`);
+
 
     const [dailySnap, monthlySnap] = await Promise.all([
       dailyRef.get(),

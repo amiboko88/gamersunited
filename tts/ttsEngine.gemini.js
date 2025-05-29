@@ -33,8 +33,8 @@ async function checkGeminiQuota(textLength) {
   const dateKey = getDateKey();
   const monthKey = getMonthKey();
 
-  const dailyRef = db.doc(`geminiTtsUsage/daily/${dateKey}`);
-  const monthlyRef = db.doc(`geminiTtsUsage/monthly/${monthKey}`);
+  const dailyRef = db.collection('geminiTtsUsage').doc(`daily-${dateKey}`);
+  const monthlyRef = db.collection('geminiTtsUsage').doc(`monthly-${monthKey}`);
 
   const [dailySnap, monthlySnap] = await Promise.all([
     dailyRef.get(),
@@ -132,5 +132,6 @@ async function getShortTTSByProfile(userId) {
 module.exports = {
   synthesizeGeminiTTS,
   getPodcastAudioGemini,
+  getProfileByUserId,
   getShortTTSByProfile
 };

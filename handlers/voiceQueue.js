@@ -1,4 +1,4 @@
-// 📁 handlers/voiceQueue.js – ניהול חכם של תור TTS, קרציות, פודקאסטים ועוד (FIFO OpenAI + FFmpeg + Prism)
+// 📁 handlers/voiceQueue.js – FIFO TTS: תור, קרציות, פודקאסטים, OpenAI, FFmpeg + Debug מלא
 
 const { 
   joinVoiceChannel, 
@@ -20,6 +20,8 @@ const { shouldUseFallback } = require('../tts/ttsQuotaManager');
 
 const { Readable } = require('stream');
 const prism = require('prism-media');
+const fs = require('fs');
+const ffmpegPath = require('ffmpeg-static');
 
 const activeQueue = new Map();
 const recentUsers = new Map();
@@ -35,37 +37,67 @@ function bufferToStream(buffer) {
   return Readable.from(buffer);
 }
 
-// 🏆 פונקציה חכמה – ממירה mp3 ל-PCM (Discord דורש) עם ffmpeg+prism-media
+// 🏆 playAudio – חכם, עם כל דיבאג ולוג אפשרי
 async function playAudio(connection, audioBuffer) {
-  // ממיר mp3 מה-TTS ל-PCM RAW
-  const prismStream = new prism.FFmpeg({
-    args: [
-      '-analyzeduration', '0',
-      '-loglevel', '0',
-      '-f', 'mp3',
-      '-i', 'pipe:0',
-      '-f', 's16le',
-      '-ar', '48000',
-      '-ac', '2',
-      'pipe:1'
-    ]
-  });
-
-  bufferToStream(audioBuffer).pipe(prismStream);
-
-  const resource = createAudioResource(prismStream, { inputType: StreamType.Raw });
-  const player = createAudioPlayer();
-  connection.subscribe(player);
-  player.play(resource);
-
   try {
-    await entersState(player, AudioPlayerStatus.Idle, 30_000);
-  } catch (err) {
-    console.error('🛑 השמעה נכשלה:', err);
-  }
+    // בדיקת Buffer
+    console.log('🎛️ Buffer type:', typeof audioBuffer, 'Buffer.isBuffer?', Buffer.isBuffer(audioBuffer), 'Size:', audioBuffer.length);
 
-  player.stop();
-  connection.destroy();
+    // שמירה לדיסק – תוכל להאזין אח"כ אם תרצה
+    const debugFile = `/tmp/tts_debug_${Date.now()}.mp3`;
+    fs.writeFileSync(debugFile, audioBuffer);
+    console.log('💾 נשמר קובץ debug:', debugFile);
+
+    // בדיקת FFmpeg path
+    console.log('FFmpeg path:', ffmpegPath);
+
+    // הגדרת Prism+FFmpeg
+    const prismStream = new prism.FFmpeg({
+      args: [
+        '-analyzeduration', '0',
+        '-loglevel', '0',
+        '-f', 'mp3',
+        '-i', 'pipe:0',
+        '-f', 's16le',
+        '-ar', '48000',
+        '-ac', '2',
+        'pipe:1'
+      ]
+    });
+
+    // בדיקת ffmpeg errors
+    prismStream.on('error', (err) => {
+      console.error('🛑 ffmpeg error:', err);
+    });
+
+    bufferToStream(audioBuffer).pipe(prismStream);
+
+    // יצירת AudioResource
+    const resource = createAudioResource(prismStream, { inputType: StreamType.Raw });
+    const player = createAudioPlayer();
+    connection.subscribe(player);
+
+    player.on('error', (err) => {
+      console.error('🛑 player error:', err);
+    });
+
+    player.play(resource);
+
+    console.log('🔊 התחלנו להשמיע... ממתינים ל־Idle (סיום)');
+
+    try {
+      await entersState(player, AudioPlayerStatus.Idle, 30_000);
+      console.log('✅ player במצב Idle – סיים השמעה');
+    } catch (err) {
+      console.error('🛑 תקלה ב־entersState:', err);
+    }
+
+    player.stop();
+    connection.destroy();
+  } catch (err) {
+    console.error('🛑 השמעה נכשלה – exception:', err);
+    if (connection) connection.destroy();
+  }
 }
 
 // זיהוי "קרציות" – משתמשים שמציפים/מציקים
@@ -136,14 +168,13 @@ async function processUserSmart(member, channel) {
       continue;
     }
 
-    // יצירת והפעלת חיבור קולי
-    const connection = joinVoiceChannel({
-      channelId: channel.id,
-      guildId: channel.guild.id,
-      adapterCreator: channel.guild.voiceAdapterCreator
-    });
-
+    // יצירת והפעלת חיבור קולי והשמעה (כולל debug)
     try {
+      const connection = joinVoiceChannel({
+        channelId: channel.id,
+        guildId: channel.guild.id,
+        adapterCreator: channel.guild.voiceAdapterCreator
+      });
       await entersState(connection, VoiceConnectionStatus.Ready, 15_000);
       await playAudio(connection, audioBuffer);
     } catch (err) {

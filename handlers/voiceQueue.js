@@ -1,12 +1,26 @@
-// 📁 handlers/voiceQueue.js – ניהול חכם של תור TTS, קרציות, פודקאסטים ועוד
+// 📁 handlers/voiceQueue.js – ניהול חכם של תור TTS, קרציות, פודקאסטים ועוד (גרסה מתקדמת FIFO OPENAI)
 
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState, AudioPlayerStatus, VoiceConnectionStatus } = require('@discordjs/voice');
-const { getShortTTSByProfile, getPodcastAudioGemini } = require('../tts/ttsEngine.gemini');
+const { 
+  joinVoiceChannel, 
+  createAudioPlayer, 
+  createAudioResource, 
+  entersState, 
+  AudioPlayerStatus, 
+  VoiceConnectionStatus 
+} = require('@discordjs/voice');
+
+const { 
+  getShortTTSByProfile, 
+  getPodcastAudioOpenAI,
+  canUserUseTTS
+} = require('../tts/ttsEngine.openai');
+
 const { shouldUseFallback } = require('../tts/ttsQuotaManager');
 
 const activeQueue = new Map();
 const recentUsers = new Map();
 const connectionLocks = new Set();
+
 const TTS_TIMEOUT = 5000;
 const CRITICAL_SPAM_WINDOW = 10_000;
 const MULTI_JOIN_WINDOW = 6_000;
@@ -32,6 +46,7 @@ async function playAudio(connection, audioBuffer) {
   connection.destroy();
 }
 
+// זיהוי "קרציות" – משתמשים שמציפים או מציקים
 function isUserAnnoying(userId) {
   const now = Date.now();
   const timestamps = recentUsers.get(userId) || [];
@@ -40,6 +55,11 @@ function isUserAnnoying(userId) {
   return newTimestamps.length >= 3;
 }
 
+/**
+ * תור TTS חכם – תומך בהשמעה קבוצתית (פודקאסט) ובודדת, כולל קרציות, בונוסים, Fallback
+ * @param {GuildMember} member 
+ * @param {VoiceChannel} channel 
+ */
 async function processUserSmart(member, channel) {
   const userId = member.id;
   const guildId = channel.guild.id;
@@ -50,18 +70,26 @@ async function processUserSmart(member, channel) {
 
   queue.push({ member, timestamp: Date.now() });
 
-  if (connectionLocks.has(key)) return; // Already processing
-
+  // אם כבר יש השמעה פעילה – נמתין
+  if (connectionLocks.has(key)) return;
   connectionLocks.add(key);
 
   while (queue.length > 0) {
     const { member: nextMember, timestamp } = queue.shift();
 
+    // הגנה – קרציות
     if (isUserAnnoying(nextMember.id)) {
       console.log(`🤬 ${nextMember.displayName} מתנהג כמו קרצייה`);
       continue;
     }
 
+    // בקרת שימוש – quota אישי (אפשר לכבות ע"י הגבלת limit גבוה מאוד)
+    if (!(await canUserUseTTS(nextMember.id, 10))) { // ברירת מחדל: 10 השמעות למשתמש ביום
+      console.log(`⛔️ ${nextMember.displayName} חרג מהמגבלה היומית האישית`);
+      continue;
+    }
+
+    // זיהוי התחברות קבוצתית (פודקאסט) – תוך MULTI_JOIN_WINDOW
     const joinedClose = queue.some(item =>
       item.member.id !== nextMember.id &&
       Math.abs(item.timestamp - timestamp) <= MULTI_JOIN_WINDOW
@@ -72,14 +100,21 @@ async function processUserSmart(member, channel) {
     let audioBuffer;
 
     try {
-      audioBuffer = usePodcast
-        ? await getPodcastAudioGemini(queue.map(item => item.member.displayName))
-        : await getShortTTSByProfile(nextMember, useFallback);
+      if (usePodcast) {
+        // פודקאסט קבוצתי (ריבוי מצטרפים) – קולות FIFO, משפטים מותאמים
+        const displayNames = queue.map(item => item.member.displayName);
+        const ids = queue.map(item => item.member.id);
+        audioBuffer = await getPodcastAudioOpenAI(displayNames, ids);
+      } else {
+        // TTS אישי – לפי פרופיל המשתמש (כולל Fallback)
+        audioBuffer = await getShortTTSByProfile(nextMember, useFallback);
+      }
     } catch (err) {
       console.error(`TTS error:`, err);
       continue;
     }
 
+    // יצירת והפעלת חיבור קולי
     const connection = joinVoiceChannel({
       channelId: channel.id,
       guildId: channel.guild.id,

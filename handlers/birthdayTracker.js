@@ -1,5 +1,5 @@
 const { EmbedBuilder, ChannelType } = require('discord.js');
-const { synthesizeGeminiTTS } = require('../tts/ttsEngine.gemini');
+const { synthesizeGeminiTTS } = require('../tts/ttsEngine.openai');
 const db = require('../utils/firebase');
 
 const CHANNEL_ID = process.env.BIRTHDAY_CHANNEL_ID;

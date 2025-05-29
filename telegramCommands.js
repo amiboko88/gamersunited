@@ -1,4 +1,4 @@
-// 📁 telegramCommands.js – גרסה מלאה, כל פקודה נרשמת במפורש
+// 📁 telegramCommands.js – גרסה סופית 2030: פיצ'רים, קטגוריות ו־Menu Button
 
 const replies = require("./commandsData");
 
@@ -6,34 +6,50 @@ module.exports = function registerTelegramCommands(bot) {
   const getRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
   const nameOf = (ctx) => ctx.from?.first_name || "חבר";
 
-  // 📌 רישום Slash Commands אחד־אחד
+  // 📌 פקודות Slash בקטגוריות + כותרות
   bot.api.setMyCommands([
-    { command: "start", description: "התחלה וברוך הבא" },
-    { command: "help", description: "הצג את כל האפשרויות של הבוט" },
-    { command: "prophecy", description: "קבל תחזית פסימית מהבוט" },
-    { command: "laugh", description: "שמעון יורד עליך" },
-    { command: "compliment", description: "מחמאה גסה במיוחד" },
-    { command: "nextmvp", description: "ניחוש מגוחך של שמעון" },
-    { command: "why", description: "למה אני כזה גרוע?" },
-    { command: "shimon", description: "משפט השראה מרושע" },
-    { command: "excuse", description: "תירוץ מביך להפסד שלך" },
-    { command: "rage", description: "התפרצות זעם של גיימר מתוסכל" },
-    { command: "daily", description: "משפט יומי אכזרי משמעון" },
-    { command: "insult", description: "העלבה ישירה" },
-    { command: "legend", description: "כבוד לגיימר מיתולוגי" },
-    { command: "status", description: "מצב חברתי אכזרי" },
+    { command: "——", description: "🎮 גיימינג וירידות ——" },
     { command: "roast_me", description: "צלייה אישית" },
+    { command: "insult", description: "העלבה ישירה" },
+    { command: "compliment", description: "מחמאה סרקסטית" },
+    { command: "excuse", description: "תירוץ מביך" },
+    { command: "rage", description: "התפרצות זעם" },
+    { command: "punishment", description: "עונש על ביצועים" },
+
+    { command: "——", description: "🧠 פסיכולוגיה של שמעון ——" },
+    { command: "prophecy", description: "תחזית פסימית" },
+    { command: "why", description: "למה אתה גרוע" },
+    { command: "shimon", description: "משפט השראה מרושע" },
     { command: "honest", description: "אמת כואבת" },
-    { command: "toxic", description: "מצב טוקסיות" },
+    { command: "toxic", description: "רמת טוקסיות" },
+    { command: "status", description: "מצב FIFO" },
+    { command: "nextmvp", description: "ניחוש MVP" },
+
+    { command: "——", description: "🎉 פאן והומור ——" },
+    { command: "joke", description: "בדיחה גרועה" },
+    { command: "sound", description: "צליל FIFO מדומיין" },
     { command: "yogi", description: "משפטי יוגי" },
-    { command: "punishment", description: "עונש על ביצועים חלשים" },
-    { command: "joke", description: "בדיחה גרועה במיוחד" },
-    { command: "sound", description: "צליל FIFO מדומיין" }
+    { command: "daily", description: "משפט יומי" },
+    { command: "legend", description: "גיימר אגדי" },
+
+    { command: "——", description: "📅 ימי הולדת ——" },
+    { command: "birthday", description: "הוסף או עדכן יום הולדת" },
+
+    { command: "——", description: "🛠️ מערכת ——" },
+    { command: "start", description: "התחלה וברוך הבא" },
+    { command: "help", description: "הצג את כל האפשרויות" }
   ]).catch((err) => {
     console.error("❌ שגיאה ברישום פקודות בטלגרם:", err);
   });
 
-  // 🧠 פקודות אחת־אחת
+  // 🟢 כפתור Menu קבוע בצ'אט (כל הפלטפורמות, חדש!)
+  bot.api.setChatMenuButton({
+    menu_button: { type: "commands" }
+  }).then(() => {
+    console.log("📎 Menu Button הוגדר בהצלחה");
+  }).catch(console.error);
+
+  // 🧠 פקודות אחת־אחת (לא נגעתי)
   bot.command("prophecy", (ctx) => {
     const { text, options } = format(ctx, replies.prophecy);
     ctx.reply(text, options);
@@ -152,6 +168,7 @@ module.exports = function registerTelegramCommands(bot) {
 /punishment – עונש
 /joke – בדיחה גרועה
 /sound – סאונד דמיוני
+/birthday – הוסף או עדכן יום הולדת
     `.trim();
     ctx.reply(`\u200F<b>${name}</b>, שמעון יודע לעשות את הדברים הבאים:\n\n${list}`, { parse_mode: "HTML" });
   });
@@ -163,13 +180,12 @@ module.exports = function registerTelegramCommands(bot) {
   });
 
   // 🔧 פורמט אחיד
-function format(ctx, list) {
-  const name = nameOf(ctx); // שולף את שם המשתמש או "חבר"
-  const text = getRandom(list); // בוחר משפט רנדומלי מהמאגר
-  return {
-    text: `\u200F<b>${name}</b> – ${text}`, // טקסט מעוצב עם RTL
-    options: { parse_mode: "HTML" } // הגדרה לתמיכה בעיצוב
-  };
-}
-
+  function format(ctx, list) {
+    const name = nameOf(ctx);
+    const text = getRandom(list);
+    return {
+      text: `\u200F<b>${name}</b> – ${text}`,
+      options: { parse_mode: "HTML" }
+    };
+  }
 };

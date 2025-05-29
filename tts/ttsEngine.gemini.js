@@ -1,10 +1,8 @@
-// 📁 tts/ttsEngine.gemini.js – FIFO PODCAST ENGINE עם Gemini TTS
-
 const axios = require('axios');
 const admin = require('firebase-admin');
 const { log } = require('../utils/logger');
-const { getScriptByUserId } = require('../data/fifoLines');
-const { getProfileByUserId } = require('../data/profiles');
+const { FIFO_LINES } = require('../data/fifoLines');
+const { playerProfiles } = require('../data/profiles');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const DAILY_CHAR_LIMIT = 10000;
@@ -26,6 +24,12 @@ function getVoiceName(speaker = 'shimon') {
     shirley: 'zephyr'
   };
   return voices[speaker] || voices.shimon;
+}
+
+function getProfileByUserId(userId) {
+  return {
+    lines: playerProfiles[userId] || playerProfiles['default']
+  };
 }
 
 async function checkGeminiQuota(textLength) {
@@ -103,35 +107,37 @@ async function synthesizeGeminiTTS(text, speaker = 'shimon') {
   }
 }
 
-async function getPodcastAudioGemini(userId) {
-  const script = getScriptByUserId(userId);
-  const segments = [
-    { speaker: 'shimon', text: script.shimon },
-    { speaker: 'shirley', text: script.shirley },
-    { speaker: 'shimon', text: script.punch }
-  ];
+async function getShortTTSByProfile(member) {
+  const userId = member.user.id;
+  const profile = getProfileByUserId(userId);
 
-  const buffers = [];
-  for (const seg of segments) {
-    const buffer = await synthesizeGeminiTTS(seg.text, seg.speaker);
-    buffers.push(buffer);
-  }
+  const lines = Array.isArray(profile?.lines) && profile.lines.length > 0
+    ? profile.lines
+    : playerProfiles['default'];
 
-  return buffers;
+  const sentence = lines[Math.floor(Math.random() * lines.length)];
+  const speaker = Math.random() < 0.5 ? 'shimon' : 'shirley';
+
+  log(`🗣️ TTS אישי ל־${member.displayName}: ${sentence}`);
+  return synthesizeGeminiTTS(sentence, speaker);
 }
 
-async function getShortTTSByProfile(userId) {
-  const profile = getProfileByUserId(userId);
-  const text = Array.isArray(profile?.lines)
-    ? profile.lines[Math.floor(Math.random() * profile.lines.length)]
-    : 'ברוך הבא לחדר, גבר.';
-  const speaker = Math.random() < 0.5 ? 'shimon' : 'shirley';
-  return await synthesizeGeminiTTS(text, speaker);
+async function getPodcastAudioGemini(displayNames = []) {
+  const buffers = [];
+
+  for (const [speaker, line] of FIFO_LINES) {
+    const fullLine = line.replace('{players}', displayNames.join(', '));
+    const audioBuffer = await synthesizeGeminiTTS(fullLine, speaker);
+    buffers.push(audioBuffer);
+  }
+
+  return Buffer.concat(buffers);
 }
 
 module.exports = {
   synthesizeGeminiTTS,
+  getShortTTSByProfile,
   getPodcastAudioGemini,
   getProfileByUserId,
-  getShortTTSByProfile
+  getVoiceName
 };

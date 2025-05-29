@@ -6,6 +6,8 @@ const express = require("express");
 const handleSmartReply = require("./shimonSmart");
 const db = require("./utils/firebase");
 const registerCommands = require("./telegramCommands");
+const registerBirthdayHandler = require("./telegramBirthday");
+const { sendBirthdayMessages } = require("./birthdayNotifierTelegram");
 const { handleCurses } = require("./telegramCurses");
 const { handleTrigger, checkDailySilence } = require("./telegramTriggers");
 
@@ -19,6 +21,7 @@ bot.use(async (ctx, next) => {
 
 // 📌 רישום Slash Commands
 registerCommands(bot);
+registerBirthdayHandler(bot);
 
 // 🧠 ניתוח הודעות
 bot.on("message", async (ctx) => {
@@ -63,6 +66,17 @@ if (process.env.RAILWAY_STATIC_URL) {
   app.listen(port, () => {
     console.log(`🚀 האזנה ל־Webhook בטלגרם בפורט ${port}`);
   });
+
+  // 🎉 תזמון ברכות יומולדת יומיות ב־09:00
+  const now = new Date();
+  const millisUntilNine =
+    new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0, 0) - now;
+
+  setTimeout(() => {
+    sendBirthdayMessages();
+    setInterval(sendBirthdayMessages, 24 * 60 * 60 * 1000); // כל 24 שעות
+  }, Math.max(millisUntilNine, 0));
+
 } else {
   console.error("❌ חסר RAILWAY_STATIC_URL במשתני סביבה");
 }

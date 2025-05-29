@@ -1,2 +1,0 @@
-[phases.setup]
-nixpkgs = ["nodejs-20_x", "npm"]

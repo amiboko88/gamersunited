@@ -24,7 +24,7 @@ const { startBirthdayTracker } = require('./handlers/birthdayTracker');
 const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayReminder');
 
 // 🎧 ניהול קולי
-const handleVoiceStateUpdate = require('./handlers/voiceQueue');
+const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const handleMusicControls = require('./handlers/musicControls');
 const ttsCommand = require('./commands/ttsCommand');
 

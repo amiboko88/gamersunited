@@ -1,4 +1,4 @@
-// 📁 ttsCommand.js – פקודת Slash להצגת סטטוס TTS
+// 📁 ttsCommand.js – פקודת Slash להצגת סטטוס TTS (גרסה מתוקנת)
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { getTTSQuotaReport } = require('../tts/ttsQuotaManager');
@@ -34,10 +34,16 @@ module.exports = {
         )
         .setFooter({ text: 'אם הגענו ל־90% – שמעון יעבור אוטומטית ל־Gemini Flash 😶‍🌫️' });
 
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+      await interaction.reply({
+        embeds: [embed],
+        flags: 64 // ✅ במקום ephemeral: true
+      });
     } catch (err) {
       console.error('❌ שגיאה בפקודת /tts:', err);
-      await interaction.reply({ content: 'שמעון לא הצליח להביא את הסטטוס כרגע 😢', ephemeral: true });
+      await interaction.reply({
+        content: 'שמעון לא הצליח להביא את הסטטוס כרגע 😢',
+        flags: 64
+      });
     }
   }
 };

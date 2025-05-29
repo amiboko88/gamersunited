@@ -24,7 +24,7 @@ const { startBirthdayTracker } = require('./handlers/birthdayTracker');
 const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayReminder');
 
 // 🎧 ניהול קולי
-const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
+const voiceHandler = require('./handlers/voiceHandler');
 const handleMusicControls = require('./handlers/musicControls');
 const ttsCommand = require('./commands/ttsCommand');
 
@@ -130,7 +130,7 @@ client.on('presenceUpdate', (oldPresence, newPresence) => {
 
 // 🎤 קול
 client.on('voiceStateUpdate', (oldState, newState) => {
-  handleVoiceStateUpdate(oldState, newState);
+   voiceHandler.execute(oldState, newState);
 });
 
 client.on('guildMemberAdd', async member => {

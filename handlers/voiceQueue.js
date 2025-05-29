@@ -1,4 +1,4 @@
-// 📁 handlers/voiceQueue.js – FIFO TTS: תור, קרציות, פודקאסטים, OpenAI, FFmpeg + Debug מלא
+// 📁 handlers/voiceQueue.js – FIFO TTS: תור, קרציות, פודקאסטים, OpenAI, OPUS
 
 const { 
   joinVoiceChannel, 
@@ -37,43 +37,38 @@ function bufferToStream(buffer) {
   return Readable.from(buffer);
 }
 
-// 🏆 playAudio – חכם, עם כל דיבאג ולוג אפשרי
+// 🏆 playAudio – המרת mp3 ל־Opus ושידור תקני
 async function playAudio(connection, audioBuffer) {
   try {
-    // בדיקת Buffer
+    // Debug: בדוק Buffer
     console.log('🎛️ Buffer type:', typeof audioBuffer, 'Buffer.isBuffer?', Buffer.isBuffer(audioBuffer), 'Size:', audioBuffer.length);
 
-    // שמירה לדיסק – תוכל להאזין אח"כ אם תרצה
+    // Debug: שמירה לדיסק (אם תרצה להוריד לבדוק)
     const debugFile = `/tmp/tts_debug_${Date.now()}.mp3`;
     fs.writeFileSync(debugFile, audioBuffer);
     console.log('💾 נשמר קובץ debug:', debugFile);
 
-    // בדיקת FFmpeg path
+    // Debug: FFmpeg path
     console.log('FFmpeg path:', ffmpegPath);
 
-    // הגדרת Prism+FFmpeg
-    const prismStream = new prism.FFmpeg({
-      args: [
-        '-analyzeduration', '0',
-        '-loglevel', '0',
-        '-f', 'mp3',
-        '-i', 'pipe:0',
-        '-f', 's16le',
-        '-ar', '48000',
-        '-ac', '2',
-        'pipe:1'
-      ]
-    });
+    // המרת mp3 ל־Opus ע"י ffmpeg+prism-media
+    const opusStream = bufferToStream(audioBuffer)
+      .pipe(new prism.FFmpeg({
+        args: [
+          '-analyzeduration', '0',
+          '-loglevel', '0',
+          '-f', 'mp3',
+          '-i', 'pipe:0',
+          '-c:a', 'libopus',
+          '-ar', '48000',
+          '-ac', '2',
+          '-f', 'opus',
+          'pipe:1'
+        ]
+      }));
 
-    // בדיקת ffmpeg errors
-    prismStream.on('error', (err) => {
-      console.error('🛑 ffmpeg error:', err);
-    });
-
-    bufferToStream(audioBuffer).pipe(prismStream);
-
-    // יצירת AudioResource
-    const resource = createAudioResource(prismStream, { inputType: StreamType.Raw });
+    // נשתמש ב־StreamType.OggOpus, זה הסטנדרט
+    const resource = createAudioResource(opusStream, { inputType: StreamType.OggOpus });
     const player = createAudioPlayer();
     connection.subscribe(player);
 
@@ -83,8 +78,7 @@ async function playAudio(connection, audioBuffer) {
 
     player.play(resource);
 
-    console.log('🔊 התחלנו להשמיע... ממתינים ל־Idle (סיום)');
-
+    console.log('🔊 מתחיל לשדר OPUS... ממתינים ל־Idle (סיום)');
     try {
       await entersState(player, AudioPlayerStatus.Idle, 30_000);
       console.log('✅ player במצב Idle – סיים השמעה');

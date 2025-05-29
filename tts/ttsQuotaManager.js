@@ -1,4 +1,4 @@
-// 📁 tts/ttsQuotaManager.js – מעקב מגבלות TTS ו־Fallback ל־Gemini Flash
+// 📁 tts/ttsQuotaManager.js – ניהול מגבלות TTS, רישום שימוש, ו־Fallback ל־Gemini/OpenAI
 
 const admin = require('firebase-admin');
 
@@ -6,6 +6,7 @@ const DAILY_CHAR_LIMIT = 10000;
 const DAILY_CALL_LIMIT = 15;
 const MONTHLY_CHAR_LIMIT = 300000;
 
+// פונקציות עזר
 function getDateKey() {
   return new Date().toISOString().split('T')[0];
 }
@@ -15,15 +16,16 @@ function getMonthKey() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
+// קבלת סטטיסטיקת שימוש
 async function getTTSQuotaReport() {
   try {
     const db = admin.firestore();
     const dateKey = getDateKey();
     const monthKey = getMonthKey();
 
-const dailyRef = db.collection('geminiTtsUsage').doc(`daily-${dateKey}`);
-const monthlyRef = db.collection('geminiTtsUsage').doc(`monthly-${monthKey}`);
-
+    // שמרנו את אותו שם אוסף – אפשר להחליף ל־'ttsUsage' אם תרצה להפריד (למשל openai/גמיני)
+    const dailyRef = db.collection('geminiTtsUsage').doc(`daily-${dateKey}`);
+    const monthlyRef = db.collection('geminiTtsUsage').doc(`monthly-${monthKey}`);
 
     const [dailySnap, monthlySnap] = await Promise.all([
       dailyRef.get(),
@@ -57,6 +59,7 @@ const monthlyRef = db.collection('geminiTtsUsage').doc(`monthly-${monthKey}`);
   }
 }
 
+// האם צריך לעבור ל־Fallback לפי מגבלות?
 async function shouldUseFallback() {
   const report = await getTTSQuotaReport();
   if (!report) return true;
@@ -67,7 +70,34 @@ async function shouldUseFallback() {
   return nearingLimit;
 }
 
+// ✅ רישום שימוש אמיתי ב־TTS (תווים/קריאות)
+async function registerTTSUsage(chars = 0, calls = 1) {
+  try {
+    const db = admin.firestore();
+    const dateKey = getDateKey();
+    const monthKey = getMonthKey();
+
+    const dailyRef = db.collection('geminiTtsUsage').doc(`daily-${dateKey}`);
+    const monthlyRef = db.collection('geminiTtsUsage').doc(`monthly-${monthKey}`);
+
+    await Promise.all([
+      dailyRef.set({
+        totalCharacters: admin.firestore.FieldValue.increment(chars),
+        totalCalls: admin.firestore.FieldValue.increment(calls),
+        lastUpdated: new Date().toISOString()
+      }, { merge: true }),
+      monthlyRef.set({
+        totalCharacters: admin.firestore.FieldValue.increment(chars),
+        lastUpdated: new Date().toISOString()
+      }, { merge: true })
+    ]);
+  } catch (e) {
+    console.error('❌ שגיאה ברישום שימוש TTS:', e.message);
+  }
+}
+
 module.exports = {
   getTTSQuotaReport,
-  shouldUseFallback
+  shouldUseFallback,
+  registerTTSUsage
 };

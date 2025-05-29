@@ -7,40 +7,41 @@ module.exports = function registerTelegramCommands(bot) {
   const nameOf = (ctx) => ctx.from?.first_name || "חבר";
 
   // 📌 פקודות Slash בקטגוריות + כותרות
-  bot.api.setMyCommands([
-    { command: "——", description: "🎮 גיימינג וירידות ——" },
-    { command: "roast_me", description: "צלייה אישית" },
-    { command: "insult", description: "העלבה ישירה" },
-    { command: "compliment", description: "מחמאה סרקסטית" },
-    { command: "excuse", description: "תירוץ מביך" },
-    { command: "rage", description: "התפרצות זעם" },
-    { command: "punishment", description: "עונש על ביצועים" },
+bot.api.setMyCommands([
+  // 🎮 גיימינג וירידות
+  { command: "roast_me", description: "🎮 צלייה אישית" },
+  { command: "insult", description: "💥 העלבה ישירה" },
+  { command: "compliment", description: "🫡 מחמאה סרקסטית" },
+  { command: "excuse", description: "🫠 תירוץ מביך" },
+  { command: "rage", description: "🤬 התפרצות זעם" },
+  { command: "punishment", description: "🚫 עונש על ביצועים" },
 
-    { command: "——", description: "🧠 פסיכולוגיה של שמעון ——" },
-    { command: "prophecy", description: "תחזית פסימית" },
-    { command: "why", description: "למה אתה גרוע" },
-    { command: "shimon", description: "משפט השראה מרושע" },
-    { command: "honest", description: "אמת כואבת" },
-    { command: "toxic", description: "רמת טוקסיות" },
-    { command: "status", description: "מצב FIFO" },
-    { command: "nextmvp", description: "ניחוש MVP" },
+  // 🧠 פסיכולוגיה של שמעון
+  { command: "prophecy", description: "🔮 תחזית פסימית" },
+  { command: "why", description: "❓ למה אתה גרוע" },
+  { command: "shimon", description: "🧑‍💻 משפט השראה מרושע" },
+  { command: "honest", description: "🎯 אמת כואבת" },
+  { command: "toxic", description: "☢️ רמת טוקסיות" },
+  { command: "status", description: "📊 מצב FIFO" },
+  { command: "nextmvp", description: "🏆 ניחוש MVP" },
 
-    { command: "——", description: "🎉 פאן והומור ——" },
-    { command: "joke", description: "בדיחה גרועה" },
-    { command: "sound", description: "צליל FIFO מדומיין" },
-    { command: "yogi", description: "משפטי יוגי" },
-    { command: "daily", description: "משפט יומי" },
-    { command: "legend", description: "גיימר אגדי" },
+  // 🎉 פאן והומור
+  { command: "joke", description: "🤣 בדיחה גרועה" },
+  { command: "sound", description: "🎵 צליל FIFO דמיוני" },
+  { command: "yogi", description: "🧘 משפטי יוגי" },
+  { command: "daily", description: "🗓️ משפט יומי" },
+  { command: "legend", description: "👑 גיימר אגדי" },
 
-    { command: "——", description: "📅 ימי הולדת ——" },
-    { command: "birthday", description: "הוסף או עדכן יום הולדת" },
+  // 📅 ימי הולדת
+  { command: "birthday", description: "🎂 הוסף או עדכן יום הולדת" },
 
-    { command: "——", description: "🛠️ מערכת ——" },
-    { command: "start", description: "התחלה וברוך הבא" },
-    { command: "help", description: "הצג את כל האפשרויות" }
-  ]).catch((err) => {
-    console.error("❌ שגיאה ברישום פקודות בטלגרם:", err);
-  });
+  // 🛠️ מערכת
+  { command: "start", description: "🚀 התחלה וברוך הבא" },
+  { command: "help", description: "🆘 הצג את כל האפשרויות" }
+]).catch((err) => {
+  console.error("❌ שגיאה ברישום פקודות בטלגרם:", err);
+});
+
 
   // 🟢 כפתור Menu קבוע בצ'אט (כל הפלטפורמות, חדש!)
   bot.api.setChatMenuButton({

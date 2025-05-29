@@ -1,4 +1,4 @@
-// 📁 telegramCommands.js – גרסה סופית 2030: פיצ'רים, קטגוריות ו־Menu Button
+// 📁 telegramCommands.js – גרסה 2030: רק פקודות עיקריות + תפריט help חכם ב-Inline
 
 const replies = require("./commandsData");
 
@@ -6,51 +6,24 @@ module.exports = function registerTelegramCommands(bot) {
   const getRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
   const nameOf = (ctx) => ctx.from?.first_name || "חבר";
 
-  // 📌 פקודות Slash בקטגוריות + כותרות
-bot.api.setMyCommands([
-  // 🎮 גיימינג וירידות
-  { command: "roast_me", description: "🎮 צלייה אישית" },
-  { command: "insult", description: "💥 העלבה ישירה" },
-  { command: "compliment", description: "🫡 מחמאה סרקסטית" },
-  { command: "excuse", description: "🫠 תירוץ מביך" },
-  { command: "rage", description: "🤬 התפרצות זעם" },
-  { command: "punishment", description: "🚫 עונש על ביצועים" },
+  // 📌 רישום רק פקודות עיקריות ב-setMyCommands
+  bot.api.setMyCommands([
+    { command: "start", description: "🚀 התחלה וברוך הבא" },
+    { command: "help", description: "🆘 תפריט פקודות וקטגוריות" },
+    { command: "birthday", description: "🎂 הוסף או עדכן יום הולדת" }
+  ]).catch((err) => {
+    console.error("❌ שגיאה ברישום פקודות בטלגרם:", err);
+  });
 
-  // 🧠 פסיכולוגיה של שמעון
-  { command: "prophecy", description: "🔮 תחזית פסימית" },
-  { command: "why", description: "❓ למה אתה גרוע" },
-  { command: "shimon", description: "🧑‍💻 משפט השראה מרושע" },
-  { command: "honest", description: "🎯 אמת כואבת" },
-  { command: "toxic", description: "☢️ רמת טוקסיות" },
-  { command: "status", description: "📊 מצב FIFO" },
-  { command: "nextmvp", description: "🏆 ניחוש MVP" },
-
-  // 🎉 פאן והומור
-  { command: "joke", description: "🤣 בדיחה גרועה" },
-  { command: "sound", description: "🎵 צליל FIFO דמיוני" },
-  { command: "yogi", description: "🧘 משפטי יוגי" },
-  { command: "daily", description: "🗓️ משפט יומי" },
-  { command: "legend", description: "👑 גיימר אגדי" },
-
-  // 📅 ימי הולדת
-  { command: "birthday", description: "🎂 הוסף או עדכן יום הולדת" },
-
-  // 🛠️ מערכת
-  { command: "start", description: "🚀 התחלה וברוך הבא" },
-  { command: "help", description: "🆘 הצג את כל האפשרויות" }
-]).catch((err) => {
-  console.error("❌ שגיאה ברישום פקודות בטלגרם:", err);
-});
-
-
-  // 🟢 כפתור Menu קבוע בצ'אט (כל הפלטפורמות, חדש!)
+  // 🟢 כפתור Menu קבוע בצ'אט
   bot.api.setChatMenuButton({
     menu_button: { type: "commands" }
   }).then(() => {
     console.log("📎 Menu Button הוגדר בהצלחה");
   }).catch(console.error);
 
-  // 🧠 פקודות אחת־אחת (לא נגעתי)
+  // 🧠 פקודות אחת־אחת (לא נגעתי – לשמור את כל הישן כאן!)
+
   bot.command("prophecy", (ctx) => {
     const { text, options } = format(ctx, replies.prophecy);
     ctx.reply(text, options);
@@ -146,41 +119,88 @@ bot.api.setMyCommands([
     ctx.reply(text, options);
   });
 
-  // 🆘 /help
-  bot.command("help", (ctx) => {
+  // 🟢 /help אינטראקטיבי – Inline Keyboard לקטגוריות
+  bot.command("help", async (ctx) => {
     const name = nameOf(ctx);
-    const list = `
-/prophecy – תחזית פסימית
-/laugh – ירידה אכזרית
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: "🎮 גיימינג וירידות", callback_data: "help_gaming" },
+          { text: "🧠 פסיכולוגיה של שמעון", callback_data: "help_psy" }
+        ],
+        [
+          { text: "🎉 פאן ובדיחות", callback_data: "help_fun" },
+          { text: "📅 ימי הולדת", callback_data: "help_birthday" }
+        ],
+        [
+          { text: "🛠️ מערכת", callback_data: "help_system" }
+        ]
+      ]
+    };
+
+    await ctx.reply(
+      `\u200F<b>${name}</b>, תפריט פקודות חכם – בחר קטגוריה:` +
+      `\n\nשמעון הבוט 2030: אינטראקטיבי, קטלני, ומצחיק.`,
+      { parse_mode: "HTML", reply_markup: keyboard }
+    );
+  });
+
+  // 🟢 תגובה לכל כפתור Help – מציג רשימה של פקודות בקטגוריה
+  const helpSections = {
+    help_gaming: `
+<b>🎮 גיימינג וירידות</b>
+/roast_me – צלייה אישית
+/insult – העלבה ישירה
 /compliment – מחמאה סרקסטית
-/nextmvp – ניחוש MVP
-/why – למה אתה גרוע
-/shimon – משפט השראה
 /excuse – תירוץ מביך
 /rage – התפרצות זעם
-/daily – משפט יומי
-/insult – העלבה
-/legend – גיימר אגדי
-/status – מצב FIFO
-/roast_me – צלייה
+/punishment – עונש על ביצועים
+    `.trim(),
+
+    help_psy: `
+<b>🧠 פסיכולוגיה של שמעון</b>
+/prophecy – תחזית פסימית
+/why – למה אתה גרוע?
+/shimon – משפט השראה מרושע
 /honest – אמת כואבת
-/toxic – רעל
-/yogi – משפטי יוגי
-/punishment – עונש
+/toxic – רמת טוקסיות
+/status – מצב FIFO
+/nextmvp – ניחוש MVP
+    `.trim(),
+
+    help_fun: `
+<b>🎉 פאן ובדיחות</b>
 /joke – בדיחה גרועה
-/sound – סאונד דמיוני
-/birthday – הוסף או עדכן יום הולדת
-    `.trim();
-    ctx.reply(`\u200F<b>${name}</b>, שמעון יודע לעשות את הדברים הבאים:\n\n${list}`, { parse_mode: "HTML" });
+/sound – צליל FIFO דמיוני
+/yogi – משפטי יוגי
+/daily – משפט יומי
+/legend – גיימר אגדי
+    `.trim(),
+
+    help_birthday: `
+<b>📅 ימי הולדת</b>
+/birthday – הוסף או עדכן יום הולדת (עם כפתור)
+    `.trim(),
+
+    help_system: `
+<b>🛠️ מערכת</b>
+/start – התחלה וברוך הבא
+/help – תפריט זה
+    `.trim()
+  };
+
+  bot.callbackQuery(/help_/, async (ctx) => {
+    const section = ctx.callbackQuery.data;
+    if (helpSections[section]) {
+      await ctx.answerCallbackQuery();
+      await ctx.reply(helpSections[section], { parse_mode: "HTML" });
+    } else {
+      await ctx.answerCallbackQuery("לא נמצא מידע לקטגוריה זו.", { show_alert: true });
+    }
   });
 
-  // 🚀 /start
-  bot.command("start", (ctx) => {
-    const name = nameOf(ctx);
-    ctx.reply(`\u200F<b>${name}</b>, ברוך הבא לשמעון הבוט. הקלד /help כדי לראות מה אני יודע לעשות 🤖`, { parse_mode: "HTML" });
-  });
-
-  // 🔧 פורמט אחיד
+  // 🔧 פורמט אחיד (כמו תמיד)
   function format(ctx, list) {
     const name = nameOf(ctx);
     const text = getRandom(list);

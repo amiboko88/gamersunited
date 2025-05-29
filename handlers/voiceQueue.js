@@ -1,4 +1,4 @@
-// 📁 handlers/voiceQueue.js – ניהול חכם של תור TTS, קרציות, פודקאסטים ועוד (גרסה מתקדמת FIFO OPENAI)
+// 📁 handlers/voiceQueue.js – ניהול חכם של תור TTS, קרציות, פודקאסטים ועוד (FIFO OpenAI + FFmpeg + Prism)
 
 const { 
   joinVoiceChannel, 
@@ -6,7 +6,8 @@ const {
   createAudioResource, 
   entersState, 
   AudioPlayerStatus, 
-  VoiceConnectionStatus 
+  VoiceConnectionStatus,
+  StreamType
 } = require('@discordjs/voice');
 
 const { 
@@ -17,6 +18,9 @@ const {
 
 const { shouldUseFallback } = require('../tts/ttsQuotaManager');
 
+const { Readable } = require('stream');
+const prism = require('prism-media');
+
 const activeQueue = new Map();
 const recentUsers = new Map();
 const connectionLocks = new Set();
@@ -26,13 +30,31 @@ const CRITICAL_SPAM_WINDOW = 10_000;
 const MULTI_JOIN_WINDOW = 6_000;
 const BONUS_MIN_COUNT = 3;
 
-function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+// ממיר Buffer ל-Stream (נדרש ל-ffmpeg)
+function bufferToStream(buffer) {
+  return Readable.from(buffer);
 }
 
+// 🏆 פונקציה חכמה – ממירה mp3 ל-PCM (Discord דורש) עם ffmpeg+prism-media
 async function playAudio(connection, audioBuffer) {
+  // ממיר mp3 מה-TTS ל-PCM RAW
+  const prismStream = new prism.FFmpeg({
+    args: [
+      '-analyzeduration', '0',
+      '-loglevel', '0',
+      '-f', 'mp3',
+      '-i', 'pipe:0',
+      '-f', 's16le',
+      '-ar', '48000',
+      '-ac', '2',
+      'pipe:1'
+    ]
+  });
+
+  bufferToStream(audioBuffer).pipe(prismStream);
+
+  const resource = createAudioResource(prismStream, { inputType: StreamType.Raw });
   const player = createAudioPlayer();
-  const resource = createAudioResource(audioBuffer);
   connection.subscribe(player);
   player.play(resource);
 
@@ -46,7 +68,7 @@ async function playAudio(connection, audioBuffer) {
   connection.destroy();
 }
 
-// זיהוי "קרציות" – משתמשים שמציפים או מציקים
+// זיהוי "קרציות" – משתמשים שמציפים/מציקים
 function isUserAnnoying(userId) {
   const now = Date.now();
   const timestamps = recentUsers.get(userId) || [];
@@ -132,6 +154,10 @@ async function processUserSmart(member, channel) {
   }
 
   connectionLocks.delete(key);
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 module.exports = {

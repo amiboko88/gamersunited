@@ -1,4 +1,5 @@
-// 📁 telegramBirthday.js – אינטראקטיבי מלא ל-2030
+
+// 📁 telegramBirthday.js – אינטראקטיבי מלא 2030 – עברית תקינה RTL
 
 const { InlineKeyboard } = require("grammy");
 const db = require("./utils/firebase");
@@ -31,27 +32,26 @@ async function saveBirthday(user, bday) {
   await db.collection("birthdays").doc(user.id.toString()).set(doc, { merge: true });
 }
 
-// 🟢 פקודה ראשית + Inline
 module.exports = function registerBirthdayHandler(bot) {
-  // /birthday – שולח תפריט אינטראקטיבי
+  // פקודת /birthday – תפריט אינטראקטיבי
   bot.command("birthday", async (ctx) => {
     const name = ctx.from?.first_name || "חבר";
     const keyboard = new InlineKeyboard()
-      .text("🎂 שלח תאריך יום הולדת", "update_birthday")
-      .text("🎉 ימי הולדת קרובים", "show_upcoming_birthdays");
+      .text("שלח תאריך יום הולדת 🎂", "update_birthday")
+      .text("ימי הולדת קרובים 🎉", "show_upcoming_birthdays");
     await ctx.reply(
-      `\u200F<b>${name}</b>, רוצה לקבל ברכה סרקסטית אמיתית ביום ההולדת? עדכן תאריך, או תבדוק למי תוכל להביא בושם השנה.`,
+      `\u200F<b>${name}</b>, רוצה לקבל ברכה סרקסטית אמיתית ביום ההולדת? עדכן תאריך, או תבדוק למי תצטרך להביא עוגה השנה 🍰`,
       { parse_mode: "HTML", reply_markup: keyboard }
     );
   });
 
-  // שלח תאריך יום הולדת
+  // כפתור לשליחת תאריך יום הולדת
   bot.callbackQuery("update_birthday", async (ctx) => {
     const userId = ctx.from.id;
     WAITING_USERS.set(userId, true);
     await ctx.answerCallbackQuery();
     await ctx.reply(
-      "📅 שלח לי את תאריך יום ההולדת שלך בפורמט: 28.06.1993"
+      "שלח לי את תאריך יום ההולדת שלך בפורמט 28.06.1993 📅"
     );
   });
 
@@ -64,22 +64,22 @@ module.exports = function registerBirthdayHandler(bot) {
     const bday = validateBirthday(input);
 
     if (!bday) {
-      await ctx.reply("❌ זה לא תאריך תקין. תנסה שוב: 28.06.1993");
+      await ctx.reply("זה לא תאריך תקין. נסה שוב – 28.06.1993 ❌");
       return;
     }
 
     try {
       await saveBirthday(ctx.from, bday);
-      await ctx.reply("🥳 נשמר! מחכה לחגוג איתך – וצפה לצלייה קולית משמעון!");
+      await ctx.reply("נשמר! מחכה לחגוג איתך – צפה לצלייה קולית משמעון 🎉");
     } catch (err) {
       console.error("❌ שגיאה בשמירת יום הולדת:", err);
-      await ctx.reply("😵 משהו נדפק, נסה שוב מאוחר יותר.");
+      await ctx.reply("משהו נדפק, נסה שוב מאוחר יותר 😵");
     } finally {
       WAITING_USERS.delete(userId);
     }
   });
 
-  // 🟢 Inline – הצגת ימי הולדת קרובים
+  // כפתור – ימי הולדת קרובים (תצוגה RTL ואימוג'ים בסוף)
   bot.callbackQuery("show_upcoming_birthdays", async (ctx) => {
     await ctx.answerCallbackQuery();
 
@@ -92,9 +92,23 @@ module.exports = function registerBirthdayHandler(bot) {
       const data = doc.data();
       const { day, month, year } = data.birthday || {};
       if (!day || !month || !year) return;
+
+      // גיל הבא – חישוב נכון ל־RTL
+      let ageNext;
+      if (
+        now.getMonth() + 1 > month ||
+        (now.getMonth() + 1 === month && now.getDate() >= day)
+      ) {
+        // כבר חגג השנה – הגיל הבא בשנה הבאה
+        ageNext = now.getFullYear() - year + 1;
+      } else {
+        // טרם חגג השנה – הגיל הבא זה השנה
+        ageNext = now.getFullYear() - year;
+      }
+
       let orderNum = (month - 1) * 100 + day;
       if (orderNum < todayNum) orderNum += 1200; // מעבר לשנה הבאה
-      const ageNext = now.getFullYear() - year + (orderNum >= todayNum ? 0 : 1);
+
       users.push({
         name: data.fullName || "חבר",
         day, month, year,
@@ -107,15 +121,14 @@ module.exports = function registerBirthdayHandler(bot) {
     const top = users.slice(0, 5);
 
     if (top.length === 0) {
-      await ctx.reply("לא הוזנו ימי הולדת בקהילה. באסה.");
+      await ctx.reply("לא הוזנו ימי הולדת בקהילה. באסה 😢");
       return;
     }
 
-    let txt = `🎉 <b>ימי הולדת הקרובים</b>:\n`;
+    let txt = `🎉 <b>ימי הולדת הקרובים:</b>\n\n━━━━━━━━━━━━━\n`;
     top.forEach((u, i) => {
-      txt += `\n${i + 1}. <b>${u.name}</b> – ${String(u.day).padStart(2, "0")}.${String(u.month).padStart(2, "0")} (יהיה בן ${u.ageNext})`;
+      txt += `<b>${u.name}</b> 🎂\n<b>${String(u.day).padStart(2, "0")}.${String(u.month).padStart(2, "0")}</b> 🗓️ | בן <b>${u.ageNext}</b> 🎈\n━━━━━━━━━━━━━\n`;
     });
-
     await ctx.reply(txt.trim(), { parse_mode: "HTML" });
   });
 };

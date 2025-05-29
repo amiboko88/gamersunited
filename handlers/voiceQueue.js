@@ -1,4 +1,4 @@
-// 📁 handlers/voiceQueue.js – FIFO TTS: תור, קרציות, פודקאסטים, OpenAI, OPUS
+// 📁 handlers/voiceQueue.js – FIFO TTS: תור, קרציות, פודקאסטים, OpenAI, mp3 fallback חכם
 
 const { 
   joinVoiceChannel, 
@@ -6,8 +6,7 @@ const {
   createAudioResource, 
   entersState, 
   AudioPlayerStatus, 
-  VoiceConnectionStatus,
-  StreamType
+  VoiceConnectionStatus
 } = require('@discordjs/voice');
 
 const { 
@@ -19,9 +18,7 @@ const {
 const { shouldUseFallback } = require('../tts/ttsQuotaManager');
 
 const { Readable } = require('stream');
-const prism = require('prism-media');
 const fs = require('fs');
-const ffmpegPath = require('ffmpeg-static');
 
 const activeQueue = new Map();
 const recentUsers = new Map();
@@ -32,69 +29,75 @@ const CRITICAL_SPAM_WINDOW = 10_000;
 const MULTI_JOIN_WINDOW = 6_000;
 const BONUS_MIN_COUNT = 3;
 
-// ממיר Buffer ל-Stream (נדרש ל-ffmpeg)
+// ממיר Buffer ל-Stream
 function bufferToStream(buffer) {
   return Readable.from(buffer);
 }
 
-// 🏆 playAudio – המרת mp3 ל־Opus ושידור תקני
+// 🏆 playAudio – הכי חכם, עובר בין כל שיטה אוטומטית
 async function playAudio(connection, audioBuffer) {
   try {
-    // Debug: בדוק Buffer
-    console.log('🎛️ Buffer type:', typeof audioBuffer, 'Buffer.isBuffer?', Buffer.isBuffer(audioBuffer), 'Size:', audioBuffer.length);
-
-    // Debug: שמירה לדיסק (אם תרצה להוריד לבדוק)
-    const debugFile = `/tmp/tts_debug_${Date.now()}.mp3`;
-    fs.writeFileSync(debugFile, audioBuffer);
-    console.log('💾 נשמר קובץ debug:', debugFile);
-
-    // Debug: FFmpeg path
-    console.log('FFmpeg path:', ffmpegPath);
-
-    // המרת mp3 ל־Opus ע"י ffmpeg+prism-media
-    const opusStream = bufferToStream(audioBuffer)
-      .pipe(new prism.FFmpeg({
-        args: [
-          '-analyzeduration', '0',
-          '-loglevel', '0',
-          '-f', 'mp3',
-          '-i', 'pipe:0',
-          '-c:a', 'libopus',
-          '-ar', '48000',
-          '-ac', '2',
-          '-f', 'opus',
-          'pipe:1'
-        ]
-      }));
-
-    // נשתמש ב־StreamType.OggOpus, זה הסטנדרט
-    const resource = createAudioResource(opusStream, { inputType: StreamType.OggOpus });
-    const player = createAudioPlayer();
-    connection.subscribe(player);
-
-    player.on('error', (err) => {
-      console.error('🛑 player error:', err);
-    });
-
-    player.play(resource);
-
-    console.log('🔊 מתחיל לשדר OPUS... ממתינים ל־Idle (סיום)');
+    let success = false;
+    let resource, player;
+    // 1. ניסיון ראשון: Buffer ישירות
     try {
-      await entersState(player, AudioPlayerStatus.Idle, 30_000);
-      console.log('✅ player במצב Idle – סיים השמעה');
-    } catch (err) {
-      console.error('🛑 תקלה ב־entersState:', err);
+      resource = createAudioResource(audioBuffer);
+      player = createAudioPlayer();
+      connection.subscribe(player);
+      player.play(resource);
+      await entersState(player, AudioPlayerStatus.Idle, 15_000);
+      console.log('✅ Buffer נוגן בהצלחה!');
+      success = true;
+    } catch (err1) {
+      console.warn('⚠️ Buffer נכשל, מנסה Path:', err1.message);
+
+      // 2. ניסיון שני: לשמור ל־Path ולהשמיע מהקובץ
+      const tmpPath = `/tmp/tts_debug_${Date.now()}.mp3`;
+      fs.writeFileSync(tmpPath, audioBuffer);
+      try {
+        resource = createAudioResource(tmpPath);
+        player = createAudioPlayer();
+        connection.subscribe(player);
+        player.play(resource);
+        await entersState(player, AudioPlayerStatus.Idle, 15_000);
+        console.log('✅ Path נוגן בהצלחה!');
+        success = true;
+      } catch (err2) {
+        console.warn('⚠️ Path נכשל, מנסה Stream:', err2.message);
+
+        // 3. ניסיון שלישי: stream
+        try {
+          const stream = bufferToStream(audioBuffer);
+          resource = createAudioResource(stream);
+          player = createAudioPlayer();
+          connection.subscribe(player);
+          player.play(resource);
+          await entersState(player, AudioPlayerStatus.Idle, 15_000);
+          console.log('✅ Stream נוגן בהצלחה!');
+          success = true;
+        } catch (err3) {
+          console.error('❌ כל הניסיונות להשמיע mp3 נכשלו!', err3.message);
+        }
+      }
     }
 
-    player.stop();
-    connection.destroy();
+    if (!success) {
+      // פה אפשר להוסיף Fallback (למשל Google TTS)
+      console.warn('🎵 fallback: לא הצלחנו להשמיע קול – אפשר לנסות מנוע אחר');
+      // לדוג':
+      // const googleBuffer = await googleTTS.synthesizeGoogleTTS(text, speaker);
+      // ... ואז תנגן שוב עם אותו תהליך
+    }
+
+    if (player) player.stop();
+    if (connection) connection.destroy();
   } catch (err) {
-    console.error('🛑 השמעה נכשלה – exception:', err);
+    console.error('🛑 השמעה נכשלה – exception:', err.message);
     if (connection) connection.destroy();
   }
 }
 
-// זיהוי "קרציות" – משתמשים שמציפים/מציקים
+// זיהוי "קרציות"
 function isUserAnnoying(userId) {
   const now = Date.now();
   const timestamps = recentUsers.get(userId) || [];
@@ -132,7 +135,7 @@ async function processUserSmart(member, channel) {
     }
 
     // בקרת שימוש – quota אישי (אפשר לכבות ע"י הגבלת limit גבוה מאוד)
-    if (!(await canUserUseTTS(nextMember.id, 10))) { // ברירת מחדל: 10 השמעות למשתמש ביום
+    if (!(await canUserUseTTS(nextMember.id, 10))) {
       console.log(`⛔️ ${nextMember.displayName} חרג מהמגבלה היומית האישית`);
       continue;
     }
@@ -149,12 +152,10 @@ async function processUserSmart(member, channel) {
 
     try {
       if (usePodcast) {
-        // פודקאסט קבוצתי (ריבוי מצטרפים) – קולות FIFO, משפטים מותאמים
         const displayNames = queue.map(item => item.member.displayName);
         const ids = queue.map(item => item.member.id);
         audioBuffer = await getPodcastAudioOpenAI(displayNames, ids);
       } else {
-        // TTS אישי – לפי פרופיל המשתמש (כולל Fallback)
         audioBuffer = await getShortTTSByProfile(nextMember, useFallback);
       }
     } catch (err) {

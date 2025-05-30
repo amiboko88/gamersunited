@@ -1,7 +1,8 @@
-// 📁 shimonTelegram.js – גרסה מדויקת ל־grammy 1.36.3 + express 5.1.0 (Node 18.17.0)
+// 📁 shimonTelegram.js – עם runner, webhook, ותגובות טקסט מלאות
 
 require("dotenv").config();
 const { Bot, webhookCallback } = require("grammy");
+const { run } = require("@grammyjs/runner"); // ✅ תוספת קריטית
 const express = require("express");
 
 const handleSmartReply = require("./shimonSmart");
@@ -14,19 +15,23 @@ const { handleTrigger, checkDailySilence } = require("./telegramTriggers");
 
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
 
+// 🧠 זמינות DB בהקשר
 bot.use(async (ctx, next) => {
   ctx.db = db;
   await next();
 });
 
-// 📌 רישום Slash Commands ואינטראקציה
+// 📌 פקודות Slash ותפריטי יום הולדת
 registerCommands(bot);
 registerBirthdayHandler(bot);
+
+// ✅ החייאת event listeners כמו bot.on("message")
+run(bot); // 🔥 זו השורה שחסרה לך!
 
 const app = express();
 const path = "/telegram";
 
-// 🌡️ Route בריאות – בדוק בזמינות תמידית
+// 🌡️ בריאות
 app.get("/", (req, res) => {
   res.status(200).json({
     status: "ok",
@@ -35,48 +40,46 @@ app.get("/", (req, res) => {
   });
 });
 
-// ✅ השורה החשובה לגרסה שלך:
 app.use(express.json());
 app.use(path, webhookCallback(bot, "express"));
 
-// DEBUG – מעקב אחרי הודעות
+// 🎯 תגובות טקסט רגילות
 bot.on("message", async (ctx) => {
   console.log("📩 התקבלה הודעה:", ctx.message?.text || "[לא טקסט]");
   if (!ctx.message || ctx.message.from?.is_bot) return;
 
   const text = ctx.message.text?.toLowerCase() || "";
 
-  // 1. קללות
+  console.log("🧪 בדיקת קללה...");
   const cursed = await handleCurses(ctx, text);
   if (cursed) {
     console.log("🔺 הופעלה תגובת קללה!");
     return;
   }
 
-  // 2. טריגרים
+  console.log("🧪 בדיקת טריגר...");
   const triggerResult = handleTrigger(ctx);
   if (triggerResult.triggered) {
     console.log("🔺 הופעל טריגר!");
     return;
   }
 
-  // 3. תגובה חכמה
+  console.log("🧪 תגובה חכמה...");
   const smart = await handleSmartReply(ctx, triggerResult);
   if (smart) {
     console.log("🟢 הופעלה תגובה חכמה!");
     return;
   }
 
-  // אם כלום לא הופעל
   console.log("ℹ️ לא הופעלה שום תגובה.");
 });
 
-// ⏰ תזכורת שקט אוטומטית כל 10 דקות
+// ⏰ תזכורת אוטומטית של שקט בקבוצה
 setInterval(() => {
   checkDailySilence(bot, process.env.TELEGRAM_CHAT_ID);
 }, 10 * 60 * 1000);
 
-// 🌐 Webhook ל־Railway – אינטגרציה מלאה
+// 🌐 Webhook ל־Railway
 if (process.env.RAILWAY_STATIC_URL) {
   const fullUrl = `${process.env.RAILWAY_STATIC_URL}${path}`;
   bot.api.setWebhook(fullUrl).then(() => {
@@ -88,13 +91,12 @@ if (process.env.RAILWAY_STATIC_URL) {
   const port = process.env.PORT || 8080;
   app.listen(port, () => {
     console.log(`🚀 האזנה ל־Webhook בטלגרם בפורט ${port}`);
-    console.log("🌡️ בדיקת בריאות זמינה ב־/ (root) – פתח את הדפדפן לכתובת שלך לבדוק תקינות.");
+    console.log("🌡️ בדיקת בריאות זמינה ב־/ (root)");
   });
 
-  // 🎉 ברכות יומולדת – כל יום ב־09:00 (זמן שרת)
+  // 🎉 שליחת ברכות כל בוקר
   const now = new Date();
-  const millisUntilNine =
-    new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0, 0) - now;
+  const millisUntilNine = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0, 0) - now;
 
   setTimeout(() => {
     sendBirthdayMessages();

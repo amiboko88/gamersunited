@@ -138,9 +138,9 @@ module.exports = async function handleSmartReply(ctx, triggerResult = { triggere
   try {
     if (!ctx.message || !ctx.message.text || ctx.message.from?.is_bot) return false;
 
-    // ⛔ דילוג על פקודות Slash (כמו /start, /help)
-if (ctx.message.text?.startsWith("/")) {
-  console.log("⛔️ זוהתה פקודת Slash – בוט חכם מתעלם");
+    //  דילוג על פקודות Slash (כמו /start, /help)
+  if  (ctx.message.text?.startsWith("/")) {
+  console.log(" זוהתה פקודת Slash – בוט חכם מתעלם");
   return false;
 }
 

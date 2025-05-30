@@ -89,7 +89,10 @@ setInterval(() => {
 // 🚀 הרשמת Webhook + פתיחת פורט
 if (process.env.RAILWAY_STATIC_URL) {
   const fullUrl = `${process.env.RAILWAY_STATIC_URL}${path}`;
-  bot.api.setWebhook(fullUrl).then(() => {
+  
+  bot.api.setWebhook(fullUrl, {
+    allowed_updates: ["message", "callback_query"]
+  }).then(() => {
     console.log(`✅ Webhook נרשם בהצלחה: ${fullUrl}`);
   }).catch((err) => {
     console.error("❌ שגיאה בהרשמת Webhook:", err);
@@ -100,14 +103,15 @@ if (process.env.RAILWAY_STATIC_URL) {
     console.log(`🚀 האזנה ל־Webhook בפורט ${port}`);
   });
 
-  // 🎉 ברכות יומיות
   const now = new Date();
-  const millisUntilNine = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0, 0) - now;
+  const millisUntilNine =
+    new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0, 0) - now;
 
   setTimeout(() => {
     sendBirthdayMessages();
     setInterval(sendBirthdayMessages, 24 * 60 * 60 * 1000);
   }, Math.max(millisUntilNine, 0));
-} else {
+}
+ else {
   console.error("❌ חסר RAILWAY_STATIC_URL במשתני סביבה");
 }

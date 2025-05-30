@@ -1,4 +1,4 @@
-// 📁 shimonSmart.js – חכם, לא שותק, עם fallback ו־try/catch מניעתי
+// 📁 shimonSmart.js – הגנה, fallback אלגנטי ודילוג על Slash
 
 const { OpenAI } = require("openai");
 const { getScriptByUserId } = require("./data/fifoLines");
@@ -48,6 +48,10 @@ function isQuestion(text) {
   return text.endsWith("?") || ["מה", "למה", "איך"].some(w => text.startsWith(w));
 }
 
+function cleanFallbackPrefix(text) {
+  return text.replace(/fallback\s?#?\d+\s?[-–]\s?/i, "").trim();
+}
+
 function createPrompt({ userText, contextLine }) {
   const text = userText.trim();
   if (isOffensive(text)) {
@@ -66,10 +70,11 @@ function createPrompt({ userText, contextLine }) {
 }
 
 async function generateReply(userId, userText, name, triggerType) {
-  const profileLine = getScriptByUserId(userId)?.shimon || null;
+  const profileRaw = getScriptByUserId(userId)?.shimon || null;
+  const profileLine = profileRaw ? cleanFallbackPrefix(profileRaw) : null;
   const contextLine = profileLine ? `משפט אישי: "${profileLine}"` : "";
-  const prompt = createPrompt({ userText, contextLine });
 
+  const prompt = createPrompt({ userText, contextLine });
   console.log("📤 Prompt:", prompt);
 
   const messages = [{ role: "user", content: prompt }];
@@ -132,6 +137,12 @@ async function logToFirestore(ctx, replyInfo, triggerText, triggerType) {
 module.exports = async function handleSmartReply(ctx, triggerResult = { triggered: false }) {
   try {
     if (!ctx.message || !ctx.message.text || ctx.message.from?.is_bot) return false;
+
+    // ⛔ דילוג על פקודות Slash (כמו /start, /help)
+    if (ctx.message.entities?.some(e => e.type === "bot_command")) {
+      console.log("⚙️ זוהתה פקודת Slash – לא מגיב עם GPT");
+      return false;
+    }
 
     const userId = ctx.from.id;
     const text = ctx.message.text;

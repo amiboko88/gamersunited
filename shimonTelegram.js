@@ -18,9 +18,10 @@ const path = "/telegram";
 
 // 🧠 זמינות DB בהקשר
 bot.use(async (ctx, next) => {
-  ctx.db = db;
+  console.log("📦 קיבלנו update גולמי:", JSON.stringify(ctx.update, null, 2));
   await next();
 });
+
 
 // 📌 רישום פקודות
 registerCommands(bot);

@@ -1,4 +1,4 @@
-// 📁 shimonSmart.js – חכם, לא שותק, עם fallback
+// 📁 shimonSmart.js – חכם, לא שותק, עם fallback ו־try/catch מניעתי
 
 const { OpenAI } = require("openai");
 const { getScriptByUserId } = require("./data/fifoLines");
@@ -68,8 +68,8 @@ function createPrompt({ userText, contextLine }) {
 async function generateReply(userId, userText, name, triggerType) {
   const profileLine = getScriptByUserId(userId)?.shimon || null;
   const contextLine = profileLine ? `משפט אישי: "${profileLine}"` : "";
-
   const prompt = createPrompt({ userText, contextLine });
+
   console.log("📤 Prompt:", prompt);
 
   const messages = [{ role: "user", content: prompt }];
@@ -82,7 +82,7 @@ async function generateReply(userId, userText, name, triggerType) {
       temperature: 0.93,
       max_tokens: 140
     });
-    reply = res.choices[0].message.content.trim().replace(/^"|"$/g, "");
+    reply = res.choices[0]?.message?.content?.trim()?.replace(/^"|"$/g, "") || null;
     modelUsed = "gpt-4o";
   } catch (err) {
     console.warn("⚠️ GPT-4o נכשל:", err.message);
@@ -93,7 +93,7 @@ async function generateReply(userId, userText, name, triggerType) {
         temperature: 0.9,
         max_tokens: 120
       });
-      reply = res.choices[0].message.content.trim().replace(/^"|"$/g, "");
+      reply = res.choices[0]?.message?.content?.trim()?.replace(/^"|"$/g, "") || null;
       modelUsed = "gpt-3.5-turbo";
     } catch (err2) {
       console.error("❌ גם GPT-3.5 נכשל:", err2.message);
@@ -130,30 +130,35 @@ async function logToFirestore(ctx, replyInfo, triggerText, triggerType) {
 }
 
 module.exports = async function handleSmartReply(ctx, triggerResult = { triggered: false }) {
-  if (!ctx.message || !ctx.message.text || ctx.message.from?.is_bot) return false;
-
-  const userId = ctx.from.id;
-  const text = ctx.message.text;
-  const name = ctx.from.first_name || "חבר";
-
-  // 🛠️ לדיבוג: השבתת כל החסמים
-  // if (isUserSpammedRecently(userId)) return false;
-  // if (shouldSkipDueToActiveChat(ctx)) return false;
-
-  const replyInfo = await generateReply(userId, text, name, triggerResult?.type);
-  if (!replyInfo) {
-    console.warn("❌ לא נוצרה תשובה – replyInfo ריק.");
-    return false;
-  }
-
   try {
+    if (!ctx.message || !ctx.message.text || ctx.message.from?.is_bot) return false;
+
+    const userId = ctx.from.id;
+    const text = ctx.message.text;
+    const name = ctx.from.first_name || "חבר";
+
+    // 🛠️ לבדיקות: הסר חסימות זמנית
+    // if (isUserSpammedRecently(userId)) return false;
+    // if (shouldSkipDueToActiveChat(ctx)) return false;
+
+    const replyInfo = await generateReply(userId, text, name, triggerResult?.type);
+    if (!replyInfo) {
+      console.warn("❌ לא נוצרה תשובה – replyInfo ריק.");
+      return false;
+    }
+
     await ctx.reply(replyInfo.formatted, { parse_mode: "HTML" });
     lastReplyPerUser.set(userId, Date.now());
     await logToFirestore(ctx, replyInfo, text, triggerResult?.type);
+
     console.log(`🟢 תשובה נשלחה (${replyInfo.model})`);
     return true;
+
   } catch (err) {
-    console.error("❌ שגיאה בשליחת תגובה:", err.message);
+    console.error("❌ שגיאה חיצונית ב־handleSmartReply:", err.message);
+    try {
+      await ctx.reply("❌ שמעון הסתבך עם התגובה. נסה שוב.");
+    } catch {}
     return false;
   }
 };

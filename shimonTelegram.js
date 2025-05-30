@@ -1,8 +1,4 @@
-// 📁 shimonTelegram.js – FINAL FIX ✅
-
-// טעינת משתני סביבה
 require("dotenv").config();
-
 const { Bot, webhookCallback } = require("grammy");
 const { run } = require("@grammyjs/runner");
 const express = require("express");
@@ -17,52 +13,58 @@ const { handleTrigger, checkDailySilence } = require("./telegramTriggers");
 
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
 
-// 🧠 זמינות DB בכל ההקשרים
+// 📌 זמינות DB
 bot.use(async (ctx, next) => {
-  console.log("🔁 עבר דרך .use –", ctx.updateType);
+  console.log("🔁 updateType:", ctx.updateType, ">>", ctx.message?.text);
   ctx.db = db;
   await next();
 });
 
-// 🎯 רישום פקודות Slash /start /help
+// פקודות Slash
 registerCommands(bot);
 registerBirthdayHandler(bot);
 
-// ✅ תגובות לטקסט רגיל – חובה לפני webhookCallback
+// 🛡️ טיפול בטוח בהודעות טקסט
 bot.on("message", async (ctx) => {
-  console.log("📩 התקבלה הודעה:", ctx.message?.text || "[לא טקסט]");
-  if (!ctx.message || ctx.message.from?.is_bot) return;
+  try {
+    console.log("📩 התקבלה הודעה:", ctx.message?.text || "[לא טקסט]");
+    if (!ctx.message || ctx.message.from?.is_bot) return;
 
-  const text = ctx.message.text?.toLowerCase() || "";
+    const text = ctx.message.text?.toLowerCase() || "";
 
-  console.log("🧪 בדיקת קללה...");
-  const cursed = await handleCurses(ctx, text);
-  if (cursed) {
-    console.log("🔺 הופעלה תגובת קללה!");
-    return;
+    console.log("🧪 בדיקת קללה...");
+    const cursed = await handleCurses(ctx, text);
+    if (cursed) {
+      console.log("🔺 הופעלה תגובת קללה!");
+      return;
+    }
+
+    console.log("🧪 בדיקת טריגר...");
+    const triggerResult = handleTrigger(ctx);
+    if (triggerResult.triggered) {
+      console.log("🔺 הופעל טריגר!");
+      return;
+    }
+
+    console.log("🧪 תגובה חכמה...");
+    const smart = await handleSmartReply(ctx, triggerResult);
+    if (smart) {
+      console.log("🟢 הופעלה תגובה חכמה!");
+      return;
+    }
+
+    console.log("ℹ️ לא הופעלה שום תגובה.");
+  } catch (err) {
+    console.error("❌ שגיאה בטיפול בהודעה:", err.message, err);
+    try {
+      await ctx.reply("❌ שמעון הסתבך עם התשובה. תנסה שוב עוד רגע.");
+    } catch {}
   }
-
-  console.log("🧪 בדיקת טריגר...");
-  const triggerResult = handleTrigger(ctx);
-  if (triggerResult.triggered) {
-    console.log("🔺 הופעל טריגר!");
-    return;
-  }
-
-  console.log("🧪 תגובה חכמה...");
-  const smart = await handleSmartReply(ctx, triggerResult);
-  if (smart) {
-    console.log("🟢 הופעלה תגובה חכמה!");
-    return;
-  }
-
-  console.log("ℹ️ לא הופעלה שום תגובה.");
 });
 
-// ✅ הפעלת listener בלבד (לא getUpdates!)
+// רק הפעלת event listeners
 run(bot, { runner: false });
 
-// ✅ הגדרת Webhook
 const app = express();
 const path = "/telegram";
 
@@ -77,11 +79,12 @@ app.get("/", (req, res) => {
   });
 });
 
-// 🎉 תזמון ברכות יומולדת + בדיקת שקט
+// תזמון
 setInterval(() => {
   checkDailySilence(bot, process.env.TELEGRAM_CHAT_ID);
 }, 10 * 60 * 1000);
 
+// webhook + ברכות
 if (process.env.RAILWAY_STATIC_URL) {
   const fullUrl = `${process.env.RAILWAY_STATIC_URL}${path}`;
   bot.api.setWebhook(fullUrl).then(() => {
@@ -93,7 +96,6 @@ if (process.env.RAILWAY_STATIC_URL) {
   const port = process.env.PORT || 8080;
   app.listen(port, () => {
     console.log(`🚀 האזנה ל־Webhook בטלגרם בפורט ${port}`);
-    console.log("🌡️ בדיקת בריאות זמינה ב־/ (root)");
   });
 
   const now = new Date();
@@ -104,6 +106,7 @@ if (process.env.RAILWAY_STATIC_URL) {
     sendBirthdayMessages();
     setInterval(sendBirthdayMessages, 24 * 60 * 60 * 1000);
   }, Math.max(millisUntilNine, 0));
+
 } else {
   console.error("❌ חסר RAILWAY_STATIC_URL במשתני סביבה");
 }

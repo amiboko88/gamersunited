@@ -6,7 +6,8 @@ const path = require('path');
 const WELCOME_CHANNEL_ID = '689067371843158026';
 
 // יש להוריד ולהוסיף גופן עברי בתיקיית fonts (אפשר גם Arial, אבל עברית תצא יפה יותר)
-registerFont(path.join(__dirname, 'assets', 'NotoSansHebrew-Bold.ttf'), { family: 'Noto Sans Hebrew' });
+registerFont(path.join(__dirname, '..', 'assets', 'NotoSansHebrew-Bold.ttf'), { family: 'Noto Sans Hebrew' });
+
 
 module.exports = (client) => {
   client.on('guildMemberAdd', async (member) => {

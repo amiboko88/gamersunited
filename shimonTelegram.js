@@ -24,34 +24,42 @@ bot.use(async (ctx, next) => {
 registerCommands(bot);
 registerBirthdayHandler(bot);
 
-// ✅ הבוט מאזין להודעות – אחרי Slash כדי שלא ייבלעו
+
 bot.on("message", async (ctx) => {
   try {
-    // ⛔ התעלמות מ־Slash Commands
-    if (ctx.message.entities?.some(e => e.type === "bot_command")) {
-      console.log("⚙️ זוהתה פקודת Slash – לא מגיב עם GPT");
+    console.log("📩 התקבלה הודעה:", ctx.message?.text || "[לא טקסט]");
+
+    if (!ctx.message || ctx.message.from?.is_bot) {
+      console.log("⛔️ אין הודעה או שזה בוט");
       return;
     }
-
-    console.log("📩 התקבלה הודעה:", ctx.message?.text || "[לא טקסט]");
-    if (!ctx.message || ctx.message.from?.is_bot) return;
 
     const text = ctx.message.text?.toLowerCase() || "";
 
     const cursed = await handleCurses(ctx, text);
-    if (cursed) return;
+    if (cursed) {
+      console.log("☠️ Curse זוהה והטופל");
+      return;
+    }
 
     const triggerResult = handleTrigger(ctx);
-    if (triggerResult.triggered) return;
+    if (triggerResult.triggered) {
+      console.log("🎯 טריגר הופעל");
+      return;
+    }
 
     const smart = await handleSmartReply(ctx, triggerResult);
-    if (smart) return;
+    if (smart) {
+      console.log("🧠 תשובה חכמה נשלחה");
+      return;
+    }
 
     console.log("ℹ️ לא הופעלה שום תגובה.");
   } catch (err) {
     console.error("❌ שגיאה בטיפול בהודעה:", err.message);
   }
 });
+
 
 // 🌐 Webhook
 app.use(express.json());

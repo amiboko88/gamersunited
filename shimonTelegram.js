@@ -1,4 +1,4 @@
-// 📁 shimonTelegram.js – בדיקת RAW BODY לכל קריאה ל־/telegram, Route בריאות, וכל הלוגיקה שלך
+// 📁 shimonTelegram.js – גרסה מדויקת ל־grammy 1.36.3 + express 5.1.0 (Node 18.17.0)
 
 require("dotenv").config();
 const { Bot, webhookCallback } = require("grammy");
@@ -19,15 +19,14 @@ bot.use(async (ctx, next) => {
   await next();
 });
 
-// רישום Slash Commands ואינטראקציה
+// 📌 רישום Slash Commands ואינטראקציה
 registerCommands(bot);
 registerBirthdayHandler(bot);
 
-// הגדרת express ו־/telegram + בדיקת RAW BODY
 const app = express();
 const path = "/telegram";
 
-// 🌡️ בדיקת בריאות ל־/
+// 🌡️ Route בריאות – בדוק בזמינות תמידית
 app.get("/", (req, res) => {
   res.status(200).json({
     status: "ok",
@@ -36,21 +35,12 @@ app.get("/", (req, res) => {
   });
 });
 
-// 🔎 בדיקת RAW BODY לפני כל קריאה ל־/telegram
-app.use(path, (req, res, next) => {
-  let rawBody = '';
-  req.on('data', chunk => { rawBody += chunk; });
-  req.on('end', () => {
-    console.log("🟡 RAW BODY ב־/telegram:", rawBody);
-    next();
-  });
-});
-
-// *** אין express.json! ***
+// ✅ השורה החשובה לגרסה שלך:
+app.use(express.json());
 app.use(path, webhookCallback(bot, "express"));
 
-// לוג לכל event – DEBUG מלא
-bot.on("message", async (ctx, next) => {
+// DEBUG – מעקב אחרי הודעות
+bot.on("message", async (ctx) => {
   console.log("📩 התקבלה הודעה:", ctx.message?.text || "[לא טקסט]");
   if (!ctx.message || ctx.message.from?.is_bot) return;
 
@@ -76,6 +66,7 @@ bot.on("message", async (ctx, next) => {
     console.log("🟢 הופעלה תגובה חכמה!");
     return;
   }
+
   // אם כלום לא הופעל
   console.log("ℹ️ לא הופעלה שום תגובה.");
 });

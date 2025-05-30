@@ -1,4 +1,4 @@
-// 📁 shimonTelegram.js – הגרסה היציבה ל־Railway + Grammy Webhook + Route בריאות, כולל לוגים מתקדמים
+// 📁 shimonTelegram.js – בדיקת RAW BODY לכל קריאה ל־/telegram, Route בריאות, וכל הלוגיקה שלך
 
 require("dotenv").config();
 const { Bot, webhookCallback } = require("grammy");
@@ -19,15 +19,15 @@ bot.use(async (ctx, next) => {
   await next();
 });
 
-// רישום Slash Commands וכל אינטראקציה
+// רישום Slash Commands ואינטראקציה
 registerCommands(bot);
 registerBirthdayHandler(bot);
 
-// DEBUG Route – HEALTHCHECK
+// הגדרת express ו־/telegram + בדיקת RAW BODY
 const app = express();
 const path = "/telegram";
 
-// בדיקת בריאות (Health Check)
+// 🌡️ בדיקת בריאות ל־/
 app.get("/", (req, res) => {
   res.status(200).json({
     status: "ok",
@@ -36,11 +36,20 @@ app.get("/", (req, res) => {
   });
 });
 
-// *** הכי חשוב: אין express.json! ***
-// רק למסלול הטלגרם מוסיפים webhookCallback
+// 🔎 בדיקת RAW BODY לפני כל קריאה ל־/telegram
+app.use(path, (req, res, next) => {
+  let rawBody = '';
+  req.on('data', chunk => { rawBody += chunk; });
+  req.on('end', () => {
+    console.log("🟡 RAW BODY ב־/telegram:", rawBody);
+    next();
+  });
+});
+
+// *** אין express.json! ***
 app.use(path, webhookCallback(bot, "express"));
 
-// לוג בכל event – DEBUG מלא
+// לוג לכל event – DEBUG מלא
 bot.on("message", async (ctx, next) => {
   console.log("📩 התקבלה הודעה:", ctx.message?.text || "[לא טקסט]");
   if (!ctx.message || ctx.message.from?.is_bot) return;
@@ -67,7 +76,6 @@ bot.on("message", async (ctx, next) => {
     console.log("🟢 הופעלה תגובה חכמה!");
     return;
   }
-
   // אם כלום לא הופעל
   console.log("ℹ️ לא הופעלה שום תגובה.");
 });
@@ -77,7 +85,7 @@ setInterval(() => {
   checkDailySilence(bot, process.env.TELEGRAM_CHAT_ID);
 }, 10 * 60 * 1000);
 
-// 🌐 Webhook ל־Railway – אינטגרציה 100%
+// 🌐 Webhook ל־Railway – אינטגרציה מלאה
 if (process.env.RAILWAY_STATIC_URL) {
   const fullUrl = `${process.env.RAILWAY_STATIC_URL}${path}`;
   bot.api.setWebhook(fullUrl).then(() => {

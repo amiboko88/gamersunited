@@ -25,20 +25,26 @@ registerCommands(bot);
 registerBirthdayHandler(bot);
 
 
-bot.on("message", async (ctx) => {
+bot.use(async (ctx, next) => {
   try {
-    console.log("📩 התקבלה הודעה:", ctx.message?.text || "[לא טקסט]");
-
     if (!ctx.message || ctx.message.from?.is_bot) {
       console.log("⛔️ אין הודעה או שזה בוט");
       return;
     }
 
+    const isSlash = ctx.message.entities?.some(e => e.type === "bot_command");
+    if (isSlash) {
+      console.log("⚙️ פקודת Slash – מדלג על תגובת שמעון");
+      return next(); // מאפשר ל־registerCommands לטפל בזה
+    }
+
+    console.log("📩 התקבלה הודעה:", ctx.message.text || "[לא טקסט]");
+
     const text = ctx.message.text?.toLowerCase() || "";
 
     const cursed = await handleCurses(ctx, text);
     if (cursed) {
-      console.log("☠️ Curse זוהה והטופל");
+      console.log("☠️ Curse טופל");
       return;
     }
 
@@ -56,9 +62,10 @@ bot.on("message", async (ctx) => {
 
     console.log("ℹ️ לא הופעלה שום תגובה.");
   } catch (err) {
-    console.error("❌ שגיאה בטיפול בהודעה:", err.message);
+    console.error("❌ שגיאה:", err.message);
   }
 });
+
 
 
 // 🌐 Webhook

@@ -24,25 +24,23 @@ bot.use(async (ctx, next) => {
 registerCommands(bot);
 registerBirthdayHandler(bot);
 
-
-bot.use(async (ctx, next) => {
+// ✅ הבוט מאזין להודעות רגילות בלבד (ולא פקודות Slash)
+bot.on("message", async (ctx) => {
   try {
     if (!ctx.message || ctx.message.from?.is_bot) {
       console.log("⛔️ אין הודעה או שזה בוט");
       return;
     }
 
-    const isSlash = ctx.message.entities?.some(e => e.type === "bot_command");
-    if (isSlash) {
-      console.log("⚙️ פקודת Slash – מדלג על תגובת שמעון");
-      return next(); // מאפשר ל־registerCommands לטפל בזה
+    const text = ctx.message.text || "";
+    if (text.startsWith("/")) {
+      console.log("⚙️ Slash Command – מדלג");
+      return; // כדי לא להגיב פעמיים
     }
 
-    console.log("📩 התקבלה הודעה:", ctx.message.text || "[לא טקסט]");
+    console.log("📩 התקבלה הודעה:", text);
 
-    const text = ctx.message.text?.toLowerCase() || "";
-
-    const cursed = await handleCurses(ctx, text);
+    const cursed = await handleCurses(ctx, text.toLowerCase());
     if (cursed) {
       console.log("☠️ Curse טופל");
       return;
@@ -62,11 +60,9 @@ bot.use(async (ctx, next) => {
 
     console.log("ℹ️ לא הופעלה שום תגובה.");
   } catch (err) {
-    console.error("❌ שגיאה:", err.message);
+    console.error("❌ שגיאה בטיפול בהודעה:", err.message);
   }
 });
-
-
 
 // 🌐 Webhook
 app.use(express.json());
@@ -89,8 +85,8 @@ setInterval(() => {
 // 🚀 הרשמת Webhook + פתיחת פורט
 if (process.env.RAILWAY_STATIC_URL) {
   const fullUrl = `${process.env.RAILWAY_STATIC_URL}${path}`;
-  
-  bot.api.setWebhook(fullUrl, {
+
+   bot.api.setWebhook(fullUrl, {
     allowed_updates: ["message", "callback_query"]
   }).then(() => {
     console.log(`✅ Webhook נרשם בהצלחה: ${fullUrl}`);
@@ -111,7 +107,6 @@ if (process.env.RAILWAY_STATIC_URL) {
     sendBirthdayMessages();
     setInterval(sendBirthdayMessages, 24 * 60 * 60 * 1000);
   }, Math.max(millisUntilNine, 0));
-}
- else {
+} else {
   console.error("❌ חסר RAILWAY_STATIC_URL במשתני סביבה");
 }

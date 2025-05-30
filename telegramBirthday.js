@@ -1,10 +1,9 @@
-
-// 📁 telegramBirthday.js – אינטראקטיבי מלא 2030 – עברית תקינה RTL
+// 📁 telegramBirthday.js – תפריט ניהול יום הולדת אישי 2030
 
 const { InlineKeyboard } = require("grammy");
 const db = require("./utils/firebase");
 
-const WAITING_USERS = new Map(); // userId -> true
+const WAITING_USERS = new Map(); // userId -> מצב ("add", "delete_confirm")
 
 function validateBirthday(input) {
   const match = input.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
@@ -15,6 +14,11 @@ function validateBirthday(input) {
   if (age < 10 || age > 100) return null;
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   return { day, month, year, age };
+}
+
+async function getUserBirthday(userId) {
+  const doc = await db.collection("birthdays").doc(userId.toString()).get();
+  return doc.exists ? doc.data().birthday : null;
 }
 
 async function saveBirthday(user, bday) {
@@ -32,54 +36,141 @@ async function saveBirthday(user, bday) {
   await db.collection("birthdays").doc(user.id.toString()).set(doc, { merge: true });
 }
 
+async function deleteBirthday(userId) {
+  await db.collection("birthdays").doc(userId.toString()).delete();
+}
+
 module.exports = function registerBirthdayHandler(bot) {
-  // פקודת /birthday – תפריט אינטראקטיבי
+  // /birthday – תפריט ראשי עם אפשרות ניהול אישי
   bot.command("birthday", async (ctx) => {
     const name = ctx.from?.first_name || "חבר";
+    const userId = ctx.from.id;
+    const oldBirthday = await getUserBirthday(userId);
+
     const keyboard = new InlineKeyboard()
-      .text("שלח תאריך יום הולדת 🎂", "update_birthday")
+      .text("תפריט ניהול אישי 🧑‍💼", "bday_manage")
       .text("ימי הולדת קרובים 🎉", "show_upcoming_birthdays");
     await ctx.reply(
-      `\u200F<b>${name}</b>, רוצה לקבל ברכה סרקסטית אמיתית ביום ההולדת? עדכן תאריך, או תבדוק למי תצטרך להביא עוגה השנה 🍰`,
+      `\u200F<b>${name}</b>, תפריט ימי הולדת – עדכון, מחיקה או צפייה. אפשר לבדוק גם ימי הולדת קרובים בקהילה.`,
       { parse_mode: "HTML", reply_markup: keyboard }
     );
   });
 
-  // כפתור לשליחת תאריך יום הולדת
-  bot.callbackQuery("update_birthday", async (ctx) => {
+  // תפריט ניהול אישי
+  bot.callbackQuery("bday_manage", async (ctx) => {
     const userId = ctx.from.id;
-    WAITING_USERS.set(userId, true);
+    const oldBirthday = await getUserBirthday(userId);
+
+    let txt;
+    const keyboard = new InlineKeyboard();
+
+    if (oldBirthday) {
+      txt = `🎂 <b>התאריך שלך:</b> <b>${String(oldBirthday.day).padStart(2, "0")}.${String(oldBirthday.month).padStart(2, "0")}.${oldBirthday.year}</b>\n\nמה תרצה לעשות?`;
+      keyboard
+        .text("עדכן תאריך 📝", "bday_update")
+        .text("מחק יום הולדת ❌", "bday_delete_confirm");
+    } else {
+      txt = "לא נמצא תאריך יום הולדת שמור.\nמה תרצה לעשות?";
+      keyboard.text("הוסף יום הולדת 🎂", "bday_update");
+    }
+    keyboard.row().text("חזור לתפריט 🔙", "bday_menu_main");
+    await ctx.reply(txt, { parse_mode: "HTML", reply_markup: keyboard });
     await ctx.answerCallbackQuery();
-    await ctx.reply(
-      "שלח לי את תאריך יום ההולדת שלך בפורמט 28.06.1993 📅"
-    );
   });
 
-  // קבלת תאריך, אימות, שמירה
+  // חזור לתפריט ראשי
+  bot.callbackQuery("bday_menu_main", async (ctx) => {
+    const name = ctx.from?.first_name || "חבר";
+    const keyboard = new InlineKeyboard()
+      .text("תפריט ניהול אישי 🧑‍💼", "bday_manage")
+      .text("ימי הולדת קרובים 🎉", "show_upcoming_birthdays");
+    await ctx.reply(
+      `\u200F<b>${name}</b>, תפריט ימי הולדת – עדכון, מחיקה או צפייה. אפשר לבדוק גם ימי הולדת קרובים בקהילה.`,
+      { parse_mode: "HTML", reply_markup: keyboard }
+    );
+    await ctx.answerCallbackQuery();
+  });
+
+  // עדכון/הוספת יום הולדת
+  bot.callbackQuery("bday_update", async (ctx) => {
+    const userId = ctx.from.id;
+    WAITING_USERS.set(userId, "add");
+    await ctx.reply("שלח לי את תאריך יום ההולדת שלך בפורמט 28.06.1993 📅\n(או כתוב \"ביטול\" לביטול)");
+    await ctx.answerCallbackQuery();
+  });
+
+  // אישור מחיקה
+  bot.callbackQuery("bday_delete_confirm", async (ctx) => {
+    const userId = ctx.from.id;
+    WAITING_USERS.set(userId, "delete_confirm");
+    const keyboard = new InlineKeyboard()
+      .text("מחק סופית ❌", "bday_delete_final")
+      .text("ביטול", "bday_manage");
+    await ctx.reply(
+      "האם אתה בטוח שברצונך למחוק את תאריך יום ההולדת מהמערכת?\n(הפעולה אינה הפיכה)",
+      { reply_markup: keyboard }
+    );
+    await ctx.answerCallbackQuery();
+  });
+
+  // ביצוע מחיקה
+  bot.callbackQuery("bday_delete_final", async (ctx) => {
+    const userId = ctx.from.id;
+    await deleteBirthday(userId);
+    WAITING_USERS.delete(userId);
+    await ctx.reply("תאריך יום ההולדת שלך נמחק מהמערכת ❌");
+    await ctx.answerCallbackQuery();
+  });
+
+  // הזנת תאריך/ביטול/ניהול
   bot.on("message:text", async (ctx) => {
     const userId = ctx.from.id;
     if (!WAITING_USERS.has(userId)) return;
 
+    const mode = WAITING_USERS.get(userId);
     const input = ctx.message.text.trim();
-    const bday = validateBirthday(input);
 
-    if (!bday) {
-      await ctx.reply("זה לא תאריך תקין. נסה שוב – 28.06.1993 ❌");
+    // אפשרות ביטול
+    if (["ביטול", "בטל", "cancel"].includes(input.toLowerCase())) {
+      WAITING_USERS.delete(userId);
+      await ctx.reply("ביטלת עדכון יום הולדת. אפשר תמיד לנסות שוב דרך התפריט 🎂");
       return;
     }
 
-    try {
-      await saveBirthday(ctx.from, bday);
-      await ctx.reply("נשמר! מחכה לחגוג איתך – צפה לצלייה קולית משמעון 🎉");
-    } catch (err) {
-      console.error("❌ שגיאה בשמירת יום הולדת:", err);
-      await ctx.reply("משהו נדפק, נסה שוב מאוחר יותר 😵");
-    } finally {
-      WAITING_USERS.delete(userId);
+    // הזנת תאריך
+    if (mode === "add") {
+      const bday = validateBirthday(input);
+      if (!bday) {
+        await ctx.reply("זה לא תאריך תקין. שלח תאריך כמו 28.06.1993, או \"ביטול\" לביטול.");
+        return;
+      }
+      const oldBirthday = await getUserBirthday(userId);
+      if (oldBirthday && 
+          oldBirthday.day === bday.day &&
+          oldBirthday.month === bday.month &&
+          oldBirthday.year === bday.year
+      ) {
+        await ctx.reply("זה כבר התאריך השמור שלך – לא בוצע עדכון.");
+        WAITING_USERS.delete(userId);
+        return;
+      }
+      try {
+        await saveBirthday(ctx.from, bday);
+        await ctx.reply("נשמר! מחכה לחגוג איתך – צפה לצלייה קולית משמעון 🎉");
+      } catch (err) {
+        console.error("❌ שגיאה בשמירת יום הולדת:", err);
+        await ctx.reply("משהו נדפק, נסה שוב מאוחר יותר 😵");
+      } finally {
+        WAITING_USERS.delete(userId);
+      }
+    }
+    // אם היה במצב מחיקה ושלח טקסט, מתעלמים/אפשר להחזיר לתפריט
+    if (mode === "delete_confirm") {
+      await ctx.reply("אם התחרטת, לחץ על 'ביטול' או 'חזור לתפריט' 👈");
     }
   });
 
-  // כפתור – ימי הולדת קרובים (תצוגה RTL ואימוג'ים בסוף)
+  // ימי הולדת קרובים (כפי שהיה קודם)
   bot.callbackQuery("show_upcoming_birthdays", async (ctx) => {
     await ctx.answerCallbackQuery();
 
@@ -99,15 +190,13 @@ module.exports = function registerBirthdayHandler(bot) {
         now.getMonth() + 1 > month ||
         (now.getMonth() + 1 === month && now.getDate() >= day)
       ) {
-        // כבר חגג השנה – הגיל הבא בשנה הבאה
         ageNext = now.getFullYear() - year + 1;
       } else {
-        // טרם חגג השנה – הגיל הבא זה השנה
         ageNext = now.getFullYear() - year;
       }
 
       let orderNum = (month - 1) * 100 + day;
-      if (orderNum < todayNum) orderNum += 1200; // מעבר לשנה הבאה
+      if (orderNum < todayNum) orderNum += 1200;
 
       users.push({
         name: data.fullName || "חבר",
@@ -116,7 +205,6 @@ module.exports = function registerBirthdayHandler(bot) {
       });
     });
 
-    // מיין לפי orderNum
     users.sort((a, b) => a.orderNum - b.orderNum);
     const top = users.slice(0, 5);
 

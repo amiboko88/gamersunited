@@ -14,6 +14,11 @@ const bot = new Bot(process.env.TELEGRAM_TOKEN);
 const app = express();
 const path = "/telegram";
 
+// קודם רישום פקודות
+registerCommands(bot);
+registerBirthdayHandler(bot);
+
+
 // ✅ הבוט מאזין להודעות לפני כל שימוש ב־webhookCallback
 bot.on("message", async (ctx) => {
   try {
@@ -43,9 +48,6 @@ bot.use(async (ctx, next) => {
   await next();
 });
 
-// 🎯 רישום פקודות
-registerCommands(bot);
-registerBirthdayHandler(bot);
 
 // 🌐 Webhook
 app.use(express.json());

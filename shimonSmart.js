@@ -139,10 +139,10 @@ module.exports = async function handleSmartReply(ctx, triggerResult = { triggere
     if (!ctx.message || !ctx.message.text || ctx.message.from?.is_bot) return false;
 
     // ⛔ דילוג על פקודות Slash (כמו /start, /help)
-    if (ctx.message.entities?.some(e => e.type === "bot_command")) {
-      console.log("⚙️ זוהתה פקודת Slash – לא מגיב עם GPT");
-      return false;
-    }
+if (ctx.message.text?.startsWith("/")) {
+  console.log("⛔️ זוהתה פקודת Slash – בוט חכם מתעלם");
+  return false;
+}
 
     const userId = ctx.from.id;
     const text = ctx.message.text;

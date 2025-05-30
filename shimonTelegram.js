@@ -14,14 +14,25 @@ const bot = new Bot(process.env.TELEGRAM_TOKEN);
 const app = express();
 const path = "/telegram";
 
-// קודם רישום פקודות
+// 🧠 זמינות DB
+bot.use(async (ctx, next) => {
+  ctx.db = db;
+  await next();
+});
+
+// 📌 רישום Slash Commands ותפריטי יום הולדת
 registerCommands(bot);
 registerBirthdayHandler(bot);
 
-
-// ✅ הבוט מאזין להודעות לפני כל שימוש ב־webhookCallback
+// ✅ הבוט מאזין להודעות – אחרי Slash כדי שלא ייבלעו
 bot.on("message", async (ctx) => {
   try {
+    // ⛔ התעלמות מ־Slash Commands
+    if (ctx.message.entities?.some(e => e.type === "bot_command")) {
+      console.log("⚙️ זוהתה פקודת Slash – לא מגיב עם GPT");
+      return;
+    }
+
     console.log("📩 התקבלה הודעה:", ctx.message?.text || "[לא טקסט]");
     if (!ctx.message || ctx.message.from?.is_bot) return;
 
@@ -42,18 +53,11 @@ bot.on("message", async (ctx) => {
   }
 });
 
-// 🧠 זמינות DB
-bot.use(async (ctx, next) => {
-  ctx.db = db;
-  await next();
-});
-
-
 // 🌐 Webhook
 app.use(express.json());
 app.use(path, webhookCallback(bot, "express"));
 
-// 🩺 בריאות
+// 🩺 בדיקת בריאות
 app.get("/", (req, res) => {
   res.status(200).json({
     status: "ok",
@@ -81,9 +85,9 @@ if (process.env.RAILWAY_STATIC_URL) {
     console.log(`🚀 האזנה ל־Webhook בפורט ${port}`);
   });
 
+  // 🎉 ברכות יומיות
   const now = new Date();
-  const millisUntilNine =
-    new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0, 0) - now;
+  const millisUntilNine = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0, 0) - now;
 
   setTimeout(() => {
     sendBirthdayMessages();

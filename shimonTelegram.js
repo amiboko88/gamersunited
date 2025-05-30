@@ -1,5 +1,3 @@
-// 📁 shimonTelegram.js – Webhook בלבד, בלי runner, עם תגובות מלאות
-
 require("dotenv").config();
 const { Bot, webhookCallback } = require("grammy");
 const express = require("express");
@@ -16,18 +14,7 @@ const bot = new Bot(process.env.TELEGRAM_TOKEN);
 const app = express();
 const path = "/telegram";
 
-// 🧠 זמינות DB בהקשר
-bot.use(async (ctx, next) => {
-  console.log("📦 קיבלנו update גולמי:", JSON.stringify(ctx.update, null, 2));
-  await next();
-});
-
-
-// 📌 רישום פקודות
-registerCommands(bot);
-registerBirthdayHandler(bot);
-
-// 📩 תגובות טקסט רגילות
+// ✅ הבוט מאזין להודעות לפני כל שימוש ב־webhookCallback
 bot.on("message", async (ctx) => {
   try {
     console.log("📩 התקבלה הודעה:", ctx.message?.text || "[לא טקסט]");
@@ -46,11 +33,25 @@ bot.on("message", async (ctx) => {
 
     console.log("ℹ️ לא הופעלה שום תגובה.");
   } catch (err) {
-    console.error("❌ שגיאה כללית ב־message handler:", err.message);
+    console.error("❌ שגיאה בטיפול בהודעה:", err.message);
   }
 });
 
-// 🛡️ בדיקת בריאות
+// 🧠 זמינות DB
+bot.use(async (ctx, next) => {
+  ctx.db = db;
+  await next();
+});
+
+// 🎯 רישום פקודות
+registerCommands(bot);
+registerBirthdayHandler(bot);
+
+// 🌐 Webhook
+app.use(express.json());
+app.use(path, webhookCallback(bot, "express"));
+
+// 🩺 בריאות
 app.get("/", (req, res) => {
   res.status(200).json({
     status: "ok",
@@ -59,18 +60,14 @@ app.get("/", (req, res) => {
   });
 });
 
-app.use(express.json());
-app.use(path, webhookCallback(bot, "express"));
-
-// 🕒 בדיקת שקט קבוצתי
+// 🔁 תזכורת יומית
 setInterval(() => {
   checkDailySilence(bot, process.env.TELEGRAM_CHAT_ID);
 }, 10 * 60 * 1000);
 
-// 📆 תזמון ברכות יומיות
+// 🚀 הרשמת Webhook + פתיחת פורט
 if (process.env.RAILWAY_STATIC_URL) {
   const fullUrl = `${process.env.RAILWAY_STATIC_URL}${path}`;
-
   bot.api.setWebhook(fullUrl).then(() => {
     console.log(`✅ Webhook נרשם בהצלחה: ${fullUrl}`);
   }).catch((err) => {
@@ -83,7 +80,8 @@ if (process.env.RAILWAY_STATIC_URL) {
   });
 
   const now = new Date();
-  const millisUntilNine = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0, 0) - now;
+  const millisUntilNine =
+    new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0, 0) - now;
 
   setTimeout(() => {
     sendBirthdayMessages();

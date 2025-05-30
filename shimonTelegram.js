@@ -26,7 +26,7 @@ registerCommands(bot);
 registerBirthdayHandler(bot);
 
 // ✅ החייאת event listeners כמו bot.on("message")
-run(bot); // 🔥 זו השורה שחסרה לך!
+run(bot, { runner: false }); // ❗ זה יפעיל רק event listeners, בלי getUpdates
 
 const app = express();
 const path = "/telegram";

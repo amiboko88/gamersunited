@@ -31,6 +31,7 @@ const ttsCommand = require('./commands/ttsCommand');
 
 // 🤖 אינטראקציות חכמות
 const smartChat = require('./handlers/smartChat');
+const welcomeImage = require('./handlers/welcomeImage');
 const { startActivityScheduler } = require('./handlers/activityScheduler');
 const { showBirthdayModal, handleBirthdayModalSubmit } = require('./handlers/birthdayModal');
 
@@ -94,6 +95,7 @@ client.once('ready', async () => {
   await setupVerificationMessage(client);
    await sendPublicRulesEmbed(client); // ✅ חדש
   startWeeklyRulesUpdate(client);  // ✅ חדש
+  welcomeImage(client);
   startDmTracking(client);
   startLeaderboardUpdater(client);
   startPresenceLoop(client);

@@ -12,6 +12,7 @@ const {
 
 // 📦 פקודות Slash
 const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
+const { data: fifoData, execute: fifoExecute } = require('./commands/fifo');
 const { data: songData, execute: songExecute, autocomplete: songAutocomplete } = require('./commands/song');
 const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
 const { data: birthdayCommands, execute: birthdayExecute } = require('./commands/birthdayCommands');
@@ -85,6 +86,7 @@ registerMvpCommand(commands);
 commands.push(verifyData, songData, soundData);
 commands.push(...birthdayCommands);
 commands.push(leaderboardData);
+commands.push(fifoData);
 commands.push(rulesStatsData);
 commands.push(ttsCommand.data); // ✅ חדש
 commands.push(refreshRulesData);
@@ -192,6 +194,7 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'שיר') return songExecute(interaction, client);
   if (commandName === 'עדכן_חוקים') return refreshRulesExecute(interaction);
   if (commandName === 'אישרו_חוקים') return rulesStatsExecute(interaction);
+  if (commandName === 'פיפו') return fifoExecute(interaction);
   if (commandName === 'tts') return ttsCommand.execute(interaction);
   if (commandName === 'לוח_פעילות') return leaderboardExecute(interaction);
   if (commandName === 'סאונד') return soundExecute(interaction, client);  

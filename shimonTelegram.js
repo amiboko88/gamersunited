@@ -9,7 +9,7 @@ const registerCommands = require("./telegramCommands");
 const registerBirthdayHandler = require("./telegramBirthday");
 const { handleCurses } = require("./telegramCurses");
 const { handleTrigger, checkDailySilence } = require("./telegramTriggers");
-const handleSmartReply = require("./shimonSmart");
+// const handleSmartReply = require("./shimonSmart");
 const { sendBirthdayMessages } = require("./birthdayNotifierTelegram");
 
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
@@ -49,11 +49,11 @@ bot.on("message", async (ctx) => {
       return;
     }
 
-    const smart = await handleSmartReply(ctx, triggerResult);
-    if (smart) {
-      console.log("🧠 תשובה חכמה נשלחה");
-      return;
-    }
+    // const smart = await handleSmartReply(ctx, triggerResult);
+    // if (smart) {
+    //   console.log("🧠 תשובה חכמה נשלחה");
+    //   return;
+    // }
 
     console.log("ℹ️ לא הופעלה תגובה חכמה או טריגר.");
   } catch (err) {

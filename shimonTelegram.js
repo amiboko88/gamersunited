@@ -59,15 +59,7 @@ if (process.env.RAILWAY_STATIC_URL) {
   app.use(path, webhookCallback(bot, "express"));
 
   const fullUrl = `${process.env.RAILWAY_STATIC_URL}${path}`;
-  bot.api.setWebhook(fullUrl, {
-    allowed_updates: [
-      "message",
-      "callback_query",
-      "inline_query",
-      "edited_message",
-      "poll"
-    ]
-  }).then(() => {
+  bot.api.setWebhook(fullUrl).then(() => {
     console.log(`✅ Webhook נרשם בהצלחה: ${fullUrl}`);
   }).catch((err) => {
     console.error("❌ שגיאה בהרשמת Webhook:", err);

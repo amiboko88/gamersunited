@@ -19,7 +19,7 @@ module.exports = (client) => {
       const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 256 });
       const avatar = await loadImage(avatarURL);
 
-      const logo = await loadImage(path.join(__dirname, 'logo.png'));
+      const logo = await loadImage(path.join(__dirname, '..', 'assets', 'logo.png'));
 
       // 1000x420 בדיוק כמו MEE6
       const width = 1000;

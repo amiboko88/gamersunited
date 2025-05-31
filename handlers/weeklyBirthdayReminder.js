@@ -17,7 +17,9 @@ async function wasAlreadySentThisWeek() {
   const snap = await statusRef.get();
   if (!snap.exists) return false;
 
-  const lastSent = snap.data().lastBirthdayReminder?.toDate?.() || new Date(0);
+  const raw = snap.data().lastBirthdayReminder;
+  const lastSent = raw instanceof Date ? raw : raw?.toDate?.() || new Date(0);
+
   const now = new Date();
   const oneWeek = 1000 * 60 * 60 * 24 * 7;
 
@@ -68,9 +70,9 @@ async function sendWeeklyReminder(client) {
 function startWeeklyBirthdayReminder(client) {
   setInterval(async () => {
     if (isSaturdayAt20()) {
-      if (await wasAlreadySentThisWeek()) {
-        log('🔁 תזכורת יום הולדת כבר נשלחה השבוע.');
-        return;
+      const alreadySent = await wasAlreadySentThisWeek();
+      if (alreadySent) {
+        return; // ⚠️ לא מדפיס שוב את הלוג כל 5 דקות
       }
       await sendWeeklyReminder(client).catch(console.error);
     }

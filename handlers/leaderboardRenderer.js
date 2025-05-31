@@ -53,7 +53,7 @@ async function renderLeaderboardImage(users) {
 
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: 'networkidle0' });
-  await page.setViewport({ width: 1920, height: 1400 });
+  await page.setViewport({ width: 1920, height: 1080 }); // ✅ עדכון חשוב
 
   const imagePath = path.join(__dirname, '../assets/leaderboard.png');
   await page.screenshot({ path: imagePath, fullPage: true });

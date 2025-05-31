@@ -66,9 +66,9 @@ async function sendLeaderboardEmbed(client) {
     }
 
     // 🖼️ שליחת תמונת פתיחה
-    const introImagePath = path.join(__dirname, '../assets/leaderboard_intro.png');
-    const introImage = new AttachmentBuilder(introImagePath);
-    await channel.send({ files: [introImage] });
+    // const introImagePath = path.join(__dirname, '../assets/leaderboard_intro.png');
+    // const introImage = new AttachmentBuilder(introImagePath);
+    // await channel.send({ files: [introImage] });
 
     // 🖼️ שליחת לוח הפעילות
     const leaderboardImage = new AttachmentBuilder(imagePath);

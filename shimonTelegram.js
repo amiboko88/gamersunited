@@ -4,6 +4,8 @@ const express = require("express");
 
 const db = require("./utils/firebase");
 const registerCommands = require("./telegramCommands");
+const { handleCurses } = require("./telegramCurses");
+const { handleTrigger } = require("./telegramTriggers");
 
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
 

@@ -73,20 +73,13 @@ async function sendLeaderboardEmbed(client) {
     });
 
     // 🖼️ שליחת טבלת המצטיינים – כתמונה פנימית בתוך Embed
-    const leaderboardAttachment = new AttachmentBuilder(imagePath, { name: 'leaderboard.png' });
-    const embed = {
-      image: { url: 'attachment://leaderboard.png' },
-      description: '🏆 **לוח הפעילות לשבוע זה – מצטייני הקהילה**',
-      color: 0xffcc00
-    };
-
-    const message = await channel.send({
-      embeds: [embed],
-      files: [leaderboardAttachment],
-      allowedMentions: { parse: [] }
-    });
-
-    await message.react('🏅');
+const leaderboardImage = new AttachmentBuilder(imagePath);
+const message = await channel.send({
+  content: '🏆 **מצטייני השבוע – GAMERS UNITED IL**\n(התמונה מוצגת במלואה 👇)',
+  files: [leaderboardImage],
+  allowedMentions: { parse: [] }
+});
+await message.react('🏅');
     console.log('✅ לוח הפעילות נשלח בהצלחה.');
     return true;
 

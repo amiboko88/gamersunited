@@ -68,7 +68,7 @@ async function sendLeaderboardEmbed(client) {
     // 🖼️ שליחת הלוגו הקבוע (ברוחב מלא)
      await channel.send({
      content: '**🏆 לוח פעילות לשבוע זה**',
-     files: [new AttachmentBuilder(path.join(__dirname, '../assets/leaderboard_logo.png'))],
+     files: [new AttachmentBuilder(path.join(__dirname, '../assets/leaderboard_intro.png'))],
     allowedMentions: { parse: [] }
     });
 

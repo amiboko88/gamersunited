@@ -200,7 +200,7 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'fifo') return fifoExecute(interaction);
   if (commandName === 'tts') return ttsCommand.execute(interaction);
   if (commandName === 'activity') return activityBoardExecute(interaction, client); // לוח פעילות Slash
-  if (commandName === 'Leaderboard') return leaderboardExecute(interaction);
+  if (commandName === 'leaderboard') return leaderboardExecute(interaction);
   if (commandName === 'soundbaord') return soundExecute(interaction, client);
   if (commandName === 'verify') return verifyExecute(interaction);
   if (commandName === 'mvp') return mvpDisplayExecute(interaction, client);

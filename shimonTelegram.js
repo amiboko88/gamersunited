@@ -7,11 +7,15 @@ const registerCommands = require("./telegramCommands");
 const { handleCurses } = require("./telegramCurses");
 const { handleTrigger } = require("./telegramTriggers");
 const handleSmartReply = require("./shimonSmart");
+const registerBirthdayHandler = require("./telegramBirthday");
+const { sendBirthdayMessages } = require("./birthdayNotifierTelegram");
 
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
 
 // 📌 רישום Slash Commands מוקדם
 registerCommands(bot);
+registerBirthdayHandler(bot);
+
 
 // 🧠 מאזן הודעות טקסט (כולל Slash וגם רגיל!)
 bot.on("message", async (ctx) => {
@@ -35,6 +39,13 @@ bot.on("message", async (ctx) => {
 });
 
 
+// 🎂 ברכות יומיות ב־9:00
+const now = new Date();
+const millisUntilNine = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0, 0) - now;
+setTimeout(() => {
+  sendBirthdayMessages();
+  setInterval(sendBirthdayMessages, 24 * 60 * 60 * 1000);
+}, Math.max(millisUntilNine, 0));
 
 
 // 🌐 webhook ל־Railway

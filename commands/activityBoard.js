@@ -4,7 +4,7 @@ const { postOrUpdateWeeklySchedule } = require('../handlers/scheduleUpdater');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('לוח_פעילות')
+    .setName('activity')
     .setDescription('שלח או עדכן את לוח הפעילות השבועי (ידני)'),
 
   async execute(interaction, client) {

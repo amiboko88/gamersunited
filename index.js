@@ -176,7 +176,10 @@ client.on('interactionCreate', async interaction => {
 
   if (interaction.isButton()) {
     // 🟦 כפתורי לוח פעילות
-if (interaction.isButton() && interaction.customId.startsWith('like_')) {
+if (interaction.isButton() && interaction.customId.startsWith('vote_')) {
+  return handleRSVP(interaction, client);
+}
+if (interaction.isButton() && interaction.customId === 'show_stats') {
   return handleRSVP(interaction, client);
 }
     // 🟦 שאר כפתורים

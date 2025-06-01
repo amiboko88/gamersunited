@@ -1,28 +1,66 @@
-// 📁 handlers/scheduleButtonsHandler.js
-const rsvpCounts = {}; // זה יישמר בזיכרון. אפשר לשדרג למסד נתונים אמיתי!
+const { EmbedBuilder } = require('discord.js');
+const { votes, weeklySchedule, buildDesc, buildButtons, ROLE_ID } = require('../commands/activityBoard');
 
-module.exports = async function handleRSVP(interaction) {
-  const customId = interaction.customId;
-  if (!customId.startsWith('like_')) return;
+module.exports = async function handleRSVP(interaction, client) {
+  if (interaction.customId.startsWith('vote_')) {
+    const id = interaction.customId.replace('vote_', '');
+    const voterId = interaction.user.id;
+    const alreadyVoted = votes[id].has(voterId);
 
-  // הגדל את מספר ההצבעות
-  rsvpCounts[customId] = (rsvpCounts[customId] || 0) + 1;
+    // אפשר לאפשר גם "הסרה" (ביטול הצבעה)
+    if (alreadyVoted) {
+      votes[id].delete(voterId);
+    } else {
+      votes[id].add(voterId);
 
-  // הודעה מהירה למצביע
-  const dayMap = {
-    like_sunday: 'ראשון',
-    like_monday: 'שני',
-    like_tuesday: 'שלישי',
-    like_wednesday: 'רביעי',
-    like_thursday: 'חמישי',
-    like_saturday: 'שבת',
-    like_all: 'כל השבוע'
-  };
+      // מחלק Role אם תרצה (בדוק שיש הרשאה)
+      if (ROLE_ID) {
+        try {
+          const member = await interaction.guild.members.fetch(voterId);
+          await member.roles.add(ROLE_ID);
+        } catch (e) { /* אפשר להדפיס לוג */ }
+      }
+    }
 
-  await interaction.reply({
-    content: `🔥 נספרת כהצבעה ל**${dayMap[customId] || 'פעילות'}**! נתראה על המפה 🚀`,
-    ephemeral: true
-  });
+    // עדכון Embed בלייב — איתור ההודעה ועריכה
+    const channel = interaction.channel;
+    let msg;
+    try {
+      msg = await channel.messages.fetch(interaction.message.id);
+    } catch (e) {}
 
-  // אפשר להוסיף כאן עדכון ללוח, שליחת סקר חדש או ניהול RSVP אמיתי לפי הצורך!
+    if (msg) {
+      // בנה Embed וכפתורים מעודכנים
+      const embed = EmbedBuilder.from(msg.embeds[0])
+        .setDescription(buildDesc())
+        .setTimestamp(new Date());
+      await msg.edit({
+        embeds: [embed],
+        components: buildButtons(voterId)
+      });
+    }
+
+    // שלח תגובה עם GIF/הודעה מצחיקה/אימוג'י
+    const funnyLines = [
+      '🔥 אתה נכנס לליגת האלופים!',
+      '💣 שימחת אותנו, קבל באדג\' למצטיינים!',
+      '🍕 מובטח פיצה למי שמגיע ראשון!',
+      '🎁 אולי הפעם תנצח משהו אמיתי!',
+      '🎮 תיזהר — שמעון עוקב אחרי הנוכחות!'
+    ];
+    const funnyLine = funnyLines[Math.floor(Math.random() * funnyLines.length)];
+
+    await interaction.reply({
+      content: `${weeklySchedule.find(e => e.id === id).emoji} ${funnyLine} ${alreadyVoted ? '❌ ביטלת הצבעה' : '✅ נספרת להצבעה!'}\n*רוצה תוצאה? לחץ שוב להצגת מצב עדכני*`,
+      ephemeral: true
+    });
+
+  } else if (interaction.customId === 'show_stats') {
+    // סטטיסטיקה כללית — Embed קצר
+    const stats = weeklySchedule.map(e => `${e.emoji} **${e.day}:** \`${votes[e.id].size} מצביעים\``).join('\n');
+    await interaction.reply({
+      content: `📊 **סטטיסטיקה מעודכנת:**\n${stats}`,
+      ephemeral: true
+    });
+  }
 };

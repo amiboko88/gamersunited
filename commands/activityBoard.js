@@ -1,75 +1,86 @@
-// 📁 commands/activityBoard.js
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
 const CHANNEL_ID = '1375415546769838120';
 const COVER_PATH = path.join(__dirname, '../assets/schedulecover.png');
+const ROLE_ID = '123456789012345678'; // עדכן ל-ID של Role לבאדג'
 
 const weeklySchedule = [
-  { day: 'ראשון', emoji: '🔵', desc: 'טורניר פיפו סודי — מתכוננים לקרב חיי הלילה' },
-  { day: 'שני', emoji: '🟢', desc: 'ערב Resurgence עם הקבועים. צחוקים, קרינג׳, וצרחות' },
-  { day: 'שלישי', emoji: '🟡', desc: 'GUN GAME לכל הרעבים לדם (ואל תשכחו אוזניות)' },
-  { day: 'רביעי', emoji: '🟣', desc: 'ערב חידות ומשימות משוגעות עם פרסים בסוף' },
-  { day: 'חמישי', emoji: '🟠', desc: 'קלאן-וור נדיר! כולם באים, לא מעניין אותנו תירוצים' },
-  { day: 'שבת', emoji: '🔴', desc: 'מוצ"ש של אש! סשן לילה עד שהאצבעות נמסות' },
+  { id: 'sunday', day: 'ראשון', emoji: '🔵', desc: 'טורניר פיפו סודי...' },
+  { id: 'monday', day: 'שני', emoji: '🟢', desc: 'ערב Resurgence...' },
+  { id: 'tuesday', day: 'שלישי', emoji: '🟡', desc: 'GUN GAME לכל הרעבים לדם...' },
+  { id: 'wednesday', day: 'רביעי', emoji: '🟣', desc: 'ערב חידות ומשימות...' },
+  { id: 'thursday', day: 'חמישי', emoji: '🟠', desc: 'קלאן-וור נדיר! כולם באים...' },
+  { id: 'saturday', day: 'שבת', emoji: '🔴', desc: 'מוצ"ש של אש! סשן לילה...' },
 ];
 
-// כפתורים מפוצצים וצבעוניים
-const buttonRows = [
-  new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('like_sunday').setLabel('🔥 ראשון').setStyle(ButtonStyle.Danger).setEmoji('🔵'),
-    new ButtonBuilder().setCustomId('like_monday').setLabel('💚 שני').setStyle(ButtonStyle.Success).setEmoji('🟢'),
-    new ButtonBuilder().setCustomId('like_tuesday').setLabel('💛 שלישי').setStyle(ButtonStyle.Primary).setEmoji('🟡'),
-    new ButtonBuilder().setCustomId('like_wednesday').setLabel('💜 רביעי').setStyle(ButtonStyle.Secondary).setEmoji('🟣'),
-    new ButtonBuilder().setCustomId('like_thursday').setLabel('🧡 חמישי').setStyle(ButtonStyle.Danger).setEmoji('🟠')
-  ),
-  new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('like_saturday').setLabel('❤️‍🔥 שבת').setStyle(ButtonStyle.Success).setEmoji('🔴'),
-    new ButtonBuilder().setCustomId('like_all').setLabel('💯 בא לכל השבוע!').setStyle(ButtonStyle.Primary).setEmoji('🌟')
-  )
-];
+// כל ההצבעות — בזיכרון (להדגמה, תוכל להעביר ל-Firestore)
+const votes = {
+  sunday: new Set(), monday: new Set(), tuesday: new Set(),
+  wednesday: new Set(), thursday: new Set(), saturday: new Set()
+};
 
-// דינמיקה — אפשר לעבור לשאיבת RSVP ממסד נתונים אם תרצה!
-const rsvpCounts = {}; // { like_sunday: 3, ... }
+function buildDesc() {
+  return weeklySchedule.map(e =>
+    `**${e.day}** ┃ ${e.desc}\n${e.emoji}  \`${votes[e.id].size} הצבעות\``
+  ).join('\n──────────────\n');
+}
+
+function buildButtons(userId) {
+  return [
+    new ActionRowBuilder().addComponents(
+      ...weeklySchedule.map(e =>
+        new ButtonBuilder()
+          .setCustomId(`vote_${e.id}`)
+          .setLabel(`${e.day} (${votes[e.id].size})`)
+          .setStyle(votes[e.id].has(userId) ? ButtonStyle.Success : ButtonStyle.Primary)
+          .setEmoji(e.emoji)
+      ),
+      new ButtonBuilder()
+        .setCustomId('show_stats')
+        .setLabel('📊 הצג סטטיסטיקה')
+        .setStyle(ButtonStyle.Secondary)
+    )
+  ];
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('activity')
-    .setDescription('שלח או עדכן את לוח הפעילות השבועי (הכי מקצועי ויפה!'),
+    .setDescription('שלח או עדכן את לוח הפעילות השבועי (אינטראקטיבי, עם הצבעות LIVE!)'),
 
   async execute(interaction, client) {
     await interaction.deferReply({ ephemeral: true });
     try {
-      // שלח קודם כל את התמונה הראשית — אם טרם קיימת/נעוצה (אפשר למחוק ישנות אוטומטית לפי הצורך)
       const channel = await client.channels.fetch(CHANNEL_ID);
       if (!channel || !channel.isTextBased()) throw 'ערוץ לא תקין!';
       const buffer = fs.readFileSync(COVER_PATH);
       const coverAttachment = new AttachmentBuilder(buffer, { name: 'schedulecover.png' });
 
-      // בנה את Embed הטקסטואלי המקצועי
-      const desc = weeklySchedule.map((e, i) =>
-        `${e.emoji} **${e.day}:** ${e.desc} ${rsvpCounts['like_' + e.day.toLowerCase()] ? '— 🟩 ' + rsvpCounts['like_' + e.day.toLowerCase()] + ' הצבעות' : ''}`
-      ).join('\n\n');
-
       const embed = new EmbedBuilder()
         .setTitle('📅 לוח פעילות שבועי – GAMERS UNITED IL')
-        .setDescription(desc)
+        .setDescription(buildDesc())
         .setImage('attachment://schedulecover.png')
         .setColor('#00B2FF')
-        .setFooter({ text: 'הכי מקצועי בארץ | שבת שלום' })
+        .setFooter({ text: 'LIVE | הצבעה עדכנית • Powered by Shimon Bot' })
         .setTimestamp();
 
-      await channel.send({
+      // שלח את הלוח — ושמור את ה-ID להמשך עריכה!
+      const sentMsg = await channel.send({
         embeds: [embed],
         files: [coverAttachment],
-        components: buttonRows
+        components: buildButtons()
       });
 
-      await interaction.editReply('✅ לוח פעילות שבועי חדש נשלח לערוץ בהצלחה!');
+      // שמור ID ב-Firestore אם תרצה עריכה/סטטיסטיקה בהמשך
+      await interaction.editReply('✅ לוח פעילות שבועי אינטראקטיבי נשלח לערוץ!');
     } catch (err) {
-      console.error('שגיאה בהפעלת לוח פעילות:', err);
+      console.error('שגיאה בלוח פעילות:', err);
       await interaction.editReply('❌ שגיאה בשליחת הלוח. בדוק הרשאות/לוגים.');
     }
-  }
+  },
+
+  // ייצוא עבור האנדלר (להתחבר ל-handler אם צריך)
+  votes, weeklySchedule, buildDesc, buildButtons, ROLE_ID
 };

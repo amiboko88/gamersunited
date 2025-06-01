@@ -5,7 +5,7 @@ const { sendLeaderboardEmbed } = require('../handlers/leaderboardDisplay');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('LEADERBOARD')
+    .setName('leaderboard')
     .setDescription('🏆 מציג את לוח הפעילות השבועי של הקהילה')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator), // ✅ למנהלים בלבד
 

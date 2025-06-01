@@ -2,7 +2,7 @@
 
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const db = require("./utils/firebase");
+const db = require("../utils/firebase");
 const { getScriptByUserId } = require("./data/fifoLines"); // אופציונלי, אם תרצה פרופיל אישי
 
 const STAFF_CHANNEL_ID = '881445829100060723'; // ערוץ STAFF

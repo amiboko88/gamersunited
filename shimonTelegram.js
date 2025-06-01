@@ -6,6 +6,7 @@ const db = require("./utils/firebase");
 const registerCommands = require("./telegramCommands");
 const { handleCurses } = require("./telegramCurses");
 const { handleTrigger } = require("./telegramTriggers");
+const handleSmartReply = require("./shimonSmart");
 
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
 
@@ -17,21 +18,22 @@ bot.on("message", async (ctx) => {
   const text = ctx.message.text || "";
   console.log("📥 התקבלה הודעה:", text);
 
-  if (text.startsWith("/")) {
-    console.log("⚙️ Slash Command – לא מגיב כאן");
-    return;
-  }
+  if (text.startsWith("/")) return;
 
-  // נסה קודם קללות
   const cursed = await handleCurses(ctx, text.toLowerCase());
   if (cursed) return;
 
-  // טריגר
   const triggerResult = handleTrigger(ctx);
   if (triggerResult.triggered) return;
 
+  // החזרת שמעון החכם
+  const smart = await handleSmartReply(ctx, triggerResult);
+  if (smart) return;
+
+  // Fallback — למקרה שלא הופעלה תגובה
   await ctx.reply("שמעון כאן ועונה!");
 });
+
 
 
 

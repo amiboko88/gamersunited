@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
 
-// פונקציה להמרת קובץ PNG ל־Base64
 function imageToBase64(filePath) {
   const file = fs.readFileSync(filePath);
   return `data:image/png;base64,${file.toString('base64')}`;
@@ -54,7 +53,7 @@ async function renderLeaderboardImage(users) {
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: 'networkidle0' });
 
-  // ✅ הזרקת גופן עברי Noto Hebrew מ־Base64
+  // הזרקת פונט עברי Base64
   const fontPath = path.join(__dirname, '../assets/NotoSansHebrew-Bold.ttf');
   const fontData = fs.readFileSync(fontPath).toString('base64');
   await page.addStyleTag({
@@ -71,8 +70,8 @@ async function renderLeaderboardImage(users) {
     `
   });
 
-  // ✅ הגדלת גובה – למלא חלון Discord כמו שצריך
-  await page.setViewport({ width: 1920, height: 1920 });
+  // ✅ יחס 16:9 אמיתי – לרוחב מלא
+  await page.setViewport({ width: 1920, height: 1080 });
 
   const imagePath = path.join(__dirname, '../assets/leaderboard.png');
   await page.screenshot({ path: imagePath, fullPage: true });

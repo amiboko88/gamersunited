@@ -4,28 +4,21 @@
   <meta charset="UTF-8" />
   <title>GAMERS UNITED IL - לוח מצטיינים</title>
   <style>
-    @font-face {
-      font-family: 'Noto Hebrew';
-      src: url('../assets/NotoSansHebrew-Bold.ttf') format('truetype');
-      font-weight: normal;
-      font-style: normal;
-    }
-
     html, body {
       margin: 0;
       padding: 0;
       width: 1920px;
-      height: 1400px;
+      height: 1080px;
       font-family: 'Noto Hebrew', sans-serif;
       direction: rtl;
-      background: linear-gradient(135deg, #0d0d0d, #1a1a1a);
+      background: linear-gradient(135deg, #000000, #1a1a1a);
       color: #ffffff;
     }
 
     .container {
       width: 100%;
       height: 100%;
-      padding: 80px 100px;
+      padding: 60px 100px;
       box-sizing: border-box;
       display: flex;
       flex-direction: column;
@@ -33,45 +26,43 @@
     }
 
     h1 {
-      font-size: 76px;
+      font-size: 78px;
       text-align: center;
       color: #ffcc00;
-      margin-bottom: 60px;
-      text-shadow: 3px 3px 12px #000;
+      margin-bottom: 40px;
+      text-shadow: 4px 4px 12px #000;
     }
 
     .leaderboard {
       flex-grow: 1;
       display: flex;
       flex-direction: column;
-      gap: 42px;
+      gap: 28px;
     }
 
     .player {
       display: flex;
       align-items: center;
       background: #111;
-      border: 3px solid #333;
-      padding: 64px 80px;
-      min-height: 180px;
+      border: 2px solid #333;
+      padding: 36px 48px;
       border-radius: 24px;
-      box-shadow: 0 0 45px rgba(255, 204, 0, 0.3);
-      
-      font-size: 40px;
-      position: relative;
+      box-shadow: 0 0 35px rgba(255, 204, 0, 0.2);
+      font-size: 48px;
+      min-height: 170px;
     }
 
     .player.gold {
       border-color: gold;
       background: #1f1f1f;
-      box-shadow: 0 0 55px rgba(255, 215, 0, 0.5);
+      box-shadow: 0 0 55px rgba(255, 215, 0, 0.4);
     }
 
     .avatar {
-      width: 128px;
-      height: 128px;
+      width: 140px;
+      height: 140px;
       border-radius: 50%;
-      border: 4px solid #444;
+      border: 4px solid #555;
       margin-left: 40px;
       background-size: cover;
       background-position: center;
@@ -83,7 +74,7 @@
     }
 
     .name {
-      font-size: 60px;
+      font-size: 64px;
       font-weight: bold;
       color: #fff;
     }
@@ -91,16 +82,16 @@
     .details {
       font-size: 42px;
       color: #ccc;
-      margin-top: 12px;
+      margin-top: 10px;
     }
 
     .position {
-      margin-right: 24px;
+      margin-right: 30px;
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 72px;
-      height: 72px;
+      width: 80px;
+      height: 80px;
     }
 
     .position img {
@@ -118,17 +109,17 @@
       text-align: center;
       font-size: 24px;
       color: #777;
-      margin-top: 40px;
+      margin-top: 20px;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>מצטייני השבוע - GAMERS UNITED IL</h1>
+    <h1>GAMERS UNITED IL - מצטייני השבוע</h1>
     <div class="leaderboard">
-      <!-- שורות המשתמשים מוזרקות כאן -->
+      <!-- שורות מוזרקות -->
     </div>
-    <footer>נוצר אוטומטית על ידי שמעון הבוט – שבת ב־20:00</footer>
+    <footer>נוצר אוטומטית על ידי שמעון הבוט – שבת 21:00</footer>
   </div>
 </body>
 </html>

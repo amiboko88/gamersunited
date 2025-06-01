@@ -27,8 +27,8 @@ registerBirthdayHandler(bot);
 bot.on("message", async (ctx) => {
   if (!ctx.message || ctx.message.from?.is_bot) return;
 
-  const text = ctx.message.text?.trim() || "";
-  console.log("📥 נקלט טקסט:", text);
+  const text = ctx.message.text?.toLowerCase();
+  if (!text) return;
 
   // 🎛️ סינון Slash
   if (text.startsWith("/")) {
@@ -57,18 +57,7 @@ if (process.env.RAILWAY_STATIC_URL) {
   app.use(path, webhookCallback(bot, "express"));
 
   const fullUrl = `${process.env.RAILWAY_STATIC_URL}${path}`;
-  bot.api.setWebhook(fullUrl, {
-    allowed_updates: [
-  "message",
-  "edited_message",
-  "callback_query",
-  "inline_query",
-  "poll",
-  "my_chat_member",
-  "chat_member",
-  "message_reaction"
-]
-  }).then(() => {
+  bot.api.setWebhook(fullUrl).then(() => {
     console.log(`✅ Webhook נרשם בהצלחה: ${fullUrl}`);
   }).catch((err) => {
     console.error("❌ שגיאה בהרשמת Webhook:", err);

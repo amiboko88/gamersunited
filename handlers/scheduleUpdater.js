@@ -10,7 +10,6 @@ const LOGO_PATH = path.join(__dirname, '../assets/logo.png');
 const FONT_PATH = path.join(__dirname, '../assets/NotoSansHebrew-Bold.ttf');
 const COVER_PATH = path.join(__dirname, '../assets/schedulecover.png'); // עדכן אם השם שונה
 
-// פעילויות מגוונות, לא חוזר על עצמו בשבוע
 const ACTIVITY_BANK = [
   '🕹️ טורניר פיפו סודי — מתכוננים לקרב חיי הלילה',
   '💥 ערב Resurgence עם הקבועים. צחוקים, קרינג׳, וצרחות',
@@ -27,7 +26,6 @@ const ACTIVITY_BANK = [
 
 const WEEK_DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שבת'];
 
-// הפקת פעילות אקראית לכל יום
 function getRandomActivities() {
   const used = new Set();
   while (used.size < WEEK_DAYS.length) {
@@ -37,7 +35,6 @@ function getRandomActivities() {
   return Array.from(used).map(i => ACTIVITY_BANK[i]);
 }
 
-// ציור טבלה עברית רחבה ומגניבה
 function drawTableHebrew(ctx, activities) {
   ctx.fillStyle = '#222c3a';
   ctx.fillRect(0, 0, 1080, 720);
@@ -47,7 +44,6 @@ function drawTableHebrew(ctx, activities) {
   ctx.textAlign = 'center';
   ctx.fillText('לוח פעילות שבועי', 540, 80);
 
-  // כותרות ימים
   ctx.font = 'bold 40px Noto';
   ctx.textAlign = 'center';
   WEEK_DAYS.forEach((day, i) => {
@@ -55,7 +51,6 @@ function drawTableHebrew(ctx, activities) {
     ctx.fillText(day, 180 + i * 150, 170);
   });
 
-  // פעילויות
   activities.forEach((activity, i) => {
     ctx.fillStyle = '#FFF';
     ctx.font = '32px Noto';
@@ -64,7 +59,6 @@ function drawTableHebrew(ctx, activities) {
   });
 }
 
-// הפונקציה הראשית — שליחה/עדכון Cover והלוח השבועי
 async function postOrUpdateWeeklySchedule(client, manual = false) {
   const today = new Date();
   const scheduleDoc = db.doc('schedule/message');
@@ -78,27 +72,23 @@ async function postOrUpdateWeeklySchedule(client, manual = false) {
   if (!coverSnap.exists) {
     try {
       const buffer = fs.readFileSync(COVER_PATH);
-      const coverAttachment = new AttachmentBuilder(buffer, { name: 'cover.png' });
+      const coverAttachment = new AttachmentBuilder(buffer, { name: 'schedulecover.png' });
       const coverMsg = await channel.send({ files: [coverAttachment] });
       await coverDoc.set({ id: coverMsg.id });
       console.log('🎨 נשלחה תמונת כותרת לערוץ!');
-      // המתן שנייה למניעת כפילות/בלבול בעומס (דיסקורד איטי לפעמים)
       await new Promise(r => setTimeout(r, 1000));
     } catch (e) {
       console.error('❌ כשל בשליחת תמונת כותרת:', e);
     }
   }
 
-  // יצירת פעילות רנדומלית לשבוע
   const activities = getRandomActivities();
 
-  // בניית התמונה (canvas)
   registerFont(FONT_PATH, { family: 'Noto' });
   const canvas = createCanvas(1080, 720);
   const ctx = canvas.getContext('2d');
   drawTableHebrew(ctx, activities);
 
-  // הוספת לוגו בפינה
   try {
     const logo = await loadImage(LOGO_PATH);
     ctx.drawImage(logo, 900, 600, 140, 100);
@@ -109,7 +99,6 @@ async function postOrUpdateWeeklySchedule(client, manual = false) {
   const buffer = canvas.toBuffer('image/png');
   const attachment = new AttachmentBuilder(buffer, { name: 'activityBoard.png' });
 
-  // בניית Embed (הלוח)
   const embed = new EmbedBuilder()
     .setTitle('📅 לוח פעילות שבועי – GAMERS UNITED IL')
     .setDescription('בחר באילו ימים אתה זורם עם הלוז. כל שבוע: פעילות רנדומלית, אווירה, וכפתורי הצבעה לכל יום! 🎮')
@@ -118,15 +107,19 @@ async function postOrUpdateWeeklySchedule(client, manual = false) {
     .setFooter({ text: 'נוצר אוטומטית ע״י שמעון הבוט | שבת שלום' })
     .setTimestamp();
 
-  // כפתורים (לכל יום)
-  const buttons = new ActionRowBuilder().addComponents(
-    ...WEEK_DAYS.map((day, index) =>
-      new ButtonBuilder()
-        .setCustomId(`rsvp_${index}`)
-        .setLabel(day)
-        .setStyle(ButtonStyle.Primary)
-    )
+  // ---- פיצול כפתורים לשתי שורות ----
+  const buttonsArr = WEEK_DAYS.map((day, index) =>
+    new ButtonBuilder()
+      .setCustomId(`rsvp_${index}`)
+      .setLabel(day)
+      .setStyle(ButtonStyle.Primary)
   );
+  const buttonRows = [];
+  buttonRows.push(new ActionRowBuilder().addComponents(...buttonsArr.slice(0, 5)));
+  if (buttonsArr.length > 5) {
+    buttonRows.push(new ActionRowBuilder().addComponents(...buttonsArr.slice(5)));
+  }
+  // ---- סוף פיצול ----
 
   // איפוס הצבעות שבועיות
   await db.collection('rsvp').get().then(snapshot => {
@@ -138,7 +131,7 @@ async function postOrUpdateWeeklySchedule(client, manual = false) {
   if (docSnap.exists) {
     try {
       const msg = await channel.messages.fetch(docSnap.data().id);
-      await msg.edit({ embeds: [embed], files: [attachment], components: [buttons] });
+      await msg.edit({ embeds: [embed], files: [attachment], components: buttonRows });
       await systemRef.set({ lastScheduleSent: today.toISOString().split('T')[0] }, { merge: true });
       if (manual) return '🔁 לוח שבועי עודכן ידנית!';
       console.log('🔁 לוח שבועי עודכן');
@@ -149,7 +142,7 @@ async function postOrUpdateWeeklySchedule(client, manual = false) {
   }
 
   // שליחה חדשה (אם אין)
-  const sentMsg = await channel.send({ embeds: [embed], files: [attachment], components: [buttons] });
+  const sentMsg = await channel.send({ embeds: [embed], files: [attachment], components: buttonRows });
   await scheduleDoc.set({ id: sentMsg.id });
   await systemRef.set({ lastScheduleSent: today.toISOString().split('T')[0] }, { merge: true });
   if (manual) return '📤 נשלח לוח חדש ידנית!';

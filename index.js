@@ -194,22 +194,22 @@ client.on('interactionCreate', async interaction => {
   const { commandName } = interaction;
 
   // פקודות Slash
-  if (commandName === 'שיר') return songExecute(interaction, client);
-  if (commandName === 'עדכן_חוקים') return refreshRulesExecute(interaction);
-  if (commandName === 'אישרו_חוקים') return rulesStatsExecute(interaction);
-  if (commandName === 'פיפו') return fifoExecute(interaction);
+  if (commandName === 'song') return songExecute(interaction, client);
+  if (commandName === 'updaterules') return refreshRulesExecute(interaction);
+  if (commandName === 'rules') return rulesStatsExecute(interaction);
+  if (commandName === 'fifo') return fifoExecute(interaction);
   if (commandName === 'tts') return ttsCommand.execute(interaction);
-  if (commandName === 'לוח_פעילות') return activityBoardExecute(interaction, client); // לוח פעילות Slash
-  if (commandName === 'לידרבורד') return leaderboardExecute(interaction);
-  if (commandName === 'סאונד') return soundExecute(interaction, client);
-  if (commandName === 'אמת') return verifyExecute(interaction);
+  if (commandName === 'activity') return activityBoardExecute(interaction, client); // לוח פעילות Slash
+  if (commandName === 'Leaderboard') return leaderboardExecute(interaction);
+  if (commandName === 'soundbaord') return soundExecute(interaction, client);
+  if (commandName === 'verify') return verifyExecute(interaction);
   if (commandName === 'mvp') return mvpDisplayExecute(interaction, client);
 
   if ([
-    'הוסף_יום_הולדת',
-    'ימי_הולדת',
-    'היום_הולדת_הבא',
-    'ימי_הולדת_חסרים'
+    'addbirthday',
+    'birthdays',
+    'nextbirthday',
+    'missingbirthday'
   ].includes(commandName)) {
     return birthdayExecute(interaction);
   }

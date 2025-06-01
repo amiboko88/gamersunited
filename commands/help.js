@@ -1,5 +1,5 @@
-// commands/help.js – פקודת עזרה עם כפתורים (דיסקורד.js v14+)
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, InteractionType } = require('discord.js');
+// commands/help.js – פקודת עזרה עם כפתורים (תומך 5 כפתורים בשורה, דיסקורד.js v14+)
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 
 const HELP_CATEGORIES = [
   {
@@ -85,16 +85,25 @@ const HELP_CONTENT = {
 • אפשר להפעיל אותה בכל עת לבדיקת זמינות וחיבור.`
 };
 
+// 👇 חלוקה לשורות – כל שורה עד 5 כפתורים!
 function buildHelpButtons(selectedId = 'general') {
-  return new ActionRowBuilder().addComponents(
-    HELP_CATEGORIES.map(cat =>
+  const rows = [];
+  let currentRow = new ActionRowBuilder();
+  HELP_CATEGORIES.forEach((cat, i) => {
+    if (i > 0 && i % 5 === 0) {
+      rows.push(currentRow);
+      currentRow = new ActionRowBuilder();
+    }
+    currentRow.addComponents(
       new ButtonBuilder()
         .setCustomId(`help_${cat.id}`)
         .setLabel(cat.label)
         .setEmoji(cat.emoji)
         .setStyle(cat.id === selectedId ? ButtonStyle.Primary : ButtonStyle.Secondary)
-    )
-  );
+    );
+  });
+  if (currentRow.components.length > 0) rows.push(currentRow);
+  return rows;
 }
 
 function buildHelpEmbed(selectedId = 'general') {
@@ -103,7 +112,7 @@ function buildHelpEmbed(selectedId = 'general') {
     .setColor('#2b2d31')
     .setTitle(`${cat.emoji} ${cat.label}`)
     .setDescription(HELP_CONTENT[selectedId])
-    .setFooter({ text: 'FIFO BOT • מערכת עזרה בעברית' });
+    .setFooter({ text: 'GAMERS UNITED IL • מערכת עזרה בעברית' });
 }
 
 module.exports = {
@@ -111,11 +120,10 @@ module.exports = {
     .setName('עזרה')
     .setDescription('צפייה בכל הפקודות, הסברים ושאלות נפוצות.'),
   async execute(interaction) {
-    // הצגת Embed ראשוני + כפתורים
     await interaction.reply({
       embeds: [buildHelpEmbed()],
-      components: [buildHelpButtons()],
-      ephemeral: true // עזרה נשלחת למשתמש בלבד
+      components: buildHelpButtons(),
+      ephemeral: true // אתה יכול להחליף ל-flags: 64 אם תרצה
     });
   },
   // האנדלר של הכפתורים (יש להוסיף לאירוע interactionCreate הראשי!)
@@ -130,7 +138,7 @@ module.exports = {
 
     await interaction.update({
       embeds: [buildHelpEmbed(selectedId)],
-      components: [buildHelpButtons(selectedId)],
+      components: buildHelpButtons(selectedId),
       ephemeral: true
     });
 

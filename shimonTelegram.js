@@ -20,8 +20,17 @@ bot.on("message", async (ctx) => {
     return;
   }
 
+  // נסה קודם קללות
+  const cursed = await handleCurses(ctx, text.toLowerCase());
+  if (cursed) return;
+
+  // טריגר
+  const triggerResult = handleTrigger(ctx);
+  if (triggerResult.triggered) return;
+
   await ctx.reply("שמעון כאן ועונה!");
 });
+
 
 
 // 🌐 webhook ל־Railway

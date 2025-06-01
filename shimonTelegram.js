@@ -13,7 +13,9 @@ registerCommands(bot);
 // 🧠 מאזן הודעות טקסט (כולל Slash וגם רגיל!)
 bot.on("message", async (ctx) => {
   console.log("📥 התקבלה הודעה:", ctx.message.text);
+  await ctx.reply("שמעון כאן ועונה!");
 });
+
 
 // 🌐 webhook ל־Railway
 if (process.env.RAILWAY_STATIC_URL) {

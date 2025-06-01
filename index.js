@@ -8,6 +8,9 @@ const { postOrUpdateWeeklySchedule } = require('./handlers/scheduleUpdater');
 const handleRSVP = require('./handlers/scheduleButtonsHandler');
 const { data: activityBoardData, execute: activityBoardExecute } = require('./commands/activityBoard');
 
+// ✅ שינוי לפקודת עזרה
+const { data: helpData, execute: helpExecute, handleButton: helpHandleButton } = require('./commands/help');
+
 // 📘 שאר הייבוא שלך — נשאר בדיוק כפי שהיה (לא נערך כאן)
 const {
   sendPublicRulesEmbed,
@@ -59,6 +62,7 @@ const statTracker = require('./handlers/statTracker');
 const commands = [];
 registerMvpCommand(commands);
 commands.push(
+  helpData, // ✅ שינוי לפקודת עזרה: הוסף לפקודות Slash
   verifyData,
   songData,
   soundData,
@@ -165,6 +169,11 @@ client.on('messageCreate', async message => {
 client.on('interactionCreate', async interaction => {
   if (interaction.isAutocomplete()) return songAutocomplete(interaction);
 
+  // ✅ שינוי לפקודת עזרה — טיפול בכפתורים
+  if (interaction.isButton() && interaction.customId.startsWith('help_')) {
+    if (await helpHandleButton(interaction)) return;
+  }
+
   if (interaction.isButton()) {
     // 🟦 כפתורי לוח פעילות
     if (interaction.customId.startsWith('rsvp_')) {
@@ -192,6 +201,9 @@ client.on('interactionCreate', async interaction => {
   await statTracker.trackSlash(interaction);
 
   const { commandName } = interaction;
+
+  // ✅ שינוי לפקודת עזרה — טיפול ב־/עזרה
+  if (commandName === 'עזרה') return helpExecute(interaction);
 
   // פקודות Slash
   if (commandName === 'song') return songExecute(interaction, client);

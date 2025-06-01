@@ -58,7 +58,16 @@ if (process.env.RAILWAY_STATIC_URL) {
 
   const fullUrl = `${process.env.RAILWAY_STATIC_URL}${path}`;
   bot.api.setWebhook(fullUrl, {
-    allowed_updates: ["message", "edited_message", "callback_query", "inline_query", "poll"]
+    allowed_updates: [
+  "message",
+  "edited_message",
+  "callback_query",
+  "inline_query",
+  "poll",
+  "my_chat_member",
+  "chat_member",
+  "message_reaction"
+]
   }).then(() => {
     console.log(`✅ Webhook נרשם בהצלחה: ${fullUrl}`);
   }).catch((err) => {

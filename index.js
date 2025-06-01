@@ -1,16 +1,20 @@
 // 📁 index.js
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
+const schedule = require('node-schedule');
 
-// 📘 חוקים
+// 🎮 פיצ'רים Scheduler
+const { postOrUpdateWeeklySchedule } = require('./handlers/scheduleUpdater');
+const handleRSVP = require('./handlers/scheduleButtonsHandler');
+const { data: activityBoardData, execute: activityBoardExecute } = require('./commands/activityBoard');
+
+// 📘 שאר הייבוא שלך — נשאר בדיוק כפי שהיה (לא נערך כאן)
 const {
   sendPublicRulesEmbed,
   sendRulesToUser,
   handleRulesInteraction,
   startWeeklyRulesUpdate
 } = require('./handlers/rulesEmbed');
-
-// 📦 פקודות Slash
 const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
 const { data: fifoData, execute: fifoExecute } = require('./commands/fifo');
 const { data: songData, execute: songExecute, autocomplete: songAutocomplete } = require('./commands/song');
@@ -18,44 +22,29 @@ const { execute: soundExecute, data: soundData } = require('./handlers/soundboar
 const { data: birthdayCommands, execute: birthdayExecute } = require('./commands/birthdayCommands');
 const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
 const { registerMvpCommand } = require('./commands/mvpDisplay');
-
-// 🧠 משחקים וחגים
 const { startMiniGameScheduler } = require('./handlers/miniGames');
 const { startBirthdayTracker } = require('./handlers/birthdayTracker');
 const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayReminder');
-
-// 🎧 ניהול קולי
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const handleMusicControls = require('./handlers/musicControls');
 const ttsCommand = require('./commands/ttsCommand');
-
-
-// 🤖 אינטראקציות חכמות
 const smartChat = require('./handlers/smartChat');
 const welcomeImage = require('./handlers/welcomeImage');
 const { startActivityScheduler } = require('./handlers/activityScheduler');
 const { showBirthdayModal, handleBirthdayModalSubmit } = require('./handlers/birthdayModal');
-
-// 🔒 אימות
 const {
   setupVerificationMessage,
   startDmTracking,
   handleInteraction: handleVerifyInteraction
 } = require('./handlers/verificationButton');
-
-// 📈 נוכחות
 const {
   trackGamePresence,
   hardSyncPresenceOnReady,
   startPresenceLoop
 } = require('./handlers/presenceTracker');
 const { startPresenceRotation } = require('./handlers/presenceRotator');
-
-// 🎯 MVP
 const { startMvpScheduler } = require('./handlers/mvpTracker');
 const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
-
-// 🧼 כללי
 const { startLeaderboardUpdater } = require('./handlers/leaderboardUpdater');
 const { data: leaderboardData, execute: leaderboardExecute } = require('./commands/leaderboard');
 const { setupMemberTracker } = require('./handlers/memberTracker');
@@ -64,9 +53,24 @@ const { data: rulesStatsData, execute: rulesStatsExecute } = require('./commands
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
 const { handleSpam } = require('./handlers/antispam');
 const db = require('./utils/firebase');
-const statTracker = require('./handlers/statTracker'); // ✅ חדש
+const statTracker = require('./handlers/statTracker');
 
-// 🎮 אתחול הבוט
+// פקודות Slash — כולל לוח פעילות
+const commands = [];
+registerMvpCommand(commands);
+commands.push(
+  verifyData,
+  songData,
+  soundData,
+  ...birthdayCommands,
+  leaderboardData,
+  fifoData,
+  rulesStatsData,
+  ttsCommand.data,
+  refreshRulesData,
+  activityBoardData // לוח פעילות
+);
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -77,26 +81,14 @@ const client = new Client({
     GatewayIntentBits.GuildMembers
   ]
 });
-
 client.db = db;
-
-// פקודות
-const commands = [];
-registerMvpCommand(commands);
-commands.push(verifyData, songData, soundData);
-commands.push(...birthdayCommands);
-commands.push(leaderboardData);
-commands.push(fifoData);
-commands.push(rulesStatsData);
-commands.push(ttsCommand.data); // ✅ חדש
-commands.push(refreshRulesData);
 
 // ▶️ התחברות
 client.once('ready', async () => {
   await hardSyncPresenceOnReady(client);
   await setupVerificationMessage(client);
-   await sendPublicRulesEmbed(client); // ✅ חדש
-  startWeeklyRulesUpdate(client);  // ✅ חדש
+  await sendPublicRulesEmbed(client);
+  startWeeklyRulesUpdate(client);
   welcomeImage(client);
   startDmTracking(client);
   startLeaderboardUpdater(client);
@@ -111,11 +103,21 @@ client.once('ready', async () => {
   startMvpScheduler(client, db);
   await startMvpReactionWatcher(client, db);
 
+  // ⏰ תזמון לוח פעילות שבועי — כל מוצ"ש ב־21:00 (שעון שרת)
+  schedule.scheduleJob('0 21 * * 6', async () => {
+    try {
+      await postOrUpdateWeeklySchedule(client);
+      console.log('🗓️ לוח פעילות שבועי נשלח אוטומטית');
+    } catch (e) {
+      console.error('❌ תקלה בלוח פעילות:', e);
+    }
+  });
+
   console.log(`שימי הבוט באוויר! ${client.user.tag}`);
 
+  // פקודות Slash
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   const guildId = process.env.GUILD_ID;
-
   try {
     await rest.put(
       Routes.applicationGuildCommands(client.user.id, guildId),
@@ -134,19 +136,17 @@ client.on('presenceUpdate', (oldPresence, newPresence) => {
 
 // 🎤 קול
 client.on('voiceStateUpdate', (oldState, newState) => {
-   handleVoiceStateUpdate(oldState, newState);
+  handleVoiceStateUpdate(oldState, newState);
 });
 
 client.on('guildMemberAdd', async member => {
-  await sendRulesToUser(member); // ✅ שולח DM רק למי שצריך
+  await sendRulesToUser(member);
 });
-
 
 // 💬 טקסט
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
-
-  await statTracker.trackMessage(message); // ✅ חדש
+  await statTracker.trackMessage(message);
 
   const lowered = message.content.toLowerCase();
   const targetBot = lowered.includes('שמעון') || lowered.includes('bot') || lowered.includes('shim');
@@ -166,18 +166,20 @@ client.on('interactionCreate', async interaction => {
   if (interaction.isAutocomplete()) return songAutocomplete(interaction);
 
   if (interaction.isButton()) {
+    // 🟦 כפתורי לוח פעילות
+    if (interaction.customId.startsWith('rsvp_')) {
+      return handleRSVP(interaction, client);
+    }
+    // 🟦 שאר כפתורים
     if (['pause', 'resume', 'stop'].includes(interaction.customId)) {
       return handleMusicControls(interaction);
     }
-
     if (interaction.customId === 'open_birthday_modal') {
       return showBirthdayModal(interaction);
     }
-
     if (interaction.customId.startsWith('rules_') || interaction.customId === 'accept_rules') {
-      return handleRulesInteraction(interaction); // ✅ חדש
+      return handleRulesInteraction(interaction);
     }
-
     return handleVerifyInteraction(interaction);
   }
 
@@ -187,17 +189,19 @@ client.on('interactionCreate', async interaction => {
 
   if (!interaction.isCommand()) return;
 
-  await statTracker.trackSlash(interaction); // ✅ חדש
+  await statTracker.trackSlash(interaction);
 
   const { commandName } = interaction;
 
+  // פקודות Slash
   if (commandName === 'שיר') return songExecute(interaction, client);
   if (commandName === 'עדכן_חוקים') return refreshRulesExecute(interaction);
   if (commandName === 'אישרו_חוקים') return rulesStatsExecute(interaction);
   if (commandName === 'פיפו') return fifoExecute(interaction);
   if (commandName === 'tts') return ttsCommand.execute(interaction);
-  if (commandName === 'לוח_פעילות') return leaderboardExecute(interaction);
-  if (commandName === 'סאונד') return soundExecute(interaction, client);  
+  if (commandName === 'לוח_פעילות') return activityBoardExecute(interaction, client); // לוח פעילות Slash
+  if (commandName === 'לידרבורד') return leaderboardExecute(interaction);
+  if (commandName === 'סאונד') return soundExecute(interaction, client);
   if (commandName === 'אמת') return verifyExecute(interaction);
   if (commandName === 'mvp') return mvpDisplayExecute(interaction, client);
 
@@ -233,3 +237,6 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // ✅ תוספת אחת בלבד: הפעלת בוט טלגרם
 require('./shimonTelegram');
+
+// ✅ מחזיק את התהליך חי כל הזמן
+setInterval(() => {}, 1000 * 60 * 60);

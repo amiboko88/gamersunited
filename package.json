@@ -32,6 +32,7 @@
     "google-tts-api": "^2.0.2",
     "grammy": "^1.36.3",
     "node-cron": "^4.0.7",
+    "node-schedule": "^2.1.1",
     "openai": "^4.28.3",
     "opusscript": "^0.0.8",
     "play-dl": "^1.9.7",

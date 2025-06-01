@@ -53,7 +53,26 @@ async function renderLeaderboardImage(users) {
 
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: 'networkidle0' });
-  await page.setViewport({ width: 1920, height: 1080 }); // ✅ עדכון חשוב
+
+  // ✅ הזרקת גופן עברי Noto Hebrew מ־Base64
+  const fontPath = path.join(__dirname, '../assets/NotoSansHebrew-Bold.ttf');
+  const fontData = fs.readFileSync(fontPath).toString('base64');
+  await page.addStyleTag({
+    content: `
+      @font-face {
+        font-family: 'Noto Hebrew';
+        src: url(data:font/truetype;charset=utf-8;base64,${fontData}) format('truetype');
+        font-weight: normal;
+        font-style: normal;
+      }
+      html, body, * {
+        font-family: 'Noto Hebrew', sans-serif !important;
+      }
+    `
+  });
+
+  // ✅ הגדלת גובה – למלא חלון Discord כמו שצריך
+  await page.setViewport({ width: 1920, height: 1920 });
 
   const imagePath = path.join(__dirname, '../assets/leaderboard.png');
   await page.screenshot({ path: imagePath, fullPage: true });

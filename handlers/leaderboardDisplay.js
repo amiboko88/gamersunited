@@ -36,7 +36,7 @@ async function fetchTopUsers(limit = 10) {
 
 async function sendLeaderboardEmbed(client) {
   try {
-    const topUsers = await fetchTopUsers();
+    const topUsers = await fetchTopUsers(5);
 
     if (!topUsers.length) {
       console.log('ℹ️ אין משתמשים פעילים ל־Leaderboard.');
@@ -65,16 +65,18 @@ async function sendLeaderboardEmbed(client) {
       return false;
     }
 
-    // 🖼️ שליחת תמונת פתיחה
-    // const introImagePath = path.join(__dirname, '../assets/leaderboard_intro.png');
-    // const introImage = new AttachmentBuilder(introImagePath);
-    // await channel.send({ files: [introImage] });
+    // 🖼️ שליחת הלוגו הקבוע (ברוחב מלא)
+     await channel.send({
+     content: '**🏆 לוח פעילות לשבוע זה**',
+     files: [new AttachmentBuilder(path.join(__dirname, '../assets/leaderboard_logo.png'))],
+    allowedMentions: { parse: [] }
+    });
 
     // 🖼️ שליחת לוח הפעילות
-    const leaderboardImage = new AttachmentBuilder(imagePath);
-    const message = await channel.send({
-      content: 'לוח הפעילות השבועי 📸',
-      files: [leaderboardImage]
+     const leaderboardImage = new AttachmentBuilder(imagePath);
+     await channel.send({
+     files: [leaderboardImage],
+     allowedMentions: { parse: [] }
     });
 
     await message.react('🏅');

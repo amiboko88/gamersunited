@@ -125,8 +125,8 @@ module.exports = function registerBirthdayHandler(bot) {
   // הזנת תאריך/ביטול/ניהול
   bot.on("message:text", async (ctx) => {
     const userId = ctx.from.id;
-    if (!WAITING_USERS.has(userId)) return;
-
+   if (!WAITING_USERS.has(userId)) return await next(); // זה ההבדל הקריטי
+    
     const mode = WAITING_USERS.get(userId);
     const input = ctx.message.text.trim();
 

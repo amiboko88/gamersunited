@@ -1,25 +1,28 @@
 // 📁 handlers/scheduleButtonsHandler.js
-const db = require('../utils/firebase');
-
-const WEEK_DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שבת'];
+const rsvpCounts = {}; // זה יישמר בזיכרון. אפשר לשדרג למסד נתונים אמיתי!
 
 module.exports = async function handleRSVP(interaction) {
-  const userId = interaction.user.id;
-  const displayName = interaction.member?.displayName || interaction.user.username;
-  const customId = interaction.customId; // למשל: rsvp_2
+  const customId = interaction.customId;
+  if (!customId.startsWith('like_')) return;
 
-  if (!customId.startsWith('rsvp_')) return;
+  // הגדל את מספר ההצבעות
+  rsvpCounts[customId] = (rsvpCounts[customId] || 0) + 1;
 
-  const dayIndex = parseInt(customId.replace('rsvp_', ''), 10);
-  const dayLabel = WEEK_DAYS[dayIndex] || 'לא ידוע';
+  // הודעה מהירה למצביע
+  const dayMap = {
+    like_sunday: 'ראשון',
+    like_monday: 'שני',
+    like_tuesday: 'שלישי',
+    like_wednesday: 'רביעי',
+    like_thursday: 'חמישי',
+    like_saturday: 'שבת',
+    like_all: 'כל השבוע'
+  };
 
-  // 🔐 שמירה ב־Firestore (הוספה לרשימת ההצבעות לאותו יום)
-  const docRef = db.collection('rsvp').doc(dayLabel);
-  await docRef.set({ [userId]: displayName }, { merge: true });
-
-  // 🔔 תגובה פרטית
   await interaction.reply({
-    content: `✅ נרשמת ליום **${dayLabel}**. תתכונן לקרב GAMERS UNITED IL! 🎮`,
+    content: `🔥 נספרת כהצבעה ל**${dayMap[customId] || 'פעילות'}**! נתראה על המפה 🚀`,
     ephemeral: true
   });
+
+  // אפשר להוסיף כאן עדכון ללוח, שליחת סקר חדש או ניהול RSVP אמיתי לפי הצורך!
 };

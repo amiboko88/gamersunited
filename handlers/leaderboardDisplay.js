@@ -72,15 +72,40 @@ async function sendLeaderboardEmbed(client) {
       allowedMentions: { parse: [] }
     });
 
-    // 🖼️ שליחת טבלת המצטיינים – כתמונה פנימית בתוך Embed
-const leaderboardImage = new AttachmentBuilder(imagePath);
-const message = await channel.send({
-  content: '🏆 **מצטייני השבוע – GAMERS UNITED IL**\n(התמונה מוצגת במלואה 👇)',
-  files: [leaderboardImage],
-  allowedMentions: { parse: [] }
-});
-await message.react('🏅');
-    console.log('✅ לוח הפעילות נשלח בהצלחה.');
+    const leaderboardImage = new AttachmentBuilder(imagePath);
+
+    // ✅ בדיקה אם קיימת הודעה קודמת לעריכה
+    const docRef = db.collection('systemTasks').doc('weeklyLeaderboard');
+    const doc = await docRef.get();
+    let message;
+
+    if (doc.exists && doc.data().messageId) {
+      const prevMessageId = doc.data().messageId;
+      const prevMessage = await channel.messages.fetch(prevMessageId).catch(() => null);
+
+      if (prevMessage) {
+        message = await prevMessage.edit({
+          content: '🏆 **מצטייני השבוע – GAMERS UNITED IL**\n(התמונה מוצגת במלואה 👇)',
+          files: [leaderboardImage],
+          allowedMentions: { parse: [] }
+        });
+        console.log('📝 לוח הפעילות עודכן על הודעה קיימת.');
+      }
+    }
+
+    // אם לא נמצא הודעה קודמת – שולחים חדשה
+    if (!message) {
+      message = await channel.send({
+        content: '🏆 **מצטייני השבוע – GAMERS UNITED IL**\n(התמונה מוצגת במלואה 👇)',
+        files: [leaderboardImage],
+        allowedMentions: { parse: [] }
+      });
+
+      await docRef.set({ messageId: message.id, lastUpdated: new Date().toISOString() }, { merge: true });
+      console.log('✅ לוח הפעילות נשלח כהודעה חדשה.');
+    }
+
+    await message.react('🏅');
     return true;
 
   } catch (error) {

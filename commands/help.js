@@ -1,9 +1,7 @@
-// commands/help.js – פקודת עזרה דינמית לפי כל הפקודות הרשומות, דיסקורד.js v14+
-// שימוש ב־flags: 64 (ephemeral replacement) | Node 22
+// commands/help.js – דינמי, Node 22 + discord.js v14+, עם flags: 64
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
-// רשימת אימוג'ים מומלצים – אפשר להרחיב לפי רצונך
 const emojiMap = {
   leaderboard: '🏆',
   mvp: '🏅',
@@ -16,32 +14,28 @@ const emojiMap = {
   refreshrules: '🔄',
   rulesstats: '📑',
   'עזרה': '❓',
-  // ...הוסף כאן התאמות אישיות
 };
 
 function getCommandEmoji(cmdName) {
   return emojiMap[cmdName] || '➡️';
 }
 
-// קבלת הרשימת פקודות הפעילה מתוך client.application.commands.cache (רק למה שרשום ב־index.js)
-function getCommandsList(client) {
-  // שים לב: יתכן שיהיו פקודות GLOBAL, לרוב רלוונטי רק ל־Guild
-  return client.application.commands.cache.map(cmd => ({
-    name: cmd.name,
-    description: cmd.description,
-    id: cmd.id,
-    type: cmd.type
-  }));
+async function getCommandsList(client, guildId) {
+  // שליפת הפקודות הכי עדכניות מהשרת הספציפי, לא מה-Cache בלבד
+  const guild = await client.guilds.fetch(guildId);
+  const commands = await guild.commands.fetch();
+  return Array.from(commands.values())
+    .filter(cmd => cmd.type === 1)
+    .sort((a, b) => a.name.localeCompare(b.name, 'he'));
 }
 
-// בונה Embed דינמי מתוך ה־cache של הפקודות
-function buildHelpEmbed(client) {
-  const slashCmds = getCommandsList(client);
+async function buildHelpEmbed(client, guildId) {
+  const cmds = await getCommandsList(client, guildId);
 
-  // מציג רק פקודות Slash (type 1), ממוין לפי שם
-  const filtered = slashCmds.filter(cmd => cmd.type === 1).sort((a, b) => a.name.localeCompare(b.name, 'he'));
-  const desc = filtered.length
-    ? filtered.map(cmd => `**/${cmd.name}** ${getCommandEmoji(cmd.name)} — ${cmd.description || ''}`).join('\n')
+  const desc = cmds.length
+    ? cmds.map(cmd =>
+        `**/${cmd.name}** ${getCommandEmoji(cmd.name)} — ${cmd.description || ''}`
+      ).join('\n')
     : 'לא נמצאו פקודות פעילות בשרת 😮‍💨';
 
   return new EmbedBuilder()
@@ -56,12 +50,12 @@ module.exports = {
     .setName('עזרה')
     .setDescription('רשימת כל הפקודות הפעילות, אוטומטי לחלוטין.'),
   async execute(interaction) {
-    // שימוש ב־flags: 64 במקום ephemeral
+    const guildId = interaction.guildId;
+    const embed = await buildHelpEmbed(interaction.client, guildId);
     await interaction.reply({
-      embeds: [buildHelpEmbed(interaction.client)],
-      flags: 64 // Private reply (החליף את ephemeral: true)
+      embeds: [embed],
+      flags: 64 // Private reply
     });
   },
-  // אין כפתורים – רק Embed רשימה פשוטה
   async handleButton() { return false; }
 };

@@ -176,9 +176,9 @@ client.on('interactionCreate', async interaction => {
 
   if (interaction.isButton()) {
     // 🟦 כפתורי לוח פעילות
-    if (interaction.customId.startsWith('rsvp_')) {
-      return handleRSVP(interaction, client);
-    }
+if (interaction.isButton() && interaction.customId.startsWith('like_')) {
+  return handleRSVP(interaction, client);
+}
     // 🟦 שאר כפתורים
     if (['pause', 'resume', 'stop'].includes(interaction.customId)) {
       return handleMusicControls(interaction);

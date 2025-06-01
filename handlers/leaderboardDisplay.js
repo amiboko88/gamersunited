@@ -3,7 +3,6 @@ const db = require('../utils/firebase');
 const { renderLeaderboardImage } = require('./leaderboardRenderer');
 const path = require('path');
 
-// עדכן את מזהה הערוץ שלך כאן
 const CHANNEL_ID = '1375415570937151519';
 
 function calculateScore(data) {
@@ -19,7 +18,7 @@ function calculateScore(data) {
   );
 }
 
-async function fetchTopUsers(limit = 10) {
+async function fetchTopUsers(limit = 5) {
   const snapshot = await db.collection('userStats').get();
   const users = [];
 
@@ -36,7 +35,7 @@ async function fetchTopUsers(limit = 10) {
 
 async function sendLeaderboardEmbed(client) {
   try {
-    const topUsers = await fetchTopUsers(5);
+    const topUsers = await fetchTopUsers();
 
     if (!topUsers.length) {
       console.log('ℹ️ אין משתמשים פעילים ל־Leaderboard.');
@@ -65,18 +64,26 @@ async function sendLeaderboardEmbed(client) {
       return false;
     }
 
-    // 🖼️ שליחת הלוגו הקבוע (ברוחב מלא)
-     await channel.send({
-     content: '**🏆 לוח פעילות לשבוע זה**',
-     files: [new AttachmentBuilder(path.join(__dirname, '../assets/leaderboard_intro.png'))],
-    allowedMentions: { parse: [] }
+    // 🖼️ שליחת תמונת פתיחה קבועה בלבד (בלי טקסט)
+    const introImagePath = path.join(__dirname, '../assets/leaderboard_intro.png');
+    const introImage = new AttachmentBuilder(introImagePath);
+    await channel.send({
+      files: [introImage],
+      allowedMentions: { parse: [] }
     });
 
-    // 🖼️ שליחת לוח הפעילות
-     const leaderboardImage = new AttachmentBuilder(imagePath);
-     await channel.send({
-     files: [leaderboardImage],
-     allowedMentions: { parse: [] }
+    // 🖼️ שליחת טבלת המצטיינים – כתמונה פנימית בתוך Embed
+    const leaderboardAttachment = new AttachmentBuilder(imagePath, { name: 'leaderboard.png' });
+    const embed = {
+      image: { url: 'attachment://leaderboard.png' },
+      description: '🏆 **לוח הפעילות לשבוע זה – מצטייני הקהילה**',
+      color: 0xffcc00
+    };
+
+    const message = await channel.send({
+      embeds: [embed],
+      files: [leaderboardAttachment],
+      allowedMentions: { parse: [] }
     });
 
     await message.react('🏅');

@@ -12,7 +12,14 @@ registerCommands(bot);
 
 // 🧠 מאזן הודעות טקסט (כולל Slash וגם רגיל!)
 bot.on("message", async (ctx) => {
-  console.log("📥 התקבלה הודעה:", ctx.message.text);
+  const text = ctx.message.text || "";
+  console.log("📥 התקבלה הודעה:", text);
+
+  if (text.startsWith("/")) {
+    console.log("⚙️ Slash Command – לא מגיב כאן");
+    return;
+  }
+
   await ctx.reply("שמעון כאן ועונה!");
 });
 

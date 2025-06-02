@@ -12,7 +12,7 @@ const { data: adminData, execute: adminExecute } = require('./commands/admin');
 // ====== שאר require/handlers ======
 const { postOrUpdateWeeklySchedule } = require('./handlers/scheduleUpdater');
 const { startStatsUpdater } = require('./handlers/statsUpdater');
-const { sendLeaderboardToTelegram } = require("./sendLeaderboardToTelegram");
+const { sendLeaderboardToTelegram } = require("./handlers/sendLeaderboardToTelegram");
 const handleRSVP = require('./handlers/scheduleButtonsHandler');
 const { sendPublicRulesEmbed, sendRulesToUser, handleRulesInteraction, startWeeklyRulesUpdate } = require('./handlers/rulesEmbed');
 const { startBirthdayTracker } = require('./handlers/birthdayTracker');

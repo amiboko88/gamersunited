@@ -1,5 +1,3 @@
-// 📁 index.js — בנוי מלא Production | Node 22 | Discord.js v14 | ישראל 2025
-
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const schedule = require('node-schedule');
@@ -11,10 +9,10 @@ const { data: adminData, execute: adminExecute } = require('./commands/admin');
 
 // ====== שאר require/handlers ======
 const { postOrUpdateWeeklySchedule } = require('./handlers/scheduleUpdater');
-const { startStatsUpdater } = require('./handlers/statsUpdater');
-const { sendLeaderboardToTelegram } = require("./handlers/sendLeaderboardToTelegram");
 const handleRSVP = require('./handlers/scheduleButtonsHandler');
 const { sendPublicRulesEmbed, sendRulesToUser, handleRulesInteraction, startWeeklyRulesUpdate } = require('./handlers/rulesEmbed');
+const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
+const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
 const { startBirthdayTracker } = require('./handlers/birthdayTracker');
 const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayReminder');
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
@@ -35,14 +33,14 @@ const { handleSpam } = require('./handlers/antispam');
 const db = require('./utils/firebase');
 const statTracker = require('./handlers/statTracker');
 
-// ====== הרשימת Slash Commands ======
 const commands = [
   helpData,
   communityData,
   adminData,
+  soundData,
+  verifyData,
 ];
 
-// ====== client instance ======
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -55,13 +53,10 @@ const client = new Client({
 });
 client.db = db;
 
-// ====== once ready — להריץ הכל, כולל סנכרון Slash ======
 client.once('ready', async () => {
   await hardSyncPresenceOnReady(client);
-  await sendLeaderboardToTelegram(imagePath);
   await setupVerificationMessage(client);
   await sendPublicRulesEmbed(client);
-  startStatsUpdater(client);
   startWeeklyRulesUpdate(client);
   welcomeImage(client);
   startDmTracking(client);
@@ -86,7 +81,7 @@ client.once('ready', async () => {
     }
   });
 
-  // ====== סנכרון Slash Commands ======
+  // סנכרון Slash Commands (GUILD בלבד)
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   try {
     await rest.put(
@@ -101,7 +96,6 @@ client.once('ready', async () => {
   console.log(`הבוט עלה! ${client.user.tag}`);
 });
 
-// ====== event handlers (הודעות, קול, נוכחות, הצטרפות וכו') ======
 client.on('presenceUpdate', (oldPresence, newPresence) => {
   trackGamePresence(newPresence);
 });
@@ -125,29 +119,37 @@ client.on('interactionCreate', async interaction => {
 
   // ---- טיפול ב-help (כפתורים, מודאל) ----
   if (
-    (interaction.isButton() && interaction.customId.startsWith('help_')) ||
+    (interaction.isButton() && typeof interaction.customId === 'string' && interaction.customId.startsWith('help_')) ||
     (interaction.type === 5 && interaction.customId === 'help_ai_modal')
   ) {
     if (await helpHandleButton(interaction)) return;
   }
-  // ---- טיפול בלוח פעילות (דוגמה) ----
-  if (interaction.isButton() && interaction.customId.startsWith('vote_')) {
+  // ---- טיפול בלוח פעילות ----
+  if (
+    interaction.isButton() &&
+    typeof interaction.customId === 'string' &&
+    interaction.customId.startsWith('vote_')
+  ) {
     return handleRSVP(interaction, client);
   }
   if (interaction.isButton() && interaction.customId === 'show_stats') {
     return handleRSVP(interaction, client);
   }
   // ---- מוזיקה ----
-  if (['pause', 'resume', 'stop'].includes(interaction.customId)) {
+  if (interaction.isButton() && ['pause', 'resume', 'stop'].includes(interaction.customId)) {
     return handleMusicControls(interaction);
   }
-  if (interaction.customId === 'open_birthday_modal') {
+  if (interaction.isButton() && interaction.customId === 'open_birthday_modal') {
     return showBirthdayModal(interaction);
   }
-  if (interaction.customId.startsWith('rules_') || interaction.customId === 'accept_rules') {
+  if (
+    interaction.isButton() &&
+    typeof interaction.customId === 'string' &&
+    (interaction.customId.startsWith('rules_') || interaction.customId === 'accept_rules')
+  ) {
     return handleRulesInteraction(interaction);
   }
-  if (interaction.customId.startsWith('verify')) {
+  if (interaction.isButton() && typeof interaction.customId === 'string' && interaction.customId.startsWith('verify')) {
     return handleVerifyInteraction(interaction);
   }
 
@@ -166,15 +168,14 @@ client.on('interactionCreate', async interaction => {
   // --- תוכל להוסיף כאן פקודות יחידניות נוספות (פינג, מידע) אם יש ---
 });
 
-// ====== הרצת הבוט ======
 client.login(process.env.DISCORD_TOKEN);
 
-// ====== ניטור תקלות מערכת ======
+// ניטור תקלות מערכת
 process.on('exit', (code) => { console.log(`[EXIT] התהליך הסתיים עם קוד: ${code}`); });
 process.on('SIGTERM', () => { console.log('[SIGTERM] SIGTERM!'); });
 process.on('uncaughtException', (err) => { console.error('[UNCAUGHT EXCEPTION]', err); });
 process.on('unhandledRejection', (reason, promise) => { console.error('[UNHANDLED REJECTION]', reason); });
 
-// ====== בוט טלגרם / משאבים נוספים / אינטרוולים ======
+// משאבים נוספים / בוט טלגרם
 require('./shimonTelegram');
 setInterval(() => {}, 1000 * 60 * 60);

@@ -2,7 +2,7 @@
 
 const { processUserSmart } = require('./voiceQueue'); // ✅ שימוש בתור חכם
 const TARGET_CHANNEL_ID = process.env.TTS_TEST_CHANNEL_ID;
-const FIFO_CHANNEL_ID = '1372282634482352128'; // ⬅️ החלף ל־ID האמיתי של ערוץ FIFO
+const FIFO_CHANNEL_ID = '1231453923387379783'; // ⬅️ החלף ל־ID האמיתי של ערוץ FIFO
 const FIFO_ROLE_NAME = 'FIFO';
 
 async function handleVoiceStateUpdate(oldState, newState) {

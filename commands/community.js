@@ -3,47 +3,47 @@ const { SlashCommandBuilder } = require('discord.js');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('קהילה')
-    .setDescription('כל הפיצ׳רים המרכזיים של הקהילה 👥')
+    .setDescription('הפקודות המרכזיות של הקהילה 👥')
     .addSubcommand(cmd =>
-      cmd.setName('song').setDescription('נגן שיר 🎵')
+      cmd.setName('שיר').setDescription('נגן שיר 🎵')
     )
     .addSubcommand(cmd =>
-      cmd.setName('fifo').setDescription('מצב פיפו 🎮')
+      cmd.setName('פיפו').setDescription('הפעל מצב פיפו 🎮')
     )
     .addSubcommand(cmd =>
-      cmd.setName('verify').setDescription('אימות משתמש חדש ✅')
+      cmd.setName('אימות').setDescription('אימות משתמש חדש ✅')
     )
     .addSubcommand(cmd =>
-      cmd.setName('mvp').setDescription('מצטיין השבוע 🏅')
+      cmd.setName('מצטיין').setDescription('מצטיין השבוע 🏅')
     )
     .addSubcommand(cmd =>
-      cmd.setName('birthdays').setDescription('ימי הולדת קרובים 📅')
+      cmd.setName('ימי_הולדת').setDescription('רשימת ימי הולדת קרובים 📅')
     )
     .addSubcommand(cmd =>
-      cmd.setName('addbirthday').setDescription('הוסף יום הולדת 🎂')
+      cmd.setName('הוסף_יום_הולדת').setDescription('הוסף יום הולדת 🎂')
     )
     .addSubcommand(cmd =>
-      cmd.setName('nextbirthday').setDescription('מי חוגג הכי קרוב? 🔜')
+      cmd.setName('חגיגות').setDescription('מי חוגג הכי קרוב? 🔜')
     )
     .addSubcommand(cmd =>
-      cmd.setName('soundboard').setDescription('השמע סאונד מצחיק 🔊')
+      cmd.setName('סאונדבורד').setDescription('השמע סאונד מצחיק 🔊')
     ),
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
     switch(sub) {
-      case 'song':
+      case 'שיר':
         return require('./song').execute(interaction, interaction.client);
-      case 'fifo':
+      case 'פיפו':
         return require('./fifo').execute(interaction);
-      case 'verify':
+      case 'אימות':
         return require('./verify').execute(interaction);
-      case 'mvp':
+      case 'מצטיין':
         return require('./mvpDisplay').execute(interaction, interaction.client);
-      case 'birthdays':
-      case 'addbirthday':
-      case 'nextbirthday':
+      case 'ימי_הולדת':
+      case 'הוסף_יום_הולדת':
+      case 'חוגג_הבא':
         return require('./birthdayCommands').execute(interaction);
-      case 'soundboard':
+      case 'סאונדבורד':
         return require('./soundboard').execute(interaction, interaction.client);
       default:
         return interaction.reply({ content: 'פקודה לא מוכרת.', ephemeral: true });

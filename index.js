@@ -8,6 +8,7 @@ const { data: communityData, execute: communityExecute } = require('./commands/c
 const { data: adminData, execute: adminExecute } = require('./commands/admin');
 
 // ====== שאר require/handlers ======
+const { startStatsUpdater } = require('./handlers/statsUpdater');
 const { postOrUpdateWeeklySchedule } = require('./handlers/scheduleUpdater');
 const handleRSVP = require('./handlers/scheduleButtonsHandler');
 const { sendPublicRulesEmbed, sendRulesToUser, handleRulesInteraction, startWeeklyRulesUpdate } = require('./handlers/rulesEmbed');
@@ -57,6 +58,7 @@ client.once('ready', async () => {
   await hardSyncPresenceOnReady(client);
   await setupVerificationMessage(client);
   await sendPublicRulesEmbed(client);
+  startStatsUpdater(client);
   startWeeklyRulesUpdate(client);
   welcomeImage(client);
   startDmTracking(client);

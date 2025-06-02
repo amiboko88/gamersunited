@@ -14,7 +14,7 @@ const weeklySchedule = [
   { id: 'saturday', day: 'שבת', emoji: '🔴', desc: 'מוצ"ש של אש! סשן לילה...' },
 ];
 
-// כל ההצבעות — בזיכרון (אפשר להמיר ל־Firestore!)
+// הצבעות בזיכרון (לשדרוג – חבר ל-DB)
 const votes = {
   sunday: new Set(), monday: new Set(), tuesday: new Set(),
   wednesday: new Set(), thursday: new Set(), saturday: new Set()
@@ -27,15 +27,19 @@ function buildDesc() {
 }
 
 function buildButtons(userId) {
+  const dayButtons = weeklySchedule.map(e =>
+    new ButtonBuilder()
+      .setCustomId(`vote_${e.id}`)
+      .setLabel(`${e.day} (${votes[e.id].size})`)
+      .setStyle(votes[e.id].has(userId) ? ButtonStyle.Success : ButtonStyle.Primary)
+      .setEmoji(e.emoji)
+  );
+
+  // פיצול לשתי שורות – 5 ראשונים, שבת + סטטיסטיקה
   return [
+    new ActionRowBuilder().addComponents(...dayButtons.slice(0, 5)),
     new ActionRowBuilder().addComponents(
-      ...weeklySchedule.map(e =>
-        new ButtonBuilder()
-          .setCustomId(`vote_${e.id}`)
-          .setLabel(`${e.day} (${votes[e.id].size})`)
-          .setStyle(votes[e.id].has(userId) ? ButtonStyle.Success : ButtonStyle.Primary)
-          .setEmoji(e.emoji)
-      ),
+      dayButtons[5],
       new ButtonBuilder()
         .setCustomId('show_stats')
         .setLabel('📊 הצג סטטיסטיקה')
@@ -52,26 +56,18 @@ module.exports = {
   async execute(interaction, client) {
     await interaction.deferReply({ ephemeral: true });
 
-    // ✅ בדוק הרשאת אדמין בלבד!
+    // 🔒 רק אדמין
+    if (!interaction.member?.permissions.has('Administrator')) {
+      return await interaction.editReply({
+        content: '❌ רק אדמין רשאי להפעיל את הלוח. אם זו טעות – בדוק הרשאות בשרת.',
+        ephemeral: true
+      });
+    }
+
     try {
-      // לא תמיד interaction.member.permissions עובד ב־DM! תשתמש רק ב־guild:
-      if (!interaction.member?.permissions.has('Administrator')) {
-        return await interaction.editReply({
-          content: '❌ רק אדמין רשאי להפעיל את הלוח. אם זו טעות — וודא שיש לך הרשאות אדמין בתפקיד שלך.',
-          ephemeral: true
-        });
-      }
-
-      // ---- לוגים לאבחון ----
-      console.log('--- EXECUTE ACTIVITY ---');
       const channel = await client.channels.fetch(CHANNEL_ID);
-      console.log('CHANNEL:', !!channel, 'TextBased:', channel.isTextBased?.());
-      const exists = fs.existsSync(COVER_PATH);
-      console.log('COVER_PATH', COVER_PATH, 'EXISTS', exists);
-
-      if (!exists) throw new Error('קובץ COVER_PATH לא קיים!');
       if (!channel || !channel.isTextBased()) throw new Error('ערוץ לא תקין!');
-      // ---- סוף לוג ----
+      if (!fs.existsSync(COVER_PATH)) throw new Error('קובץ COVER_PATH לא קיים!');
 
       const buffer = fs.readFileSync(COVER_PATH);
       const coverAttachment = new AttachmentBuilder(buffer, { name: 'schedulecover.png' });
@@ -97,6 +93,6 @@ module.exports = {
     }
   },
 
-  // ייצוא עבור האנדלר (להתחבר ל-handler אם צריך)
+  // עבור כפתורי RSVP
   votes, weeklySchedule, buildDesc, buildButtons
 };

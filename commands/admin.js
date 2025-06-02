@@ -6,32 +6,32 @@ module.exports = {
     .setDescription('כלי ניהול למנהלים בלבד ⚙️')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand(cmd =>
-      cmd.setName('tts').setDescription('שימוש בשמעון 🗣️')
+      cmd.setName('שמעון').setDescription('שימוש בשמעון TTS 🗣️')
     )
     .addSubcommand(cmd =>
-      cmd.setName('activity').setDescription('לוח פעילות שבועי 🗓️')
+      cmd.setName('לוח_פעילות').setDescription('ניהול לוח פעילות שבועי 🗓️')
     )
     .addSubcommand(cmd =>
-      cmd.setName('leaderboard').setDescription('לוח תוצאות 🏆')
+      cmd.setName('תוצאות').setDescription('ניהול לוח תוצאות 🏆')
     )
     .addSubcommand(cmd =>
-      cmd.setName('updaterules').setDescription('עדכן חוקים 🔧')
+      cmd.setName('עדכון_חוקים').setDescription('עדכון חוקים 🔧')
     )
     .addSubcommand(cmd =>
-      cmd.setName('rulesstats').setDescription('סטטיסטיקות חוקים 📑')
+      cmd.setName('סטטיסטיקות_חוקים').setDescription('צפה בסטטיסטיקות החוקים 📑')
     ),
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
     switch(sub) {
-      case 'tts':
+      case 'שמעון':
         return require('./ttsCommand').execute(interaction);
-      case 'activity':
+      case 'לוח_פעילות':
         return require('./activityBoard').execute(interaction, interaction.client);
-      case 'leaderboard':
+      case 'תוצאות':
         return require('./leaderboard').execute(interaction);
-      case 'updaterules':
+      case 'עדכון_חוקים':
         return require('./refreshRules').execute(interaction);
-      case 'rulesstats':
+      case 'סטטיסטיקות_חוקים':
         return require('./rulesStats').execute(interaction);
       default:
         return interaction.reply({ content: 'פקודת ניהול לא מוכרת.', ephemeral: true });

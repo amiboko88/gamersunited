@@ -1,6 +1,7 @@
 const { AttachmentBuilder } = require('discord.js');
 const db = require('../utils/firebase');
 const { renderLeaderboardImage } = require('./leaderboardRenderer');
+const { sendLeaderboardToTelegram } = require('./sendLeaderboardToTelegram');
 const path = require('path');
 
 const CHANNEL_ID = '1375415570937151519';
@@ -71,7 +72,8 @@ async function sendLeaderboardEmbed(client) {
       files: [introImage],
       allowedMentions: { parse: [] }
     });
-
+    
+    await sendLeaderboardToTelegram(imagePath, '🏆 מצטייני השבוע – GAMERS UNITED IL');
     const leaderboardImage = new AttachmentBuilder(imagePath);
 
     // ✅ בדיקה אם קיימת הודעה קודמת לעריכה

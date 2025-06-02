@@ -4,7 +4,6 @@ const path = require('path');
 
 const CHANNEL_ID = '1375415546769838120';
 const COVER_PATH = path.join(__dirname, '../assets/schedulecover.png');
-const ROLE_ID = '1133753472966201555'; // עדכן ל-ID של Role לבאדג'
 
 const weeklySchedule = [
   { id: 'sunday', day: 'ראשון', emoji: '🔵', desc: 'טורניר פיפו סודי...' },
@@ -15,7 +14,7 @@ const weeklySchedule = [
   { id: 'saturday', day: 'שבת', emoji: '🔴', desc: 'מוצ"ש של אש! סשן לילה...' },
 ];
 
-// כל ההצבעות — בזיכרון (להדגמה, תוכל להעביר ל-Firestore)
+// כל ההצבעות — בזיכרון (אפשר להמיר ל־Firestore!)
 const votes = {
   sunday: new Set(), monday: new Set(), tuesday: new Set(),
   wednesday: new Set(), thursday: new Set(), saturday: new Set()
@@ -52,9 +51,28 @@ module.exports = {
 
   async execute(interaction, client) {
     await interaction.deferReply({ ephemeral: true });
+
+    // ✅ בדוק הרשאת אדמין בלבד!
     try {
+      // לא תמיד interaction.member.permissions עובד ב־DM! תשתמש רק ב־guild:
+      if (!interaction.member?.permissions.has('Administrator')) {
+        return await interaction.editReply({
+          content: '❌ רק אדמין רשאי להפעיל את הלוח. אם זו טעות — וודא שיש לך הרשאות אדמין בתפקיד שלך.',
+          ephemeral: true
+        });
+      }
+
+      // ---- לוגים לאבחון ----
+      console.log('--- EXECUTE ACTIVITY ---');
       const channel = await client.channels.fetch(CHANNEL_ID);
-      if (!channel || !channel.isTextBased()) throw 'ערוץ לא תקין!';
+      console.log('CHANNEL:', !!channel, 'TextBased:', channel.isTextBased?.());
+      const exists = fs.existsSync(COVER_PATH);
+      console.log('COVER_PATH', COVER_PATH, 'EXISTS', exists);
+
+      if (!exists) throw new Error('קובץ COVER_PATH לא קיים!');
+      if (!channel || !channel.isTextBased()) throw new Error('ערוץ לא תקין!');
+      // ---- סוף לוג ----
+
       const buffer = fs.readFileSync(COVER_PATH);
       const coverAttachment = new AttachmentBuilder(buffer, { name: 'schedulecover.png' });
 
@@ -66,21 +84,19 @@ module.exports = {
         .setFooter({ text: 'LIVE | הצבעה עדכנית • Powered by Shimon Bot' })
         .setTimestamp();
 
-      // שלח את הלוח — ושמור את ה-ID להמשך עריכה!
-      const sentMsg = await channel.send({
+      await channel.send({
         embeds: [embed],
         files: [coverAttachment],
-        components: buildButtons()
+        components: buildButtons(interaction.user.id)
       });
 
-      // שמור ID ב-Firestore אם תרצה עריכה/סטטיסטיקה בהמשך
       await interaction.editReply('✅ לוח פעילות שבועי אינטראקטיבי נשלח לערוץ!');
     } catch (err) {
-      console.error('שגיאה בלוח פעילות:', err);
-      await interaction.editReply('❌ שגיאה בשליחת הלוח. בדוק הרשאות/לוגים.');
+      console.error('❌ שגיאה בלוח פעילות:', err);
+      await interaction.editReply(`❌ שגיאה בשליחת הלוח. בדוק הרשאות/לוגים.\n\`\`\`${err}\`\`\``);
     }
   },
 
   // ייצוא עבור האנדלר (להתחבר ל-handler אם צריך)
-  votes, weeklySchedule, buildDesc, buildButtons, ROLE_ID
+  votes, weeklySchedule, buildDesc, buildButtons
 };

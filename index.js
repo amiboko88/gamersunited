@@ -169,20 +169,24 @@ client.on('messageCreate', async message => {
 client.on('interactionCreate', async interaction => {
   if (interaction.isAutocomplete()) return songAutocomplete(interaction);
 
-  // ✅ שינוי לפקודת עזרה — טיפול בכפתורים
-  if (interaction.isButton() && interaction.customId.startsWith('help_')) {
+  // ✅ טיפול מושלם לכל אינטראקציית עזרה: גם Button, גם Modal
+  if (
+    (interaction.isButton() && interaction.customId.startsWith('help_')) ||
+    (interaction.type === 5 && interaction.customId === 'help_ai_modal')
+  ) {
     if (await helpHandleButton(interaction)) return;
   }
 
+  // --- שאר הטיפול שלך ---
   if (interaction.isButton()) {
-    // 🟦 כפתורי לוח פעילות
-if (interaction.isButton() && interaction.customId.startsWith('vote_')) {
-  return handleRSVP(interaction, client);
-}
-if (interaction.isButton() && interaction.customId === 'show_stats') {
-  return handleRSVP(interaction, client);
-}
-    // 🟦 שאר כפתורים
+    // כפתורי לוח פעילות
+    if (interaction.customId.startsWith('vote_')) {
+      return handleRSVP(interaction, client);
+    }
+    if (interaction.customId === 'show_stats') {
+      return handleRSVP(interaction, client);
+    }
+    // שאר כפתורים
     if (['pause', 'resume', 'stop'].includes(interaction.customId)) {
       return handleMusicControls(interaction);
     }
@@ -205,7 +209,7 @@ if (interaction.isButton() && interaction.customId === 'show_stats') {
 
   const { commandName } = interaction;
 
-  // ✅ שינוי לפקודת עזרה — טיפול ב־/עזרה
+  // עזרה (פקודת Slash עזרה)
   if (commandName === 'עזרה') return helpExecute(interaction);
 
   // פקודות Slash
@@ -214,7 +218,7 @@ if (interaction.isButton() && interaction.customId === 'show_stats') {
   if (commandName === 'rules') return rulesStatsExecute(interaction);
   if (commandName === 'fifo') return fifoExecute(interaction);
   if (commandName === 'tts') return ttsCommand.execute(interaction);
-  if (commandName === 'activity') return activityBoardExecute(interaction, client); // לוח פעילות Slash
+  if (commandName === 'activity') return activityBoardExecute(interaction, client);
   if (commandName === 'leaderboard') return leaderboardExecute(interaction);
   if (commandName === 'soundbaord') return soundExecute(interaction, client);
   if (commandName === 'verify') return verifyExecute(interaction);
@@ -229,6 +233,7 @@ if (interaction.isButton() && interaction.customId === 'show_stats') {
     return birthdayExecute(interaction);
   }
 });
+
 
 // 🚀 הפעלה
 client.login(process.env.DISCORD_TOKEN);

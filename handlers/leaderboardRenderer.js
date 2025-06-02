@@ -71,7 +71,7 @@ async function renderLeaderboardImage(users) {
   });
 
   // ✅ יחס 16:9 אמיתי – לרוחב מלא
-  await page.setViewport({ width: 2000, height: 840 }); // ⬅️ יחס 2.38:1
+ await page.setViewport({ width: 2000, height: 600 }); // יחס רחב, נמוך, יכפה Preview פתוח
 
   const imagePath = path.join(__dirname, '../assets/leaderboard.png');
   await page.screenshot({ path: imagePath, fullPage: true });

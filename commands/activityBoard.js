@@ -4,7 +4,7 @@ const path = require('path');
 
 const CHANNEL_ID = '1375415546769838120';
 const COVER_PATH = path.join(__dirname, '../assets/schedulecover.png');
-const ROLE_ID = '123456789012345678'; // עדכן ל-ID של Role לבאדג'
+const ROLE_ID = '1133753472966201555'; // עדכן ל-ID של Role לבאדג'
 
 const weeklySchedule = [
   { id: 'sunday', day: 'ראשון', emoji: '🔵', desc: 'טורניר פיפו סודי...' },

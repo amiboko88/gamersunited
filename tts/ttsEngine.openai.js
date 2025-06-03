@@ -1,4 +1,4 @@
-// 📁 ttsEngine.openai.js – FIFO OPENAI TTS ENGINE PRO – הגנת Buffer כפולה + בדיקת MP3
+// 📁 ttsEngine.openai.js – FIFO OPENAI TTS ENGINE PRO – רק OpenAI (ללא fallback), Buffer נקי
 
 const axios = require('axios');
 const admin = require('firebase-admin');
@@ -26,23 +26,8 @@ async function checkOpenAIQuota(textLength) {
   return true;
 }
 
-// הגנות חדשות!
-function normalizeToBuffer(data) {
-  if (Buffer.isBuffer(data)) return data;
-  if (data instanceof ArrayBuffer) return Buffer.from(new Uint8Array(data));
-  if (Array.isArray(data)) return Buffer.from(Uint8Array.from(data));
-  throw new Error('normalizeToBuffer: Unsupported type for response.data');
-}
-
-function isLikelyMp3(buffer) {
-  if (buffer.length < 1000) return false;
-  // MP3 מתחיל ב-FF FB, FF F3, או FF F2
-  const sig = buffer.slice(0, 2).toString('hex');
-  return sig === 'fffb' || sig === 'fff3' || sig === 'fff2';
-}
-
-// יצירת קובץ קול (Buffer) עם בדיקת תקינות סופית
 async function synthesizeOpenAITTS(text, speaker = 'shimon') {
+  // ניקוד/פיסוק
   const upgradedText = preprocessTTS(text);
 
   const allowed = await checkOpenAIQuota(upgradedText.length);
@@ -72,19 +57,13 @@ async function synthesizeOpenAITTS(text, speaker = 'shimon') {
     }
   );
 
-  let bufferData = normalizeToBuffer(response.data);
-console.log('⏩ Buffer length:', bufferData.length);
-console.log('⏩ Buffer start HEX:', bufferData.slice(0, 32).toString('hex'));
-console.log('⏩ Buffer as Array:', Array.from(bufferData.slice(0, 32)));
-console.log('⏩ typeof bufferData:', typeof bufferData, 'Buffer?', Buffer.isBuffer(bufferData));
-console.log('⏩ bufferData instanceof ArrayBuffer:', bufferData instanceof ArrayBuffer);
-console.log('⏩ bufferData instanceof Uint8Array:', bufferData instanceof Uint8Array);
-
-
-  if (!isLikelyMp3(bufferData)) {
-    console.error('❌ Buffer אינו mp3:', bufferData.slice(0,16));
-    throw new Error('OpenAI response אינו MP3 תקין');
+  if (!response.data || response.data.length < 1200) {
+    throw new Error("🔇 OpenAI לא החזיר קול תקין");
   }
+
+  // אפשר להדפיס דיבוג – למחוק אח״כ!
+  // require('fs').writeFileSync('test.mp3', Buffer.from(response.data));
+  // console.log('Buffer length:', response.data.length);
 
   await saveTTSAudit({
     text: upgradedText,
@@ -94,10 +73,9 @@ console.log('⏩ bufferData instanceof Uint8Array:', bufferData instanceof Uint8
     timestamp: new Date().toISOString()
   });
 
-  return bufferData;
+  return Buffer.from(response.data);
 }
 
-// שמירה ללוג audit ב-Firestore
 async function saveTTSAudit(data) {
   try {
     const db = admin.firestore();
@@ -107,7 +85,6 @@ async function saveTTSAudit(data) {
   }
 }
 
-// TTS אישי – תמיד OpenAI
 async function getShortTTSByProfile(member) {
   const userId = member.user.id;
   const profile = playerProfiles[userId] || playerProfiles['default'];
@@ -118,7 +95,6 @@ async function getShortTTSByProfile(member) {
   return synthesizeOpenAITTS(sentence, speaker);
 }
 
-// פודקאסט קבוצתי – OpenAI בלבד עם הגנה על Buffer
 async function getPodcastAudioOpenAI(displayNames = [], ids = []) {
   const buffers = [];
   const hasCustom = ids.length && ids.some(uid => getScriptByUserId(uid));
@@ -128,27 +104,13 @@ async function getPodcastAudioOpenAI(displayNames = [], ids = []) {
 
   for (const script of userScripts) {
     const { shimon, shirley, punch } = script;
-    if (shimon) {
-      const buf = await synthesizeOpenAITTS(shimon, 'shimon');
-      if (!Buffer.isBuffer(buf)) throw new Error('getPodcastAudioOpenAI: shimon לא החזיר Buffer');
-      buffers.push(buf);
-    }
-    if (shirley) {
-      const buf = await synthesizeOpenAITTS(shirley, 'shirley');
-      if (!Buffer.isBuffer(buf)) throw new Error('getPodcastAudioOpenAI: shirley לא החזיר Buffer');
-      buffers.push(buf);
-    }
-    if (punch) {
-      const buf = await synthesizeOpenAITTS(punch, Math.random() < 0.5 ? 'shimon' : 'shirley');
-      if (!Buffer.isBuffer(buf)) throw new Error('getPodcastAudioOpenAI: punch לא החזיר Buffer');
-      buffers.push(buf);
-    }
+    if (shimon) buffers.push(await synthesizeOpenAITTS(shimon, 'shimon'));
+    if (shirley) buffers.push(await synthesizeOpenAITTS(shirley, 'shirley'));
+    if (punch) buffers.push(await synthesizeOpenAITTS(punch, Math.random() < 0.5 ? 'shimon' : 'shirley'));
   }
-  if (!buffers.length) throw new Error('getPodcastAudioOpenAI: No podcast buffers created!');
   return Buffer.concat(buffers);
 }
 
-// בדיקת מגבלה למשתמש בודד
 async function canUserUseTTS(userId, limit = 5) {
   const db = admin.firestore();
   const key = `${userId}_${new Date().toISOString().split('T')[0]}`;

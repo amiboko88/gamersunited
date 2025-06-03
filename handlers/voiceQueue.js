@@ -63,11 +63,11 @@ setInterval(() => {
 async function playAudio(connection, audioBuffer) {
   try {
     if (!Buffer.isBuffer(audioBuffer)) {
-      throw new Error('Audio buffer אינו מסוג Buffer! סוג: ' + typeof audioBuffer);
+      console.error('🛑 השמעה נכשלה – Buffer לא תקין!', typeof audioBuffer, audioBuffer);
+      return;
     }
-    let resource, player;
-    resource = createAudioResource(audioBuffer);
-    player = createAudioPlayer();
+    const resource = createAudioResource(audioBuffer);
+    const player = createAudioPlayer();
     connection.subscribe(player);
     player.play(resource);
     await entersState(player, AudioPlayerStatus.Idle, 15_000);
@@ -96,11 +96,7 @@ function markShimonSpoken(channelId) {
   recentUsers.set('shimon-last-spoken-' + channelId, Date.now());
 }
 
-/**
- * תור TTS חכם – פודקאסט קבוצתי בכניסות קבוצתיות בלבד, שמירה על חיבור, דילוג על "קרציות", בלי חפירות
- * @param {GuildMember} member 
- * @param {VoiceChannel} channel 
- */
+// תור TTS חכם – פודקאסט קבוצתי בכניסות קבוצתיות בלבד, שמירה על חיבור, דילוג על "קרציות", בלי חפירות
 async function processUserSmart(member, channel) {
   const userId = member.id;
   const guildId = channel.guild.id;
@@ -129,9 +125,11 @@ async function processUserSmart(member, channel) {
     if (userIds.some(isUserAnnoying)) continue;
 
     // בקרת שימוש – quota אישי
+    let blocked = false;
     for (const user of batch) {
-      if (!(await canUserUseTTS(user.member.id, 10))) continue;
+      if (!(await canUserUseTTS(user.member.id, 10))) blocked = true;
     }
+    if (blocked) continue;
 
     // דיבור קבוצתי – רק אם מספיק אנשים עלו
     const usePodcast = batch.length >= GROUP_MIN;
@@ -148,6 +146,11 @@ async function processUserSmart(member, channel) {
       }
     } catch (err) {
       console.error(`TTS error:`, err);
+      continue;
+    }
+
+    if (!Buffer.isBuffer(audioBuffer)) {
+      console.error('🛑 ניסיון השמעה של ערך לא חוקי!', typeof audioBuffer, audioBuffer);
       continue;
     }
 

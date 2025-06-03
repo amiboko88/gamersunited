@@ -1,4 +1,4 @@
-// 📁 ttsEngine.openai.js – FIFO OPENAI TTS ENGINE PRO – רק OpenAI (ללא fallback), כולל ניקוד
+// 📁 ttsEngine.openai.js – FIFO OPENAI TTS ENGINE PRO – הגנה מלאה על Buffer
 
 const axios = require('axios');
 const admin = require('firebase-admin');
@@ -32,7 +32,7 @@ async function checkOpenAIQuota(textLength) {
   return true;
 }
 
-// הפקת TTS אמיתי (OpenAI בלבד, ללא fallback)
+// הפקת TTS אמיתי (OpenAI בלבד, הגנה מלאה על Buffer)
 async function synthesizeOpenAITTS(text, speaker = 'shimon') {
   // ניקוד/פיסוק
   const upgradedText = preprocessTTS(text);
@@ -64,7 +64,23 @@ async function synthesizeOpenAITTS(text, speaker = 'shimon') {
     }
   );
 
-  if (!response.data || response.data.length < 1200) {
+  // הגנה מלאה: כל מצב הופך ל-Buffer תקין
+  let bufferData;
+  if (Buffer.isBuffer(response.data)) {
+    bufferData = response.data;
+  } else if (response.data instanceof ArrayBuffer) {
+    bufferData = Buffer.from(new Uint8Array(response.data));
+  } else if (Array.isArray(response.data)) {
+    bufferData = Buffer.from(response.data);
+  } else {
+    console.error('❌ סוג לא מזוהה ל-response.data:', typeof response.data, response.data);
+    throw new Error('❌ OpenAI response.data לא חוקי: ' + typeof response.data);
+  }
+
+  // DEBUG: מחיקת הדפסה אחרי בדיקה!
+  // console.log('>>> bufferData', bufferData, Buffer.isBuffer(bufferData), bufferData.length);
+
+  if (!Buffer.isBuffer(bufferData) || bufferData.length < 1200) {
     throw new Error("🔇 OpenAI לא החזיר קול תקין");
   }
 
@@ -76,7 +92,7 @@ async function synthesizeOpenAITTS(text, speaker = 'shimon') {
     timestamp: new Date().toISOString()
   });
 
-  return Buffer.from(response.data);
+  return bufferData;
 }
 
 // שמירה ללוג audit ב-Firestore
@@ -100,7 +116,6 @@ async function getShortTTSByProfile(member) {
   return synthesizeOpenAITTS(sentence, speaker);
 }
 
-// פודקאסט קבוצתי – OpenAI בלבד
 // פודקאסט קבוצתי – OpenAI בלבד עם הגנה על Buffer
 async function getPodcastAudioOpenAI(displayNames = [], ids = []) {
   const buffers = [];
@@ -130,7 +145,6 @@ async function getPodcastAudioOpenAI(displayNames = [], ids = []) {
   if (!buffers.length) throw new Error('getPodcastAudioOpenAI: No podcast buffers created!');
   return Buffer.concat(buffers);
 }
-
 
 // בדיקת מגבלה למשתמש בודד
 async function canUserUseTTS(userId, limit = 5) {

@@ -1,173 +1,136 @@
 const {
   SlashCommandBuilder,
   EmbedBuilder,
+  ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ActionRowBuilder,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
-  InteractionType
+  ComponentType,
 } = require('discord.js');
-const { getShimonReply } = require('../handlers/helpai'); // פה החיבור למנוע החכם שלך
 
-// קטגוריות עזרה
 const HELP_CATEGORIES = [
   {
-    id: 'general',
-    name: 'כללי',
-    emoji: '🧩',
+    id: 'all',
+    name: '📖 כל הפקודות',
+    emoji: '📖',
     commands: [
-      { name: 'activity', emoji: '🗓️', desc: 'לוח פעילות שבועי' },
-      { name: 'leaderboard', emoji: '🏆', desc: 'לוח תוצאות גיימרים' },
-      { name: 'mvp', emoji: '🏅', desc: 'מצטיין השבוע' }
+      { name: '/עזרה', description: 'מרכז עזרה אינטראקטיבי 🧩' },
+      { name: '/אימות', description: 'אימות משתמש חדש ✅' },
+      { name: '/מוזיקה', description: 'נגן שיר 🎵' },
+      { name: '/פיפו', description: 'הפעל מצב פיפו 🎮' },
+      { name: '/סאונדבורד', description: 'השמע סאונד מצחיק 🔊' },
+      { name: '/מצטיינים', description: 'מצטייני השבוע 🏆' },
+      { name: '/הוסף_יום_הולדת', description: 'הוסף יום הולדת 🎂' },
+      { name: '/ימי_הולדת', description: 'רשימת ימי הולדת קרובים 📅' },
+      { name: '/היום_הולדת_הבא', description: 'מי חוגג הכי קרוב? 🔜' },
+      { name: '/ימי_הולדת_חסרים', description: 'מי עוד לא מסר תאריך? ⏳' },
+      { name: '/leaderboard', description: 'לוח תוצאות 🏅' },
+      { name: '/activity', description: 'לוח פעילות 🗓️' },
+      { name: '/tts', description: 'הפעלת שמעון TTS 🗣️' },
+      { name: '/updaterules', description: 'עדכון חוקים 🔧 (מנהלים)' },
+      { name: '/rulestats', description: 'סטטיסטיקות חוקים 📑 (מנהלים)' }
     ]
   },
   {
-    id: 'voice',
-    name: 'קול ו-TTS',
-    emoji: '🎤',
+    id: 'user',
+    name: '👤 פקודות משתמש',
+    emoji: '👤',
     commands: [
-      { name: 'tts', emoji: '🗣️', desc: 'הפעלת מצב דיבור' },
-      { name: 'soundboard', emoji: '🎶', desc: 'השמע קטעים מצחיקים' }
+      { name: '/אימות', description: 'אימות משתמש חדש ✅' },
+      { name: '/מוזיקה', description: 'נגן שיר 🎵' },
+      { name: '/פיפו', description: 'הפעל מצב פיפו 🎮' },
+      { name: '/סאונדבורד', description: 'השמע סאונד מצחיק 🔊' },
+      { name: '/מצטיינים', description: 'מצטייני השבוע 🏆' },
+      { name: '/הוסף_יום_הולדת', description: 'הוסף יום הולדת 🎂' },
+      { name: '/ימי_הולדת', description: 'רשימת ימי הולדת קרובים 📅' },
+      { name: '/יום_הולדת_הבא', description: 'מי חוגג הכי קרוב? 🔜' },
+      { name: '/ימי_הולדת_חסרים', description: 'מי עוד לא מסר תאריך? ⏳' }
     ]
   },
   {
-    id: 'community',
-    name: 'קהילה',
-    emoji: '👥',
+    id: 'admin',
+    name: '👑 פקודות מנהלים',
+    emoji: '👑',
     commands: [
-      { name: 'verify', emoji: '✅', desc: 'אימות משתמש' },
-      { name: 'refreshRules', emoji: '♻️', desc: 'רענון חוקים' },
-      { name: 'rulesStats', emoji: '📑', desc: 'סטטיסטיקת חוקים' }
-    ]
-  },
-  {
-    id: 'fun',
-    name: 'Fun',
-    emoji: '🥳',
-    commands: [
-      { name: 'song', emoji: '🎵', desc: 'נגן שיר' },
-      { name: 'fifo', emoji: '🎮', desc: 'מצב פיפו' }
-    ]
-  },
-  {
-    id: 'birthday',
-    name: 'ימי הולדת',
-    emoji: '🎂',
-    commands: [
-      { name: 'addbirthday', emoji: '🎂', desc: 'הוסף יום הולדת' },
-      { name: 'birthdays', emoji: '📅', desc: 'ימי הולדת קרובים' },
-      { name: 'nextbirthday', emoji: '⏭️', desc: 'מי חוגג מחר?' }
+      { name: '/updaterules', description: 'עדכון חוקים 🔧' },
+      { name: '/rulestats', description: 'סטטיסטיקות חוקים 📑' },
+      { name: '/tts', description: ' TTS 🗣️' },
+      { name: '/leaderboard', description: 'לוח תוצאות 🏅' },
+      { name: '/activity', description: 'לוח פעילות 🗓️' }
+
     ]
   }
 ];
 
-// פונקציה שמחלקת כפתורים תמיד לשורות של עד 5
-function chunkButtonsToRows(buttonsArray, maxPerRow = 5) {
-  const rows = [];
-  for (let i = 0; i < buttonsArray.length; i += maxPerRow) {
-    const row = new ActionRowBuilder().addComponents(
-      ...buttonsArray.slice(i, i + maxPerRow)
-    );
-    rows.push(row);
-  }
-  return rows;
-}
+function buildEmbed(categoryId = 'all') {
+  const category = HELP_CATEGORIES.find(c => c.id === categoryId) || HELP_CATEGORIES[0];
 
-// בניית Embed לקטגוריה
-function buildCategoryEmbed(categoryId) {
-  let cat = HELP_CATEGORIES.find(c => c.id === categoryId) || HELP_CATEGORIES[0];
-  let cmds = cat.commands;
-  const commandsDesc = cmds.length
-    ? cmds.map(cmd => `**/${cmd.name}** ${cmd.emoji} — ${cmd.desc}`).join('\n')
-    : 'לא נמצאו פקודות תואמות 🙁';
   return new EmbedBuilder()
-    .setColor(`#${Math.floor(Math.random()*16777215).toString(16)}`)
-    .setTitle(`${cat.emoji} ${cat.name} — מרכז עזרה`)
-    .setDescription(commandsDesc)
-    .setFooter({ text: 'תוכל לשאול כל שאלה בלחיצה על "שאל את שמעון" 👇' });
+    .setColor(0x3498db)
+    .setTitle(`${category.emoji} ${category.name}`)
+    .setDescription('בחר/י פקודה כדי להפעיל אותה או לקבל הסבר מפורט.\n\n**פקודות המנהלים זמינות למנהלי השרת בלבד!**')
+    .setFields(
+      category.commands.map(cmd => ({
+        name: `**${cmd.name}**`,
+        value: `${cmd.description}`,
+        inline: false,
+      }))
+    )
+    .setFooter({ text: 'שמעון | מרכז עזרה', iconURL: 'https://cdn.discordapp.com/emojis/1120791263410348032.webp?size=96&quality=lossless' })
+    .setTimestamp();
 }
 
-// בניית שורות כפתורים חכמה (לא עובר 5 בשורה)
-function buildCategoryButtons(selectedId) {
-  const categoryButtons = HELP_CATEGORIES.map(cat =>
+function buildActionRow(selected = 'all') {
+  return new ActionRowBuilder().addComponents(
+    ...HELP_CATEGORIES.map(cat =>
+      new ButtonBuilder()
+        .setCustomId(`help_category_${cat.id}`)
+        .setLabel(cat.name)
+        .setStyle(selected === cat.id ? ButtonStyle.Primary : ButtonStyle.Secondary)
+        .setEmoji(cat.emoji)
+    ),
     new ButtonBuilder()
-      .setCustomId(`help_${cat.id}`)
-      .setLabel(cat.name)
-      .setEmoji(cat.emoji)
-      .setStyle(cat.id === selectedId ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setCustomId('help_ai_modal')
+      .setLabel('שאל את שמעון 🤖')
+      .setStyle(ButtonStyle.Success)
   );
-  // כפתור שאל את שמעון (AI)
-  const askShimon = new ButtonBuilder()
-    .setCustomId('help_askai')
-    .setLabel('שאל את שמעון (AI)')
-    .setEmoji('🤖')
-    .setStyle(ButtonStyle.Success);
-
-  // מחלק לשורות של 5, ומוסיף שורה לשאלת שמעון
-  const rows = chunkButtonsToRows(categoryButtons);
-  rows.push(new ActionRowBuilder().addComponents(askShimon));
-  return rows;
 }
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('עזרה')
-    .setDescription('מרכז עזרה חכם — עזרה, טיפים, שאלות לשמעון'),
+    .setDescription('מרכז עזרה אינטראקטיבי 🧩'),
+
   async execute(interaction) {
     await interaction.reply({
-      embeds: [buildCategoryEmbed('general')],
-      components: buildCategoryButtons('general'),
-      flags: 64
+      embeds: [buildEmbed()],
+      components: [buildActionRow()],
+      ephemeral: true // עזרה רק לשולח
     });
   },
+
+  // טיפול בכפתורים ומודאל AI
   async handleButton(interaction) {
-    // טיפול בלחיצה על כפתורי עזרה
-    if (interaction.isButton() && interaction.customId.startsWith('help_')) {
-      const category = interaction.customId.replace('help_', '');
-      if (category === 'askai') {
-        // פתח Modal לשאלה ל-AI
-        const modal = new ModalBuilder()
-          .setCustomId('help_ai_modal')
-          .setTitle('שאל את שמעון (AI)');
+    if (!interaction.isButton() && !(interaction.isModalSubmit && interaction.customId === 'help_ai_modal')) return false;
 
-        const input = new TextInputBuilder()
-          .setCustomId('help_ai_q')
-          .setLabel('מה תרצה לשאול?')
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(true)
-          .setPlaceholder('לדוג: איך מוסיפים יום הולדת?');
-
-        modal.addComponents(new ActionRowBuilder().addComponents(input));
-        await interaction.showModal(modal);
-        return true;
-      }
-      // קטגוריה רגילה
+    if (interaction.customId.startsWith('help_category_')) {
+      const catId = interaction.customId.replace('help_category_', '');
       await interaction.update({
-        embeds: [buildCategoryEmbed(category)],
-        components: buildCategoryButtons(category),
-        flags: 64
+        embeds: [buildEmbed(catId)],
+        components: [buildActionRow(catId)],
+        ephemeral: true
       });
       return true;
     }
 
-    // טיפול בשאלה ל־AI (Modal)
-    if (
-      interaction.type === InteractionType.ModalSubmit &&
-      interaction.customId === 'help_ai_modal'
-    ) {
-      const userText = interaction.fields.getTextInputValue('help_ai_q');
-      await interaction.deferReply({ flags: 64 });
-
-      // קריאה חכמה ל-AI דרך helpai.js!
-      const aiReply = await getShimonReply({ text: userText, displayName: interaction.user.displayName });
-
-      await interaction.editReply({
-        content: `🤖 **שמעון עונה:**\n${aiReply}`
+    if (interaction.customId === 'help_ai_modal') {
+      // פתיחת מודאל עם שאלה לשמעון (AI)
+      await interaction.reply({
+        content: 'מגניב! שלח/י כאן כל שאלה, שמעון ינסה לעזור/להגיב עם הומור 😉',
+        ephemeral: true
       });
       return true;
     }
+
     return false;
   }
 };

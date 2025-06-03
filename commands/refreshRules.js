@@ -4,7 +4,7 @@ const { setupRulesMessage } = require('../handlers/rulesEmbed');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('עדכן_חוקים')
+    .setName('updaterules')
     .setDescription('🔁 מרענן את הודעת חוקי הקהילה (רק למנהלים)')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator), // ✅ מגביל למנהלים
 

@@ -51,7 +51,7 @@ function clearState(guildId) {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('שיר')
+    .setName('מוזיקה')
     .setDescription('השמע שיר מהשרת')
     .addStringOption(option =>
       option

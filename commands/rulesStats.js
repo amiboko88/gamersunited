@@ -4,7 +4,7 @@ const db = require('../utils/firebase');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('אישרו_חוקים')
+    .setName('rulestats')
     .setDescription('📘 צפה ברשימת המשתמשים שאישרו את חוקי הקהילה')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator), // רק למנהלים
 

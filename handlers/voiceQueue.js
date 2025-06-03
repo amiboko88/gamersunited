@@ -1,16 +1,16 @@
-// 📁 handlers/voiceQueue.js – FIFO TTS: תור, קרציות, פודקאסטים, OpenAI, mp3 fallback חכם
+// 📁 handlers/voiceQueue.js – FIFO TTS: תור, פודקאסטים, OpenAI, דיליי חכם, "שמעון חבר", שמירה על חיבור
 
-const { 
-  joinVoiceChannel, 
-  createAudioPlayer, 
-  createAudioResource, 
-  entersState, 
-  AudioPlayerStatus, 
+const {
+  joinVoiceChannel,
+  createAudioPlayer,
+  createAudioResource,
+  entersState,
+  AudioPlayerStatus,
   VoiceConnectionStatus
 } = require('@discordjs/voice');
 
-const { 
-  getShortTTSByProfile, 
+const {
+  getShortTTSByProfile,
   getPodcastAudioOpenAI,
   canUserUseTTS
 } = require('../tts/ttsEngine.openai');
@@ -23,77 +23,69 @@ const fs = require('fs');
 const activeQueue = new Map();
 const recentUsers = new Map();
 const connectionLocks = new Set();
+const channelConnections = new Map(); // ⬅️ שמירת חיבור פתוח לפי ערוץ
 
 const TTS_TIMEOUT = 5000;
 const CRITICAL_SPAM_WINDOW = 10_000;
-const MULTI_JOIN_WINDOW = 6_000;
-const BONUS_MIN_COUNT = 3;
+const MULTI_JOIN_WINDOW = 6000;
+const GROUP_MIN = 3; // מינימום להצגת פודקאסט
+const SHIMON_COOLDOWN = 45_000; // שמעון לא מדבר שוב תוך 45 שניות
+const CONNECTION_IDLE_TIMEOUT = 60_000; // התנתקות אוטומטית לאחר דקה ללא פעילות
 
 // ממיר Buffer ל-Stream
 function bufferToStream(buffer) {
   return Readable.from(buffer);
 }
 
-// 🏆 playAudio – הכי חכם, עובר בין כל שיטה אוטומטית
+// יצירת וניהול חיבור קולי עם שמירה לערוץ
+async function getOrCreateConnection(channel) {
+  let record = channelConnections.get(channel.id);
+  const now = Date.now();
+  if (record && record.connection && record.lastUsed && (now - record.lastUsed < CONNECTION_IDLE_TIMEOUT)) {
+    record.lastUsed = now;
+    return record.connection;
+  }
+  // יצירת חיבור חדש
+  if (record && record.connection) {
+    try { record.connection.destroy(); } catch (e) {}
+  }
+  const connection = joinVoiceChannel({
+    channelId: channel.id,
+    guildId: channel.guild.id,
+    adapterCreator: channel.guild.voiceAdapterCreator
+  });
+  channelConnections.set(channel.id, { connection, lastUsed: now });
+  return connection;
+}
+
+// ניתוק אוטומטי מהערוץ אחרי דקה ללא פעילות
+setInterval(() => {
+  const now = Date.now();
+  for (const [channelId, record] of channelConnections) {
+    if (now - record.lastUsed > CONNECTION_IDLE_TIMEOUT) {
+      try { record.connection.destroy(); } catch (e) {}
+      channelConnections.delete(channelId);
+    }
+  }
+}, 20_000);
+
+// ניגון Buffer (mp3) עם ניהול יציב
 async function playAudio(connection, audioBuffer) {
   try {
     let success = false;
     let resource, player;
-    // 1. ניסיון ראשון: Buffer ישירות
-    try {
-      resource = createAudioResource(audioBuffer);
-      player = createAudioPlayer();
-      connection.subscribe(player);
-      player.play(resource);
-      await entersState(player, AudioPlayerStatus.Idle, 15_000);
-      console.log('✅ Buffer נוגן בהצלחה!');
-      success = true;
-    } catch (err1) {
-      console.warn('⚠️ Buffer נכשל, מנסה Path:', err1.message);
-
-      // 2. ניסיון שני: לשמור ל־Path ולהשמיע מהקובץ
-      const tmpPath = `/tmp/tts_debug_${Date.now()}.mp3`;
-      fs.writeFileSync(tmpPath, audioBuffer);
-      try {
-        resource = createAudioResource(tmpPath);
-        player = createAudioPlayer();
-        connection.subscribe(player);
-        player.play(resource);
-        await entersState(player, AudioPlayerStatus.Idle, 15_000);
-        console.log('✅ Path נוגן בהצלחה!');
-        success = true;
-      } catch (err2) {
-        console.warn('⚠️ Path נכשל, מנסה Stream:', err2.message);
-
-        // 3. ניסיון שלישי: stream
-        try {
-          const stream = bufferToStream(audioBuffer);
-          resource = createAudioResource(stream);
-          player = createAudioPlayer();
-          connection.subscribe(player);
-          player.play(resource);
-          await entersState(player, AudioPlayerStatus.Idle, 15_000);
-          console.log('✅ Stream נוגן בהצלחה!');
-          success = true;
-        } catch (err3) {
-          console.error('❌ כל הניסיונות להשמיע mp3 נכשלו!', err3.message);
-        }
-      }
-    }
-
-    if (!success) {
-      // פה אפשר להוסיף Fallback (למשל Google TTS)
-      console.warn('🎵 fallback: לא הצלחנו להשמיע קול – אפשר לנסות מנוע אחר');
-      // לדוג':
-      // const googleBuffer = await googleTTS.synthesizeGoogleTTS(text, speaker);
-      // ... ואז תנגן שוב עם אותו תהליך
-    }
+    // ניסיון ראשון: Buffer ישירות
+    resource = createAudioResource(audioBuffer);
+    player = createAudioPlayer();
+    connection.subscribe(player);
+    player.play(resource);
+    await entersState(player, AudioPlayerStatus.Idle, 15_000);
+    success = true;
 
     if (player) player.stop();
-    if (connection) connection.destroy();
+    // הערה: לא הורסים connection כאן!
   } catch (err) {
     console.error('🛑 השמעה נכשלה – exception:', err.message);
-    if (connection) connection.destroy();
   }
 }
 
@@ -106,8 +98,18 @@ function isUserAnnoying(userId) {
   return newTimestamps.length >= 3;
 }
 
+// ניהול זמן דיבור אחרון של שמעון
+function shouldShimonSpeak(channelId) {
+  const lastSpoken = recentUsers.get('shimon-last-spoken-' + channelId) || 0;
+  if (Date.now() - lastSpoken < SHIMON_COOLDOWN) return false;
+  return true;
+}
+function markShimonSpoken(channelId) {
+  recentUsers.set('shimon-last-spoken-' + channelId, Date.now());
+}
+
 /**
- * תור TTS חכם – תומך בהשמעה קבוצתית (פודקאסט) ובודדת, כולל קרציות, בונוסים, Fallback
+ * תור TTS חכם – פודקאסט קבוצתי בכניסות קבוצתיות בלבד, שמירה על חיבור, דילוג על "קרציות", בלי חפירות
  * @param {GuildMember} member 
  * @param {VoiceChannel} channel 
  */
@@ -126,52 +128,46 @@ async function processUserSmart(member, channel) {
   connectionLocks.add(key);
 
   while (queue.length > 0) {
-    const { member: nextMember, timestamp } = queue.shift();
+    const now = Date.now();
+    // נסתכל על כל הכניסות האחרונות (window של MULTI_JOIN_WINDOW)
+    const batch = [queue.shift()];
+    while (queue.length > 0 && (queue[0].timestamp - batch[0].timestamp) <= MULTI_JOIN_WINDOW) {
+      batch.push(queue.shift());
+    }
+    const userIds = batch.map(x => x.member.id);
+    const displayNames = batch.map(x => x.member.displayName);
 
     // הגנה – קרציות
-    if (isUserAnnoying(nextMember.id)) {
-      console.log(`🤬 ${nextMember.displayName} מתנהג כמו קרצייה`);
-      continue;
+    if (userIds.some(isUserAnnoying)) continue;
+
+    // בקרת שימוש – quota אישי
+    for (const user of batch) {
+      if (!(await canUserUseTTS(user.member.id, 10))) continue;
     }
 
-    // בקרת שימוש – quota אישי (אפשר לכבות ע"י הגבלת limit גבוה מאוד)
-    if (!(await canUserUseTTS(nextMember.id, 10))) {
-      console.log(`⛔️ ${nextMember.displayName} חרג מהמגבלה היומית האישית`);
-      continue;
-    }
-
-    // זיהוי התחברות קבוצתית (פודקאסט) – תוך MULTI_JOIN_WINDOW
-    const joinedClose = queue.some(item =>
-      item.member.id !== nextMember.id &&
-      Math.abs(item.timestamp - timestamp) <= MULTI_JOIN_WINDOW
-    );
-
-    const usePodcast = joinedClose;
-    const useFallback = await shouldUseFallback();
+    // דיבור קבוצתי – רק אם מספיק אנשים עלו
+    const usePodcast = batch.length >= GROUP_MIN;
+    // דילוג אם שמעון דיבר לאחרונה
+    if (!shouldShimonSpeak(channel.id)) continue;
     let audioBuffer;
 
     try {
       if (usePodcast) {
-        const displayNames = queue.map(item => item.member.displayName);
-        const ids = queue.map(item => item.member.id);
-        audioBuffer = await getPodcastAudioOpenAI(displayNames, ids);
+        audioBuffer = await getPodcastAudioOpenAI(displayNames, userIds);
       } else {
-        audioBuffer = await getShortTTSByProfile(nextMember, useFallback);
+        // רק משפט קצר לאותו משתמש (לא מדבר פעמיים באותו window)
+        audioBuffer = await getShortTTSByProfile(batch[0].member);
       }
     } catch (err) {
       console.error(`TTS error:`, err);
       continue;
     }
 
-    // יצירת והפעלת חיבור קולי והשמעה (כולל debug)
+    // הפעלת חיבור קולי והשמעה
     try {
-      const connection = joinVoiceChannel({
-        channelId: channel.id,
-        guildId: channel.guild.id,
-        adapterCreator: channel.guild.voiceAdapterCreator
-      });
-      await entersState(connection, VoiceConnectionStatus.Ready, 15_000);
+      const connection = await getOrCreateConnection(channel);
       await playAudio(connection, audioBuffer);
+      markShimonSpoken(channel.id); // סימון זמן דיבור אחרון
     } catch (err) {
       console.error('🔌 שגיאה בהשמעה:', err);
     }

@@ -1,4 +1,4 @@
-// 📁 ttsEngine.openai.js – FIFO OPENAI TTS ENGINE PRO עם ניקוד
+// 📁 ttsEngine.openai.js – FIFO OPENAI TTS ENGINE PRO – רק OpenAI (ללא fallback), כולל ניקוד
 
 const axios = require('axios');
 const admin = require('firebase-admin');
@@ -6,7 +6,6 @@ const { log } = require('../utils/logger');
 const { playerProfiles } = require('../data/profiles');
 const { getScriptByUserId, fallbackScripts } = require('../data/fifoLines');
 const { shouldUseFallback, registerTTSUsage } = require('./ttsQuotaManager');
-const googleTTS = require('./ttsEngine'); // fallback רגיל
 
 // ⬅️ מנגנון ניקוד ופיסוק
 const { preprocessTTS } = require('./textPreprocess');
@@ -25,6 +24,7 @@ function getVoiceName(speaker = 'shimon') {
   return VOICE_MAP[speaker] || VOICE_MAP['shimon'];
 }
 
+// בדיקת מגבלה ועדכון usage
 async function checkOpenAIQuota(textLength) {
   const overQuota = await shouldUseFallback();
   if (overQuota) return false;
@@ -32,65 +32,54 @@ async function checkOpenAIQuota(textLength) {
   return true;
 }
 
+// הפקת TTS אמיתי (OpenAI בלבד, ללא fallback)
 async function synthesizeOpenAITTS(text, speaker = 'shimon') {
-  // ⬅️ שלב קריטי: ניקוד/פיסוק/עיוותים
+  // ניקוד/פיסוק
   const upgradedText = preprocessTTS(text);
 
   const allowed = await checkOpenAIQuota(upgradedText.length);
   if (!allowed) {
     log(`🛑 שמעון (OpenAI) השתתק – עברנו מגבלה`);
-    try {
-      return await googleTTS.synthesizeGoogleTTS(upgradedText, speaker);
-    } catch (e) {
-      throw new Error("❌ לא הצלחנו להשמיע קול – גם fallback נכשל");
-    }
+    throw new Error("❌ שמעון עבר מגבלה יומית/חודשית, לא הופק קול!");
   }
 
   const voice = getVoiceName(speaker);
   const endpoint = "https://api.openai.com/v1/audio/speech";
   log(`🎙️ OpenAI TTS (${voice}) – ${upgradedText.length} תווים`);
 
-  try {
-    const response = await axios.post(
-      endpoint,
-      {
-        model: "tts-1",
-        input: upgradedText,
-        voice,
-        response_format: "mp3"
-      },
-      {
-        responseType: "arraybuffer",
-        headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
-
-    if (!response.data || response.data.length < 1200) {
-      throw new Error("🔇 OpenAI לא החזיר קול תקין");
-    }
-
-    await saveTTSAudit({
-      text: upgradedText,
+  const response = await axios.post(
+    endpoint,
+    {
+      model: "tts-1",
+      input: upgradedText,
       voice,
-      speaker,
-      length: upgradedText.length,
-      timestamp: new Date().toISOString()
-    });
-
-    return Buffer.from(response.data);
-  } catch (err) {
-    log(`❌ שגיאה ב־OpenAI TTS: ${err.response?.data?.error?.message || err.message}`);
-    try {
-      return await googleTTS.synthesizeGoogleTTS(upgradedText, speaker);
-    } catch (e) {
-      throw new Error("❌ גם Fallback Google TTS נכשל – בדוק API KEY");
+      response_format: "mp3"
+    },
+    {
+      responseType: "arraybuffer",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      }
     }
+  );
+
+  if (!response.data || response.data.length < 1200) {
+    throw new Error("🔇 OpenAI לא החזיר קול תקין");
   }
+
+  await saveTTSAudit({
+    text: upgradedText,
+    voice,
+    speaker,
+    length: upgradedText.length,
+    timestamp: new Date().toISOString()
+  });
+
+  return Buffer.from(response.data);
 }
 
+// שמירה ללוג audit ב-Firestore
 async function saveTTSAudit(data) {
   try {
     const db = admin.firestore();
@@ -100,6 +89,7 @@ async function saveTTSAudit(data) {
   }
 }
 
+// TTS אישי – תמיד OpenAI
 async function getShortTTSByProfile(member) {
   const userId = member.user.id;
   const profile = playerProfiles[userId] || playerProfiles['default'];
@@ -110,6 +100,7 @@ async function getShortTTSByProfile(member) {
   return synthesizeOpenAITTS(sentence, speaker);
 }
 
+// פודקאסט קבוצתי – OpenAI בלבד
 async function getPodcastAudioOpenAI(displayNames = [], ids = []) {
   const buffers = [];
   const hasCustom = ids.length && ids.some(uid => getScriptByUserId(uid));
@@ -126,6 +117,7 @@ async function getPodcastAudioOpenAI(displayNames = [], ids = []) {
   return Buffer.concat(buffers);
 }
 
+// בדיקת מגבלה למשתמש בודד
 async function canUserUseTTS(userId, limit = 5) {
   const db = admin.firestore();
   const key = `${userId}_${new Date().toISOString().split('T')[0]}`;

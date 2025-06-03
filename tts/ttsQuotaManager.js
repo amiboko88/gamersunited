@@ -35,9 +35,10 @@ async function getTTSQuotaReport() {
     const daily = dailySnap.exists ? dailySnap.data() : {};
     const monthly = monthlySnap.exists ? monthlySnap.data() : {};
 
-    const dailyCharacters = typeof daily.totalCharacters === 'number' ? daily.totalCharacters : 0;
-    const dailyCalls = typeof daily.totalCalls === 'number' ? daily.totalCalls : 0;
-    const monthlyCharacters = typeof monthly.totalCharacters === 'number' ? monthlyCharacters : 0;
+const dailyCharacters = typeof daily.totalCharacters === 'number' ? daily.totalCharacters : 0;
+const dailyCalls = typeof daily.totalCalls === 'number' ? daily.totalCalls : 0;
+const monthlyCharacters = typeof monthly.totalCharacters === 'number' ? monthly.totalCharacters : 0;
+
 
     // סטטוס יפה לעברית
     const getStatus = (used, limit) => {

@@ -66,7 +66,9 @@ async function playAudio(connection, audioBuffer) {
       console.error('🛑 השמעה נכשלה – Buffer לא תקין!', typeof audioBuffer, audioBuffer);
       return;
     }
-    const resource = createAudioResource(audioBuffer);
+    const { Readable } = require('stream');
+    const stream = Readable.from(audioBuffer);
+    const resource = createAudioResource(stream);
     const player = createAudioPlayer();
     connection.subscribe(player);
     player.play(resource);
@@ -76,6 +78,7 @@ async function playAudio(connection, audioBuffer) {
     console.error('🛑 השמעה נכשלה – exception:', err.message);
   }
 }
+
 
 // זיהוי "קרציות"
 function isUserAnnoying(userId) {

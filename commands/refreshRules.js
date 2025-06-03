@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { setupRulesMessage } = require('../handlers/rulesEmbed');
 
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('עדכן_חוקים')

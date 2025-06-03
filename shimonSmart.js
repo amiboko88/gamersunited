@@ -1,4 +1,4 @@
-// 📁 shimonSmart.js – הגנה, fallback אלגנטי ודילוג על Slash
+// 📁 shimonSmart.js – גרסה חדה, גברית, קצרה ועוקצנית
 
 const { OpenAI } = require("openai");
 const { getScriptByUserId } = require("./data/fifoLines");
@@ -7,26 +7,10 @@ const db = require("./utils/firebase");
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const lastReplyPerUser = new Map();
-const recentMessages = [];
 
 function isUserSpammedRecently(userId) {
   const last = lastReplyPerUser.get(userId) || 0;
   return (Date.now() - last) < 5 * 1000;
-}
-
-function shouldSkipDueToActiveChat(ctx) {
-  if (ctx.chat?.type === "private") return false;
-  const now = Date.now();
-  const updated = recentMessages.filter(e => now - e.ts < 20 * 1000);
-  updated.push({ id: ctx.from?.id, ts: now });
-  while (updated.length > 30) updated.shift();
-  recentMessages.length = 0; recentMessages.push(...updated);
-  const uniqueSenders = [...new Set(updated.map(e => e.id))];
-  return uniqueSenders.length >= 6;
-}
-
-function estimateTokens(text) {
-  return Math.ceil(text.length / 4);
 }
 
 function isOffensive(text) {
@@ -48,33 +32,30 @@ function isQuestion(text) {
   return text.endsWith("?") || ["מה", "למה", "איך"].some(w => text.startsWith(w));
 }
 
-function cleanFallbackPrefix(text) {
-  return text.replace(/fallback\s?#?\d+\s?[-–]\s?/i, "").trim();
-}
-
-function createPrompt({ userText, contextLine }) {
+function createPrompt({ userText }) {
   const text = userText.trim();
+
   if (isOffensive(text)) {
-    return `משתמש קילל: "${text}"\nשמעון – תגיב בירידה חריפה וסרקסטית. ${contextLine}`;
+    return `מישהו קילל: "${text}"\nשמעון – תן ירידה גסה, קצרה, בלי דיבור יפה.`;
   }
   if (isTrigger(text)) {
-    return `מישהו קרא לשמעון: "${text}"\nתן תגובה חדה, מצחיקה ומעט חצופה. ${contextLine}`;
+    return `קוראים לך שמעון: "${text}"\nתן תשובה גברית, חדה, קצרה וסרקסטית.`;
   }
   if (isNice(text)) {
-    return `משתמש מחמיא: "${text}"\nשמעון – תחמיא בחזרה, אבל עם טוויסט ציני. ${contextLine}`;
+    return `משהו נחמד: "${text}"\nתן מחמאה קצרת רוח בסגנון ישראלי.`;
   }
   if (isQuestion(text)) {
-    return `שאלה נשאלה: "${text}"\nשמעון – ענה תשובה עם הומור, עוקצנות וטיפה עומק. ${contextLine}`;
+    return `שואלים אותך: "${text}"\nתן תשובה בגסות, תשובה אחת בלי חפירות.`;
   }
-  return `הודעה התקבלה: "${text}"\nשמעון – תגיב בסרקזם ישראלי, כולל ירידה מצחיקה. ${contextLine}`;
+  return `מישהו כתב: "${text}"\nתגיב קצר, עוקצני, גברי, בלי דיבורי סרק.`;
 }
 
-async function generateReply(userId, userText, name, triggerType) {
-  const profileRaw = getScriptByUserId(userId)?.shimon || null;
-  const profileLine = profileRaw ? cleanFallbackPrefix(profileRaw) : null;
-  const contextLine = profileLine ? `משפט אישי: "${profileLine}"` : "";
+function estimateTokens(text) {
+  return Math.ceil(text.length / 4);
+}
 
-  const prompt = createPrompt({ userText, contextLine });
+async function generateReply(userId, userText, name) {
+  const prompt = createPrompt({ userText });
   console.log("📤 Prompt:", prompt);
 
   const messages = [{ role: "user", content: prompt }];
@@ -84,8 +65,8 @@ async function generateReply(userId, userText, name, triggerType) {
     const res = await openai.chat.completions.create({
       model: "gpt-4o",
       messages,
-      temperature: 0.93,
-      max_tokens: 140
+      temperature: 1.11,
+      max_tokens: 55
     });
     reply = res.choices[0]?.message?.content?.trim()?.replace(/^"|"$/g, "") || null;
     modelUsed = "gpt-4o";
@@ -95,14 +76,14 @@ async function generateReply(userId, userText, name, triggerType) {
       const res = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages,
-        temperature: 0.9,
-        max_tokens: 120
+        temperature: 1.07,
+        max_tokens: 50
       });
       reply = res.choices[0]?.message?.content?.trim()?.replace(/^"|"$/g, "") || null;
       modelUsed = "gpt-3.5-turbo";
     } catch (err2) {
       console.error("❌ גם GPT-3.5 נכשל:", err2.message);
-      reply = "אני כרגע על הפנים. תנסה שוב עוד רגע – או תדבר יפה יותר 😴";
+      reply = "יאללה, לך תביא כוס מים ותחזור אליי כמו גבר.";
       modelUsed = "fallback";
     }
   }
@@ -135,41 +116,29 @@ async function logToFirestore(ctx, replyInfo, triggerText, triggerType) {
 }
 
 module.exports = async function handleSmartReply(ctx, triggerResult = { triggered: false }) {
+  if (!ctx.message || !ctx.message.text || ctx.message.from?.is_bot) return false;
+
+  const userId = ctx.from.id;
+  const text = ctx.message.text;
+  const name = ctx.from.first_name || "חבר";
+
+  // אם תרצה להפעיל אנטי־ספאם, תבטל את ההערה הבאה:
+  // if (isUserSpammedRecently(userId)) return false;
+
+  const replyInfo = await generateReply(userId, text, name);
+  if (!replyInfo) {
+    console.warn("❌ לא נוצרה תשובה – replyInfo ריק.");
+    return false;
+  }
+
   try {
-    if (!ctx.message || !ctx.message.text || ctx.message.from?.is_bot) return false;
-
-    //  דילוג על פקודות Slash (כמו /start, /help)
-  if  (ctx.message.text?.startsWith("/")) {
-  console.log(" זוהתה פקודת Slash – בוט חכם מתעלם");
-  return false;
-}
-
-    const userId = ctx.from.id;
-    const text = ctx.message.text;
-    const name = ctx.from.first_name || "חבר";
-
-    // 🛠️ לבדיקות: הסר חסימות זמנית
-    // if (isUserSpammedRecently(userId)) return false;
-    // if (shouldSkipDueToActiveChat(ctx)) return false;
-
-    const replyInfo = await generateReply(userId, text, name, triggerResult?.type);
-    if (!replyInfo) {
-      console.warn("❌ לא נוצרה תשובה – replyInfo ריק.");
-      return false;
-    }
-
     await ctx.reply(replyInfo.formatted, { parse_mode: "HTML" });
     lastReplyPerUser.set(userId, Date.now());
     await logToFirestore(ctx, replyInfo, text, triggerResult?.type);
-
     console.log(`🟢 תשובה נשלחה (${replyInfo.model})`);
     return true;
-
   } catch (err) {
-    console.error("❌ שגיאה חיצונית ב־handleSmartReply:", err.message);
-    try {
-      await ctx.reply("❌ שמעון הסתבך עם התגובה. נסה שוב.");
-    } catch {}
+    console.error("❌ שגיאה בשליחת תגובה:", err.message);
     return false;
   }
 };

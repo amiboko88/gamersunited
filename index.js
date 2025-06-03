@@ -2,18 +2,26 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const schedule = require('node-schedule');
 
-// ====== קומנדס מרכזיים (פקודות-על) ======
+// ====== Slash Commands שטוחות ======
+const { data: rulesStatsData, execute: rulesStatsExecute } = require('./commands/rulesStats');
 const { data: helpData, execute: helpExecute, handleButton: helpHandleButton } = require('./commands/help');
-const { data: communityData, execute: communityExecute } = require('./commands/community');
-const { data: adminData, execute: adminExecute } = require('./commands/admin');
+const { data: songData, execute: songExecute } = require('./commands/song');
+const { data: fifoData, execute: fifoExecute } = require('./commands/fifo');
+const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
+const { data: mvpData, execute: mvpExecute } = require('./commands/mvpDisplay');
+const { data: soundboardData, execute: soundboardExecute } = require('./commands/soundboard');
+const { data: birthdaysData, execute: birthdaysExecute } = require('./commands/birthdayCommands');
+const { data: addBirthdayData, execute: addBirthdayExecute } = require('./commands/birthdayCommands');
+const { data: nextBirthdayData, execute: nextBirthdayExecute } = require('./commands/birthdayCommands');
+const { data: updateRulesData, execute: updateRulesExecute } = require('./commands/refreshRules');
+const { data: activityData, execute: activityExecute } = require('./commands/activityBoard');
+const { data: leaderboardData, execute: leaderboardExecute } = require('./commands/leaderboard');
 
-// ====== שאר require/handlers ======
+// ====== כל שאר require/handlers ======
 const { startStatsUpdater } = require('./handlers/statsUpdater');
 const { postOrUpdateWeeklySchedule } = require('./handlers/scheduleUpdater');
 const handleRSVP = require('./handlers/scheduleButtonsHandler');
 const { sendPublicRulesEmbed, sendRulesToUser, handleRulesInteraction, startWeeklyRulesUpdate } = require('./handlers/rulesEmbed');
-const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
-const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
 const { startBirthdayTracker } = require('./handlers/birthdayTracker');
 const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayReminder');
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
@@ -36,10 +44,18 @@ const statTracker = require('./handlers/statTracker');
 
 const commands = [
   helpData,
-  communityData,
-  adminData,
-  soundData,
+  songData,
+  fifoData,
   verifyData,
+  rulesStatsData,
+  mvpData,
+  soundboardData,
+  birthdaysData,
+  addBirthdayData,
+  nextBirthdayData,
+  updateRulesData,
+  activityData,
+  leaderboardData,
 ];
 
 const client = new Client({
@@ -114,19 +130,17 @@ client.on('messageCreate', async message => {
   await smartChat(message);
 });
 
-// ====== אינטראקציות (Slash, כפתורים, מודאלים) ======
 client.on('interactionCreate', async interaction => {
-  // ---- אוטוקומפליטים ----
   if (interaction.isAutocomplete()) return;
 
-  // ---- טיפול ב-help (כפתורים, מודאל) ----
+  // עזרה אינטראקטיבית (כפתורים/מודאלים)
   if (
     (interaction.isButton() && typeof interaction.customId === 'string' && interaction.customId.startsWith('help_')) ||
     (interaction.type === 5 && interaction.customId === 'help_ai_modal')
   ) {
     if (await helpHandleButton(interaction)) return;
   }
-  // ---- טיפול בלוח פעילות ----
+  // לוח פעילות
   if (
     interaction.isButton() &&
     typeof interaction.customId === 'string' &&
@@ -137,7 +151,7 @@ client.on('interactionCreate', async interaction => {
   if (interaction.isButton() && interaction.customId === 'show_stats') {
     return handleRSVP(interaction, client);
   }
-  // ---- מוזיקה ----
+  // מוזיקה
   if (interaction.isButton() && ['pause', 'resume', 'stop'].includes(interaction.customId)) {
     return handleMusicControls(interaction);
   }
@@ -154,30 +168,36 @@ client.on('interactionCreate', async interaction => {
   if (interaction.isButton() && typeof interaction.customId === 'string' && interaction.customId.startsWith('verify')) {
     return handleVerifyInteraction(interaction);
   }
-
   if (interaction.isModalSubmit() && interaction.customId === 'birthday_modal') {
     return handleBirthdayModalSubmit(interaction, client);
   }
 
-  // ====== Slash Commands עיקריות בלבד ======
+  // Slash Commands שטוחות בלבד (עברית בלבד)
   if (!interaction.isCommand()) return;
   const { commandName } = interaction;
 
   if (commandName === 'עזרה') return helpExecute(interaction);
-  if (commandName === 'קהילה') return communityExecute(interaction);
-  if (commandName === 'ניהול') return adminExecute(interaction);
+  if (commandName === 'שיר') return songExecute(interaction, client);
+  if (commandName === 'פיפו') return fifoExecute(interaction);
+  if (commandName === 'אימות') return verifyExecute(interaction);
+  if (commandName === 'מצטיין') return mvpExecute(interaction, client);
+  if (commandName === 'סאונדבורד') return soundboardExecute(interaction, client);
+  if (commandName === 'ימי_הולדת') return birthdaysExecute(interaction);
+  if (commandName === 'הוסף_יום_הולדת') return addBirthdayExecute(interaction);
+  if (commandName === 'מי_חוגג') return nextBirthdayExecute(interaction);
 
-  // --- תוכל להוסיף כאן פקודות יחידניות נוספות (פינג, מידע) אם יש ---
+  if (commandName === 'leaderboardpush') return leaderboardExecute(interaction);
+  if (commandName === 'activitypush') return activityExecute(interaction, client);
+  if (commandName === 'rulespush') return updateRulesExecute(interaction);
+  if (commandName === 'rulestats') return rulesStatsExecute(interaction);
 });
 
 client.login(process.env.DISCORD_TOKEN);
 
-// ניטור תקלות מערכת
 process.on('exit', (code) => { console.log(`[EXIT] התהליך הסתיים עם קוד: ${code}`); });
 process.on('SIGTERM', () => { console.log('[SIGTERM] SIGTERM!'); });
 process.on('uncaughtException', (err) => { console.error('[UNCAUGHT EXCEPTION]', err); });
 process.on('unhandledRejection', (reason, promise) => { console.error('[UNHANDLED REJECTION]', reason); });
 
-// משאבים נוספים / בוט טלגרם
 require('./shimonTelegram');
 setInterval(() => {}, 1000 * 60 * 60);

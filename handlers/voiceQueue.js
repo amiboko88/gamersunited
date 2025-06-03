@@ -63,21 +63,46 @@ setInterval(() => {
 async function playAudio(connection, audioBuffer) {
   try {
     if (!Buffer.isBuffer(audioBuffer)) {
-      console.error('🛑 השמעה נכשלה – Buffer לא תקין!', typeof audioBuffer, audioBuffer);
+      console.error('🛑 Buffer לא תקין!', typeof audioBuffer, audioBuffer);
       return;
     }
     const { Readable } = require('stream');
-    const stream = Readable.from(audioBuffer);
-    const resource = createAudioResource(stream);
-    const player = createAudioPlayer();
-    connection.subscribe(player);
-    player.play(resource);
-    await entersState(player, AudioPlayerStatus.Idle, 15_000);
-    if (player) player.stop();
+    // ננסה קודם Buffer ישירות
+    try {
+      console.log('🚩 ניגון עם Buffer ישירות');
+      let resource = createAudioResource(audioBuffer);
+      let player = createAudioPlayer();
+      connection.subscribe(player);
+      player.play(resource);
+      await entersState(player, AudioPlayerStatus.Idle, 15_000);
+      if (player) player.stop();
+      console.log('✅ נוגן בהצלחה עם Buffer!');
+      return;
+    } catch (err) {
+      console.error('❌ נכשל ניגון Buffer ישיר, מנסה Stream:', err.message);
+    }
+    // אם לא עבד, ננסה Stream
+    try {
+      console.log('🚩 ניגון עם Stream');
+      const stream = Readable.from(audioBuffer);
+      let resource = createAudioResource(stream);
+      let player = createAudioPlayer();
+      connection.subscribe(player);
+      player.play(resource);
+      await entersState(player, AudioPlayerStatus.Idle, 15_000);
+      if (player) player.stop();
+      console.log('✅ נוגן בהצלחה עם Stream!');
+      return;
+    } catch (err) {
+      console.error('❌ נכשל ניגון עם Stream:', err.message);
+    }
+    // אם הכל נכשל
+    console.error('🛑 השמעה נכשלה – Buffer לא הצליח עם אף אופציה');
   } catch (err) {
-    console.error('🛑 השמעה נכשלה – exception:', err.message);
+    console.error('🛑 חריגת על – exception:', err.message);
   }
 }
+
 
 
 // זיהוי "קרציות"

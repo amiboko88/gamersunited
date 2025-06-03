@@ -101,6 +101,7 @@ async function getShortTTSByProfile(member) {
 }
 
 // פודקאסט קבוצתי – OpenAI בלבד
+// פודקאסט קבוצתי – OpenAI בלבד עם הגנה על Buffer
 async function getPodcastAudioOpenAI(displayNames = [], ids = []) {
   const buffers = [];
   const hasCustom = ids.length && ids.some(uid => getScriptByUserId(uid));
@@ -110,12 +111,26 @@ async function getPodcastAudioOpenAI(displayNames = [], ids = []) {
 
   for (const script of userScripts) {
     const { shimon, shirley, punch } = script;
-    if (shimon) buffers.push(await synthesizeOpenAITTS(shimon, 'shimon'));
-    if (shirley) buffers.push(await synthesizeOpenAITTS(shirley, 'shirley'));
-    if (punch) buffers.push(await synthesizeOpenAITTS(punch, Math.random() < 0.5 ? 'shimon' : 'shirley'));
+    if (shimon) {
+      const buf = await synthesizeOpenAITTS(shimon, 'shimon');
+      if (!Buffer.isBuffer(buf)) throw new Error('getPodcastAudioOpenAI: shimon לא החזיר Buffer');
+      buffers.push(buf);
+    }
+    if (shirley) {
+      const buf = await synthesizeOpenAITTS(shirley, 'shirley');
+      if (!Buffer.isBuffer(buf)) throw new Error('getPodcastAudioOpenAI: shirley לא החזיר Buffer');
+      buffers.push(buf);
+    }
+    if (punch) {
+      const buf = await synthesizeOpenAITTS(punch, Math.random() < 0.5 ? 'shimon' : 'shirley');
+      if (!Buffer.isBuffer(buf)) throw new Error('getPodcastAudioOpenAI: punch לא החזיר Buffer');
+      buffers.push(buf);
+    }
   }
+  if (!buffers.length) throw new Error('getPodcastAudioOpenAI: No podcast buffers created!');
   return Buffer.concat(buffers);
 }
+
 
 // בדיקת מגבלה למשתמש בודד
 async function canUserUseTTS(userId, limit = 5) {

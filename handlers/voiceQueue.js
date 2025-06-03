@@ -1,12 +1,11 @@
-// 📁 handlers/voiceQueue.js – FIFO TTS: תור, פודקאסטים, OpenAI, דיליי חכם, "שמעון חבר", שמירה על חיבור
+// 📁 handlers/voiceQueue.js – FIFO TTS: תור, פודקאסטים, OpenAI, דיליי חכם, הגנה על Buffer, שמירה על חיבור
 
 const {
   joinVoiceChannel,
   createAudioPlayer,
   createAudioResource,
   entersState,
-  AudioPlayerStatus,
-  VoiceConnectionStatus
+  AudioPlayerStatus
 } = require('@discordjs/voice');
 
 const {
@@ -15,27 +14,19 @@ const {
   canUserUseTTS
 } = require('../tts/ttsEngine.openai');
 
-const { shouldUseFallback } = require('../tts/ttsQuotaManager');
-
 const { Readable } = require('stream');
-const fs = require('fs');
 
 const activeQueue = new Map();
 const recentUsers = new Map();
 const connectionLocks = new Set();
-const channelConnections = new Map(); // ⬅️ שמירת חיבור פתוח לפי ערוץ
+const channelConnections = new Map();
 
 const TTS_TIMEOUT = 5000;
 const CRITICAL_SPAM_WINDOW = 10_000;
 const MULTI_JOIN_WINDOW = 6000;
-const GROUP_MIN = 3; // מינימום להצגת פודקאסט
-const SHIMON_COOLDOWN = 45_000; // שמעון לא מדבר שוב תוך 45 שניות
-const CONNECTION_IDLE_TIMEOUT = 60_000; // התנתקות אוטומטית לאחר דקה ללא פעילות
-
-// ממיר Buffer ל-Stream
-function bufferToStream(buffer) {
-  return Readable.from(buffer);
-}
+const GROUP_MIN = 3;
+const SHIMON_COOLDOWN = 45_000;
+const CONNECTION_IDLE_TIMEOUT = 60_000;
 
 // יצירת וניהול חיבור קולי עם שמירה לערוץ
 async function getOrCreateConnection(channel) {
@@ -45,7 +36,6 @@ async function getOrCreateConnection(channel) {
     record.lastUsed = now;
     return record.connection;
   }
-  // יצירת חיבור חדש
   if (record && record.connection) {
     try { record.connection.destroy(); } catch (e) {}
   }
@@ -69,21 +59,19 @@ setInterval(() => {
   }
 }, 20_000);
 
-// ניגון Buffer (mp3) עם ניהול יציב
+// הפעלת Buffer (mp3) עם הגנה קשוחה
 async function playAudio(connection, audioBuffer) {
   try {
-    let success = false;
+    if (!Buffer.isBuffer(audioBuffer)) {
+      throw new Error('Audio buffer אינו מסוג Buffer! סוג: ' + typeof audioBuffer);
+    }
     let resource, player;
-    // ניסיון ראשון: Buffer ישירות
     resource = createAudioResource(audioBuffer);
     player = createAudioPlayer();
     connection.subscribe(player);
     player.play(resource);
     await entersState(player, AudioPlayerStatus.Idle, 15_000);
-    success = true;
-
     if (player) player.stop();
-    // הערה: לא הורסים connection כאן!
   } catch (err) {
     console.error('🛑 השמעה נכשלה – exception:', err.message);
   }
@@ -153,21 +141,20 @@ async function processUserSmart(member, channel) {
 
     try {
       if (usePodcast) {
-        audioBuffer = await getPodcastAudioOpenAI(displayNames, userIds);
+        audioBuffer = await safeGetPodcastAudioOpenAI(displayNames, userIds);
       } else {
-        // רק משפט קצר לאותו משתמש (לא מדבר פעמיים באותו window)
         audioBuffer = await getShortTTSByProfile(batch[0].member);
+        if (!Buffer.isBuffer(audioBuffer)) throw new Error('Single TTS audioBuffer אינו Buffer');
       }
     } catch (err) {
       console.error(`TTS error:`, err);
       continue;
     }
 
-    // הפעלת חיבור קולי והשמעה
     try {
       const connection = await getOrCreateConnection(channel);
       await playAudio(connection, audioBuffer);
-      markShimonSpoken(channel.id); // סימון זמן דיבור אחרון
+      markShimonSpoken(channel.id);
     } catch (err) {
       console.error('🔌 שגיאה בהשמעה:', err);
     }
@@ -176,6 +163,38 @@ async function processUserSmart(member, channel) {
   }
 
   connectionLocks.delete(key);
+}
+
+// הגנה לפודקאסט: רק Buffer נכנס ל־concat, אם לא – זורקים שגיאה ברורה
+async function safeGetPodcastAudioOpenAI(displayNames, userIds) {
+  const { getScriptByUserId, fallbackScripts } = require('../data/fifoLines');
+  const buffers = [];
+  const hasCustom = userIds.length && userIds.some(uid => getScriptByUserId(uid));
+  const userScripts = hasCustom
+    ? userIds.map(uid => getScriptByUserId(uid))
+    : [fallbackScripts[Math.floor(Math.random() * fallbackScripts.length)]];
+  const { synthesizeOpenAITTS } = require('../tts/ttsEngine.openai');
+
+  for (const script of userScripts) {
+    const { shimon, shirley, punch } = script;
+    if (shimon) {
+      const buf = await synthesizeOpenAITTS(shimon, 'shimon');
+      if (!Buffer.isBuffer(buf)) throw new Error('פודקאסט – shimon לא החזיר Buffer');
+      buffers.push(buf);
+    }
+    if (shirley) {
+      const buf = await synthesizeOpenAITTS(shirley, 'shirley');
+      if (!Buffer.isBuffer(buf)) throw new Error('פודקאסט – shirley לא החזיר Buffer');
+      buffers.push(buf);
+    }
+    if (punch) {
+      const buf = await synthesizeOpenAITTS(punch, Math.random() < 0.5 ? 'shimon' : 'shirley');
+      if (!Buffer.isBuffer(buf)) throw new Error('פודקאסט – punch לא החזיר Buffer');
+      buffers.push(buf);
+    }
+  }
+  if (!buffers.length) throw new Error('No podcast buffers created!');
+  return Buffer.concat(buffers);
 }
 
 function wait(ms) {

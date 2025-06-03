@@ -28,7 +28,7 @@ const availableSounds = [
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('סאונד')
+    .setName('סאונדבורד')
     .setDescription('מפעיל סאונד קצר בערוץ הקולי')
     .addStringOption(opt =>
       opt

@@ -73,6 +73,13 @@ async function synthesizeOpenAITTS(text, speaker = 'shimon') {
   );
 
   let bufferData = normalizeToBuffer(response.data);
+console.log('⏩ Buffer length:', bufferData.length);
+console.log('⏩ Buffer start HEX:', bufferData.slice(0, 32).toString('hex'));
+console.log('⏩ Buffer as Array:', Array.from(bufferData.slice(0, 32)));
+console.log('⏩ typeof bufferData:', typeof bufferData, 'Buffer?', Buffer.isBuffer(bufferData));
+console.log('⏩ bufferData instanceof ArrayBuffer:', bufferData instanceof ArrayBuffer);
+console.log('⏩ bufferData instanceof Uint8Array:', bufferData instanceof Uint8Array);
+
 
   if (!isLikelyMp3(bufferData)) {
     console.error('❌ Buffer אינו mp3:', bufferData.slice(0,16));

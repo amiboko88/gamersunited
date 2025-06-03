@@ -1,4 +1,4 @@
-// 📁 ttsEngine.openai.js – FIFO OPENAI TTS ENGINE PRO – הגנה מלאה על Buffer
+// 📁 ttsEngine.openai.js – FIFO OPENAI TTS ENGINE PRO – הגנת Buffer כפולה + בדיקת MP3
 
 const axios = require('axios');
 const admin = require('firebase-admin');
@@ -6,14 +6,9 @@ const { log } = require('../utils/logger');
 const { playerProfiles } = require('../data/profiles');
 const { getScriptByUserId, fallbackScripts } = require('../data/fifoLines');
 const { shouldUseFallback, registerTTSUsage } = require('./ttsQuotaManager');
-
-// ⬅️ מנגנון ניקוד ופיסוק
 const { preprocessTTS } = require('./textPreprocess');
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const DAILY_CHAR_LIMIT = 10000;
-const DAILY_CALL_LIMIT = 15;
-const MONTHLY_CHAR_LIMIT = 300000;
 
 const VOICE_MAP = {
   shimon: 'onyx',
@@ -24,7 +19,6 @@ function getVoiceName(speaker = 'shimon') {
   return VOICE_MAP[speaker] || VOICE_MAP['shimon'];
 }
 
-// בדיקת מגבלה ועדכון usage
 async function checkOpenAIQuota(textLength) {
   const overQuota = await shouldUseFallback();
   if (overQuota) return false;
@@ -32,9 +26,23 @@ async function checkOpenAIQuota(textLength) {
   return true;
 }
 
-// הפקת TTS אמיתי (OpenAI בלבד, הגנה מלאה על Buffer)
+// הגנות חדשות!
+function normalizeToBuffer(data) {
+  if (Buffer.isBuffer(data)) return data;
+  if (data instanceof ArrayBuffer) return Buffer.from(new Uint8Array(data));
+  if (Array.isArray(data)) return Buffer.from(Uint8Array.from(data));
+  throw new Error('normalizeToBuffer: Unsupported type for response.data');
+}
+
+function isLikelyMp3(buffer) {
+  if (buffer.length < 1000) return false;
+  // MP3 מתחיל ב-FF FB, FF F3, או FF F2
+  const sig = buffer.slice(0, 2).toString('hex');
+  return sig === 'fffb' || sig === 'fff3' || sig === 'fff2';
+}
+
+// יצירת קובץ קול (Buffer) עם בדיקת תקינות סופית
 async function synthesizeOpenAITTS(text, speaker = 'shimon') {
-  // ניקוד/פיסוק
   const upgradedText = preprocessTTS(text);
 
   const allowed = await checkOpenAIQuota(upgradedText.length);
@@ -64,24 +72,11 @@ async function synthesizeOpenAITTS(text, speaker = 'shimon') {
     }
   );
 
-  // הגנה מלאה: כל מצב הופך ל-Buffer תקין
-  let bufferData;
-  if (Buffer.isBuffer(response.data)) {
-    bufferData = response.data;
-  } else if (response.data instanceof ArrayBuffer) {
-    bufferData = Buffer.from(new Uint8Array(response.data));
-  } else if (Array.isArray(response.data)) {
-    bufferData = Buffer.from(response.data);
-  } else {
-    console.error('❌ סוג לא מזוהה ל-response.data:', typeof response.data, response.data);
-    throw new Error('❌ OpenAI response.data לא חוקי: ' + typeof response.data);
-  }
+  let bufferData = normalizeToBuffer(response.data);
 
-  // DEBUG: מחיקת הדפסה אחרי בדיקה!
-  // console.log('>>> bufferData', bufferData, Buffer.isBuffer(bufferData), bufferData.length);
-
-  if (!Buffer.isBuffer(bufferData) || bufferData.length < 1200) {
-    throw new Error("🔇 OpenAI לא החזיר קול תקין");
+  if (!isLikelyMp3(bufferData)) {
+    console.error('❌ Buffer אינו mp3:', bufferData.slice(0,16));
+    throw new Error('OpenAI response אינו MP3 תקין');
   }
 
   await saveTTSAudit({

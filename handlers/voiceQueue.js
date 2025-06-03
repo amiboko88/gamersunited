@@ -1,4 +1,4 @@
-// 📁 handlers/voiceQueue.js – FIFO TTS: תור, פודקאסטים, OpenAI, דיליי חכם, הגנה על Buffer, שמירה על חיבור
+// 📁 handlers/voiceQueue.js – FIFO TTS: תור, פודקאסטים, OpenAI, DEBUG קשוח
 
 const {
   joinVoiceChannel,
@@ -13,8 +13,6 @@ const {
   getPodcastAudioOpenAI,
   canUserUseTTS
 } = require('../tts/ttsEngine.openai');
-
-const { Readable } = require('stream');
 
 const activeQueue = new Map();
 const recentUsers = new Map();
@@ -59,26 +57,27 @@ setInterval(() => {
   }
 }, 20_000);
 
-// הפעלת Buffer (mp3) עם הגנה קשוחה
 async function playAudio(connection, audioBuffer) {
   try {
+    console.log(`[SHIMON] playAudio! Buffer? ${Buffer.isBuffer(audioBuffer)}, size: ${audioBuffer?.length}`);
     if (!Buffer.isBuffer(audioBuffer)) {
       console.error('🛑 Buffer לא תקין!', typeof audioBuffer, audioBuffer);
       return;
     }
+    // ניתן לבדוק מה באמת יש כאן
+    // require('fs').writeFileSync('debug-shimon.mp3', audioBuffer);
+
     let resource = createAudioResource(audioBuffer);
     let player = createAudioPlayer();
     connection.subscribe(player);
     player.play(resource);
     await entersState(player, AudioPlayerStatus.Idle, 15_000);
     if (player) player.stop();
+    console.log('[SHIMON] Audio נוגן בהצלחה!');
   } catch (err) {
     console.error('🛑 השמעה נכשלה – exception:', err.message);
   }
 }
-
-
-
 
 // זיהוי "קרציות"
 function isUserAnnoying(userId) {
@@ -99,19 +98,24 @@ function markShimonSpoken(channelId) {
   recentUsers.set('shimon-last-spoken-' + channelId, Date.now());
 }
 
-// תור TTS חכם – פודקאסט קבוצתי בכניסות קבוצתיות בלבד, שמירה על חיבור, דילוג על "קרציות", בלי חפירות
+// תור TTS חכם – DEBUG מודפס בכל שלב
 async function processUserSmart(member, channel) {
   const userId = member.id;
   const guildId = channel.guild.id;
   const key = `${guildId}-${channel.id}`;
+  console.log(`[SHIMON] processUserSmart: ${member.displayName} נכנס לערוץ ${channel.name}`);
 
   if (!activeQueue.has(key)) activeQueue.set(key, []);
   const queue = activeQueue.get(key);
 
   queue.push({ member, timestamp: Date.now() });
+  console.log(`[SHIMON] queue size for ${channel.name}: ${queue.length}`);
 
   // אם כבר יש השמעה פעילה – נמתין
-  if (connectionLocks.has(key)) return;
+  if (connectionLocks.has(key)) {
+    console.log(`[SHIMON] connection lock for key ${key} – ממתין`);
+    return;
+  }
   connectionLocks.add(key);
 
   while (queue.length > 0) {
@@ -123,37 +127,49 @@ async function processUserSmart(member, channel) {
     }
     const userIds = batch.map(x => x.member.id);
     const displayNames = batch.map(x => x.member.displayName);
+    console.log(`[SHIMON] batch for channel ${channel.name}: ${displayNames.join(', ')}`);
 
     // הגנה – קרציות
-    if (userIds.some(isUserAnnoying)) continue;
+    if (userIds.some(isUserAnnoying)) {
+      console.log('[SHIMON] דילוג – קרציות');
+      continue;
+    }
 
     // בקרת שימוש – quota אישי
     let blocked = false;
     for (const user of batch) {
       if (!(await canUserUseTTS(user.member.id, 10))) blocked = true;
     }
-    if (blocked) continue;
+    if (blocked) {
+      console.log('[SHIMON] דילוג – quota');
+      continue;
+    }
 
     // דיבור קבוצתי – רק אם מספיק אנשים עלו
     const usePodcast = batch.length >= GROUP_MIN;
     // דילוג אם שמעון דיבר לאחרונה
-    if (!shouldShimonSpeak(channel.id)) continue;
+    if (!shouldShimonSpeak(channel.id)) {
+      console.log('[SHIMON] דילוג – שמעון cooldown');
+      continue;
+    }
     let audioBuffer;
 
     try {
       if (usePodcast) {
+        console.log('[SHIMON] פודקאסט קבוצתי');
         audioBuffer = await safeGetPodcastAudioOpenAI(displayNames, userIds);
       } else {
+        console.log('[SHIMON] משפט בודד');
         audioBuffer = await getShortTTSByProfile(batch[0].member);
         if (!Buffer.isBuffer(audioBuffer)) throw new Error('Single TTS audioBuffer אינו Buffer');
       }
     } catch (err) {
-      console.error(`TTS error:`, err);
+      console.error(`[SHIMON] TTS error:`, err);
       continue;
     }
 
     if (!Buffer.isBuffer(audioBuffer)) {
-      console.error('🛑 ניסיון השמעה של ערך לא חוקי!', typeof audioBuffer, audioBuffer);
+      console.error('[SHIMON] ניסיון השמעה של ערך לא חוקי!', typeof audioBuffer, audioBuffer);
       continue;
     }
 
@@ -162,13 +178,14 @@ async function processUserSmart(member, channel) {
       await playAudio(connection, audioBuffer);
       markShimonSpoken(channel.id);
     } catch (err) {
-      console.error('🔌 שגיאה בהשמעה:', err);
+      console.error('[SHIMON] 🔌 שגיאה בהשמעה:', err);
     }
 
     await wait(TTS_TIMEOUT);
   }
 
   connectionLocks.delete(key);
+  console.log(`[SHIMON] סיים processUserSmart לערוץ ${channel.name}`);
 }
 
 // הגנה לפודקאסט: רק Buffer נכנס ל־concat, אם לא – זורקים שגיאה ברורה

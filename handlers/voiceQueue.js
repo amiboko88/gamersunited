@@ -70,6 +70,8 @@ async function playAudio(connection, audioBuffer) {
     try {
       fs.writeFileSync(filename, audioBuffer);
       console.log(`💾 [SHIMON] Saved MP3: ${filename} (size: ${audioBuffer.length})`);
+      // <<< הדפס BASE64 כאן!
+      console.log('BASE64_MP3_START:', audioBuffer.toString('base64').slice(0, 2000));
     } catch (err) {
       console.error('⚠️ שמירת Buffer לקובץ נכשלה:', err.message);
     }
@@ -90,6 +92,7 @@ async function playAudio(connection, audioBuffer) {
     console.error('🛑 השמעה נכשלה – exception:', err.message);
   }
 }
+
 
 // זיהוי "קרציות"
 function isUserAnnoying(userId) {

@@ -4,6 +4,7 @@ const schedule = require('node-schedule');
 
 // 🎮 Scheduler Features
 const { postOrUpdateWeeklySchedule } = require('./handlers/scheduleUpdater');
+const { startStatsUpdater, updateStatsChannels } = require('./handlers/statsUpdater');
 const handleRSVP = require('./handlers/scheduleButtonsHandler');
 const { data: activityBoardData, execute: activityBoardExecute } = require('./commands/activityBoard');
 
@@ -91,6 +92,8 @@ client.once('ready', async () => {
   await hardSyncPresenceOnReady(client);
   await setupVerificationMessage(client);
   await sendPublicRulesEmbed(client);
+  await updateStatsChannels(client);
+  startStatsUpdater(client);
   startWeeklyRulesUpdate(client);
   welcomeImage(client);
   startDmTracking(client);
@@ -132,19 +135,32 @@ client.once('ready', async () => {
   }
 });
 
+
+client.on('guildMemberAdd', async member => {
+  await sendRulesToUser(member);
+  updateStatsChannels(client);
+});
+
+client.on('guildMemberRemove', member => {
+  updateStatsChannels(client);
+});
+
+client.on('guildMemberUpdate', (oldMember, newMember) => {
+  updateStatsChannels(client);
+});
+
+client.on('voiceStateUpdate', (oldState, newState) => {
+  handleVoiceStateUpdate(oldState, newState);
+  updateStatsChannels(client);
+});
+
+
 // 📡 נוכחות
 client.on('presenceUpdate', (oldPresence, newPresence) => {
   trackGamePresence(newPresence);
 });
 
-// 🎤 קול
-client.on('voiceStateUpdate', (oldState, newState) => {
-  handleVoiceStateUpdate(oldState, newState);
-});
 
-client.on('guildMemberAdd', async member => {
-  await sendRulesToUser(member);
-});
 
 // 💬 טקסט
 client.on('messageCreate', async message => {

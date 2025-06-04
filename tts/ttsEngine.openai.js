@@ -101,14 +101,7 @@ async function getPodcastAudioOpenAI(displayNames = [], ids = []) {
 }
 
 async function canUserUseTTS(userId, limit = 5) {
-  const db = admin.firestore();
-  const key = `${userId}_${new Date().toISOString().split('T')[0]}`;
-  const ref = db.collection('ttsUserQuota').doc(key);
-  const snap = await ref.get();
-  const { used = 0 } = snap.exists ? snap.data() : {};
-  if (used >= limit) return false;
-  await ref.set({ used: used + 1, last: new Date().toISOString() }, { merge: true });
-  return true;
+  return true; // ⛳ ביטול מגבלת שימוש אישי לבדיקה חופשית
 }
 
 module.exports = {

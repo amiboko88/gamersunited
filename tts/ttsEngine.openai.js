@@ -1,4 +1,4 @@
-// 📁 ttsEngine.openai.js – FIFO OPENAI TTS ENGINE PRO – רק OpenAI (ללא fallback), Buffer נקי
+// 📁 ttsEngine.openai.js – FIFO OPENAI TTS ENGINE PRO – Buffer בלבד, בלי textPreprocess
 
 const axios = require('axios');
 const admin = require('firebase-admin');
@@ -6,7 +6,6 @@ const { log } = require('../utils/logger');
 const { playerProfiles } = require('../data/profiles');
 const { getScriptByUserId, fallbackScripts } = require('../data/fifoLines');
 const { shouldUseFallback, registerTTSUsage } = require('./ttsQuotaManager');
-const { preprocessTTS } = require('./textPreprocess');
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -27,10 +26,8 @@ async function checkOpenAIQuota(textLength) {
 }
 
 async function synthesizeOpenAITTS(text, speaker = 'shimon') {
-  // ניקוד/פיסוק
-  const upgradedText = preprocessTTS(text);
-
-  const allowed = await checkOpenAIQuota(upgradedText.length);
+  // טקסט עובר כמו שהוא! (אין עיבוד ניקוד)
+  const allowed = await checkOpenAIQuota(text.length);
   if (!allowed) {
     log(`🛑 שמעון (OpenAI) השתתק – עברנו מגבלה`);
     throw new Error("❌ שמעון עבר מגבלה יומית/חודשית, לא הופק קול!");
@@ -38,13 +35,13 @@ async function synthesizeOpenAITTS(text, speaker = 'shimon') {
 
   const voice = getVoiceName(speaker);
   const endpoint = "https://api.openai.com/v1/audio/speech";
-  log(`🎙️ OpenAI TTS (${voice}) – ${upgradedText.length} תווים`);
+  log(`🎙️ OpenAI TTS (${voice}) – ${text.length} תווים`);
 
   const response = await axios.post(
     endpoint,
     {
       model: "tts-1",
-      input: upgradedText,
+      input: text,
       voice,
       response_format: "mp3"
     },
@@ -61,15 +58,11 @@ async function synthesizeOpenAITTS(text, speaker = 'shimon') {
     throw new Error("🔇 OpenAI לא החזיר קול תקין");
   }
 
-  // אפשר להדפיס דיבוג – למחוק אח״כ!
-  // require('fs').writeFileSync('test.mp3', Buffer.from(response.data));
-  // console.log('Buffer length:', response.data.length);
-
   await saveTTSAudit({
-    text: upgradedText,
+    text,
     voice,
     speaker,
-    length: upgradedText.length,
+    length: text.length,
     timestamp: new Date().toISOString()
   });
 
@@ -101,7 +94,6 @@ async function getPodcastAudioOpenAI(displayNames = [], ids = []) {
   const userScripts = hasCustom
     ? ids.map(uid => getScriptByUserId(uid))
     : [fallbackScripts[Math.floor(Math.random() * fallbackScripts.length)]];
-
   for (const script of userScripts) {
     const { shimon, shirley, punch } = script;
     if (shimon) buffers.push(await synthesizeOpenAITTS(shimon, 'shimon'));

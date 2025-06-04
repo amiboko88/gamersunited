@@ -1,4 +1,4 @@
-// 📁 handlers/voiceQueue.js – FIFO TTS: תור, פודקאסטים, OpenAI בלבד, Buffer נקי + DEBUG שמירת קובץ MP3
+// 📁 handlers/voiceQueue.js – FIFO TTS: תור, פודקאסטים, OpenAI בלבד, Buffer נקי
 
 const {
   joinVoiceChannel,
@@ -13,9 +13,6 @@ const {
   getPodcastAudioOpenAI,
   canUserUseTTS
 } = require('../tts/ttsEngine.openai');
-
-const fs = require('fs');
-const path = require('path');
 
 const activeQueue = new Map();
 const recentUsers = new Map();
@@ -58,41 +55,22 @@ setInterval(() => {
   }
 }, 20_000);
 
-let playCount = 0;
-
 async function playAudio(connection, audioBuffer) {
   try {
-    playCount++;
-    console.log(`🟢 [SHIMON] playAudio #${playCount}: Buffer? ${Buffer.isBuffer(audioBuffer)}, size: ${audioBuffer?.length}`);
-
-    // שמור כל Buffer שמתקבל ל־mp3 לבדיקה:
-    const filename = path.join(__dirname, `debug-shimon-${playCount}.mp3`);
-    try {
-      fs.writeFileSync(filename, audioBuffer);
-      console.log(`💾 [SHIMON] Saved MP3: ${filename} (size: ${audioBuffer.length})`);
-      // <<< הדפס BASE64 כאן!
-      console.log('BASE64_MP3_START:', audioBuffer.toString('base64').slice(0, 2000));
-    } catch (err) {
-      console.error('⚠️ שמירת Buffer לקובץ נכשלה:', err.message);
-    }
-
     if (!Buffer.isBuffer(audioBuffer)) {
       console.error('🛑 Buffer לא תקין!', typeof audioBuffer, audioBuffer);
       return;
     }
-
     let resource = createAudioResource(audioBuffer);
     let player = createAudioPlayer();
     connection.subscribe(player);
     player.play(resource);
     await entersState(player, AudioPlayerStatus.Idle, 15_000);
     if (player) player.stop();
-    console.log('[SHIMON] Audio נוגן בהצלחה!');
   } catch (err) {
     console.error('🛑 השמעה נכשלה – exception:', err.message);
   }
 }
-
 
 // זיהוי "קרציות"
 function isUserAnnoying(userId) {

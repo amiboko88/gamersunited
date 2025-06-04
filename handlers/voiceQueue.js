@@ -7,6 +7,7 @@ const {
   entersState,
   AudioPlayerStatus
 } = require('@discordjs/voice');
+const { Readable } = require('stream');
 
 const {
   getShortTTSByProfile,
@@ -61,19 +62,24 @@ async function playAudio(connection, audioBuffer) {
       console.error('🛑 Buffer לא תקין!', typeof audioBuffer, audioBuffer);
       return;
     }
-    console.log(`🔊 משמיע אודיו (${audioBuffer.length} bytes)`); // לוג חדש
-    let resource = createAudioResource(audioBuffer);
-    let player = createAudioPlayer();
+
+    const stream = Readable.from(audioBuffer);
+    const resource = createAudioResource(stream); // ✅ עטיפה תקינה
+
+    const player = createAudioPlayer();
     connection.subscribe(player);
     player.play(resource);
+
+    console.log(`🔊 השמעה התחילה (גודל: ${audioBuffer.length} bytes)`);
+
     await entersState(player, AudioPlayerStatus.Idle, 15000);
+
     if (player) player.stop();
   } catch (err) {
     console.error('🛑 השמעה נכשלה – exception:', err.message);
   }
 }
 
-// זיהוי קרציות
 function isUserAnnoying(userId) {
   const now = Date.now();
   const timestamps = recentUsers.get(userId) || [];
@@ -82,11 +88,9 @@ function isUserAnnoying(userId) {
   return newTimestamps.length >= 3;
 }
 
-// ניהול תדירות שמעון
 function shouldShimonSpeak(channelId) {
-  return true; // ביטול זמני של Cooldown
+  return true; // ⛳ ביטול זמני של Cooldown
 }
-
 function markShimonSpoken(channelId) {
   recentUsers.set('shimon-last-spoken-' + channelId, Date.now());
 }
@@ -120,13 +124,11 @@ async function processUserSmart(member, channel) {
 
     console.log(`📦 TTS Batch: ${displayNames.join(', ')}`);
 
-    // חסימת קרציות
     if (userIds.some(isUserAnnoying)) {
       console.log(`❌ חסימת קרציות`);
       continue;
     }
 
-    // נטרול זמני של בקרת שימוש
     let blocked = false;
     for (const user of batch) {
       const ok = await canUserUseTTS(user.member.id, 10);
@@ -137,7 +139,6 @@ async function processUserSmart(member, channel) {
       continue;
     }
 
-    // דיבור קבוצתי או אישי
     const usePodcast = batch.length >= GROUP_MIN;
     console.log(`🧠 שימוש ב־${usePodcast ? 'Podcast' : 'Single'}`);
 
@@ -173,7 +174,6 @@ async function processUserSmart(member, channel) {
 
   connectionLocks.delete(key);
 }
-
 
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));

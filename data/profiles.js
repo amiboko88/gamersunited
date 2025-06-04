@@ -119,13 +119,9 @@ default: [
   
 };
 
-// ✅ זוהי הפונקציה החדשה שאתה מוסיף
-function getProfileByUserId(userId) {
-  return { lines: playerProfiles[userId] };
-}
 
 // ✅ ואלו ההחזרות בסוף הקובץ
 module.exports = {
   playerProfiles,
-  getProfileByUserId
+  
 };

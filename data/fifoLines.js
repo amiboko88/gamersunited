@@ -1,4 +1,5 @@
 // 📁 fifoLines.js – מאגר משפטים מותאמים אישית לפי שמות
+const { playerProfiles } = require('./profiles');
 
 const personalPodcastScripts = {
 "420939460725964801": [
@@ -271,6 +272,7 @@ const fallbackScripts = [
   
 ];
 
+// ⏬ פונקציה שמחזירה תסריט לפי userId
 function getScriptByUserId(userId) {
   const scripts = personalPodcastScripts[userId];
   if (scripts && scripts.length > 0) {
@@ -279,6 +281,18 @@ function getScriptByUserId(userId) {
   return fallbackScripts[Math.floor(Math.random() * fallbackScripts.length)];
 }
 
+// 🧠 פונקציית שורת פתיחה לפי פרופיל FIFO (ל-TTS רגיל)
+function getLineForUser(userId, displayName = '') {
+  const profileLines = playerProfiles[userId];
+  if (Array.isArray(profileLines) && profileLines.length > 0) {
+    const randomIndex = Math.floor(Math.random() * profileLines.length);
+    return profileLines[randomIndex];
+  }
+
+  const defaultLines = playerProfiles['default'] || [];
+  const fallback = defaultLines[Math.floor(Math.random() * defaultLines.length)];
+  return fallback.replace('כֻּלָּם', displayName || 'כֻּלָּם');
+}
 /**
  * האם המשתמש הזה נדיר (מעט פודקאסטים)
  * נשתמש בזה כדי להעדיף אותו בעת בחירת fallback או לוגיקת חשיפה
@@ -289,9 +303,11 @@ function isRareUser(userId, userStats) {
   return podcastAppearances < 3;
 }
 
+
+
 module.exports = {
+  getLineForUser,
   getScriptByUserId,
-  personalPodcastScripts,
   fallbackScripts,
   isRareUser // ✅ הוספנו תמיכה מתקדמת
 };

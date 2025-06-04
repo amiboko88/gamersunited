@@ -5,7 +5,7 @@ const admin = require('firebase-admin');
 const { log } = require('../utils/logger');
 const { playerProfiles } = require('../data/profiles');
 const { getScriptByUserId, fallbackScripts } = require('../data/fifoLines');
-const { shouldUseFallback, registerTTSUsage } = require('./ttsQuotaManager');
+// const { shouldUseFallback, registerTTSUsage } = require('./ttsQuotaManager'); // 👈 מושבת זמנית
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -18,15 +18,12 @@ function getVoiceName(speaker = 'shimon') {
   return VOICE_MAP[speaker] || VOICE_MAP['shimon'];
 }
 
+// 👇 השבתת Fallback זמנית
 async function checkOpenAIQuota(textLength) {
-  const overQuota = await shouldUseFallback();
-  if (overQuota) return false;
-  await registerTTSUsage(textLength);
-  return true;
+  return true; // מאפשר הכל לבדיקה
 }
 
 async function synthesizeOpenAITTS(text, speaker = 'shimon') {
-  // טקסט עובר כמו שהוא! (אין עיבוד ניקוד)
   const allowed = await checkOpenAIQuota(text.length);
   if (!allowed) {
     log(`🛑 שמעון (OpenAI) השתתק – עברנו מגבלה`);

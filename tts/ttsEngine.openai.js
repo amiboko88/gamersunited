@@ -10,7 +10,7 @@ const { getScriptByUserId, fallbackScripts } = require('../data/fifoLines');
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 const VOICE_MAP = {
-  shimon: 'onyx',
+  shimon: 'nova',
   shirley: 'shimmer'
 };
 
@@ -76,14 +76,21 @@ async function saveTTSAudit(data) {
 }
 
 async function getShortTTSByProfile(member) {
-  const userId = member.user.id;
-  const profile = playerProfiles[userId] || playerProfiles['default'];
-  const lines = Array.isArray(profile) && profile.length > 0 ? profile : playerProfiles['default'];
-  const sentence = lines[Math.floor(Math.random() * lines.length)];
-  const speaker = Math.random() < 0.5 ? 'shimon' : 'shirley';
-  log(`🗣️ OpenAI TTS אישי ל־${member.displayName}: ${sentence}`);
-  return synthesizeOpenAITTS(sentence, speaker);
+  const userId = member.id;
+  const displayName = member.displayName;
+  let text = getLineForUser(userId, displayName);
+
+  text = cleanTextForTTS(text); // ✅ עיבוד מותאם אישית לקולות nova/shimmer
+
+  const voice = VOICE_MAP.shimon;
+
+  console.log(`🗣️ OpenAI TTS אישי ל־${displayName}: ${text}`);
+  const mp3Buffer = await generateTTSWithOpenAI(text, voice);
+
+  console.log(`🎙️ OpenAI TTS (${voice}) – ${text.length} תווים`);
+  return mp3Buffer;
 }
+
 
 async function getPodcastAudioOpenAI(displayNames = [], ids = []) {
   const buffers = [];
@@ -103,6 +110,58 @@ async function getPodcastAudioOpenAI(displayNames = [], ids = []) {
 async function canUserUseTTS(userId, limit = 5) {
   return true; // ⛳ ביטול מגבלת שימוש אישי לבדיקה חופשית
 }
+
+// 🧠 עיבוד טקסט חכם במיוחד עבור קריינות בעברית לקולות nova (שמעון) ו-shimmer (שירלי)
+// מתואם עם fifoLines.js ו-profiles.js למניעת כפל ביטוי או תקיעה בדיבור
+
+function cleanTextForTTS(text) {
+  if (!text || typeof text !== 'string') return '';
+
+  // הגדרות מפתח: מילים שדורשות עיבוד סרקסטי עם עצירה או זרימה
+  const pauseWords = ['יאללה', 'שמע', 'טוב', 'אחי', 'כפרה', 'הלו', 'נו', 'די'];
+  const openingWords = ['היי', 'אמאלה', 'פאק', 'בחייאת'];
+  const replacements = [
+    { pattern: /[!?]{2,}/g, replacement: '!' },          // סימני קריאה/שאלה כפולים
+    { pattern: /\s{2,}/g, replacement: ' ' },             // רווחים מיותרים
+    { pattern: /\.{3,}/g, replacement: '...' },           // שלוש נקודות
+    { pattern: /([א-ת])\1{2,}/g, replacement: '$1' },     // אותיות חוזרות ('ייייי')
+    { pattern: /(?:\n|\r|\r\n)/g, replacement: ' ' }      // שורות חדשות → רווח
+  ];
+
+  let cleaned = text.trim();
+
+  // שלב 1: תיקונים כלליים
+  for (const { pattern, replacement } of replacements) {
+    cleaned = cleaned.replace(pattern, replacement);
+  }
+
+  // שלב 2: עיבוד מילים שנדרשות לעצירה קולית (לפי nova)
+  for (const word of pauseWords) {
+    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    cleaned = cleaned.replace(regex, match => {
+      return cleaned.includes(`${match}...`) ? match : `${match}...`;
+    });
+  }
+
+  // שלב 3: הוספת פסיקים אחרי מילות פתיחה
+  for (const word of openingWords) {
+    const regex = new RegExp(`\\b${word}(?![.,…])\\b`, 'gi');
+    cleaned = cleaned.replace(regex, `${word},`);
+  }
+
+  // שלב 4: ניקוי כפילויות שנגרמו מהחלפות
+  cleaned = cleaned
+    .replace(/\.{4,}/g, '...')  // מניעת ארבע נקודות או יותר
+    .replace(/,{2,}/g, ',')     // פסיקים כפולים
+    .replace(/\.\s+\./g, '.')   // נקודה נקודה
+    .trim();
+
+  return cleaned;
+}
+
+
+
+
 
 module.exports = {
   synthesizeOpenAITTS,

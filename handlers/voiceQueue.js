@@ -100,8 +100,12 @@ async function processUserSmart(member, channel) {
   const queue = activeQueue.get(key);
 
   queue.push({ member, timestamp: Date.now() });
+  console.log(`➡️ הוסף ל־TTS Queue: ${member.user.tag}`);
 
-  if (connectionLocks.has(key)) return;
+  if (connectionLocks.has(key)) {
+    console.log(`⏳ חיבור פעיל קיים – ממתין`);
+    return;
+  }
   connectionLocks.add(key);
 
   while (queue.length > 0) {
@@ -114,35 +118,50 @@ async function processUserSmart(member, channel) {
     const userIds = batch.map(x => x.member.id);
     const displayNames = batch.map(x => x.member.displayName);
 
-    if (userIds.some(isUserAnnoying)) continue;
+    console.log(`📦 TTS Batch: ${displayNames.join(', ')}`);
 
+    // חסימת קרציות
+    if (userIds.some(isUserAnnoying)) {
+      console.log(`❌ חסימת קרציות`);
+      continue;
+    }
+
+    // נטרול זמני של בקרת שימוש
     let blocked = false;
     for (const user of batch) {
-      if (!(await canUserUseTTS(user.member.id, 10))) blocked = true;
+      const ok = await canUserUseTTS(user.member.id, 10);
+      if (!ok) blocked = true;
     }
-    if (blocked) continue;
+    if (blocked) {
+      console.log(`⛔ חסימה לפי שימוש`);
+      continue;
+    }
 
+    // דיבור קבוצתי או אישי
     const usePodcast = batch.length >= GROUP_MIN;
-    if (!shouldShimonSpeak(channel.id)) {
-  console.log(`⏳ שמעון עדיין ב־Cooldown`);
-  continue;
-}
+    console.log(`🧠 שימוש ב־${usePodcast ? 'Podcast' : 'Single'}`);
 
     let audioBuffer;
+
     try {
       if (usePodcast) {
         audioBuffer = await getPodcastAudioOpenAI(displayNames, userIds);
       } else {
         audioBuffer = await getShortTTSByProfile(batch[0].member);
-        if (!Buffer.isBuffer(audioBuffer)) throw new Error('Single TTS audioBuffer אינו Buffer');
       }
     } catch (err) {
-      console.error(`TTS error:`, err);
+      console.error(`❌ שגיאה ב־TTS`, err);
+      continue;
+    }
+
+    if (!Buffer.isBuffer(audioBuffer)) {
+      console.error('🛑 Buffer לא חוקי:', audioBuffer);
       continue;
     }
 
     try {
       const connection = await getOrCreateConnection(channel);
+      console.log(`🔊 משמיע אודיו (${audioBuffer.length} bytes)`);
       await playAudio(connection, audioBuffer);
       markShimonSpoken(channel.id);
     } catch (err) {
@@ -154,6 +173,7 @@ async function processUserSmart(member, channel) {
 
   connectionLocks.delete(key);
 }
+
 
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));

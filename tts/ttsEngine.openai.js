@@ -3,9 +3,7 @@
 const axios = require('axios');
 const admin = require('firebase-admin');
 const { log } = require('../utils/logger');
-const { playerProfiles } = require('../data/profiles');
 const { getLineForUser, getScriptByUserId, fallbackScripts } = require('../data/fifoLines');
-// const { shouldUseFallback, registerTTSUsage } = require('./ttsQuotaManager'); // 👈 מושבת זמנית
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -18,16 +16,15 @@ function getVoiceName(speaker = 'shimon') {
   return VOICE_MAP[speaker] || VOICE_MAP['shimon'];
 }
 
-// 👇 השבתת Fallback זמנית
 async function checkOpenAIQuota(textLength) {
-  return true; // מאפשר הכל לבדיקה
+  return true;
 }
 
 async function synthesizeOpenAITTS(text, speaker = 'shimon') {
   const allowed = await checkOpenAIQuota(text.length);
   if (!allowed) {
     log(`🛑 שמעון (OpenAI) השתתק – עברנו מגבלה`);
-    throw new Error("❌ שמעון עבר מגבלה יומית/חודשית, לא הופק קול!");
+    throw new Error("❌ שמעון עבר מגבלה יומית/שבועית");
   }
 
   const voice = getVoiceName(speaker);
@@ -79,43 +76,58 @@ async function getShortTTSByProfile(member) {
   const userId = member.id;
   const displayName = member.displayName;
   let text = getLineForUser(userId, displayName);
-
-  text = cleanTextForTTS(text); // ✅ עיבוד מותאם אישית לקולות nova/shimmer
-
+  text = cleanTextForTTS(text);
   const voice = VOICE_MAP.shimon;
-
-  console.log(`🗣️ OpenAI TTS אישי ל־${displayName}: ${text}`);
-  const mp3Buffer = await synthesizeOpenAITTS(text, voice);
-
-  console.log(`🎙️ OpenAI TTS (${voice}) – ${text.length} תווים`);
+  log(`🗣️ OpenAI TTS אישי ל־${displayName}: ${text}`);
+  const mp3Buffer = await synthesizeOpenAITTS(text, 'shimon');
   return mp3Buffer;
 }
 
-
-async function getPodcastAudioOpenAI(displayNames = [], ids = []) {
+// 🧠 תסריט פודקאסט עם לוגיקה מתקדמת
+async function getPodcastAudioOpenAI(displayNames = [], ids = [], joinTimestamps = {}) {
   const buffers = [];
-  const hasCustom = ids.length && ids.some(uid => getScriptByUserId(uid));
-  const userScripts = hasCustom
-    ? ids.map(uid => getScriptByUserId(uid))
-    : [fallbackScripts[Math.floor(Math.random() * fallbackScripts.length)]];
+  const participants = ids.map((uid, i) => ({
+    id: uid,
+    name: displayNames[i] || 'מִשְׁתַּמֵּשׁ',
+    joinedAt: joinTimestamps[uid] || 0,
+    script: getScriptByUserId(uid)
+  }));
 
-  for (const script of userScripts) {
-    const { shimon, shirley, punch } = script;
-    if (shimon) buffers.push(await synthesizeOpenAITTS(shimon, 'shimon'));
-    if (shirley) buffers.push(await synthesizeOpenAITTS(shirley, 'shirley'));
-    if (punch) buffers.push(await synthesizeOpenAITTS(punch, Math.random() < 0.5 ? 'shimon' : 'shirley'));
+  // מיון לפי זמן הצטרפות
+  participants.sort((a, b) => a.joinedAt - b.joinedAt);
+
+  // תסריטים מותאמים או נפילה לגנרי
+  const hasCustom = participants.some(p => p.script?.shimon || p.script?.shirley);
+  const scriptsToUse = hasCustom
+    ? participants.map(p => p.script || getRandomFallbackScript())
+    : [getRandomFallbackScript()];
+
+  for (const script of scriptsToUse) {
+    if (script.shimon) buffers.push(await synthesizeOpenAITTS(cleanTextForTTS(script.shimon), 'shimon'));
+    if (script.shirley) buffers.push(await synthesizeOpenAITTS(cleanTextForTTS(script.shirley), 'shirley'));
+  }
+
+  // אם יש מישהו עם פרופיל אישי – פאנץ'
+  if (participants.some(p => p.script)) {
+    const punchScript = getRandomFallbackScript().punch;
+    if (punchScript) {
+      const randomSpeaker = Math.random() < 0.5 ? 'shimon' : 'shirley';
+      buffers.push(await synthesizeOpenAITTS(cleanTextForTTS(punchScript), randomSpeaker));
+    }
   }
 
   return Buffer.concat(buffers);
 }
 
-async function canUserUseTTS(userId, limit = 5) {
-  return true; // ⛳ ביטול מגבלת שימוש אישי לבדיקה חופשית
+function getRandomFallbackScript() {
+  return fallbackScripts[Math.floor(Math.random() * fallbackScripts.length)];
 }
 
-// 🧠 עיבוד טקסט חכם במיוחד עבור קריינות בעברית לקולות nova (שמעון) ו-shimmer (שירלי)
-// מתואם עם fifoLines.js ו-profiles.js למניעת כפל ביטוי או תקיעה בדיבור
+async function canUserUseTTS(userId, limit = 5) {
+  return true;
+}
 
+// 🧠 עיבוד טקסט מתקדם מותאם לקולות עבריים (OpenAI)
 function cleanTextForTTS(text) {
   if (!text || typeof text !== 'string') return '';
 
@@ -137,9 +149,9 @@ function cleanTextForTTS(text) {
 
   for (const word of pauseWords) {
     const regex = new RegExp(`\\b${word}\\b`, 'gi');
-    cleaned = cleaned.replace(regex, match =>
-      cleaned.includes(`${match}...`) ? match : `${match}...`
-    );
+    cleaned = cleaned.replace(regex, match => {
+      return cleaned.includes(`${match}...`) ? match : `${match}...`;
+    });
   }
 
   for (const word of openingWords) {

@@ -121,6 +121,7 @@ async function processUserSmart(member, channel) {
 
     const userIds = batch.map(x => x.member.id);
     const displayNames = batch.map(x => x.member.displayName);
+    const joinTimestamps = Object.fromEntries(batch.map(x => [x.member.id, x.timestamp]));
 
     console.log(`📦 TTS Batch: ${displayNames.join(', ')}`);
 
@@ -146,7 +147,7 @@ async function processUserSmart(member, channel) {
 
     try {
       if (usePodcast) {
-        audioBuffer = await getPodcastAudioOpenAI(displayNames, userIds);
+        audioBuffer = await getPodcastAudioOpenAI(displayNames, userIds, joinTimestamps);
       } else {
         audioBuffer = await getShortTTSByProfile(batch[0].member);
       }

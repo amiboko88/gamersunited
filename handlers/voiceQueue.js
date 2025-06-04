@@ -84,10 +84,9 @@ function isUserAnnoying(userId) {
 
 // ניהול תדירות שמעון
 function shouldShimonSpeak(channelId) {
-  const lastSpoken = recentUsers.get('shimon-last-spoken-' + channelId) || 0;
-  if (Date.now() - lastSpoken < SHIMON_COOLDOWN) return false;
-  return true;
+  return true; // ביטול זמני של Cooldown
 }
+
 function markShimonSpoken(channelId) {
   recentUsers.set('shimon-last-spoken-' + channelId, Date.now());
 }
@@ -124,7 +123,10 @@ async function processUserSmart(member, channel) {
     if (blocked) continue;
 
     const usePodcast = batch.length >= GROUP_MIN;
-    if (!shouldShimonSpeak(channel.id)) continue;
+    if (!shouldShimonSpeak(channel.id)) {
+  console.log(`⏳ שמעון עדיין ב־Cooldown`);
+  continue;
+}
 
     let audioBuffer;
     try {

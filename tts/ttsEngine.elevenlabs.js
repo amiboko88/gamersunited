@@ -8,8 +8,8 @@ const ELEVEN_API_KEY = process.env.ELEVEN_API_KEY;
 const ELEVEN_BASE_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 
 const VOICE_MAP = {
-  shimon: 'EXAVITQu4vr4xnSDxMaL',   // קול עברי גברי
-  shirley: 'pNInz6obpgDQGcFmaJgB'   // קול עברי נשי
+  shimon: '876MHA6EtWKaHTEGzjy5',   // קול עברי גברי
+  shirley: 'tnSpp4vdxKPjI9w0GnoV'   // קול עברי נשי
 };
 
 function getVoiceId(speaker = 'shimon') {

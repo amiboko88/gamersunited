@@ -1,4 +1,4 @@
-// 📁 handlers/voiceQueue.js – FIFO TTS: תור, פודקאסטים, OpenAI בלבד, Buffer נקי
+// 📁 handlers/voiceQueue.js – FIFO TTS: תור, פודקאסטים, ElevenLabs בלבד, Buffer נקי
 
 const {
   joinVoiceChannel,
@@ -9,11 +9,12 @@ const {
 } = require('@discordjs/voice');
 const { Readable } = require('stream');
 
+// ⬅️ יבוא ממנוע ElevenLabs החדש
 const {
   getShortTTSByProfile,
-  getPodcastAudioOpenAI,
+  getPodcastAudioEleven,
   canUserUseTTS
-} = require('../tts/ttsEngine.openai');
+} = require('../tts/ttsEngine.elevenlabs');
 
 const activeQueue = new Map();
 const recentUsers = new Map();
@@ -64,7 +65,7 @@ async function playAudio(connection, audioBuffer) {
     }
 
     const stream = Readable.from(audioBuffer);
-    const resource = createAudioResource(stream); // ✅ עטיפה תקינה
+    const resource = createAudioResource(stream);
 
     const player = createAudioPlayer();
     connection.subscribe(player);
@@ -73,7 +74,6 @@ async function playAudio(connection, audioBuffer) {
     console.log(`🔊 השמעה התחילה (גודל: ${audioBuffer.length} bytes)`);
 
     await entersState(player, AudioPlayerStatus.Idle, 15000);
-
     if (player) player.stop();
   } catch (err) {
     console.error('🛑 השמעה נכשלה – exception:', err.message);
@@ -89,7 +89,7 @@ function isUserAnnoying(userId) {
 }
 
 function shouldShimonSpeak(channelId) {
-  return true; // ⛳ ביטול זמני של Cooldown
+  return true;
 }
 function markShimonSpoken(channelId) {
   recentUsers.set('shimon-last-spoken-' + channelId, Date.now());
@@ -147,7 +147,7 @@ async function processUserSmart(member, channel) {
 
     try {
       if (usePodcast) {
-        audioBuffer = await getPodcastAudioOpenAI(displayNames, userIds, joinTimestamps);
+        audioBuffer = await getPodcastAudioEleven(displayNames, userIds, joinTimestamps);
       } else {
         audioBuffer = await getShortTTSByProfile(batch[0].member);
       }

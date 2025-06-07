@@ -1,49 +1,44 @@
-// 📁 ttsEngine.elevenlabs.js – FIFO TTS via ElevenLabs – גרסה מלאה כולל ניהול מגבלות
-
 const axios = require('axios');
 const admin = require('firebase-admin');
 const { log } = require('../utils/logger');
 const { getLineForUser, getScriptByUserId, fallbackScripts } = require('../data/fifoLines');
-const { registerTTSUsage } = require('./ttsQuotaManager.eleven'); // ✅ ניהול מגבלות
+const { registerTTSUsage } = require('./ttsQuotaManager.eleven');
 
 const ELEVEN_API_KEY = process.env.ELEVEN_API_KEY;
 const ELEVEN_BASE_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 
 const VOICE_MAP = {
-  shimon: 'pNInz6obpgDQGcFmaJgB',   // שמעון – קול גברי חזק
-  shirley: 'EXAVITQu4vr4xnSDxMaL'   // שירלי – קול נשי גונח
+  shimon: 'EXAVITQu4vr4xnSDxMaL',   // קול עברי גברי
+  shirley: 'pNInz6obpgDQGcFmaJgB'   // קול עברי נשי
 };
 
 function getVoiceId(speaker = 'shimon') {
   return VOICE_MAP[speaker] || VOICE_MAP['shimon'];
 }
 
-function injectStyleTags(text, speaker) {
+function getV3Tags(text, speaker) {
   if (!text || typeof text !== 'string') return text;
-
   const lowered = text.toLowerCase();
 
-  const isInsult = /תמות|פתטי|זבל|הפסד|תירוץ|קרציה|עוף|נשמה/.test(text);
-  const isSexy = /אוי|יאו+|נמסתי|חם לי|בוא|תירה בי|נמס|רועד/.test(text);
-  const isSarcastic = /ברוך הבא|מדהים|כל הכבוד|כפרה|בטח|נו באמת/.test(text);
-  const isShout = /[!]{1,}/.test(text);
-  const isPunch = text.length < 20;
+  const isInsult = /תמות|פתטי|זבל|הפסד|קרציה|עוף/.test(text);
+  const isSexy = /אוי|יאו+|נמסתי|חם לי|בוא|תירה בי/.test(text);
+  const isSarcastic = /ברוך הבא|מדהים|כל הכבוד|כפרה/.test(text);
+  const isShout = /!{1,}/.test(text);
+  const isShort = text.length < 20;
 
   if (speaker === 'shimon') {
-    let tag = '[angry]';
-    if (isInsult) tag = '[shouting][angry][laughs]';
-    else if (isShout) tag = '[shouting][angry]';
-    else if (isSarcastic) tag = '[sarcastic][laughs]';
-    else if (isPunch) tag = '[silly][laughs]';
-    return `${tag} ${text} [laughs]`;
+    if (isInsult) return `<shouting><angry>${text}</angry></shouting>`;
+    if (isShout) return `<shouting>${text}</shouting>`;
+    if (isSarcastic) return `<sarcastic>${text}</sarcastic>`;
+    if (isShort) return `<excited>${text}</excited>`;
+    return `<neutral>${text}</neutral>`;
   }
 
   if (speaker === 'shirley') {
-    let tag = '[soft]';
-    if (isSexy) tag = '[moaning][excited]';
-    else if (isSarcastic) tag = '[giggles][flirty]';
-    else if (isPunch) tag = '[teasing][giggles]';
-    return `${tag} ${text} [laughs]`;
+    if (isSexy) return `<excited>${text}</excited>`;
+    if (isSarcastic) return `<sarcastic>${text}</sarcastic>`;
+    if (isShort) return `<emotional>${text}</emotional>`;
+    return `<soft>${text}</soft>`;
   }
 
   return text;
@@ -51,19 +46,18 @@ function injectStyleTags(text, speaker) {
 
 async function synthesizeElevenTTS(text, speaker = 'shimon') {
   const voiceId = getVoiceId(speaker);
-  const styledText = injectStyleTags(text, speaker);
+  const styledText = getV3Tags(cleanTextForTTS(text), speaker);
 
-  log(`🎙️ ElevenLabs TTS (${speaker}) – ${styledText.length} תווים`);
+  log(`🎙️ ElevenLabs V3 TTS (${speaker}) – ${styledText.length} תווים`);
 
   const response = await axios.post(
     `${ELEVEN_BASE_URL}/${voiceId}/stream`,
     {
       text: styledText,
-      model_id: 'eleven_multilingual_v2',
+      model_id: 'eleven_v3',
       voice_settings: {
         stability: 0.45,
-        similarity_boost: 0.75,
-        style: 0.65
+        similarity_boost: 0.75
       }
     },
     {
@@ -79,12 +73,13 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
     throw new Error("🔇 ElevenLabs לא החזיר קול תקין");
   }
 
-  await registerTTSUsage(styledText.length, 1); // ✅ נרשם שימוש
+  await registerTTSUsage(styledText.length, 1);
 
   await saveTTSAudit({
     text: styledText,
     speaker,
     voiceId,
+    model: 'eleven_v3',
     length: styledText.length,
     timestamp: new Date().toISOString()
   });
@@ -105,7 +100,6 @@ async function getShortTTSByProfile(member) {
   const userId = member.id;
   const displayName = member.displayName;
   let text = getLineForUser(userId, displayName);
-  text = cleanTextForTTS(text);
   const mp3Buffer = await synthesizeElevenTTS(text, 'shimon');
   return mp3Buffer;
 }
@@ -127,15 +121,15 @@ async function getPodcastAudioEleven(displayNames = [], ids = [], joinTimestamps
     : [getRandomFallbackScript()];
 
   for (const script of scriptsToUse) {
-    if (script.shimon) buffers.push(await synthesizeElevenTTS(cleanTextForTTS(script.shimon), 'shimon'));
-    if (script.shirley) buffers.push(await synthesizeElevenTTS(cleanTextForTTS(script.shirley), 'shirley'));
+    if (script.shimon) buffers.push(await synthesizeElevenTTS(script.shimon, 'shimon'));
+    if (script.shirley) buffers.push(await synthesizeElevenTTS(script.shirley, 'shirley'));
   }
 
   if (participants.some(p => p.script)) {
     const punchScript = getRandomFallbackScript().punch;
     if (punchScript) {
       const randomSpeaker = Math.random() < 0.5 ? 'shimon' : 'shirley';
-      buffers.push(await synthesizeElevenTTS(cleanTextForTTS(punchScript), randomSpeaker));
+      buffers.push(await synthesizeElevenTTS(punchScript, randomSpeaker));
     }
   }
 

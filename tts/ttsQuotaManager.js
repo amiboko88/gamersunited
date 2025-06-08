@@ -1,13 +1,10 @@
-// 📁 tts/ttsQuotaManager.js – ניהול מגבלות TTS, רישום שימוש, ו־Fallback ל־OpenAI בלבד
-
 const admin = require('firebase-admin');
 
-const DAILY_CHAR_LIMIT = 10000;
-const DAILY_CALL_LIMIT = 15;
-const MONTHLY_CHAR_LIMIT = 300000;
-const COLLECTION_NAME = 'openaiTtsUsage'; // ⬅️ שימוש בלעדי ל־OpenAI!
+const DAILY_CHAR_LIMIT = 15000;
+const DAILY_CALL_LIMIT = 30;
+const MONTHLY_CHAR_LIMIT = 500000;
+const COLLECTION_NAME = 'azureTtsUsage';
 
-// פונקציות עזר
 function getDateKey() {
   return new Date().toISOString().split('T')[0];
 }
@@ -17,7 +14,6 @@ function getMonthKey() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
-// קבלת סטטיסטיקת שימוש
 async function getTTSQuotaReport() {
   try {
     const db = admin.firestore();
@@ -35,15 +31,13 @@ async function getTTSQuotaReport() {
     const daily = dailySnap.exists ? dailySnap.data() : {};
     const monthly = monthlySnap.exists ? monthlySnap.data() : {};
 
-const dailyCharacters = typeof daily.totalCharacters === 'number' ? daily.totalCharacters : 0;
-const dailyCalls = typeof daily.totalCalls === 'number' ? daily.totalCalls : 0;
-const monthlyCharacters = typeof monthly.totalCharacters === 'number' ? monthly.totalCharacters : 0;
+    const dailyCharacters = typeof daily.totalCharacters === 'number' ? daily.totalCharacters : 0;
+    const dailyCalls = typeof daily.totalCalls === 'number' ? daily.totalCalls : 0;
+    const monthlyCharacters = typeof monthly.totalCharacters === 'number' ? monthly.totalCharacters : 0;
 
-
-    // סטטוס יפה לעברית
     const getStatus = (used, limit) => {
-      if (used >= limit) return '🔴 המגבלה נוצלה במלואה';
-      if (used >= limit * 0.9) return '🟠 קרוב למגבלה';
+      if (used >= limit) return '🔴 חרגת מהמגבלה';
+      if (used >= limit * 0.9) return '🟠 קרוב מאוד למגבלה';
       return '🟢 תקין';
     };
 
@@ -70,7 +64,6 @@ const monthlyCharacters = typeof monthly.totalCharacters === 'number' ? monthly.
   }
 }
 
-// האם צריך לעבור ל־Fallback לפי מגבלות?
 async function shouldUseFallback() {
   const report = await getTTSQuotaReport();
   if (!report) return true;
@@ -81,7 +74,6 @@ async function shouldUseFallback() {
   return nearingLimit;
 }
 
-// ✅ רישום שימוש אמיתי ב־TTS (תווים/קריאות)
 async function registerTTSUsage(chars = 0, calls = 1) {
   try {
     const db = admin.firestore();

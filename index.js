@@ -3,10 +3,10 @@ const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const schedule = require('node-schedule');
 
 // 🎮 Scheduler Features
-const { postOrUpdateWeeklySchedule } = require('./handlers/scheduleUpdater');
 const { startStatsUpdater, updateStatsChannels } = require('./handlers/statsUpdater');
 const handleRSVP = require('./handlers/scheduleButtonsHandler');
-const { data: activityBoardData, execute: activityBoardExecute } = require('./commands/activityBoard');
+const { startFifoWarzoneAnnouncer } = require('./handlers/fifoWarzoneAnnouncer');
+
 
 // ✅ עזרה חדשה עם כפתורים
 const { data: helpData, execute: helpExecute, handleButton: helpHandleButton } = require('./commands/help');
@@ -25,7 +25,6 @@ const { execute: soundExecute, data: soundData } = require('./handlers/soundboar
 const { data: birthdayCommands, execute: birthdayExecute } = require('./commands/birthdayCommands');
 const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
 const { registerMvpCommand } = require('./commands/mvpDisplay');
-const { startMiniGameScheduler } = require('./handlers/miniGames');
 const { startBirthdayTracker } = require('./handlers/birthdayTracker');
 const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayReminder');
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
@@ -33,7 +32,6 @@ const handleMusicControls = require('./handlers/musicControls');
 const ttsCommand = require('./commands/ttsCommand');
 const smartChat = require('./handlers/smartChat');
 const welcomeImage = require('./handlers/welcomeImage');
-const { startActivityScheduler } = require('./handlers/activityScheduler');
 const { showBirthdayModal, handleBirthdayModalSubmit } = require('./handlers/birthdayModal');
 const {
   setupVerificationMessage,
@@ -93,6 +91,7 @@ client.once('ready', async () => {
   await setupVerificationMessage(client);
   await sendPublicRulesEmbed(client);
   await updateStatsChannels(client);
+  startFifoWarzoneAnnouncer(client);
   startStatsUpdater(client);
   startWeeklyRulesUpdate(client);
   welcomeImage(client);
@@ -100,26 +99,14 @@ client.once('ready', async () => {
   startLeaderboardUpdater(client);
   startPresenceLoop(client);
   startPresenceRotation(client);
-  startActivityScheduler(client);
   setupMemberTracker(client);
   startBirthdayTracker(client);
   startWeeklyBirthdayReminder(client);
-  startMiniGameScheduler(client);
   startCleanupScheduler(client);
   startMvpScheduler(client, db);
   await startMvpReactionWatcher(client, db);
 
-  // ⏰ תזמון לוח פעילות שבועי — כל מוצ"ש ב־21:00 (שעון שרת)
-  schedule.scheduleJob('0 21 * * 6', async () => {
-    try {
-      await postOrUpdateWeeklySchedule(client);
-      console.log('🗓️ לוח פעילות שבועי נשלח אוטומטית');
-    } catch (e) {
-      console.error('❌ תקלה בלוח פעילות:', e);
-    }
-  });
-
-  console.log(`שימי הבוט באוויר! ${client.user.tag}`);
+  console.log(` הבוט באוויר! ${client.user.tag}`);
 
   // פקודות Slash
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
@@ -230,7 +217,6 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'updaterules') return refreshRulesExecute(interaction);
   if (commandName === 'rulestats') return rulesStatsExecute(interaction);
   if (commandName === 'tts') return ttsCommand.execute(interaction);
-  if (commandName === 'activity') return activityBoardExecute(interaction, client);
   if (commandName === 'leaderboard') return leaderboardExecute(interaction);
   // משתמשים Slash
   if (commandName === 'סאונדבורד') return soundExecute(interaction, client);

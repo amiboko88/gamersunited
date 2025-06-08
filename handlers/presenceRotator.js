@@ -3,15 +3,17 @@
 const { ActivityType } = require('discord.js');
 
 const statuses = [
-  { type: ActivityType.Playing, text: 'פיפו עם שחקנים מבולבלים 🎮' },
-  { type: ActivityType.Listening, text: 'לצרחות בוורזון 🎧' },
-  { type: ActivityType.Watching, text: 'מי עוזב ערוץ הפעם...' },
-  { type: ActivityType.Playing, text: '/פיפו עם 3 בקבוצה' },
-  { type: ActivityType.Listening, text: 'לתירוצים של שחקנים' },
-  { type: ActivityType.Competing, text: 'על תואר ה-MVP 🏆' },
-  { type: ActivityType.Watching, text: 'מי שותק בערוץ 🤫' },
-  { type: ActivityType.Playing, text: 'וורזון עד השעות הקטנות' }
+  { type: ActivityType.Playing, text: 'פיפו עם קרציות 👀' },
+  { type: ActivityType.Watching, text: 'מחכה ל-MVP 🏆' },
+  { type: ActivityType.Playing, text: 'וורזון – תתחילו כבר 🎮' },
+  { type: ActivityType.Playing, text: 'AFK אבל קולט הכל 🕵️‍♂️' },
+  { type: ActivityType.Listening, text: 'GG? מי אמר GG? 🎤' },
+  { type: ActivityType.Playing, text: 'שקט! ספאם בבוטים 🤫' },
+  { type: ActivityType.Playing, text: 'נשואים מתפרקים כאן 💔' },
+  { type: ActivityType.Watching, text: 'מי יגיד GG ראשון?' },
+  { type: ActivityType.Playing, text: 'ממתין ל־/fifo...' }
 ];
+
 
 function startPresenceRotation(client) {
   let index = 0;

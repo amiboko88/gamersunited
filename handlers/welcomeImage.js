@@ -21,19 +21,19 @@ module.exports = (client) => {
       const canvas = createCanvas(width, height);
       const ctx = canvas.getContext('2d');
 
-      // === רקע גרדיאנט – כהה למעלה, כתום-זהוב-אדמדם בתחתית ===
+      // === רקע גרדיאנט זהב-כהה מותאם ללוגו ===
       const gradient = ctx.createLinearGradient(0, 0, width, height);
-      gradient.addColorStop(0, "#181818");   // כהה למעלה (שחור-אפור)
-      gradient.addColorStop(0.45, "#33281b"); // גוון כהה חום־זהב
-      gradient.addColorStop(0.85, "#f3a021"); // זהב כתום (כמו הלוגו)
-      gradient.addColorStop(1, "#e36b13");   // אדמדם־כתום קל
+      gradient.addColorStop(0, "#181818");   // כהה שמאל למעלה
+      gradient.addColorStop(0.42, "#33281b"); // חום־זהב
+      gradient.addColorStop(0.8, "#f3a021"); // זהב כתום
+      gradient.addColorStop(1, "#e8c45a");   // זהוב-צהבהב
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
 
-      // עיגול פרופיל ענק במרכז עליון
-      const avatarSize = 155;
+      // === עיגול פרופיל ענק במרכז עליון ===
+      const avatarSize = 172; // יותר גדול!
       const avatarX = width / 2 - avatarSize / 2;
-      const avatarY = 45;
+      const avatarY = 44;
       ctx.save();
       ctx.beginPath();
       ctx.arc(width / 2, avatarY + avatarSize / 2, avatarSize / 2 + 8, 0, Math.PI * 2, true);
@@ -49,36 +49,36 @@ module.exports = (client) => {
       ctx.drawImage(avatar, avatarX, avatarY, avatarSize, avatarSize);
       ctx.restore();
 
-      // טקסט "ברוך הבא [שם משתמש]" באותה שורה, באמצע
-      ctx.font = 'bold 44px "Noto Sans Hebrew"';
+      // === טקסט "ברוך הבא [שם]" בשורה אחת, קצת יותר נמוך ===
+      ctx.font = 'bold 46px "Noto Sans Hebrew"';
       ctx.fillStyle = '#fff';
       ctx.textAlign = 'center';
       ctx.direction = 'rtl';
       const username = member.user.username;
-      ctx.fillText(`ברוך הבא ${username}`, width / 2, 235);
+      ctx.fillText(`ברוך הבא ${username}`, width / 2, 270); // הורדנו עוד יותר
 
-      // טקסט משתמש מספר – מתחת, בולט בצהוב
+      // === טקסט משתמש מספר – מתחת, זהוב, לא זז ===
       ctx.font = 'bold 30px "Noto Sans Hebrew"';
       ctx.fillStyle = '#FFE98B';
-      ctx.fillText(`משתמש מספר ${memberCount}`, width / 2, 285);
+      ctx.fillText(`משתמש מספר ${memberCount}`, width / 2, 320);
 
-      // לוגו בפינה שמאל תחתונה
-      const logoWidth = 68;
-      const logoHeight = 68;
-      const logoX = 40;
+      // === לוגו בפינה שמאל תחתונה ===
+      const logoWidth = 64;
+      const logoHeight = 64;
+      const logoX = 44;
       const logoY = height - logoHeight - 60;
       ctx.globalAlpha = 0.98;
       ctx.drawImage(logo, logoX, logoY, logoWidth, logoHeight);
       ctx.globalAlpha = 1.0;
 
-      // טקסט GAMERS UNITED IL – מתחת ללוגו, ממורכז
-      ctx.font = 'bold 20px "Noto Sans Hebrew"';
+      // === טקסט GAMERS UNITED IL קטן יותר, מתחת ללוגו וממוסגר היטב ===
+      ctx.font = 'bold 17px "Noto Sans Hebrew"';
       ctx.fillStyle = '#fff';
       ctx.textAlign = 'center';
       ctx.direction = 'ltr';
-      ctx.fillText('GAMERS UNITED IL', logoX + logoWidth / 2, logoY + logoHeight + 28);
+      ctx.fillText('GAMERS UNITED IL', logoX + logoWidth / 2, logoY + logoHeight + 22);
 
-      // המרת קנבס לתמונה
+      // === הפיכת קנבס לתמונה ===
       const buffer = canvas.toBuffer('image/png');
       const attachment = new AttachmentBuilder(buffer, { name: 'welcome.png' });
 

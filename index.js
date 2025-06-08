@@ -4,7 +4,6 @@ const schedule = require('node-schedule');
 
 // 🎮 Scheduler Features
 const { startStatsUpdater, updateStatsChannels } = require('./handlers/statsUpdater');
-const handleRSVP = require('./handlers/scheduleButtonsHandler');
 const { startFifoWarzoneAnnouncer } = require('./handlers/fifoWarzoneAnnouncer');
 
 

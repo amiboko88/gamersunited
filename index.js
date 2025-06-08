@@ -69,8 +69,7 @@ commands.push(
   rulesStatsData,
   ttsCommand.data,
   refreshRulesData,
-  activityBoardData
-);
+  );
 
 const client = new Client({
   intents: [

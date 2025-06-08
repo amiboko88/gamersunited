@@ -3,7 +3,7 @@
 const { EmbedBuilder, ChannelType } = require('discord.js');
 const db = require('../utils/firebase');
 const schedule = require('node-schedule');
-const { generateFifoGif } = require('./gifGenerator');
+const { generateProBanner } = require('./mediaGenerator');
 
 const TARGET_CHANNEL_ID = '1372283521447497759';
 const KEYWORDS = ['warzone', 'call of duty', 'black ops', 'mw3', 'mw2'];
@@ -59,11 +59,12 @@ async function sendWarzoneEmbed(client) {
     .setColor('#2F3136')
     .setTitle('🎮 שחקני WARZONE מחוברים עכשיו!')
     .setDescription(`**${warzonePlayers.size} שחקנים מחוברים:**\n${mentions}`)
-    .setImage('attachment://fifo.gif')
+    .setImage('attachment://probanner.webp')
     .setFooter({ text: `משחקים שזוהו: ${gameNames}` })
     .setTimestamp();
 
-  const gifBuffer = await generateFifoGif(warzonePlayers);
+  // 🧠 יצירת הבאנר הדינמי החדש
+  const imageBuffer = await generateProBanner(warzonePlayers);
 
   const channel = await client.channels.fetch(TARGET_CHANNEL_ID);
   if (!channel || channel.type !== ChannelType.GuildText) return;
@@ -72,7 +73,7 @@ async function sendWarzoneEmbed(client) {
 
   const message = await channel.send({
     embeds: [embed],
-    files: [{ attachment: gifBuffer, name: 'fifo.gif' }]
+    files: [{ attachment: imageBuffer, name: 'probanner.webp' }]
   });
 
   await saveLastMessageId(message.id);

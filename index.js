@@ -3,7 +3,7 @@ const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const schedule = require('node-schedule');
 
 // 🎮 Scheduler Features
-const { startStatsUpdater, safeUpdateStats } = require('./handlers/statsUpdater');
+const { startStatsUpdater } = require('./handlers/statsUpdater');
 const { startFifoWarzoneAnnouncer } = require('./handlers/fifoWarzoneAnnouncer');
 
 
@@ -122,25 +122,25 @@ client.once('ready', async () => {
 
 client.on('guildMemberAdd', async member => {
   await sendRulesToUser(member);
-  safeUpdateStats(client, 'join');
+ 
 });
 
 client.on('guildMemberRemove', () => {
-  safeUpdateStats(client, 'leave');
+  
 });
 
 client.on('guildMemberUpdate', () => {
-  safeUpdateStats(client, 'update');
+ 
 });
 
 client.on('voiceStateUpdate', (oldState, newState) => {
   handleVoiceStateUpdate(oldState, newState);
-  safeUpdateStats(client, 'voice');
+  
 });
 
 client.on('presenceUpdate', (oldPresence, newPresence) => {
   trackGamePresence(newPresence);
-  safeUpdateStats(client, 'presence');
+  
 });
 
 

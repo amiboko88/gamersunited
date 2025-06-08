@@ -3,7 +3,7 @@ const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const schedule = require('node-schedule');
 
 // 🎮 Scheduler Features
-const { startStatsUpdater, updateStatsChannels } = require('./handlers/statsUpdater');
+const { startStatsUpdater, safeUpdateStats } = require('./handlers/statsUpdater');
 const { startFifoWarzoneAnnouncer } = require('./handlers/fifoWarzoneAnnouncer');
 
 
@@ -88,7 +88,6 @@ client.once('ready', async () => {
   await hardSyncPresenceOnReady(client);
   await setupVerificationMessage(client);
   await sendPublicRulesEmbed(client);
-  await updateStatsChannels(client);
   startFifoWarzoneAnnouncer(client);
   startStatsUpdater(client);
   startWeeklyRulesUpdate(client);
@@ -123,27 +122,27 @@ client.once('ready', async () => {
 
 client.on('guildMemberAdd', async member => {
   await sendRulesToUser(member);
-  updateStatsChannels(client);
+  safeUpdateStats(client, 'join');
 });
 
-client.on('guildMemberRemove', member => {
-  updateStatsChannels(client);
+client.on('guildMemberRemove', () => {
+  safeUpdateStats(client, 'leave');
 });
 
-client.on('guildMemberUpdate', (oldMember, newMember) => {
-  updateStatsChannels(client);
+client.on('guildMemberUpdate', () => {
+  safeUpdateStats(client, 'update');
 });
 
 client.on('voiceStateUpdate', (oldState, newState) => {
   handleVoiceStateUpdate(oldState, newState);
-  updateStatsChannels(client);
+  safeUpdateStats(client, 'voice');
 });
 
-
-// 📡 נוכחות
 client.on('presenceUpdate', (oldPresence, newPresence) => {
   trackGamePresence(newPresence);
+  safeUpdateStats(client, 'presence');
 });
+
 
 
 

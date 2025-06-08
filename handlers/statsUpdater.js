@@ -1,85 +1,83 @@
 const dayjs = require('dayjs');
-const db = require('../utils/firebase');
 
-// תוספים ל־dayjs
-const isSameOrAfter = require('dayjs/plugin/isSameOrAfter');
-const localizedFormat = require('dayjs/plugin/localizedFormat');
-const customParseFormat = require('dayjs/plugin/customParseFormat');
-dayjs.extend(isSameOrAfter);
-dayjs.extend(localizedFormat);
-dayjs.extend(customParseFormat);
+const VOICE_SOURCE_CHANNEL_ID = '1231453923387379783'; // TEAM ROTATION
+let displayChannelId = null;
+let displayChannelCreatedAt = null;
+let lastActive = null;
 
-const STATS_CHANNEL_ID = '1381279896059248700'; // 🟦 עדכן ל-ID של ערוץ הטופיק
-const VERIFIED_ROLE_ID = '1120787309432938607';
+const DISPLAY_CHANNEL_NAME_PREFIX = '🎙️ בשיחה כעת:';
+const MIN_ACTIVE_DURATION = 1; // דקות
+const DELETE_AFTER = 5; // דקות
 
-let lastStatsUpdate = 0;
-const MIN_INTERVAL = 30 * 1000;
-
-async function updateStatsChannelTopic(client) {
+async function updateDisplayChannel(client) {
   const guild = client.guilds.cache.first();
   if (!guild) return;
-  const channel = guild.channels.cache.get(STATS_CHANNEL_ID);
-  if (!channel) return;
 
-  const onlineCount = guild.members.cache.filter(m =>
-    !m.user.bot && m.presence && ['online', 'idle', 'dnd'].includes(m.presence.status)
-  ).size;
+  const sourceChannel = guild.channels.cache.get(VOICE_SOURCE_CHANNEL_ID);
+  if (!sourceChannel) return;
 
-  const inVoiceCount = guild.channels.cache
-    .filter(c => c.type === 2)
-    .reduce((acc, c) => acc + c.members.filter(m => !m.user.bot).size, 0);
+  const count = sourceChannel.members.filter(m => !m.user.bot).size;
+  const now = dayjs();
 
-  const verifiedRole = guild.roles.cache.get(VERIFIED_ROLE_ID);
-  const verifiedCount = verifiedRole ? verifiedRole.members.size : 0;
+  if (count > 0) {
+    if (!lastActive) lastActive = now;
 
-  const startOfMonth = dayjs().startOf('month');
-  const newThisMonthCount = guild.members.cache.filter(m =>
-    !m.user.bot && dayjs(m.joinedAt).isAfter(startOfMonth)
-  ).size;
+    // נוצר ערוץ אם יש שהייה של לפחות דקה
+    if (!displayChannelId && now.diff(lastActive, 'minute') >= MIN_ACTIVE_DURATION) {
+      const newChannel = await guild.channels.create({
+        name: `${DISPLAY_CHANNEL_NAME_PREFIX} ${count}`,
+        type: 2,
+        parent: sourceChannel.parentId,
+        position: sourceChannel.rawPosition - 1,
+        permissionOverwrites: [
+          {
+            id: guild.roles.everyone.id,
+            deny: ['Connect'],
+            allow: ['ViewChannel']
+          }
+        ]
+      });
 
-  let birthdaysToday = 0;
-  const today = dayjs().format('DD-MM');
-  const snapshot = await db.collection('birthdays').get();
-  snapshot.forEach(doc => {
-    const { birthday } = doc.data();
-    if (birthday?.day && birthday?.month) {
-      const dayStr = String(birthday.day).padStart(2, '0');
-      const monthStr = String(birthday.month).padStart(2, '0');
-      if (`${dayStr}-${monthStr}` === today) birthdaysToday++;
+      displayChannelId = newChannel.id;
+      displayChannelCreatedAt = now;
+      console.log(`[+] [${now.format('HH:mm:ss')}] נוצר ערוץ תצוגה: ${newChannel.name}`);
     }
-  });
 
-  const mvpStats = await db.collection('mvpStats').get();
-
-  // 🧠 Topic מעוצב בעברית
-  const topic = `🟢 מחוברים: ${onlineCount} • 🔊 בשיחה: ${inVoiceCount} • 🎉 ימי הולדת: ${birthdaysToday} • 🛡️ מאומתים: ${verifiedCount} • 🏆 MVPים: ${mvpStats.size}`;
-
-  if (channel.topic !== topic) {
-    await channel.setTopic(topic);
-    console.log(`📊 [${dayjs().format('HH:mm:ss')}] טופיק עודכן`);
+    // עדכון שם אם קיים וצריך שינוי
+    if (displayChannelId) {
+      const displayChannel = guild.channels.cache.get(displayChannelId);
+      if (displayChannel && displayChannel.name !== `${DISPLAY_CHANNEL_NAME_PREFIX} ${count}`) {
+        await displayChannel.setName(`${DISPLAY_CHANNEL_NAME_PREFIX} ${count}`);
+        console.log(`🔄 [${now.format('HH:mm:ss')}] עודכן שם ערוץ: ${displayChannel.name}`);
+      }
+    }
   }
-}
 
-function safeUpdateStats(client, source = 'event') {
-  const now = Date.now();
-  if (now - lastStatsUpdate >= MIN_INTERVAL) {
-    lastStatsUpdate = now;
-    console.log(`⚙️ עדכון סטטיסטיקות מ-${source}`);
-    updateStatsChannelTopic(client).catch(console.error);
+  // אם אין משתמשים – נבדוק מחיקה
+  if (displayChannelId && count === 0) {
+    if (lastActive && now.diff(lastActive, 'minute') >= DELETE_AFTER) {
+      const displayChannel = guild.channels.cache.get(displayChannelId);
+      if (displayChannel) {
+        await displayChannel.delete().catch(() => {});
+        console.log(`[-] [${now.format('HH:mm:ss')}] ערוץ תצוגה נמחק עקב חוסר פעילות`);
+      }
+      displayChannelId = null;
+      displayChannelCreatedAt = null;
+      lastActive = null;
+    }
+  }
+
+  if (count === 0) {
+    lastActive = null;
   }
 }
 
 function startStatsUpdater(client) {
   setInterval(() => {
-    const time = new Date().toLocaleTimeString();
-    console.log(`🔄 [${time}] ⏱️ עדכון אוטומטי של טופיק (Heartbeat)`);
-    updateStatsChannelTopic(client).catch(console.error);
-  }, 5 * 60 * 1000);
+    updateDisplayChannel(client).catch(console.error);
+  }, 30 * 1000); // ריצה כל 30 שניות
 }
 
-
 module.exports = {
-  updateStatsChannelTopic,
-  startStatsUpdater,
-  safeUpdateStats
+  startStatsUpdater
 };

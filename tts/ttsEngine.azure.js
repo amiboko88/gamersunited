@@ -62,8 +62,7 @@ async function synthesizeAzureTTS(text, speaker = 'shimon') {
   const speechConfig = sdk.SpeechConfig.fromSubscription(AZURE_KEY, AZURE_REGION);
   speechConfig.speechSynthesisOutputFormat = sdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3;
 
-  const audioConfig = sdk.AudioConfig.fromAudioFileOutput(null);
-  const synthesizer = new sdk.SpeechSynthesizer(speechConfig, audioConfig);
+  const synthesizer = new sdk.SpeechSynthesizer(speechConfig); // 💡 בלי audioConfig
 
   log(`🎙️ Azure TTS (${speaker}) – ${text.length} תווים`);
 
@@ -87,6 +86,7 @@ async function synthesizeAzureTTS(text, speaker = 'shimon') {
     );
   });
 }
+
 
 async function saveTTSAudit(data) {
   try {

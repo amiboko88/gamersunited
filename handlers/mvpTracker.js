@@ -1,13 +1,13 @@
 const admin = require('firebase-admin');
-const { EmbedBuilder } = require('discord.js');
 const { renderMvpImage } = require('./mvpRenderer');
+const { trackVoiceMinutes } = require('./statTracker');
 const { log } = require('../utils/logger');
 
 const Timestamp = admin.firestore.Timestamp;
 const MVP_ROLE_ID = process.env.ROLE_MVP_ID;
 const MVP_ANNOUNCE_CHANNEL_ID = '583575179880431616';
 
-let lastPrintedDate = null; // 🧠 כדי למנוע ספאם בלוג אם כבר הוכרז היום
+let lastPrintedDate = null;
 
 async function updateVoiceActivity(memberId, durationMinutes, db) {
   const voiceRef = db.doc(`voiceTime/${memberId}`);
@@ -29,6 +29,9 @@ async function updateVoiceActivity(memberId, durationMinutes, db) {
     const data = lifeSnap.data();
     await lifeRef.update({ total: (data.total || 0) + durationMinutes });
   }
+
+  // ✅ רישום גם לסטטיסטיקה הכללית
+  await trackVoiceMinutes(memberId, durationMinutes);
 
   log(`📈 עדכון פעילות ל־${memberId}: ${durationMinutes} דקות`);
 }
@@ -82,7 +85,6 @@ async function calculateAndAnnounceMVP(client, db) {
   const wins = statsSnap.exists ? (statsSnap.data().wins || 0) + 1 : 1;
   await statsRef.set({ wins });
 
-  // 🖼️ יצירת תמונה
   const imagePath = await renderMvpImage({
     username: member.displayName || member.user.username,
     avatarURL: member.displayAvatarURL({ extension: 'png', size: 512 }),
@@ -115,7 +117,6 @@ async function calculateAndAnnounceMVP(client, db) {
   log(`✅ MVP הוכרז ונשלח – ${topUser.id}`);
 }
 
-
 async function checkMVPStatusAndRun(client, db) {
   const statusRef = db.doc('mvpSystem/status');
   const statusSnap = await statusRef.get();
@@ -140,20 +141,16 @@ async function checkMVPStatusAndRun(client, db) {
   const hour = now.getHours();
   const minute = now.getMinutes();
 
-  // log(`[MVP] בדיקה: יום=${day}, שעה=${hour}, דקה=${minute}`);
-
   if (day === 0 && hour === 20 && minute === 0) {
     log('⏳ הגיע הזמן להכריז MVP...');
     await calculateAndAnnounceMVP(client, db);
-  } else {
-    // נשתוק אם לא הזמן, כדי לא להציף את הלוג כל דקה
   }
 }
 
 function startMvpScheduler(client, db) {
   setInterval(() => {
     checkMVPStatusAndRun(client, db);
-  }, 60 * 1000); // כל דקה
+  }, 60 * 1000);
 }
 
 module.exports = {

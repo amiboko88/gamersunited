@@ -4,7 +4,7 @@ const fs = require('fs');
 
 
 async function generateHelpImage() {
-  const htmlPath = path.resolve(__dirname, '../assets/helpTemplate.html');
+  const htmlPath = path.resolve(__dirname, '../templates/helpTemplate.html');
   const outputPath = path.resolve(__dirname, '../assets/helpImage.png');
 
   if (!fs.existsSync(htmlPath)) {

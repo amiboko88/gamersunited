@@ -1,5 +1,6 @@
 const admin = require('firebase-admin');
 const { EmbedBuilder } = require('discord.js');
+const { renderMvpImage } = require('./mvpRenderer');
 const { log } = require('../utils/logger');
 
 const Timestamp = admin.firestore.Timestamp;
@@ -81,19 +82,20 @@ async function calculateAndAnnounceMVP(client, db) {
   const wins = statsSnap.exists ? (statsSnap.data().wins || 0) + 1 : 1;
   await statsRef.set({ wins });
 
+  // 🖼️ יצירת תמונה
+  const imagePath = await renderMvpImage({
+    username: member.displayName || member.user.username,
+    avatarURL: member.displayAvatarURL({ extension: 'png', size: 512 }),
+    minutes: topUser.minutes,
+    wins
+  });
+
   const channel = client.channels.cache.get(MVP_ANNOUNCE_CHANNEL_ID);
   if (!channel) return;
 
-  const embed = new EmbedBuilder()
-    .setColor('Gold')
-    .setTitle('🥇 MVP השבועי')
-    .setDescription(`מזל טוב ל־<@${topUser.id}> על **${topUser.minutes} דקות** של נוכחות 🎤!\nסה״כ זכיות: **${wins}**`)
-    .setTimestamp()
-    .setFooter({ text: 'שמעון הבוט – מצטייני השבוע' });
-
   const message = await channel.send({
     content: '@everyone',
-    embeds: [embed]
+    files: [imagePath]
   }).catch(() => null);
 
   if (message) {
@@ -112,6 +114,7 @@ async function calculateAndAnnounceMVP(client, db) {
 
   log(`✅ MVP הוכרז ונשלח – ${topUser.id}`);
 }
+
 
 async function checkMVPStatusAndRun(client, db) {
   const statusRef = db.doc('mvpSystem/status');

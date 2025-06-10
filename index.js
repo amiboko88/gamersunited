@@ -18,6 +18,10 @@ const {
   startWeeklyRulesUpdate
 } = require('./handlers/rulesEmbed');
 const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
+const { data: recordData, execute: recordExecute } = require('./commands/voiceRecorder');
+const { data: playbackData, execute: playbackExecute } = require('./commands/voicePlayback');
+const { data: listData, execute: listExecute } = require('./commands/voiceList');
+const { data: deleteData, execute: deleteExecute } = require('./commands/voiceDelete');
 const { data: fifoData, execute: fifoExecute } = require('./commands/fifo');
 const { data: songData, execute: songExecute, autocomplete: songAutocomplete } = require('./commands/song');
 const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
@@ -59,6 +63,10 @@ const statTracker = require('./handlers/statTracker');
 const commands = [];
 registerMvpCommand(commands);
 commands.push(
+  recordData,
+  playbackData,
+  listData,
+  deleteData,
   helpData,
   verifyData,
   songData,
@@ -125,13 +133,6 @@ client.on('guildMemberAdd', async member => {
  
 });
 
-client.on('guildMemberRemove', () => {
-  
-});
-
-client.on('guildMemberUpdate', () => {
- 
-});
 
 client.on('voiceStateUpdate', (oldState, newState) => {
   handleVoiceStateUpdate(oldState, newState);
@@ -215,12 +216,17 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'rulestats') return rulesStatsExecute(interaction);
   if (commandName === 'tts') return ttsCommand.execute(interaction);
   if (commandName === 'leaderboard') return leaderboardExecute(interaction);
+  if (commandName === 'הקלט') return recordExecute(interaction);
+  if (commandName === 'השמע_אחרון') return playbackExecute(interaction);
+  if (commandName === 'רשימת_הקלטות') return listExecute(interaction);
+  if (commandName === 'מחק_הקלטות') return deleteExecute(interaction);
+
   // משתמשים Slash
   if (commandName === 'סאונדבורד') return soundExecute(interaction, client);
   if (commandName === 'אימות') return verifyExecute(interaction);
   if (commandName === 'מוזיקה') return songExecute(interaction, client);
   if (commandName === 'פיפו') return fifoExecute(interaction);
-  if (commandName === 'מצטיינים') return mvpDisplayExecute(interaction, client);
+  if (commandName === 'מצטיין_שבוע') return mvpDisplayExecute(interaction, client);
   if ([
     'הוסף_יום_הולדת',
     'ימי_הולדת',

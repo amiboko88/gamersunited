@@ -24,7 +24,7 @@ async function saveLastActiveToDB(timestamp) {
 
 async function clearLastActiveInDB() {
   await db.collection('settings').doc('stats').update({
-    lastActive: db.FieldValue.delete()
+    lastActive: admin.firestore.FieldValue.delete()
   }).catch(() => {});
 }
 

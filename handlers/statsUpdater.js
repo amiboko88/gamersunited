@@ -1,34 +1,37 @@
 const dayjs = require('dayjs');
 
-const VOICE_SOURCE_CHANNEL_ID = '1231453923387379783'; // TEAM ROTATION
+const CATEGORY_ID = '689124379019313214'; // קטגוריית FIFO
 let displayChannelId = null;
-let displayChannelCreatedAt = null;
 let lastActive = null;
+let lastCount = null;
 
-const DISPLAY_CHANNEL_NAME_PREFIX = '🎙️ בשיחה כעת:';
-const MIN_ACTIVE_DURATION = 1; // דקות
-const DELETE_AFTER = 5; // דקות
+const DISPLAY_CHANNEL_NAME_PREFIX = '🔊 In Voice:';
+const MIN_ACTIVE_DURATION_MINUTES = 1;
+const DELETE_AFTER_MINUTES = 5;
 
 async function updateDisplayChannel(client) {
   const guild = client.guilds.cache.first();
   if (!guild) return;
 
-  const sourceChannel = guild.channels.cache.get(VOICE_SOURCE_CHANNEL_ID);
-  if (!sourceChannel) return;
+  const voiceChannelsInCategory = guild.channels.cache.filter(c =>
+    c.parentId === CATEGORY_ID && c.type === 2
+  );
 
-  const count = sourceChannel.members.filter(m => !m.user.bot).size;
+  const count = [...voiceChannelsInCategory.values()]
+    .reduce((acc, channel) => acc + channel.members.filter(m => !m.user.bot).size, 0);
+
   const now = dayjs();
 
   if (count > 0) {
     if (!lastActive) lastActive = now;
 
-    // נוצר ערוץ אם יש שהייה של לפחות דקה
-    if (!displayChannelId && now.diff(lastActive, 'minute') >= MIN_ACTIVE_DURATION) {
+    // צור ערוץ תצוגה אם צריך
+    if (!displayChannelId && now.diff(lastActive, 'minute') >= MIN_ACTIVE_DURATION_MINUTES) {
       const newChannel = await guild.channels.create({
         name: `${DISPLAY_CHANNEL_NAME_PREFIX} ${count}`,
         type: 2,
-        parent: sourceChannel.parentId,
-        position: sourceChannel.rawPosition - 1,
+        parent: CATEGORY_ID,
+        position: 0,
         permissionOverwrites: [
           {
             id: guild.roles.everyone.id,
@@ -39,32 +42,32 @@ async function updateDisplayChannel(client) {
       });
 
       displayChannelId = newChannel.id;
-      displayChannelCreatedAt = now;
-      console.log(`[+] [${now.format('HH:mm:ss')}] נוצר ערוץ תצוגה: ${newChannel.name}`);
+      lastCount = count;
+
+      console.log(`🆕 [${now.format('HH:mm:ss')}] נוצר ערוץ תצוגה עם ${count} מחוברים`);
     }
 
-    // עדכון שם אם קיים וצריך שינוי
-    if (displayChannelId) {
+    // עדכון שם רק אם יש שינוי במספר
+    if (displayChannelId && count !== lastCount) {
       const displayChannel = guild.channels.cache.get(displayChannelId);
-      if (displayChannel && displayChannel.name !== `${DISPLAY_CHANNEL_NAME_PREFIX} ${count}`) {
+      if (displayChannel) {
         await displayChannel.setName(`${DISPLAY_CHANNEL_NAME_PREFIX} ${count}`);
-        console.log(`🔄 [${now.format('HH:mm:ss')}] עודכן שם ערוץ: ${displayChannel.name}`);
+        console.log(`🔄 [${now.format('HH:mm:ss')}] שם ערוץ תצוגה עודכן ל־${count}`);
+        lastCount = count;
       }
     }
   }
 
-  // אם אין משתמשים – נבדוק מחיקה
-  if (displayChannelId && count === 0) {
-    if (lastActive && now.diff(lastActive, 'minute') >= DELETE_AFTER) {
-      const displayChannel = guild.channels.cache.get(displayChannelId);
-      if (displayChannel) {
-        await displayChannel.delete().catch(() => {});
-        console.log(`[-] [${now.format('HH:mm:ss')}] ערוץ תצוגה נמחק עקב חוסר פעילות`);
-      }
-      displayChannelId = null;
-      displayChannelCreatedAt = null;
-      lastActive = null;
+  // מחיקה אם אין פעילות
+  if (displayChannelId && count === 0 && lastActive && now.diff(lastActive, 'minute') >= DELETE_AFTER_MINUTES) {
+    const displayChannel = guild.channels.cache.get(displayChannelId);
+    if (displayChannel) {
+      await displayChannel.delete().catch(() => {});
+      console.log(`🗑️ [${now.format('HH:mm:ss')}] ערוץ תצוגה נמחק (אין פעילות)`);
     }
+    displayChannelId = null;
+    lastActive = null;
+    lastCount = null;
   }
 
   if (count === 0) {
@@ -75,7 +78,7 @@ async function updateDisplayChannel(client) {
 function startStatsUpdater(client) {
   setInterval(() => {
     updateDisplayChannel(client).catch(console.error);
-  }, 30 * 1000); // ריצה כל 30 שניות
+  }, 30 * 1000); // בדיקה כל 30 שניות
 }
 
 module.exports = {

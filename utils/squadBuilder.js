@@ -1,5 +1,6 @@
-// 📁 utils/squadBuilder.js
-const { ChannelType, PermissionsBitField } = require('discord.js');
+// 📁 utils/squadBuilder.js – יצירת קבוצות FIFO עם שמות בכותרת וללא נעילה
+
+const { ChannelType } = require('discord.js');
 
 function buildSquads(members, squadSize) {
   const players = [...members];
@@ -32,31 +33,43 @@ function shuffle(arr) {
   }
 }
 
-async function createGroupsAndChannels({ interaction, members, groupSize, categoryId }) {
+async function createGroupsAndChannels({ interaction, members, groupSize, categoryId, openChannels = false }) {
   const { squads, waiting } = buildSquads(members, groupSize);
   const channels = [];
 
   for (let i = 0; i < squads.length; i++) {
     const squad = squads[i];
-    const channelName = `TEAM ${String.fromCharCode(65 + i)}`;
+    const baseName = `TEAM ${String.fromCharCode(65 + i)}`;
+    const displayNames = squad.map(m => m.displayName).join(', ');
+    let name = `${baseName} | ${displayNames}`;
 
-    const overwrites = [
-      {
-        id: interaction.guild.roles.everyone.id,
-        deny: [PermissionsBitField.Flags.Connect]
-      },
-      ...squad.map(member => ({
-        id: member.id,
-        allow: [PermissionsBitField.Flags.Connect]
-      }))
-    ];
+    // חיתוך אם ארוך מדי (מקסימום 100 תווים)
+    if (name.length > 100) {
+      const trimmed = displayNames.slice(0, 100 - baseName.length - 4);
+      name = `${baseName} | ${trimmed}...`;
+    }
 
-    const channel = await interaction.guild.channels.create({
-      name: channelName,
+    const options = {
+      name,
       type: ChannelType.GuildVoice,
-      parent: categoryId,
-      permissionOverwrites: overwrites
-    });
+      parent: categoryId
+    };
+
+    // 🛡️ אם לא מבקשים פתיחה – יוצרים הגבלות גישה
+    if (!openChannels) {
+      options.permissionOverwrites = [
+        {
+          id: interaction.guild.roles.everyone.id,
+          deny: ['Connect']
+        },
+        ...squad.map(member => ({
+          id: member.id,
+          allow: ['Connect']
+        }))
+      ];
+    }
+
+    const channel = await interaction.guild.channels.create(options);
 
     for (const member of squad) {
       await member.voice.setChannel(channel).catch(() => {});

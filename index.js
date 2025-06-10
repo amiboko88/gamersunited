@@ -1,6 +1,11 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const schedule = require('node-schedule');
+const { registerReplayVote, resetReplayVotes } = require('./utils/replayManager');
+const { executeReplayReset } = require('./utils/repartitionUtils');
+const { createGroupsAndChannels } = require('./utils/squadBuilder');
+const { startGroupTracking } = require('./handlers/groupTracker');
+const { EmbedBuilder } = require('discord.js');
 
 // 🎮 Scheduler Features
 const { startStatsUpdater } = require('./handlers/statsUpdater');
@@ -166,7 +171,10 @@ client.on('messageCreate', async message => {
 });
 
 // ⚙️ אינטראקציות
+
 client.on('interactionCreate', async interaction => {
+
+ 
   if (interaction.isAutocomplete()) return songAutocomplete(interaction);
 
   // ✅ עזרה אינטראקטיבית (Button, Modal)
@@ -195,6 +203,81 @@ client.on('interactionCreate', async interaction => {
     if (interaction.customId.startsWith('rules_') || interaction.customId === 'accept_rules') {
       return handleRulesInteraction(interaction);
     }
+
+// 🔄 Replay לפי קבוצה
+if (interaction.customId.startsWith('replay_')) {
+  const teamName = interaction.customId.replace('replay_', '').replace('_', ' ');
+  const voteResult = registerReplayVote(teamName, interaction.user.id);
+
+  if (!voteResult) {
+    return await interaction.reply({ content: '⚠️ שגיאה פנימית בריפליי.', ephemeral: true });
+  }
+
+  await interaction.reply({ content: '💬 ההצבעה שלך נרשמה.', ephemeral: true });
+
+  if (voteResult.someVoted) {
+    await executeReplayReset(interaction.guild, interaction.channel, teamName);
+
+  }
+  return;
+}
+
+// 🚀 חלקו מחדש
+if (interaction.customId === 'repartition_now') {
+  const FIFO_CHANNEL_ID = '123456789012345678'; // 🛑 עדכן ל־ID של הערוץ הראשי
+  const FIFO_CATEGORY_ID = process.env.FIFO_CATEGORY_ID;
+  const DEFAULT_GROUP_SIZE = 3;
+
+  const voiceChannel = interaction.guild.channels.cache.get(FIFO_CHANNEL_ID);
+  if (!voiceChannel?.isVoiceBased()) return;
+
+  const members = voiceChannel.members.filter(m => !m.user.bot);
+  if (members.size < 2) {
+    return await interaction.reply({ content: '⛔ אין מספיק שחקנים.', ephemeral: true });
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+
+  const { groups, waiting, channels } = await createGroupsAndChannels({
+    interaction,
+    members: [...members.values()],
+    groupSize: DEFAULT_GROUP_SIZE,
+    categoryId: FIFO_CATEGORY_ID,
+    openChannels: true
+  });
+
+  const summaryEmbed = new EmbedBuilder()
+    .setTitle('📢 בוצעה חלוקה מחדש!')
+    .setColor(0x00ff88)
+    .setTimestamp();
+
+  groups.forEach((group, i) => {
+    const name = `TEAM ${String.fromCharCode(65 + i)}`;
+    summaryEmbed.addFields({
+      name,
+      value: group.map(m => m.displayName).join(', '),
+      inline: false
+    });
+
+    const ch = channels[i];
+    if (ch) startGroupTracking(ch, group.map(m => m.id), name);
+  });
+
+  if (waiting.length > 0) {
+    summaryEmbed.addFields({
+      name: '⏳ ממתינים',
+      value: waiting.map(m => m.displayName).join(', '),
+      inline: false
+    });
+  }
+
+  await interaction.editReply({ content: '✅ החלוקה מחדש בוצעה!', embeds: [summaryEmbed] });
+  resetReplayVotes();
+  return;
+}
+
+
+    
     return handleVerifyInteraction(interaction);
   }
 

@@ -1,7 +1,12 @@
-// 📁 voicePlayback.js
 const fs = require('fs');
 const path = require('path');
-const { createAudioPlayer, createAudioResource, joinVoiceChannel, AudioPlayerStatus, StreamType } = require('@discordjs/voice');
+const {
+  createAudioPlayer,
+  createAudioResource,
+  joinVoiceChannel,
+  AudioPlayerStatus,
+  StreamType
+} = require('@discordjs/voice');
 const { SlashCommandBuilder } = require('discord.js');
 
 const RECORDINGS_DIR = path.join(__dirname, '..', 'recordings');
@@ -9,7 +14,7 @@ const RECORDINGS_DIR = path.join(__dirname, '..', 'recordings');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('השמע_אחרון')
-    .setDescription('משמיע את ההקלטה האחרונה שלך (אם קיימת)'),
+    .setDescription('משמיע את ההקלטה האחרונה שלך (MP3)'),
 
   async execute(interaction) {
     const member = interaction.member;
@@ -28,11 +33,11 @@ module.exports = {
     }
 
     const files = fs.readdirSync(userDir)
-      .filter(f => f.endsWith('.pcm'))
+      .filter(f => f.endsWith('.mp3'))
       .sort((a, b) => fs.statSync(path.join(userDir, b)).mtimeMs - fs.statSync(path.join(userDir, a)).mtimeMs);
 
     if (files.length === 0) {
-      return interaction.reply({ content: '❌ אין הקלטות קיימות עבורך.', ephemeral: true });
+      return interaction.reply({ content: '📭 אין הקלטות MP3 זמינות עבורך.', ephemeral: true });
     }
 
     const lastFile = path.join(userDir, files[0]);
@@ -44,7 +49,7 @@ module.exports = {
     });
 
     const player = createAudioPlayer();
-    const resource = createAudioResource(lastFile, { inputType: StreamType.Raw });
+    const resource = createAudioResource(lastFile, { inputType: StreamType.Arbitrary });
 
     connection.subscribe(player);
     player.play(resource);

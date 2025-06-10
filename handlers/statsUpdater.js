@@ -1,5 +1,6 @@
 const dayjs = require('dayjs');
 const db = require('../utils/firebase');
+const admin = require('firebase-admin'); // 💡 זה הפתרון
 
 const CATEGORY_ID = '689124379019313214'; // קטגוריית FIFO
 const DISPLAY_CHANNEL_NAME_PREFIX = '🔊 In Voice:';

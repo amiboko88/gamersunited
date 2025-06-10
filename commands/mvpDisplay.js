@@ -1,12 +1,13 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-
-const medals = ['🥇', '🥈', '🥉', '🎖️', '🎖️'];
+const { SlashCommandBuilder } = require('discord.js');
+const { createCanvas, loadImage } = require('canvas');
+const fs = require('fs');
+const path = require('path');
 
 function registerMvpCommand(commands) {
   commands.push(
     new SlashCommandBuilder()
       .setName('מצטיין_שבוע')
-      .setDescription('📊 צפייה בלוח השבועי')
+      .setDescription('📈 טבלת התקדמות חיה למצטיין השבועי (גרפי)')
       .toJSON()
   );
 }
@@ -15,89 +16,88 @@ async function execute(interaction, client) {
   await interaction.deferReply({ flags: 64 });
 
   const db = client.db;
-  const userName = interaction.user.displayName || interaction.user.username;
+  const voiceRef = await db.collection('voiceTime').get();
 
-  const [voiceRef, statsRef, lifeRef, gameStatsRef] = await Promise.all([
-    db.collection('voiceTime').get(),
-    db.collection('mvpStats').get(),
-    db.collection('voiceLifetime').get(),
-    db.collection('gameStats').get()
-  ]);
-
-  const current = [];
-  const stats = [];
-  const lifetime = [];
-  const gameTotals = {};
+  const active = [];
 
   voiceRef.forEach(doc => {
-    const d = doc.data();
-    current.push({ id: doc.id, minutes: d.minutes || 0 });
-  });
-
-  statsRef.forEach(doc => {
-    const d = doc.data();
-    stats.push({ id: doc.id, wins: d.wins || 0 });
-  });
-
-  lifeRef.forEach(doc => {
-    const d = doc.data();
-    lifetime.push({ id: doc.id, total: d.total || 0 });
-  });
-
-  gameStatsRef.forEach(doc => {
     const data = doc.data();
-    for (const [game, val] of Object.entries(data)) {
-      gameTotals[game] = (gameTotals[game] || 0) + (val.minutes || 0);
+    if (data.minutes > 0) {
+      active.push({ id: doc.id, minutes: data.minutes });
     }
   });
 
-  current.sort((a, b) => b.minutes - a.minutes);
-  stats.sort((a, b) => b.wins - a.wins);
-  lifetime.sort((a, b) => b.total - a.total);
+  if (active.length === 0) {
+    return interaction.editReply({
+      content: '😴 אף אחד לא התחבר השבוע לערוץ קול... תתעוררו!',
+      ephemeral: true
+    });
+  }
 
-  const topGames = Object.entries(gameTotals)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
+  active.sort((a, b) => b.minutes - a.minutes);
+  const maxMinutes = active[0].minutes;
+  const top = active.slice(0, 10);
 
-  const formatList = (arr, key, emojiSet, label) =>
-    arr.slice(0, 5).map((u, i) =>
-      `${emojiSet[i] || '▫️'} <@${u.id}> – **${u[key]} ${label}**`
-    ).join('\n') || 'אין נתונים זמינים.';
+  // יצירת תמונה
+  const width = 1200;
+  const rowHeight = 100;
+  const height = rowHeight * top.length + 150;
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext('2d');
 
-  const embed = new EmbedBuilder()
-    .setColor('#facc15')
-    .setTitle('👑 מצטייני השבוע')
-    .addFields(
-      {
-        name: '🏅 חמשת הפעילים ביותר השבוע:',
-        value: formatList(current, 'minutes', medals, 'דקות'),
-        inline: false
-      },
-      {
-        name: '🥇 מספר זכיות מצטברות:',
-        value: formatList(stats, 'wins', medals, 'זכיות'),
-        inline: false
-      },
-      {
-        name: '⏱️ סך כל דקות הנוכחות הכולל:',
-        value: formatList(lifetime, 'total', medals, 'דקות'),
-        inline: false
-      },
-      {
-        name: '🎮 המשחקים החמים ביותר:',
-        value: topGames.map(([name, min], i) =>
-          `${medals[i] || '▫️'} **${name}** – ${min} דקות`
-        ).join('\n') || 'אין נתונים זמינים.',
-        inline: false
-      }
-    )
-    .setFooter({
-      text: `🧠 ${userName} | 🗓️ ${new Date().toLocaleDateString('he-IL')}`,
-      iconURL: interaction.user.displayAvatarURL()
-    })
-    .setTimestamp();
+  // רקע
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(0, 0, width, height);
 
-  await interaction.editReply({ embeds: [embed] });
+  // כותרת
+  ctx.fillStyle = '#facc15';
+  ctx.font = 'bold 50px sans-serif';
+  ctx.fillText('📈 דירוג שבועי – מי הכי קרוב ל־MVP?', 50, 70);
+
+  for (let i = 0; i < top.length; i++) {
+    const user = await client.users.fetch(top[i].id).catch(() => null);
+    const minutes = top[i].minutes;
+    const percent = Math.round((minutes / maxMinutes) * 100);
+    const y = 120 + i * rowHeight;
+
+    // אווטאר
+    try {
+      const avatar = await loadImage(user.displayAvatarURL({ extension: 'png', size: 128 }));
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(90, y + 40, 35, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(avatar, 55, y + 5, 70, 70);
+      ctx.restore();
+    } catch {}
+
+    // שם ודקות
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '28px sans-serif';
+    ctx.fillText(user?.username || 'משתמש לא ידוע', 140, y + 35);
+    ctx.fillStyle = '#a5b4fc';
+    ctx.font = '24px sans-serif';
+    ctx.fillText(`${minutes} דקות (${percent}%)`, 140, y + 65);
+
+    // פס התקדמות
+    const barWidth = 600;
+    const barX = 500;
+    const filled = (percent / 100) * barWidth;
+    ctx.fillStyle = '#10b981';
+    ctx.fillRect(barX, y + 25, filled, 20);
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(barX + filled, y + 25, barWidth - filled, 20);
+  }
+
+  const outputPath = path.join(__dirname, '../temp/mvp_live.png');
+  const buffer = canvas.toBuffer('image/png');
+  fs.writeFileSync(outputPath, buffer);
+
+  await interaction.editReply({
+    content: '⬇️ מצב LIVE – התקדמות לעבר ה־MVP:',
+    files: [outputPath]
+  });
 }
 
 module.exports = {

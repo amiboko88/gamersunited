@@ -1,4 +1,5 @@
 const dayjs = require('dayjs');
+const db = require('../utils/firebase');
 
 const CATEGORY_ID = '689124379019313214'; // קטגוריית FIFO
 const DISPLAY_CHANNEL_NAME_PREFIX = '🔊 In Voice:';
@@ -7,6 +8,25 @@ const DELETE_AFTER_MINUTES = 5;
 
 let lastActive = null;
 let lastCount = null;
+
+async function getLastActiveFromDB() {
+  const doc = await db.collection('settings').doc('stats').get();
+  const data = doc.data();
+  if (data?.lastActive) return dayjs(data.lastActive);
+  return null;
+}
+
+async function saveLastActiveToDB(timestamp) {
+  await db.collection('settings').doc('stats').set({
+    lastActive: timestamp.toISOString()
+  }, { merge: true });
+}
+
+async function clearLastActiveInDB() {
+  await db.collection('settings').doc('stats').update({
+    lastActive: db.FieldValue.delete()
+  }).catch(() => {});
+}
 
 async function updateDisplayChannel(client) {
   const guild = client.guilds.cache.first();
@@ -21,16 +41,23 @@ async function updateDisplayChannel(client) {
 
   const now = dayjs();
 
-  // 🔍 חפש אם כבר קיים ערוץ תצוגה
+  // נסה לשלוף lastActive אם הבוט רק עלה
+  if (!lastActive) {
+    lastActive = await getLastActiveFromDB();
+    if (lastActive) console.log(`🕘 lastActive שוחזר מה־DB: ${lastActive.format('HH:mm:ss')}`);
+  }
+
   let displayChannel = guild.channels.cache.find(
     c => c.parentId === CATEGORY_ID && c.type === 2 && c.name.startsWith(DISPLAY_CHANNEL_NAME_PREFIX)
   );
 
-  // 🧠 אם יש פעילות
+  // 🧠 פעילות קיימת
   if (count > 0) {
-    if (!lastActive) lastActive = now;
+    if (!lastActive) {
+      lastActive = now;
+      await saveLastActiveToDB(lastActive);
+    }
 
-    // צור ערוץ אם אין קיים
     if (!displayChannel && now.diff(lastActive, 'minute') >= MIN_ACTIVE_DURATION_MINUTES) {
       displayChannel = await guild.channels.create({
         name: `${DISPLAY_CHANNEL_NAME_PREFIX} ${count}`,
@@ -49,7 +76,6 @@ async function updateDisplayChannel(client) {
       console.log(`🆕 [${now.format('HH:mm:ss')}] נוצר ערוץ תצוגה עם ${count} משתמשים`);
     }
 
-    // עדכון שם אם השתנה המספר
     if (displayChannel && count !== lastCount) {
       await displayChannel.setName(`${DISPLAY_CHANNEL_NAME_PREFIX} ${count}`);
       console.log(`🔄 [${now.format('HH:mm:ss')}] עודכן שם ערוץ תצוגה ל־${count}`);
@@ -58,15 +84,23 @@ async function updateDisplayChannel(client) {
   }
 
   // 🗑️ מחיקה אם אין פעילות
-  if (displayChannel && count === 0 && lastActive && now.diff(lastActive, 'minute') >= DELETE_AFTER_MINUTES) {
-    await displayChannel.delete().catch(() => {});
-    console.log(`🗑️ [${now.format('HH:mm:ss')}] ערוץ תצוגה נמחק – אין פעילות`);
-    lastActive = null;
-    lastCount = null;
+  if (displayChannel && count === 0 && lastActive) {
+    const minutesIdle = now.diff(lastActive, 'minute');
+
+    if (minutesIdle >= DELETE_AFTER_MINUTES) {
+      await displayChannel.delete().catch(() => {});
+      console.log(`🗑️ [${now.format('HH:mm:ss')}] ערוץ תצוגה נמחק – אין פעילות`);
+      lastActive = null;
+      lastCount = null;
+      await clearLastActiveInDB();
+    } else {
+      console.log(`⌛ [${now.format('HH:mm:ss')}] אין פעילות – ממתין למחיקה (${DELETE_AFTER_MINUTES - minutesIdle} דק')`);
+    }
   }
 
-  if (count === 0) {
+  if (count === 0 && !displayChannel) {
     lastActive = null;
+    await clearLastActiveInDB();
   }
 }
 

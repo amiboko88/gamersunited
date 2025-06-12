@@ -8,57 +8,47 @@
     body {
       margin: 0;
       font-family: 'Assistant', sans-serif;
-      background: linear-gradient(to bottom right, #1e1b4b, #0f172a);
+      background: linear-gradient(to bottom right, #1e1b4b, #78350f);
       color: #fff;
-      width: 2000px;
-      height: 600px;
-    }
-
-    .container {
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      height: 100%;
-      padding: 40px 80px;
+      width: 2400px;
+      height: 1200px;
+      padding: 80px;
       box-sizing: border-box;
     }
 
     .title {
-      font-size: 48px;
-      color: #fbbf24;
-      margin-bottom: 20px;
-    }
-
-    .role-info {
-      font-size: 28px;
-      background-color: #78350f;
-      color: #fde68a;
-      padding: 12px 20px;
-      border-radius: 12px;
-      display: inline-block;
+      font-size: 60px;
+      text-align: center;
       margin-bottom: 30px;
+      color: #fbbf24;
     }
 
-    .commands {
+    .sub-title {
+      font-size: 42px;
+      text-align: center;
+      margin-bottom: 60px;
+      color: #fde68a;
+    }
+
+    .commands-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+      gap: 40px;
+      padding: 0 60px;
     }
 
-    .command-card {
-      background-color: #1e293b;
-      padding: 18px 24px;
-      border-radius: 12px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.3);
-      font-size: 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+    .command-box {
+      background-color: #1f2937;
+      border-radius: 20px;
+      padding: 32px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.4);
+      font-size: 36px;
     }
 
     .command-name {
-      font-weight: bold;
       color: #fcd34d;
+      font-weight: bold;
+      margin-bottom: 12px;
     }
 
     .command-desc {
@@ -67,43 +57,41 @@
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="title">👑 פקודות מנהלים</div>
-    <div class="role-info">🎩 אתה מזוהה כ־Admin – הפקודות האלו זמינות לך בלבד</div>
+  <div class="title">🎩 המשתמש זוהה כ־Admin</div>
+  <div class="sub-title">👑 פקודות מנהלים</div>
 
-    <div class="commands">
-      <div class="command-card">
-        <span class="command-name">/updaterules</span>
-        <span class="command-desc">עדכון חוקים 🔧</span>
-      </div>
-      <div class="command-card">
-        <span class="command-name">/rulestats</span>
-        <span class="command-desc">אישרו חוקים 📑</span>
-      </div>
-      <div class="command-card">
-        <span class="command-name">/tts</span>
-        <span class="command-desc">בדיקת תווים 🗣️</span>
-      </div>
-      <div class="command-card">
-        <span class="command-name">/leaderboard</span>
-        <span class="command-desc">שליחת לוח תוצאות 🏅</span>
-      </div>
-      <div class="command-card">
-        <span class="command-name">/הקלט</span>
-        <span class="command-desc">התחלת הקלטת שיחה 🎙️</span>
-      </div>
-      <div class="command-card">
-        <span class="command-name">/השמע_אחרון</span>
-        <span class="command-desc">נגן את ההקלטה האחרונה ▶️</span>
-      </div>
-      <div class="command-card">
-        <span class="command-name">/רשימת_הקלטות</span>
-        <span class="command-desc">כל ההקלטות שלך 📂</span>
-      </div>
-      <div class="command-card">
-        <span class="command-name">/מחק_הקלטות</span>
-        <span class="command-desc">ניקוי ההקלטות 🧹</span>
-      </div>
+  <div class="commands-grid">
+    <div class="command-box">
+      <div class="command-name">/updaterules</div>
+      <div class="command-desc">עדכון חוקים 🔧</div>
+    </div>
+    <div class="command-box">
+      <div class="command-name">/rulestats</div>
+      <div class="command-desc">אישרו חוקים 📑</div>
+    </div>
+    <div class="command-box">
+      <div class="command-name">/tts</div>
+      <div class="command-desc">בדיקת תווים 🗣️</div>
+    </div>
+    <div class="command-box">
+      <div class="command-name">/leaderboard</div>
+      <div class="command-desc">שליחת לוח תוצאות 🏅</div>
+    </div>
+    <div class="command-box">
+      <div class="command-name">/הקלט</div>
+      <div class="command-desc">התחלת הקלטת שיחה 🎙️</div>
+    </div>
+    <div class="command-box">
+      <div class="command-name">/השמע_אחרון</div>
+      <div class="command-desc">נגן את ההקלטה האחרונה ▶️</div>
+    </div>
+    <div class="command-box">
+      <div class="command-name">/רשימת_הקלטות</div>
+      <div class="command-desc">כל ההקלטות שלך 📂</div>
+    </div>
+    <div class="command-box">
+      <div class="command-name">/מחק_הקלטות</div>
+      <div class="command-desc">ניקוי ההקלטות 🧹</div>
     </div>
   </div>
 </body>

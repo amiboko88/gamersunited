@@ -52,50 +52,73 @@ async function getStatsData() {
   return { usage, speakerCount, topUsers: enriched };
 }
 
-function drawProgressBarRTL(ctx, x, y, width, height, percent, label) {
-  ctx.fillStyle = '#444';
+function drawBar(ctx, x, y, width, height, percent, label) {
+  const barWidth = Math.min(percent, 1) * width;
+  const bgColor = '#3a3a3a';
+  const fillColor = getColor(percent);
+
+  // רקע
+  ctx.fillStyle = bgColor;
   ctx.fillRect(x, y, width, height);
 
-  const barWidth = Math.min(percent, 1) * width;
-  ctx.fillStyle = getColor(percent);
-  ctx.fillRect(x + width - barWidth, y, barWidth, height);
+  // פס צבעוני
+  ctx.fillStyle = fillColor;
+  ctx.fillRect(x, y, barWidth, height);
 
+  // טקסט על הבר
   ctx.fillStyle = '#ffffff';
+  ctx.font = '24px NotoHebrew';
+  ctx.textAlign = 'left';
+  ctx.fillText(`${(percent * 100).toFixed(1)}%`, x + width + 10, y + height - 6);
   ctx.textAlign = 'right';
-  ctx.fillText(`${(percent * 100).toFixed(1)}% – ${label}`, x + width - 10, y + height - 7);
+  ctx.fillText(label, x - 10, y + height - 6);
 }
 
 function draw(ctx, stats) {
   ctx.fillStyle = '#1e1e1e';
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
   ctx.direction = 'rtl';
-  ctx.font = '24px NotoHebrew';
+  ctx.textAlign = 'right';
+  ctx.font = '34px NotoHebrew';
   ctx.fillStyle = '#ffffff';
+  ctx.fillText('סטטוס השימוש בקול של שמעון', WIDTH - 30, 60);
 
-  ctx.fillText('סטטוס השימוש בקול של שמעון', WIDTH - 30, 40);
+  // מדדים
+  const yStart = 100;
+  const barHeight = 32;
+  const barGap = 45;
+  const barWidth = 500;
+  const xBar = WIDTH - 60 - barWidth;
 
-  // bars
-  drawProgressBarRTL(ctx, WIDTH - 620, 70, 550, 28, (stats.usage[new Date().toISOString().split('T')[0]] || 0) / 15000, 'תווים יומיים');
-  drawProgressBarRTL(ctx, WIDTH - 620, 115, 550, 28, Object.values(stats.usage).reduce((a, b) => a + b, 0) / 500000, 'תווים חודשיים');
-  drawProgressBarRTL(ctx, WIDTH - 620, 160, 550, 28, Object.keys(stats.usage).length / 30, 'קריאות יומיות');
+  const usageToday = stats.usage[new Date().toISOString().split('T')[0]] || 0;
+  const usageMonth = Object.values(stats.usage).reduce((a, b) => a + b, 0);
+  const callsToday = Object.keys(stats.usage).length;
 
-  // speaker ratio
+  drawBar(ctx, xBar, yStart + barGap * 0, barWidth, barHeight, usageToday / 15000, 'תווים יומיים');
+  drawBar(ctx, xBar, yStart + barGap * 1, barWidth, barHeight, usageMonth / 500000, 'תווים חודשיים');
+  drawBar(ctx, xBar, yStart + barGap * 2, barWidth, barHeight, callsToday / 30, 'קריאות יומיות');
+
+  // פילוח שמעון/שירלי
   const total = stats.speakerCount.shimon + stats.speakerCount.shirley || 1;
   const pShimon = Math.round((stats.speakerCount.shimon / total) * 100);
   const pShirley = 100 - pShimon;
 
-  ctx.fillText(`שמעון: ${pShimon}%  |  שירלי: ${pShirley}%`, WIDTH - 30, 210);
+  ctx.font = '24px NotoHebrew';
+  ctx.fillText(`שמעון: ${pShimon}%   |   שירלי: ${pShirley}%`, WIDTH - 30, yStart + barGap * 3 + 20);
 
-  // top users
-  ctx.fillText('המשתמשים המדברים ביותר:', WIDTH - 30, 265);
+  // TOP 5
+  ctx.font = '28px NotoHebrew';
+  ctx.fillText('המשתמשים המדברים ביותר:', WIDTH - 30, yStart + barGap * 4 + 40);
+
+  ctx.font = '22px NotoHebrew';
   stats.topUsers.forEach((user, i) => {
-    const y = 300 + i * 30;
+    const y = yStart + barGap * 5 + i * 30;
     ctx.fillText(`• ${user.name}: ${user.total} תווים`, WIDTH - 30, y);
   });
 
   // תאריך עדכון
   ctx.font = '18px NotoHebrew';
-  ctx.fillStyle = '#aaaaaa';
+  ctx.fillStyle = '#888';
   ctx.fillText(`עודכן בתאריך: ${new Date().toLocaleDateString('he-IL')}`, WIDTH - 30, HEIGHT - 20);
 }
 

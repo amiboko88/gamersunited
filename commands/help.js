@@ -46,10 +46,55 @@ async function ensureImageExists(imageName) {
   return filePath;
 }
 
+function getCommandsText(index, isAdmin) {
+  const allSections = [
+    {
+      title: '👤 פקודות משתמש',
+      commands: [
+        '/אימות – אימות משתמש חדש ✅',
+        '/מוזיקה – נגן שיר 🎵',
+        '/פיפו – הפעל מצב פיפו 🎮',
+        '/סאונדבורד – השמע סאונד מצחיק 🔊',
+        '/מצטיין_שבוע – תצוגת מצטיינים 🏆'
+      ]
+    },
+    {
+      title: '🎂 פקודות ימי הולדת',
+      commands: [
+        '/הוסף_יום_הולדת – הוסף את היום שלך 🎂',
+        '/ימי_הולדת – רשימת החוגגים הקרובים 📅',
+        '/היום_הולדת_הבא – מי הכי קרוב לחגוג? 🔜',
+        '/ימי_הולדת_חסרים – מי לא עדכן עדיין? ⏳'
+      ]
+    },
+    {
+      title: '👑 פקודות מנהלים',
+      commands: [
+        '/updaterules – עדכון חוקים 🔧',
+        '/rulestats – אישרו חוקים 📑',
+        '/tts – בדיקת תווים 🗣️',
+        '/leaderboard – שליחת לוח תוצאות 🏅',
+        '/הקלט – התחלת הקלטת שיחה 🎙️',
+        '/השמע_אחרון – נגן את ההקלטה האחרונה ▶️',
+        '/רשימת_הקלטות – כל ההקלטות שלך 📂',
+        '/מחק_הקלטות – ניקוי ההקלטות 🧹'
+      ]
+    }
+  ];
+
+  const section = isAdmin
+    ? allSections[index]
+    : allSections.slice(0, 2)[index];
+
+  if (!section) return '';
+
+  return `**${section.title}**\n${section.commands.map(c => `• ${c}`).join('\n')}`;
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('עזרה')
-    .setDescription('מרכז עזרה אינטראקטיבי עם ניווט ותמונות'),
+    .setDescription('מרכז עזרה ברור ונגיש לפי תפקיד'),
 
   async execute(interaction) {
     const isAdmin = interaction.member.permissions.has('Administrator');
@@ -63,8 +108,10 @@ module.exports = {
       ? '🎩 אתה מזוהה כ־Admin'
       : '🙋‍♂️ אתה מזוהה כמשתמש רגיל';
 
+    const commandsText = getCommandsText(0, isAdmin);
+
     await interaction.reply({
-      content: `${roleText}\nהשתמש בכפתורים למטה כדי לדפדף בין קטגוריות.`,
+      content: `${roleText}\n\n${commandsText}`,
       files: [attachment],
       components: [buttons],
       ephemeral: true
@@ -95,9 +142,10 @@ module.exports = {
     const file = await ensureImageExists(imageName);
     const attachment = new AttachmentBuilder(file);
     const buttons = buildButtons(newIndex, isAdmin);
+    const commandsText = getCommandsText(newIndex, isAdmin);
 
     await interaction.update({
-      content: `📘 עזרה – עמוד ${newIndex + 1} מתוך ${images.length}`,
+      content: commandsText,
       files: [attachment],
       components: [buttons],
       ephemeral: true

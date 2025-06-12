@@ -2,7 +2,7 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <title>שמעון – ימי הולדת</title>
+  <title>שמעון – פקודות ימי הולדת</title>
   <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;700&display=swap" rel="stylesheet">
   <style>
     body {
@@ -10,55 +10,45 @@
       font-family: 'Assistant', sans-serif;
       background: linear-gradient(to bottom right, #4c1d95, #1e293b);
       color: #fff;
-      width: 2000px;
-      height: 600px;
-    }
-
-    .container {
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      height: 100%;
-      padding: 40px 80px;
+      width: 2400px;
+      height: 1200px;
+      padding: 80px;
       box-sizing: border-box;
     }
 
     .title {
-      font-size: 48px;
-      color: #c084fc;
-      margin-bottom: 20px;
-    }
-
-    .role-info {
-      font-size: 28px;
-      background-color: #581c87;
-      color: #f3e8ff;
-      padding: 12px 20px;
-      border-radius: 12px;
-      display: inline-block;
+      font-size: 60px;
+      text-align: center;
       margin-bottom: 30px;
+      color: #d8b4fe;
     }
 
-    .commands {
+    .sub-title {
+      font-size: 42px;
+      text-align: center;
+      margin-bottom: 60px;
+      color: #f3e8ff;
+    }
+
+    .commands-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+      gap: 40px;
+      padding: 0 60px;
     }
 
-    .command-card {
+    .command-box {
       background-color: #312e81;
-      padding: 18px 24px;
-      border-radius: 12px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.3);
-      font-size: 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+      border-radius: 20px;
+      padding: 32px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.3);
+      font-size: 36px;
     }
 
     .command-name {
+      color: #f9a8d4;
       font-weight: bold;
-      color: #facc15;
+      margin-bottom: 12px;
     }
 
     .command-desc {
@@ -67,27 +57,25 @@
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="title">🎂 פקודות ימי הולדת</div>
-    <div class="role-info">🎉 הפקודות הבאות עוזרות לך לעדכן ולראות תאריכי יומולדת</div>
+  <div class="title">🎉 אתה מזוהה כמשתמש רגיל</div>
+  <div class="sub-title">🎂 פקודות ימי הולדת</div>
 
-    <div class="commands">
-      <div class="command-card">
-        <span class="command-name">/הוסף_יום_הולדת</span>
-        <span class="command-desc">הוסף את היום שלך 🎂</span>
-      </div>
-      <div class="command-card">
-        <span class="command-name">/ימי_הולדת</span>
-        <span class="command-desc">רשימת החוגגים הקרובים 📅</span>
-      </div>
-      <div class="command-card">
-        <span class="command-name">/היום_הולדת_הבא</span>
-        <span class="command-desc">מי הכי קרוב לחגוג? 🔜</span>
-      </div>
-      <div class="command-card">
-        <span class="command-name">/ימי_הולדת_חסרים</span>
-        <span class="command-desc">מי לא עדכן עדיין? ⏳</span>
-      </div>
+  <div class="commands-grid">
+    <div class="command-box">
+      <div class="command-name">/הוסף_יום_הולדת</div>
+      <div class="command-desc">הוסף את היום שלך 🎂</div>
+    </div>
+    <div class="command-box">
+      <div class="command-name">/ימי_הולדת</div>
+      <div class="command-desc">רשימת החוגגים הקרובים 📅</div>
+    </div>
+    <div class="command-box">
+      <div class="command-name">/היום_הולדת_הבא</div>
+      <div class="command-desc">מי הכי קרוב לחגוג? 🔜</div>
+    </div>
+    <div class="command-box">
+      <div class="command-name">/ימי_הולדת_חסרים</div>
+      <div class="command-desc">מי לא עדכן עדיין? ⏳</div>
     </div>
   </div>
 </body>

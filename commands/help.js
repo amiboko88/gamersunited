@@ -8,7 +8,7 @@ const {
 
 const fs = require('fs');
 const path = require('path');
-const generateHelpImageByName = require('../handlers/generateHelpImage');
+const generateHelpImage = require('../handlers/generateHelpImage');
 
 const HELP_IMAGES = ['helpUser.png', 'helpBirthday.png'];
 const ADMIN_IMAGES = ['helpAdmin.png'];
@@ -41,7 +41,7 @@ async function ensureImageExists(imageName) {
   const filePath = path.resolve(__dirname, `../images/${imageName}`);
   if (!fs.existsSync(filePath)) {
     console.log(`📸 ${imageName} לא נמצא – מייצר...`);
-    await generateHelpImageByName(imageName.replace('.png', ''));
+    await generateHelpImage(imageName.replace('.png', ''));
   }
   return filePath;
 }

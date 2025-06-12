@@ -1,30 +1,29 @@
-// 📁 utils/ttsStatsImage.js – גרף סטטוס מתקדם של TTS כמו MVP
-
-const { createCanvas } = require('canvas');
+const { createCanvas, registerFont } = require('canvas');
 const admin = require('firebase-admin');
+const path = require('path');
 
-const WIDTH = 1000;
-const HEIGHT = 562;
+registerFont(path.join(__dirname, '../assets/NotoSansHebrew-Bold.ttf'), {
+  family: 'NotoHebrew'
+});
 
-function getColorByPercent(p) {
-  if (p >= 1) return '#ff3333'; // אדום
-  if (p >= 0.9) return '#ffaa00'; // כתום
-  return '#00cc66'; // ירוק
+const WIDTH = 900;
+const HEIGHT = 500;
+
+function getColor(percent) {
+  if (percent >= 1) return '#ff3333';
+  if (percent >= 0.9) return '#ffaa00';
+  return '#00cc66';
 }
 
 async function getStatsData() {
   const db = admin.firestore();
-
-  const now = new Date();
-  const dateLimit = new Date(Date.now() - 7 * 86400000).toISOString();
-
-  const auditSnap = await db.collection('azureTtsAudit')
-    .where('timestamp', '>=', dateLimit)
-    .get();
-
   const usage = {};
   const speakerCount = { shimon: 0, shirley: 0 };
   const userTotals = {};
+
+  const auditSnap = await db.collection('azureTtsAudit')
+    .where('timestamp', '>=', new Date(Date.now() - 7 * 86400000).toISOString())
+    .get();
 
   auditSnap.forEach(doc => {
     const { timestamp, speaker, length = 0, userId } = doc.data();
@@ -53,59 +52,51 @@ async function getStatsData() {
   return { usage, speakerCount, topUsers: enriched };
 }
 
-function drawProgressBar(ctx, x, y, w, h, percent, label) {
-  const color = getColorByPercent(percent);
-  ctx.fillStyle = '#333';
-  ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = color;
-  ctx.fillRect(x, y, w * Math.min(percent, 1), h);
+function drawProgressBarRTL(ctx, x, y, width, height, percent, label) {
+  ctx.fillStyle = '#444';
+  ctx.fillRect(x, y, width, height);
 
-  ctx.fillStyle = '#fff';
-  ctx.font = '20px Assistant';
-  ctx.fillText(`${label} – ${(percent * 100).toFixed(1)}%`, x + 10, y + h - 10);
+  const barWidth = Math.min(percent, 1) * width;
+  ctx.fillStyle = getColor(percent);
+  ctx.fillRect(x + width - barWidth, y, barWidth, height);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'right';
+  ctx.fillText(`${(percent * 100).toFixed(1)}% – ${label}`, x + width - 10, y + height - 7);
 }
 
 function draw(ctx, stats) {
   ctx.fillStyle = '#1e1e1e';
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
-
-  ctx.font = '32px Assistant';
+  ctx.direction = 'rtl';
+  ctx.font = '24px NotoHebrew';
   ctx.fillStyle = '#ffffff';
-  ctx.fillText('🔊 סטטוס השימוש בקול של שמעון', 30, 50);
 
-  // תווים יומיים
-  const daily = stats.usage;
-  const todayKey = new Date().toISOString().split('T')[0];
-  const todayVal = daily[todayKey] || 0;
-  drawProgressBar(ctx, 30, 80, 600, 30, todayVal / 15000, '📅 תווים יומיים');
+  ctx.fillText('סטטוס השימוש בקול של שמעון', WIDTH - 30, 40);
 
-  // תווים חודשיים
-  const monthTotal = Object.values(daily).reduce((a, b) => a + b, 0);
-  drawProgressBar(ctx, 30, 130, 600, 30, monthTotal / 500000, '🗓️ תווים חודשיים');
+  // bars
+  drawProgressBarRTL(ctx, WIDTH - 620, 70, 550, 28, (stats.usage[new Date().toISOString().split('T')[0]] || 0) / 15000, 'תווים יומיים');
+  drawProgressBarRTL(ctx, WIDTH - 620, 115, 550, 28, Object.values(stats.usage).reduce((a, b) => a + b, 0) / 500000, 'תווים חודשיים');
+  drawProgressBarRTL(ctx, WIDTH - 620, 160, 550, 28, Object.keys(stats.usage).length / 30, 'קריאות יומיות');
 
-  // קריאות
-  const calls = Object.keys(daily).length;
-  drawProgressBar(ctx, 30, 180, 600, 30, calls / 30, '📞 קריאות יומיות');
+  // speaker ratio
+  const total = stats.speakerCount.shimon + stats.speakerCount.shirley || 1;
+  const pShimon = Math.round((stats.speakerCount.shimon / total) * 100);
+  const pShirley = 100 - pShimon;
 
-  // פילוח שמעון / שירלי
-  const totalSpeaker = stats.speakerCount.shimon + stats.speakerCount.shirley || 1;
-  const s1 = stats.speakerCount.shimon || 0;
-  const s2 = stats.speakerCount.shirley || 0;
-  const p1 = Math.round((s1 / totalSpeaker) * 100);
-  const p2 = 100 - p1;
+  ctx.fillText(`שמעון: ${pShimon}%  |  שירלי: ${pShirley}%`, WIDTH - 30, 210);
 
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '24px Assistant';
-  ctx.fillText(`🎙️ שמעון: ${p1}% | שירלי: ${p2}%`, 30, 250);
-
-  // TOP משתמשים
-  ctx.font = '24px Assistant';
-  ctx.fillText('👑 המשתמשים המדברים ביותר:', 650, 80);
-  const medals = ['🥇', '🥈', '🥉', '🏅', '🎖️'];
-
+  // top users
+  ctx.fillText('המשתמשים המדברים ביותר:', WIDTH - 30, 265);
   stats.topUsers.forEach((user, i) => {
-    ctx.fillText(`${medals[i] || '👤'} ${user.name}: ${user.total} תווים`, 650, 120 + i * 35);
+    const y = 300 + i * 30;
+    ctx.fillText(`• ${user.name}: ${user.total} תווים`, WIDTH - 30, y);
   });
+
+  // תאריך עדכון
+  ctx.font = '18px NotoHebrew';
+  ctx.fillStyle = '#aaaaaa';
+  ctx.fillText(`עודכן בתאריך: ${new Date().toLocaleDateString('he-IL')}`, WIDTH - 30, HEIGHT - 20);
 }
 
 async function generateTTSImage() {

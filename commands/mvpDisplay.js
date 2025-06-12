@@ -76,7 +76,7 @@ async function execute(interaction, client) {
   }
 
   // כותרת
-  drawRightAligned('מי הכי קרוב ל־MVP השבוע?', PADDING + 10, '46px DejaVuSans-Bold', '#facc15');
+  drawRightAligned('?מי יהיה מצטיין השבוע', PADDING + 10, '46px DejaVuSans-Bold', '#facc15');
 
   for (let i = 0; i < top.length; i++) {
     const { id, minutes } = top[i];
@@ -126,7 +126,7 @@ async function execute(interaction, client) {
   fs.writeFileSync(outputPath, buffer);
 
   await interaction.editReply({
-    content: '⬇️ מצב LIVE – התקדמות לעבר ה־MVP:',
+    content: '⬇️ MVP LIVE ⬇️',
     files: [outputPath]
   });
 }

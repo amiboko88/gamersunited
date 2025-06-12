@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>שמעון – פקודות מנהלים</title>
+  <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Assistant', sans-serif;
+      background: linear-gradient(to bottom right, #1e1b4b, #0f172a);
+      color: #fff;
+      width: 2000px;
+      height: 600px;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      height: 100%;
+      padding: 40px 80px;
+      box-sizing: border-box;
+    }
+
+    .title {
+      font-size: 48px;
+      color: #fbbf24;
+      margin-bottom: 20px;
+    }
+
+    .role-info {
+      font-size: 28px;
+      background-color: #78350f;
+      color: #fde68a;
+      padding: 12px 20px;
+      border-radius: 12px;
+      display: inline-block;
+      margin-bottom: 30px;
+    }
+
+    .commands {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 20px;
+    }
+
+    .command-card {
+      background-color: #1e293b;
+      padding: 18px 24px;
+      border-radius: 12px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      font-size: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .command-name {
+      font-weight: bold;
+      color: #fcd34d;
+    }
+
+    .command-desc {
+      color: #e0f2fe;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="title">👑 פקודות מנהלים</div>
+    <div class="role-info">🎩 אתה מזוהה כ־Admin – הפקודות האלו זמינות לך בלבד</div>
+
+    <div class="commands">
+      <div class="command-card">
+        <span class="command-name">/updaterules</span>
+        <span class="command-desc">עדכון חוקים 🔧</span>
+      </div>
+      <div class="command-card">
+        <span class="command-name">/rulestats</span>
+        <span class="command-desc">אישרו חוקים 📑</span>
+      </div>
+      <div class="command-card">
+        <span class="command-name">/tts</span>
+        <span class="command-desc">בדיקת תווים 🗣️</span>
+      </div>
+      <div class="command-card">
+        <span class="command-name">/leaderboard</span>
+        <span class="command-desc">שליחת לוח תוצאות 🏅</span>
+      </div>
+      <div class="command-card">
+        <span class="command-name">/הקלט</span>
+        <span class="command-desc">התחלת הקלטת שיחה 🎙️</span>
+      </div>
+      <div class="command-card">
+        <span class="command-name">/השמע_אחרון</span>
+        <span class="command-desc">נגן את ההקלטה האחרונה ▶️</span>
+      </div>
+      <div class="command-card">
+        <span class="command-name">/רשימת_הקלטות</span>
+        <span class="command-desc">כל ההקלטות שלך 📂</span>
+      </div>
+      <div class="command-card">
+        <span class="command-name">/מחק_הקלטות</span>
+        <span class="command-desc">ניקוי ההקלטות 🧹</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

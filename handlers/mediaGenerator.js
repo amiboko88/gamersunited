@@ -1,116 +1,75 @@
 const sharp = require('sharp');
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
+const { createCanvas, loadImage } = require('canvas');
 
-const LOGO_PATH = path.join(__dirname, '..', 'assets', 'logo.png');
+const AVATAR_SIZE = 72;
+const WIDTH = 1000;
+const HEIGHT = 562;
 
 /**
- * יוצר באנר WARZONE FIFO בגרסה גרפית מקצועית
- * @param {Collection<string, GuildMember>} players
- * @returns {Promise<Buffer>}
+ * יוצר באנר עוצמתי ב־1000x562 עם עיצוב גיימרי
+ * @param {Collection<string, GuildMember>} players - שחקנים מחוברים
+ * @returns {Promise<Buffer>} קובץ תמונה (webp) מוכן לדיסקורד
  */
 async function generateProBanner(players) {
-  const width = 800;
-  const height = 450;
-  const avatarSize = 64;
-  const spacing = 30;
-  const startX = 50;
-  const startY = 120;
+  const canvas = createCanvas(WIDTH, HEIGHT);
+  const ctx = canvas.getContext('2d');
 
-  const base = sharp({
-    create: {
-      width,
-      height,
-      channels: 4,
-      background: '#0f0f0f'
-    }
-  });
+  // רקע כהה
+  ctx.fillStyle = '#181a1b';
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-  const composites = [];
+  // כותרת
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 36px "Arial"';
+  ctx.fillText('🎮 FIFO SQUAD מחוברים עכשיו', 40, 60);
 
-  // ✅ לוגו עם resize בטוח
-  if (fs.existsSync(LOGO_PATH)) {
-    const resizedLogo = await sharp(LOGO_PATH)
-      .resize({ width: 100, height: 100, fit: 'contain' })
-      .toBuffer();
-
-    composites.push({
-      input: resizedLogo,
-      top: height - 110,
-      left: width - 110
-    });
-  }
-
-  // 📝 כותרת עליונה
-  composites.push({
-    input: Buffer.from(
-      `<svg width="${width}" height="60">
-         <text x="40" y="40" font-size="32" fill="white" font-family="Arial">צוות WARZONE פעיל עכשיו</text>
-       </svg>`
-    ),
-    top: 20,
-    left: 0
-  });
-
-  // 🧑‍🎤 אוואטרים + שמות
-  const playersArray = [...players.values()].slice(0, 6); // מקסימום 6
-  let x = startX;
-
-  for (const member of playersArray) {
+  // אוואטרים + שמות
+  let y = 110;
+  for (const member of [...players.values()].slice(0, 7)) {
     try {
-      const avatarUrl = member.displayAvatarURL({ format: 'png', size: 128 });
-      const avatarRes = await axios.get(avatarUrl, { responseType: 'arraybuffer' });
+      const avatarURL = member.displayAvatarURL({ extension: 'png', size: 128 });
+      const avatarImage = await loadImage(avatarURL);
+      const x = 50;
 
-      const avatarBuffer = await sharp(avatarRes.data)
-        .resize(avatarSize, avatarSize)
-        .composite([{
-          input: Buffer.from(
-            `<svg><circle cx="${avatarSize/2}" cy="${avatarSize/2}" r="${avatarSize/2}" fill="none"/></svg>`
-          ),
-          blend: 'dest-in'
-        }])
-        .png()
-        .toBuffer();
+      // אוואטר עגול
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(x + AVATAR_SIZE / 2, y + AVATAR_SIZE / 2, AVATAR_SIZE / 2, 0, Math.PI * 2, true);
+      ctx.closePath();
+      ctx.clip();
 
-      composites.push({ input: avatarBuffer, top: startY, left: x });
+      ctx.drawImage(avatarImage, x, y, AVATAR_SIZE, AVATAR_SIZE);
+      ctx.restore();
 
-      const name = member.displayName.length > 12
-        ? member.displayName.slice(0, 11) + '…'
+      // מסגרת
+      ctx.strokeStyle = 'cyan';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(x + AVATAR_SIZE / 2, y + AVATAR_SIZE / 2, AVATAR_SIZE / 2, 0, Math.PI * 2, true);
+      ctx.stroke();
+
+      // שם
+      const displayName = member.displayName.length > 16
+        ? member.displayName.slice(0, 15) + '…'
         : member.displayName;
 
-      composites.push({
-        input: Buffer.from(
-          `<svg width="${avatarSize}" height="30">
-             <text x="0" y="20" font-size="16" fill="lime" font-family="Arial">${name}</text>
-           </svg>`
-        ),
-        top: startY + avatarSize + 8,
-        left: x
-      });
+      ctx.font = '24px "Arial"';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(displayName, x + AVATAR_SIZE + 20, y + AVATAR_SIZE / 1.5);
 
-      x += avatarSize + spacing;
-
+      y += AVATAR_SIZE + 24;
     } catch (err) {
-      console.warn(`⚠️ שגיאה בטעינת אוואטר של ${member.displayName}: ${err.message}`);
+      console.warn(`⚠️ שגיאה באוואטר של ${member.displayName}: ${err.message}`);
     }
   }
 
-  // 🪪 חתימה תחתונה
-  composites.push({
-    input: Buffer.from(
-      `<svg width="${width}" height="30">
-         <text x="${width - 240}" y="20" font-size="16" fill="#999" font-family="Arial">FIFO | UNITED IL</text>
-       </svg>`
-    ),
-    top: height - 40,
-    left: 0
-  });
+  // חתימה תחתונה
+  ctx.fillStyle = '#888';
+  ctx.font = '18px "Arial"';
+  ctx.fillText('GAMERS UNITED IL | FIFO ACTIVE', WIDTH - 250, HEIGHT - 30);
 
-  return await base
-    .composite(composites)
-    .webp({ quality: 100 })
-    .toBuffer();
+  return canvas.toBuffer('image/webp');
 }
 
 module.exports = {

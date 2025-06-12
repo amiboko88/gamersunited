@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>שמעון – פקודות משתמש</title>
+  <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Assistant', sans-serif;
+      background: linear-gradient(to bottom right, #0f172a, #1e293b);
+      color: #fff;
+      width: 2000px;
+      height: 600px;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      height: 100%;
+      padding: 40px 80px;
+      box-sizing: border-box;
+    }
+
+    .title {
+      font-size: 48px;
+      color: #38bdf8;
+      margin-bottom: 20px;
+    }
+
+    .role-info {
+      font-size: 28px;
+      background-color: #14532d;
+      color: #a7f3d0;
+      padding: 12px 20px;
+      border-radius: 12px;
+      display: inline-block;
+      margin-bottom: 30px;
+    }
+
+    .commands {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 20px;
+    }
+
+    .command-card {
+      background-color: #1e293b;
+      padding: 18px 24px;
+      border-radius: 12px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      font-size: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .command-name {
+      font-weight: bold;
+      color: #facc15;
+    }
+
+    .command-desc {
+      color: #e0f2fe;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="title">👤 פקודות משתמש</div>
+    <div class="role-info">🙋‍♂️ אתה מזוהה כמשתמש רגיל – אלו הפקודות שזמינות עבורך</div>
+
+    <div class="commands">
+      <div class="command-card">
+        <span class="command-name">/אימות</span>
+        <span class="command-desc">אימות משתמש חדש ✅</span>
+      </div>
+      <div class="command-card">
+        <span class="command-name">/מוזיקה</span>
+        <span class="command-desc">נגן שיר 🎵</span>
+      </div>
+      <div class="command-card">
+        <span class="command-name">/פיפו</span>
+        <span class="command-desc">הפעל מצב פיפו 🎮</span>
+      </div>
+      <div class="command-card">
+        <span class="command-name">/סאונדבורד</span>
+        <span class="command-desc">השמע סאונד מצחיק 🔊</span>
+      </div>
+      <div class="command-card">
+        <span class="command-name">/מצטיין_שבוע</span>
+        <span class="command-desc">תצוגת מצטיינים 🏆</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

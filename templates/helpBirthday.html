@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>שמעון – ימי הולדת</title>
+  <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Assistant', sans-serif;
+      background: linear-gradient(to bottom right, #4c1d95, #1e293b);
+      color: #fff;
+      width: 2000px;
+      height: 600px;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      height: 100%;
+      padding: 40px 80px;
+      box-sizing: border-box;
+    }
+
+    .title {
+      font-size: 48px;
+      color: #c084fc;
+      margin-bottom: 20px;
+    }
+
+    .role-info {
+      font-size: 28px;
+      background-color: #581c87;
+      color: #f3e8ff;
+      padding: 12px 20px;
+      border-radius: 12px;
+      display: inline-block;
+      margin-bottom: 30px;
+    }
+
+    .commands {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 20px;
+    }
+
+    .command-card {
+      background-color: #312e81;
+      padding: 18px 24px;
+      border-radius: 12px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      font-size: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .command-name {
+      font-weight: bold;
+      color: #facc15;
+    }
+
+    .command-desc {
+      color: #e0f2fe;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="title">🎂 פקודות ימי הולדת</div>
+    <div class="role-info">🎉 הפקודות הבאות עוזרות לך לעדכן ולראות תאריכי יומולדת</div>
+
+    <div class="commands">
+      <div class="command-card">
+        <span class="command-name">/הוסף_יום_הולדת</span>
+        <span class="command-desc">הוסף את היום שלך 🎂</span>
+      </div>
+      <div class="command-card">
+        <span class="command-name">/ימי_הולדת</span>
+        <span class="command-desc">רשימת החוגגים הקרובים 📅</span>
+      </div>
+      <div class="command-card">
+        <span class="command-name">/היום_הולדת_הבא</span>
+        <span class="command-desc">מי הכי קרוב לחגוג? 🔜</span>
+      </div>
+      <div class="command-card">
+        <span class="command-name">/ימי_הולדת_חסרים</span>
+        <span class="command-desc">מי לא עדכן עדיין? ⏳</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

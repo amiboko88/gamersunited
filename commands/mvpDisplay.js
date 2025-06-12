@@ -38,7 +38,7 @@ async function execute(interaction, client) {
   const maxMinutes = active[0].minutes;
   const top = active.slice(0, 10);
 
-  // יצירת תמונה
+  // 🎨 יצירת Canvas
   const width = 1200;
   const rowHeight = 100;
   const height = rowHeight * top.length + 150;
@@ -90,7 +90,12 @@ async function execute(interaction, client) {
     ctx.fillRect(barX + filled, y + 25, barWidth - filled, 20);
   }
 
+  // יצירת קובץ
   const outputPath = path.join(__dirname, '../temp/mvp_live.png');
+  const dirPath = path.dirname(outputPath);
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
   const buffer = canvas.toBuffer('image/png');
   fs.writeFileSync(outputPath, buffer);
 

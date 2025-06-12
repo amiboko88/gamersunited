@@ -8,7 +8,7 @@ const {
 
 const fs = require('fs');
 const path = require('path');
-const generateHelpImageByName = require('../handlers/generateHelpImageByName');
+const generateHelpImageByName = require('../handlers/generateHelpImage');
 
 const HELP_IMAGES = ['helpUser.png', 'helpBirthday.png'];
 const ADMIN_IMAGES = ['helpAdmin.png'];

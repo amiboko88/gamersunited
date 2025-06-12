@@ -1,10 +1,11 @@
-// 📁 ttsCommand.js – פקודת Slash להצגת סטטוס TTS (גרסה עברית, גדולה, מימין לשמאל, OpenAI בלבד)
+// 📁 commands/ttsCommand.js – פקודת Slash להצגת סטטוס TTS של שמעון עם גרף חכם
 
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
+const { generateTTSImage } = require('../utils/ttsStatsImage');
 const { getTTSQuotaReport } = require('../tts/ttsQuotaManager');
 
-function rtl(txt) {
-  return `\u200F${txt}`; // סימון RTL
+function rtl(text) {
+  return `\u200F${text}`; // מגדיר RTL
 }
 
 module.exports = {
@@ -14,54 +15,30 @@ module.exports = {
 
   async execute(interaction) {
     try {
+      await interaction.deferReply({ ephemeral: true });
+
       const report = await getTTSQuotaReport();
       if (!report) throw new Error('הדו"ח לא זמין');
 
-      // גרסה עם Embed – הכל עברית, אימוג'י בסוף, מימין לשמאל, טקסט גדול
-      const embed = new EmbedBuilder()
-        .setTitle(rtl('🔊 סטטוס TTS של שמעון'))
-        .setColor(0x2b2d31)
-        .addFields(
-          {
-            name: rtl('תווים יומיים'),
-            value: rtl(`__${report.dailyCharacters.used}__ מתוך __${report.dailyCharacters.limit}__  📅\n${report.dailyCharacters.status}`),
-            inline: false
-          },
-          {
-            name: rtl('קריאות יומיות'),
-            value: rtl(`__${report.dailyCalls.used}__ מתוך __${report.dailyCalls.limit}__  📞\n${report.dailyCalls.status}`),
-            inline: false
-          },
-          {
-            name: rtl('תווים חודשיים'),
-            value: rtl(`__${report.monthlyCharacters.used}__ מתוך __${report.monthlyCharacters.limit}__  🗓️\n${report.monthlyCharacters.status}`),
-            inline: false
-          }
-        )
-        .setFooter({ text: rtl('אם הגענו ל־90% – שמעון יעבור למצב דממה 😶‍🌫️') });
+      const buffer = await generateTTSImage();
+      const attachment = new AttachmentBuilder(buffer, { name: 'tts_stats.png' });
 
-      // אפשר גם לשלוח טקסט פשוט:
-      /*
-      const text = [
-        rtl('__🔊 סטטוס TTS של שמעון__'),
-        rtl(`• תווים יומיים: ${report.dailyCharacters.used} מתוך ${report.dailyCharacters.limit} 📅  –  ${report.dailyCharacters.status}`),
-        rtl(`• קריאות יומיות: ${report.dailyCalls.used} מתוך ${report.dailyCalls.limit} 📞  –  ${report.dailyCalls.status}`),
-        rtl(`• תווים חודשיים: ${report.monthlyCharacters.used} מתוך ${report.monthlyCharacters.limit} 🗓️  –  ${report.monthlyCharacters.status}`),
-        rtl('אם הגענו ל־90% – שמעון יעבור למצב דממה 😶‍🌫️')
-      ].join('\n');
-      */
+      const statusText = [
+        `📊 מצב יומי: ${report.dailyCharacters.used} / ${report.dailyCharacters.limit} תווים – ${report.dailyCharacters.status}`,
+        `📞 קריאות: ${report.dailyCalls.used} / ${report.dailyCalls.limit} – ${report.dailyCalls.status}`,
+        `📆 מצב חודשי: ${report.monthlyCharacters.used} / ${report.monthlyCharacters.limit} – ${report.monthlyCharacters.status}`,
+        `🧠 אם הגענו ל־90% – שמעון נכנס למצב דממה`
+      ].map(rtl).join('\n');
 
-      await interaction.reply({
-        embeds: [embed],
-        // content: text, // להחליף ל־content אם רוצים טקסט רגיל (לא Embed)
-        flags: 64 // ✅ לא ציבורי
+      await interaction.editReply({
+        content: statusText,
+        files: [attachment]
       });
 
     } catch (err) {
       console.error('❌ שגיאה בפקודת /tts:', err);
-      await interaction.reply({
-        content: rtl('שמעון לא הצליח להביא את הסטטוס כרגע 😢'),
-        flags: 64
+      await interaction.editReply({
+        content: rtl('שמעון לא הצליח להביא את הסטטוס כרגע 😢')
       });
     }
   }

@@ -38,64 +38,90 @@ async function execute(interaction, client) {
   const maxMinutes = active[0].minutes;
   const top = active.slice(0, 10);
 
-  // 🎨 יצירת Canvas
-  const width = 1200;
-  const rowHeight = 100;
-  const height = rowHeight * top.length + 150;
-  const canvas = createCanvas(width, height);
+  // Canvas config
+  const WIDTH = 1260;
+  const PADDING = 40;
+  const ROW_HEIGHT = 100;
+  const BAR_WIDTH = 500;
+  const BAR_HEIGHT = 32;
+  const AVATAR_SIZE = 64;
+  const HEIGHT = PADDING + ROW_HEIGHT * top.length + 60;
+
+  const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx = canvas.getContext('2d');
 
   // רקע
   ctx.fillStyle = '#0f172a';
-  ctx.fillRect(0, 0, width, height);
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  // פונטים
+  const fontBold = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
+  const fontRegular = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
+  const fontTitle = await loadFont(fontBold, 46);
+  const fontName = await loadFont(fontBold, 28);
+  const fontStats = await loadFont(fontRegular, 22);
+  const fontPercent = await loadFont(fontBold, 20);
+
+  function drawText(text, x, y, font, color = '#ffffff') {
+    ctx.font = font;
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+  }
+
+  function drawRightAligned(text, y, font, color = '#ffffff', padding = PADDING) {
+    ctx.font = font;
+    const w = ctx.measureText(text).width;
+    ctx.fillStyle = color;
+    ctx.fillText(text, WIDTH - padding - w, y);
+  }
 
   // כותרת
-  ctx.fillStyle = '#facc15';
-  ctx.font = 'bold 50px sans-serif';
-  ctx.fillText('📈 דירוג שבועי – מי הכי קרוב ל־MVP?', 50, 70);
+  drawRightAligned('מי הכי קרוב ל־MVP השבוע?', PADDING + 10, '46px DejaVuSans-Bold', '#facc15');
 
   for (let i = 0; i < top.length; i++) {
-    const user = await client.users.fetch(top[i].id).catch(() => null);
-    const minutes = top[i].minutes;
+    const { id, minutes } = top[i];
+    const user = await client.users.fetch(id).catch(() => null);
+    const username = user?.username || `משתמש (${id.slice(-4)})`;
     const percent = Math.round((minutes / maxMinutes) * 100);
-    const y = 120 + i * rowHeight;
+    const y = PADDING + 60 + i * ROW_HEIGHT;
 
     // אווטאר
     try {
       const avatar = await loadImage(user.displayAvatarURL({ extension: 'png', size: 128 }));
       ctx.save();
       ctx.beginPath();
-      ctx.arc(90, y + 40, 35, 0, Math.PI * 2);
-      ctx.closePath();
+      ctx.arc(PADDING + AVATAR_SIZE / 2, y + AVATAR_SIZE / 2, AVATAR_SIZE / 2, 0, Math.PI * 2);
       ctx.clip();
-      ctx.drawImage(avatar, 55, y + 5, 70, 70);
+      ctx.drawImage(avatar, PADDING, y, AVATAR_SIZE, AVATAR_SIZE);
       ctx.restore();
     } catch {}
 
-    // שם ודקות
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '28px sans-serif';
-    ctx.fillText(user?.username || 'משתמש לא ידוע', 140, y + 35);
-    ctx.fillStyle = '#a5b4fc';
-    ctx.font = '24px sans-serif';
-    ctx.fillText(`${minutes} דקות (${percent}%)`, 140, y + 65);
+    // שם
+    drawText(username, PADDING + AVATAR_SIZE + 20, y + 28, '28px DejaVuSans-Bold');
+    drawText(`${minutes} דקות`, PADDING + AVATAR_SIZE + 20, y + 60, '22px DejaVuSans');
 
-    // פס התקדמות
-    const barWidth = 600;
-    const barX = 500;
-    const filled = (percent / 100) * barWidth;
-    ctx.fillStyle = '#10b981';
-    ctx.fillRect(barX, y + 25, filled, 20);
+    // בר התקדמות
+    const barX = WIDTH - PADDING - BAR_WIDTH;
+    const barY = y + 20;
+    const fillWidth = Math.round((percent / 100) * BAR_WIDTH);
     ctx.fillStyle = '#334155';
-    ctx.fillRect(barX + filled, y + 25, barWidth - filled, 20);
+    ctx.fillRect(barX, barY, BAR_WIDTH, BAR_HEIGHT);
+    ctx.fillStyle = '#10b981';
+    ctx.fillRect(barX, barY, fillWidth, BAR_HEIGHT);
+
+    // אחוז בתוך הבר
+    const percentText = `${percent}%`;
+    const textW = ctx.measureText(percentText).width;
+    const inside = fillWidth > textW + 16;
+    const percentX = inside ? barX + fillWidth - textW - 8 : barX + fillWidth + 8;
+    const percentColor = inside ? '#ffffff' : '#10b981';
+    drawText(percentText, percentX, barY + 23, '20px DejaVuSans-Bold', percentColor);
   }
 
-  // יצירת קובץ
+  // שמירה
   const outputPath = path.join(__dirname, '../temp/mvp_live.png');
   const dirPath = path.dirname(outputPath);
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
-  }
+  if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
   const buffer = canvas.toBuffer('image/png');
   fs.writeFileSync(outputPath, buffer);
 
@@ -103,6 +129,11 @@ async function execute(interaction, client) {
     content: '⬇️ מצב LIVE – התקדמות לעבר ה־MVP:',
     files: [outputPath]
   });
+}
+
+// פונקציית טעינת פונט
+async function loadFont(path, size) {
+  return `${size}px DejaVuSans`;
 }
 
 module.exports = {

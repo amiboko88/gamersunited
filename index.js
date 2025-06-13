@@ -20,10 +20,7 @@ const { data: helpData, execute: helpExecute, handleButton: helpHandleButton } =
 // 📈 מערכת ניטור פעילות + רמות
 const {
   setupMemberTracker,
-  inactivityCommand,
-  finalCheckCommand,
-  remindAgainCommand,
-  manualScanCommand
+  inactivityCommand
 } = require('./handlers/memberTracker');
 
 const { handleXPMessage, rankCommand } = require('./handlers/engagementManager');
@@ -82,10 +79,7 @@ const commands = [];
 registerMvpCommand(commands);
 commands.push(
   rankCommand.data,
-inactivityCommand.data,
-finalCheckCommand.data,
-remindAgainCommand.data,
-manualScanCommand.data,
+  inactivityCommand.data,
   recordData,
   playbackData,
   listData,

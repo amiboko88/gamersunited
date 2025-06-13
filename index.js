@@ -69,7 +69,6 @@ const { startMvpScheduler } = require('./handlers/mvpTracker');
 const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
 const { startLeaderboardUpdater } = require('./handlers/leaderboardUpdater');
 const { data: leaderboardData, execute: leaderboardExecute } = require('./commands/leaderboard');
-const { setupMemberTracker } = require('./handlers/memberTracker');
 const { data: refreshRulesData, execute: refreshRulesExecute } = require('./commands/refreshRules');
 const { data: rulesStatsData, execute: rulesStatsExecute } = require('./commands/rulesStats');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');

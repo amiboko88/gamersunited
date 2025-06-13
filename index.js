@@ -17,6 +17,17 @@ const { startFifoWarzoneAnnouncer } = require('./handlers/fifoWarzoneAnnouncer')
 // ✅ עזרה חדשה עם כפתורים
 const { data: helpData, execute: helpExecute, handleButton: helpHandleButton } = require('./commands/help');
 
+// 📈 מערכת ניטור פעילות + רמות
+const {
+  setupMemberTracker,
+  inactivityCommand,
+  finalCheckCommand,
+  remindAgainCommand
+} = require('./handlers/memberTracker');
+
+const { handleXPMessage, rankCommand } = require('./handlers/engagementManager');
+
+
 // 📘 שאר הייבוא שלך (נשאר בדיוק כפי שהוא)
 const {
   sendPublicRulesEmbed,
@@ -70,6 +81,10 @@ const statTracker = require('./handlers/statTracker');
 const commands = [];
 registerMvpCommand(commands);
 commands.push(
+  rankCommand.data,
+inactivityCommand.data,
+finalCheckCommand.data,
+remindAgainCommand.data,
   recordData,
   playbackData,
   listData,
@@ -158,6 +173,7 @@ client.on('presenceUpdate', (oldPresence, newPresence) => {
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
   await statTracker.trackMessage(message);
+  await handleXPMessage(message); // 🧮 מעניק XP
 
   const lowered = message.content.toLowerCase();
   const targetBot = lowered.includes('שמעון') || lowered.includes('bot') || lowered.includes('shim');
@@ -171,6 +187,7 @@ client.on('messageCreate', async message => {
   await handleSpam(message);
   await smartChat(message);
 });
+
 
 // ⚙️ אינטראקציות
 
@@ -312,6 +329,9 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'עזרה') return helpExecute(interaction);
 
   // מנהלים Slash
+  if (commandName === 'inactive_list') return inactivityCommand.execute(interaction);
+  if (commandName === 'inactive_final_check') return finalCheckCommand.execute(interaction);
+  if (commandName === 'remind_again') return remindAgainCommand.execute(interaction);
   if (commandName === 'updaterules') return refreshRulesExecute(interaction);
   if (commandName === 'rulestats') return rulesStatsExecute(interaction);
   if (commandName === 'tts') return ttsCommand.execute(interaction);
@@ -322,6 +342,7 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'מחק_הקלטות') return deleteExecute(interaction);
 
   // משתמשים Slash
+  if (commandName === 'רמה_שלי') return rankCommand.execute(interaction);
   if (commandName === 'סאונדבורד') return soundExecute(interaction, client);
   if (commandName === 'אימות') return verifyExecute(interaction);
   if (commandName === 'מוזיקה') return songExecute(interaction, client);

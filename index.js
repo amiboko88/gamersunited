@@ -22,7 +22,8 @@ const {
   setupMemberTracker,
   inactivityCommand,
   finalCheckCommand,
-  remindAgainCommand
+  remindAgainCommand,
+  manualScanCommand
 } = require('./handlers/memberTracker');
 
 const { handleXPMessage, rankCommand } = require('./handlers/engagementManager');
@@ -84,6 +85,7 @@ commands.push(
 inactivityCommand.data,
 finalCheckCommand.data,
 remindAgainCommand.data,
+manualScanCommand.data,
   recordData,
   playbackData,
   listData,
@@ -191,8 +193,6 @@ client.on('messageCreate', async message => {
 // ⚙️ אינטראקציות
 
 client.on('interactionCreate', async interaction => {
-
- 
   if (interaction.isAutocomplete()) return songAutocomplete(interaction);
 
   // ✅ עזרה אינטראקטיבית (Button, Modal)
@@ -208,109 +208,153 @@ client.on('interactionCreate', async interaction => {
     if (interaction.customId.startsWith('vote_')) {
       return handleRSVP(interaction, client);
     }
+
     if (interaction.customId === 'show_stats') {
       return handleRSVP(interaction, client);
     }
-    // כפתורים אחרים
+
+    // כפתורי מוסיקה
     if (['pause', 'resume', 'stop'].includes(interaction.customId)) {
       return handleMusicControls(interaction);
     }
+
+    // כפתור יום הולדת
     if (interaction.customId === 'open_birthday_modal') {
       return showBirthdayModal(interaction);
     }
+
+    // כפתורי חוקים
     if (interaction.customId.startsWith('rules_') || interaction.customId === 'accept_rules') {
       return handleRulesInteraction(interaction);
     }
 
-
-// 🔄 Replay לפי קבוצה
-  if (interaction.customId.startsWith('replay_')) {
-    const teamName = interaction.customId.replace('replay_', '').replace('_', ' ');
-    const voteResult = registerReplayVote(teamName, interaction.user.id);
-
-    if (!voteResult) {
-      return await interaction.reply({ content: '⚠️ שגיאה פנימית בריפליי.', ephemeral: true });
+    // 🔘 כפתור שליחה חוזרת - DM ראשוני או ראשון חוזר
+    if (interaction.customId.startsWith('send_dm_again_')) {
+      const userId = interaction.customId.replace('send_dm_again_', '');
+      try {
+        const user = await interaction.client.users.fetch(userId);
+        const prompt = `אתה שמעון, בוט גיימרים ישראלי. תכתוב תזכורת חביבה עבור משתמש שטרם היה פעיל.`;
+        const dm = await smartChat.smartRespond({ content: '', author: user }, 'שובב', prompt);
+        await user.send(dm);
+        await db.collection('memberTracking').doc(userId).set({
+          dmSent: true,
+          dmSentAt: new Date().toISOString(),
+          reminderCount: 1
+        }, { merge: true });
+        await interaction.reply({ content: `✅ נשלחה תזכורת ל־<@${userId}>`, ephemeral: true });
+      } catch (err) {
+        await interaction.reply({ content: `❌ לא ניתן לשלוח ל־<@${userId}>: ${err.message}`, ephemeral: true });
+      }
+      return;
     }
 
-    await interaction.reply({ content: '💬 ההצבעה שלך נרשמה.', ephemeral: true });
+    // 🔴 כפתור שליחה חוזרת - תזכורת אחרונה למתעלמים
+    if (interaction.customId.startsWith('send_final_dm_')) {
+      const userId = interaction.customId.replace('send_final_dm_', '');
+      try {
+        const user = await interaction.client.users.fetch(userId);
+        const prompt = `אתה שמעון, בוט גיימרים ישראלי. תכתוב תזכורת אחרונה ומשעשעת למשתמש שהתעלם מהודעות קודמות.`;
+        const dm = await smartChat.smartRespond({ content: '', author: user }, 'שובב', prompt);
+        await user.send(dm);
+        await db.collection('memberTracking').doc(userId).set({
+          reminderCount: 3,
+          dmSentAt: new Date().toISOString()
+        }, { merge: true });
+        await interaction.reply({ content: `📨 נשלחה תזכורת סופית ל־<@${userId}>`, ephemeral: true });
+      } catch (err) {
+        await interaction.reply({ content: `❌ שגיאה בשליחה ל־<@${userId}>: ${err.message}`, ephemeral: true });
+      }
+      return;
+    }
 
-    // ✅ אם כולם בקבוצה הזו הצביעו – השמע לקבוצה השנייה
-    if (voteResult.allVoted) {
-      const opponentGroup = [...activeGroups.entries()].find(([name]) => name !== teamName);
-      if (opponentGroup) {
-        const [_, opponentData] = opponentGroup;
-        const voiceChannel = interaction.guild.channels.cache.get(opponentData.channelId);
-        if (voiceChannel) {
-          await playTTSInVoiceChannel(
-            voiceChannel,
-            `שחקני ${teamName} רוצים ריפליי. מה דעתכם ${opponentData.name}?`
-          );
+    // 🔄 Replay לפי קבוצה
+    if (interaction.customId.startsWith('replay_')) {
+      const teamName = interaction.customId.replace('replay_', '').replace('_', ' ');
+      const voteResult = registerReplayVote(teamName, interaction.user.id);
+
+      if (!voteResult) {
+        return await interaction.reply({ content: '⚠️ שגיאה פנימית בריפליי.', ephemeral: true });
+      }
+
+      await interaction.reply({ content: '💬 ההצבעה שלך נרשמה.', ephemeral: true });
+
+      // ✅ אם כולם בקבוצה הזו הצביעו – השמע לקבוצה השנייה
+      if (voteResult.allVoted) {
+        const opponentGroup = [...activeGroups.entries()].find(([name]) => name !== teamName);
+        if (opponentGroup) {
+          const [_, opponentData] = opponentGroup;
+          const voiceChannel = interaction.guild.channels.cache.get(opponentData.channelId);
+          if (voiceChannel) {
+            await playTTSInVoiceChannel(
+              voiceChannel,
+              `שחקני ${teamName} רוצים ריפליי. מה דעתכם ${opponentData.name}?`
+            );
+          }
         }
       }
+
+      // ✅ אם גם הקבוצה השנייה הצביעה — איפוס מלא
+      if (hasReplayVotes(teamName) && hasBothTeamsVoted()) {
+        await executeReplayReset(interaction.guild, interaction.channel, teamName);
+      }
+
+      return;
     }
 
-    // ✅ אם גם הקבוצה השנייה הצביעה — איפוס מלא
-    if (hasReplayVotes(teamName) && hasBothTeamsVoted()) {
-      await executeReplayReset(interaction.guild, interaction.channel, teamName);
-    }
+    // 🚀 חלקו מחדש
+    if (interaction.customId === 'repartition_now') {
+      const FIFO_CHANNEL_ID = '123456789012345678'; // 🛑 עדכן ל־ID של הערוץ הראשי
+      const FIFO_CATEGORY_ID = process.env.FIFO_CATEGORY_ID;
+      const DEFAULT_GROUP_SIZE = 3;
 
-    return;
-  }
+      const voiceChannel = interaction.guild.channels.cache.get(FIFO_CHANNEL_ID);
+      if (!voiceChannel?.isVoiceBased()) return;
 
-  // 🚀 חלקו מחדש
-  if (interaction.customId === 'repartition_now') {
-    const FIFO_CHANNEL_ID = '123456789012345678'; // 🛑 עדכן ל־ID של הערוץ הראשי
-    const FIFO_CATEGORY_ID = process.env.FIFO_CATEGORY_ID;
-    const DEFAULT_GROUP_SIZE = 3;
+      const members = voiceChannel.members.filter(m => !m.user.bot);
+      if (members.size < 2) {
+        return await interaction.reply({ content: '⛔ אין מספיק שחקנים.', ephemeral: true });
+      }
 
-    const voiceChannel = interaction.guild.channels.cache.get(FIFO_CHANNEL_ID);
-    if (!voiceChannel?.isVoiceBased()) return;
+      await interaction.deferReply({ ephemeral: true });
 
-    const members = voiceChannel.members.filter(m => !m.user.bot);
-    if (members.size < 2) {
-      return await interaction.reply({ content: '⛔ אין מספיק שחקנים.', ephemeral: true });
-    }
-
-    await interaction.deferReply({ ephemeral: true });
-
-    const { groups, waiting, channels } = await createGroupsAndChannels({
-      interaction,
-      members: [...members.values()],
-      groupSize: DEFAULT_GROUP_SIZE,
-      categoryId: FIFO_CATEGORY_ID,
-      openChannels: true
-    });
-
-    const summaryEmbed = new EmbedBuilder()
-      .setTitle('📢 בוצעה חלוקה מחדש!')
-      .setColor(0x00ff88)
-      .setTimestamp();
-
-    groups.forEach((group, i) => {
-      const name = `TEAM ${String.fromCharCode(65 + i)}`;
-      summaryEmbed.addFields({
-        name,
-        value: group.map(m => m.displayName).join(', '),
-        inline: false
+      const { groups, waiting, channels } = await createGroupsAndChannels({
+        interaction,
+        members: [...members.values()],
+        groupSize: DEFAULT_GROUP_SIZE,
+        categoryId: FIFO_CATEGORY_ID,
+        openChannels: true
       });
 
-      const ch = channels[i];
-      if (ch) startGroupTracking(ch, group.map(m => m.id), name);
-    });
+      const summaryEmbed = new EmbedBuilder()
+        .setTitle('📢 בוצעה חלוקה מחדש!')
+        .setColor(0x00ff88)
+        .setTimestamp();
 
-    if (waiting.length > 0) {
-      summaryEmbed.addFields({
-        name: '⏳ ממתינים',
-        value: waiting.map(m => m.displayName).join(', '),
-        inline: false
+      groups.forEach((group, i) => {
+        const name = `TEAM ${String.fromCharCode(65 + i)}`;
+        summaryEmbed.addFields({
+          name,
+          value: group.map(m => m.displayName).join(', '),
+          inline: false
+        });
+
+        const ch = channels[i];
+        if (ch) startGroupTracking(ch, group.map(m => m.id), name);
       });
+
+      if (waiting.length > 0) {
+        summaryEmbed.addFields({
+          name: '⏳ ממתינים',
+          value: waiting.map(m => m.displayName).join(', '),
+          inline: false
+        });
+      }
+
+      await interaction.editReply({ content: '✅ החלוקה מחדש בוצעה!', embeds: [summaryEmbed] });
+      resetReplayVotes();
+      return;
     }
 
-    await interaction.editReply({ content: '✅ החלוקה מחדש בוצעה!', embeds: [summaryEmbed] });
-    resetReplayVotes();
-    return;
-  }
-    
     return handleVerifyInteraction(interaction);
   }
 
@@ -327,10 +371,8 @@ client.on('interactionCreate', async interaction => {
   // עזרה (פקודת Slash עזרה)
   if (commandName === 'עזרה') return helpExecute(interaction);
 
-  // מנהלים Slash
-  if (commandName === 'inactive_list') return inactivityCommand.execute(interaction);
-  if (commandName === 'inactive_final_check') return finalCheckCommand.execute(interaction);
-  if (commandName === 'remind_again') return remindAgainCommand.execute(interaction);
+  // Slash מנהלים
+  if (commandName === 'inactivity') return inactivityCommand.execute(interaction);
   if (commandName === 'updaterules') return refreshRulesExecute(interaction);
   if (commandName === 'rulestats') return rulesStatsExecute(interaction);
   if (commandName === 'tts') return ttsCommand.execute(interaction);
@@ -340,22 +382,21 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'רשימת_הקלטות') return listExecute(interaction);
   if (commandName === 'מחק_הקלטות') return deleteExecute(interaction);
 
-  // משתמשים Slash
+  // Slash משתמשים
   if (commandName === 'רמה_שלי') return rankCommand.execute(interaction);
   if (commandName === 'סאונדבורד') return soundExecute(interaction, client);
   if (commandName === 'אימות') return verifyExecute(interaction);
   if (commandName === 'מוזיקה') return songExecute(interaction, client);
   if (commandName === 'פיפו') return fifoExecute(interaction);
   if (commandName === 'מצטיין_שבוע') return mvpDisplayExecute(interaction, client);
-  if ([
-    'הוסף_יום_הולדת',
-    'ימי_הולדת',
-    'היום_הולדת_הבא',
-    'ימי_הולדת_חסרים'
-  ].includes(commandName)) {
+  if (
+    ['הוסף_יום_הולדת', 'ימי_הולדת', 'היום_הולדת_הבא', 'ימי_הולדת_חסרים']
+      .includes(commandName)
+  ) {
     return birthdayExecute(interaction);
   }
 });
+
 
 // 🚀 הפעלה
 client.login(process.env.DISCORD_TOKEN);

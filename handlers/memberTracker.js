@@ -3,7 +3,13 @@ const cron = require('node-cron');
 const db = require('../utils/firebase');
 const statTracker = require('./statTracker');
 const { smartRespond } = require('./smartChat');
-const { EmbedBuilder, SlashCommandBuilder } = require('discord.js');
+const {
+  EmbedBuilder,
+  SlashCommandBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
+} = require('discord.js');
 
 const STAFF_CHANNEL_ID = '881445829100060723';
 const GUILD_ID = process.env.GUILD_ID;
@@ -112,153 +118,201 @@ function setupMemberTracker(client) {
   });
 
   cron.schedule('0 3 * * *', () => runInactivityScan(client));
-  cron.schedule('0 20 * * 0', () => remindAgainCommand.execute({ deferReply: () => {}, client }));
 }
+
+// === פונקציות תתי־הפקודות ===
+
+async function runManualScan(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+  await runInactivityScan(interaction.client);
+  await interaction.editReply('✅ הסריקה הסתיימה.');
+}
+
+async function runRepliedList(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+  const allTracked = await db.collection('memberTracking').get();
+  const client = interaction.client;
+  const replied = allTracked.docs.filter(doc => doc.data().replied === true);
+  if (replied.length === 0) return interaction.editReply('😴 אף משתמש עדיין לא הגיב ל־DM.');
+
+  const embed = new EmbedBuilder().setTitle('📨 משתמשים שענו ל־DM').setColor(0x33cc99).setTimestamp();
+  for (const doc of replied.slice(0, 25)) {
+    const data = doc.data();
+    const userId = doc.id;
+    let username = `לא ידוע (${userId})`;
+    try {
+      const user = await client.users.fetch(userId);
+      username = user.username;
+    } catch {}
+    const text = data.replyText?.slice(0, 100) || '---';
+    const date = data.replyAt?.split('T')[0] || 'לא ידוע';
+    embed.addFields({ name: `${username} (<@${userId}>)`, value: `🗓️ ${date}\n💬 "${text}"`, inline: false });
+  }
+  await interaction.editReply({ embeds: [embed] });
+}
+
+async function runList(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+  const now = Date.now();
+  const allTracked = await db.collection('memberTracking').get();
+  const client = interaction.client;
+
+  const inactiveUsers = allTracked.docs.filter(doc => {
+    const last = new Date(doc.data().lastActivity || doc.data().joinedAt);
+    return (now - last.getTime()) / 86400000 > INACTIVITY_DAYS;
+  });
+
+  if (inactiveUsers.length === 0) {
+    return interaction.editReply('✅ כל המשתמשים פעילים לאחרונה.');
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle('📋 משתמשים לא פעילים מעל חודש')
+    .setColor(0xffaa00)
+    .setTimestamp();
+
+  const rows = [];
+
+  for (const doc of inactiveUsers.slice(0, 5)) {
+    const userId = doc.id;
+    const data = doc.data();
+    let username = `לא ידוע (${userId})`;
+    try {
+      const user = await client.users.fetch(userId);
+      username = user.username;
+    } catch {}
+
+    embed.addFields({
+      name: `${username} (<@${userId}>)`,
+      value: `📆 פעילות אחרונה: ${data.lastActivity?.split('T')[0] || 'לא ידוע'}\n✉️ DM נשלח: ${data.dmSent ? '✅' : '❌'}`,
+      inline: false
+    });
+
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`send_dm_again_${userId}`)
+        .setLabel('📨 שלח DM עכשיו')
+        .setStyle(ButtonStyle.Primary)
+    ));
+  }
+
+  await interaction.editReply({ embeds: [embed], components: rows });
+}
+
+async function runFinalCheck(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+  const now = Date.now();
+  const tracked = await db.collection('memberTracking').get();
+  const guild = await interaction.client.guilds.fetch(GUILD_ID);
+  const members = await guild.members.fetch();
+  const embed = new EmbedBuilder().setTitle('📛 משתמשים שלא ענו ל־DM').setColor(0xff4444).setTimestamp();
+  const rows = [];
+
+  const inactive = tracked.docs.filter(doc => {
+    const d = doc.data();
+    const last = new Date(d.lastActivity || d.joinedAt);
+    const daysInactive = (now - last.getTime()) / 86400000;
+    return daysInactive > INACTIVITY_DAYS && d.dmSent && !d.replied && members.has(doc.id);
+  });
+
+  for (const doc of inactive.slice(0, 5)) {
+    const userId = doc.id;
+    const d = doc.data();
+    let username = `לא ידוע (${userId})`;
+    try {
+      const user = await interaction.client.users.fetch(userId);
+      username = user.username;
+    } catch {}
+
+    embed.addFields({
+      name: `${username} (<@${userId}>)`,
+      value: `📆 אחרון: ${d.lastActivity?.split('T')[0] || 'N/A'}\n📬 נשלח: ${d.dmSentAt?.split('T')[0] || 'N/A'}`,
+      inline: false
+    });
+
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`send_final_dm_${userId}`)
+        .setLabel('📨 שלח שוב')
+        .setStyle(ButtonStyle.Danger)
+    ));
+  }
+
+  await interaction.editReply({ embeds: [embed], components: rows });
+}
+
+async function runRemindAgain(interaction) {
+  if (interaction.deferReply) await interaction.deferReply({ ephemeral: true });
+  const now = Date.now();
+  const tracked = await db.collection('memberTracking').get();
+  const guild = await interaction.client.guilds.fetch(GUILD_ID);
+  const members = await guild.members.fetch();
+  const staff = await interaction.client.channels.fetch(STAFF_CHANNEL_ID);
+  const embed = new EmbedBuilder().setTitle('🔁 דו״ח שליחת תזכורות').setColor(0x00ccff).setTimestamp();
+
+  let sent = 0, skipped = 0, failed = 0;
+
+  for (const doc of tracked.docs) {
+    const d = doc.data();
+    const userId = doc.id;
+    const last = new Date(d.lastActivity || d.joinedAt);
+    const daysInactive = (now - last.getTime()) / 86400000;
+
+    if (daysInactive > INACTIVITY_DAYS && d.dmSent && !d.replied && members.has(userId)) {
+      const reminders = d.reminderCount || 1;
+      if (reminders >= 3) {
+        skipped++;
+        embed.addFields({ name: `⛔ <@${userId}>`, value: `כבר נשלחו ${reminders} תזכורות.`, inline: false });
+        continue;
+      }
+
+      try {
+        const user = await interaction.client.users.fetch(userId);
+        const prompt = `אתה שמעון, בוט גיימרים ישראלי. תכתוב תזכורת ${reminders + 1} (מתוך 3) למשתמש שלא ענה.`;
+        const dm = await smartRespond({ content: '', author: user }, 'שובב', prompt);
+        await user.send(dm);
+        sent++;
+        embed.addFields({ name: `✅ <@${userId}>`, value: `נשלחה תזכורת מספר ${reminders + 1}`, inline: false });
+        if (staff?.isTextBased()) await staff.send(`📬 נשלחה תזכורת ל־<@${userId}>`);
+        await db.collection('memberTracking').doc(userId).set({
+          reminderCount: reminders + 1,
+          dmSentAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (err) {
+        failed++;
+        embed.addFields({ name: `❌ <@${userId}>`, value: `שגיאה: ${err.message}`, inline: false });
+      }
+    }
+  }
+
+  embed.setFooter({ text: `סה״כ: נשלחו ${sent}, דילוגים ${skipped}, נכשלו ${failed}` });
+  if (interaction.editReply) await interaction.editReply({ embeds: [embed] });
+}
+
+// === SLASH COMMAND EXPORT ===
 
 const inactivityCommand = {
   data: new SlashCommandBuilder()
-    .setName('inactive_list')
-    .setDescription('📋 הצג משתמשים שלא היו פעילים מעל 30 ימים'),
+    .setName('inactivity')
+    .setDescription('🔍 ניהול משתמשים לא פעילים')
+    .addSubcommand(sub => sub.setName('list').setDescription('📋 הצג משתמשים לא פעילים מעל חודש'))
+    .addSubcommand(sub => sub.setName('final_check').setDescription('📛 קיבלו הודעה ולא הגיבו'))
+    .addSubcommand(sub => sub.setName('remind').setDescription('🔁 שלח שוב למשתמשים שהתעלמו'))
+    .addSubcommand(sub => sub.setName('replied').setDescription('📨 הצג מי שענה ל־DM'))
+    .addSubcommand(sub => sub.setName('manual_scan').setDescription('🛠️ הרץ סריקה ידנית למשלוח DM')),
+
   execute: async interaction => {
-    await interaction.deferReply({ ephemeral: true });
-    const now = Date.now();
-    const allTracked = await db.collection('memberTracking').get();
-
-    const inactiveUsers = allTracked.docs.filter(doc => {
-      const last = new Date(doc.data().lastActivity || doc.data().joinedAt);
-      return (now - last.getTime()) / 86400000 > INACTIVITY_DAYS;
-    });
-
-    if (inactiveUsers.length === 0) {
-      return interaction.editReply('✅ כל המשתמשים פעילים לאחרונה.');
-    }
-
-    const embed = new EmbedBuilder()
-      .setTitle('📋 משתמשים לא פעילים מעל חודש')
-      .setColor(0xff8800)
-      .setTimestamp();
-
-    for (const doc of inactiveUsers.slice(0, 25)) {
-      embed.addFields({
-        name: `<@${doc.id}>`,
-        value: `Last: ${doc.data().lastActivity?.split('T')[0] || 'לא ידוע'}, DM sent: ${doc.data().dmSent ? '✅' : '❌'}`,
-        inline: false
-      });
-    }
-
-    await interaction.editReply({ embeds: [embed] });
-  }
-};
-
-const finalCheckCommand = {
-  data: new SlashCommandBuilder()
-    .setName('inactive_final_check')
-    .setDescription('📛 הצג משתמשים שלא היו פעילים, קיבלו הודעה – ולא ענו'),
-  execute: async interaction => {
-    await interaction.deferReply({ ephemeral: true });
-    const now = Date.now();
-    const tracked = await db.collection('memberTracking').get();
-    const guild = await interaction.client.guilds.fetch(GUILD_ID);
-    const members = await guild.members.fetch();
-
-    const inactive = tracked.docs.filter(doc => {
-      const d = doc.data();
-      const last = new Date(d.lastActivity || d.joinedAt);
-      const daysInactive = (now - last.getTime()) / 86400000;
-
-      return (
-        daysInactive > INACTIVITY_DAYS &&
-        d.dmSent === true &&
-        d.replied === false &&
-        members.has(doc.id)
-      );
-    });
-
-    if (inactive.length === 0) {
-      return interaction.editReply('✅ אין משתמשים שנכשלו בתגובה אחרי DM.');
-    }
-
-    const embed = new EmbedBuilder()
-      .setTitle('📛 משתמשים לא פעילים (קיבלו DM ולא ענו)')
-      .setColor(0xff3333)
-      .setTimestamp();
-
-    inactive.slice(0, 25).forEach(doc => {
-      const d = doc.data();
-      embed.addFields({
-        name: `<@${doc.id}>`,
-        value: `Last Active: ${d.lastActivity?.split('T')[0] || 'N/A'}, DM sent at: ${d.dmSentAt?.split('T')[0] || 'N/A'}`,
-        inline: false
-      });
-    });
-
-    await interaction.editReply({ embeds: [embed] });
-  }
-};
-
-const remindAgainCommand = {
-  data: new SlashCommandBuilder()
-    .setName('remind_again')
-    .setDescription('🔁 שלח שוב הודעת DM למשתמשים שהתעלמו מהתזכורת הקודמת'),
-  execute: async interaction => {
-    if (interaction.deferReply) await interaction.deferReply({ ephemeral: true });
-    const now = Date.now();
-    const tracked = await db.collection('memberTracking').get();
-    const guild = await interaction.client.guilds.fetch(GUILD_ID);
-    const members = await guild.members.fetch();
-    const staff = await interaction.client.channels.fetch(STAFF_CHANNEL_ID);
-    let count = 0;
-    let skipped = [];
-
-    for (const doc of tracked.docs) {
-      const d = doc.data();
-      const userId = doc.id;
-      const last = new Date(d.lastActivity || d.joinedAt);
-      const daysInactive = (now - last.getTime()) / 86400000;
-
-      if (
-        daysInactive > INACTIVITY_DAYS &&
-        d.dmSent === true &&
-        d.replied === false &&
-        members.has(userId)
-      ) {
-        if ((d.reminderCount || 1) >= 3) {
-          skipped.push(`<@${userId}> | ${d.reminderCount} תזכורות`);
-          continue;
-        }
-        try {
-          const user = await interaction.client.users.fetch(userId);
-          const prompt = `אתה שמעון, בוט גיימרים ישראלי. תכתוב הודעה שנייה או שלישית בהתאם למספר התזכורות שנשלחו בעבר.`;
-          const dm = await smartRespond({ content: '', author: user }, 'שובב', prompt);
-          await user.send(dm);
-          count++;
-
-          if (staff?.isTextBased()) {
-            await staff.send(`📬 נשלחה תזכורת נוספת ל־<@${userId}>`);
-          }
-
-          await db.collection('memberTracking').doc(userId).set({
-            reminderCount: (d.reminderCount || 1) + 1
-          }, { merge: true });
-
-        } catch (err) {
-          console.warn(`⚠️ שגיאה בשליחת תזכורת נוספת ל־${userId}: ${err.message}`);
-        }
-      }
-    }
-
-    if (interaction.editReply) {
-      const baseMsg = `🔁 נשלחו ${count} תזכורות נוספות למשתמשים שלא הגיבו.`;
-      const skippedMsg = skipped.length > 0 ? `\n\n⛔ הועברו ${skipped.length} משתמשים לרשימת מעקב סופית:\n` + skipped.slice(0, 20).join('\n') : '';
-      await interaction.editReply(baseMsg + skippedMsg);
-    }
+    const sub = interaction.options.getSubcommand();
+    if (sub === 'list') return await runList(interaction);
+    if (sub === 'final_check') return await runFinalCheck(interaction);
+    if (sub === 'remind') return await runRemindAgain(interaction);
+    if (sub === 'replied') return await runRepliedList(interaction);
+    if (sub === 'manual_scan') return await runManualScan(interaction);
   }
 };
 
 module.exports = {
   setupMemberTracker,
   runInactivityScan,
-  inactivityCommand,
-  finalCheckCommand,
-  remindAgainCommand
+  inactivityCommand
 };

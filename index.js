@@ -48,7 +48,7 @@ registerMvpCommand(commands);
 commands.push(
   rankCommand.data,
   inactivityCommand.data,
-  birthdayData,
+  birthdayCommandsData,
   fifoData,
   helpData,
   inactivityData,
@@ -58,13 +58,24 @@ commands.push(
   rulesStatsData,
   songData,
   soundboardData,
-  ttsData,
+  ttsCommandData,
   verifyData,
   voiceDeleteData,
   voiceListData,
   voicePlaybackData,
   voiceRecorderData
 );
+
+const allSlashCommands = commands
+  .flat(Infinity)
+  .filter(cmd => cmd && typeof cmd.toJSON === 'function')
+  .map(cmd => cmd.toJSON());
+
+await rest.put(
+  Routes.applicationGuildCommands(client.user.id, guildId),
+  { body: allSlashCommands }
+);
+
 
 const client = new Client({
   intents: [

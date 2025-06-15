@@ -40,7 +40,7 @@ const {
 } = require('./handlers/verificationButton');
 
 // 🧠 ניהול אינטראקציות
-const handleInteraction = require('./handlers/interactionHandler');
+const setupInteractions = require('./handlers/interactionHandler');
 
 // 📘 Slash Commands
 const {
@@ -154,6 +154,7 @@ client.once('ready', async () => {
   await hardSyncPresenceOnReady(client);
   await setupVerificationMessage(client);
   await sendPublicRulesEmbed(client);
+  setupInteractions(client);
   startFifoWarzoneAnnouncer(client);
   startStatsUpdater(client);
   startWeeklyRulesUpdate(client);
@@ -188,8 +189,6 @@ client.on('messageCreate', async message => {
   await smartChat(message);
 });
 
-// ⚙️ אינטראקציות
-client.on('interactionCreate', interaction => handleInteraction(interaction, client));
 
 // 🟢 התחברות
 client.login(process.env.DISCORD_TOKEN);

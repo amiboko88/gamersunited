@@ -1,29 +1,26 @@
-const db = require('../utils/firebase');
-const smartChat = require('../handlers/smartChat');
+const db = require('../../utils/firebase');
+const smartChat = require('./smartChat');
 
 const STAFF_CHANNEL_ID = '881445829100060723';
 const INACTIVITY_DAYS = 30;
 
-async function handleMemberButtons(interaction) {
+async function handleMemberButtons(interaction, client) {
   if (!interaction.isButton()) return false;
+  const id = interaction.customId;
 
-  const client = interaction.client;
-
-  // 🔘 שליחה מחדש למשתמש יחיד - ראשונה
-  if (interaction.customId.startsWith('send_dm_again_')) {
-    const userId = interaction.customId.replace('send_dm_again_', '');
+  // 🔘 שליחה מחדש למשתמש יחיד
+  if (id.startsWith('send_dm_again_')) {
+    const userId = id.replace('send_dm_again_', '');
     try {
       const user = await client.users.fetch(userId);
       const prompt = `אתה שמעון, בוט גיימרים ישראלי. תכתוב תזכורת חביבה עבור משתמש שטרם היה פעיל.`;
       const dm = await smartChat.smartRespond({ content: '', author: user }, 'שובב', prompt);
       await user.send(dm);
-
       await db.collection('memberTracking').doc(userId).set({
         dmSent: true,
         dmSentAt: new Date().toISOString(),
         reminderCount: 1
       }, { merge: true });
-
       await interaction.reply({ content: `✅ נשלחה תזכורת ל־<@${userId}>`, ephemeral: true });
     } catch (err) {
       await interaction.reply({ content: `❌ לא ניתן לשלוח ל־<@${userId}>: ${err.message}`, ephemeral: true });
@@ -32,19 +29,17 @@ async function handleMemberButtons(interaction) {
   }
 
   // 🔴 שליחה סופית למשתמש יחיד
-  if (interaction.customId.startsWith('send_final_dm_')) {
-    const userId = interaction.customId.replace('send_final_dm_', '');
+  if (id.startsWith('send_final_dm_')) {
+    const userId = id.replace('send_final_dm_', '');
     try {
       const user = await client.users.fetch(userId);
       const prompt = `אתה שמעון, בוט גיימרים ישראלי. תכתוב תזכורת אחרונה ומשעשעת למשתמש שהתעלם מהודעות קודמות.`;
       const dm = await smartChat.smartRespond({ content: '', author: user }, 'שובב', prompt);
       await user.send(dm);
-
       await db.collection('memberTracking').doc(userId).set({
         reminderCount: 3,
         dmSentAt: new Date().toISOString()
       }, { merge: true });
-
       await interaction.reply({ content: `📨 נשלחה תזכורת סופית ל־<@${userId}>`, ephemeral: true });
     } catch (err) {
       await interaction.reply({ content: `❌ שגיאה בשליחה ל־<@${userId}>: ${err.message}`, ephemeral: true });
@@ -53,7 +48,7 @@ async function handleMemberButtons(interaction) {
   }
 
   // 🔘 שליחה קבוצתית ראשונה
-  if (interaction.customId === 'send_dm_batch_list') {
+  if (id === 'send_dm_batch_list') {
     await interaction.deferReply({ ephemeral: true });
     const now = Date.now();
     const allTracked = await db.collection('memberTracking').get();
@@ -87,7 +82,6 @@ async function handleMemberButtons(interaction) {
           if (staff?.isTextBased()) {
             await staff.send(`📨 נשלחה תזכורת ל־<@${userId}>`);
           }
-
           count++;
         } catch (err) {
           failed.push(`<@${userId}>`);
@@ -102,7 +96,7 @@ async function handleMemberButtons(interaction) {
   }
 
   // 🔴 שליחה קבוצתית סופית
-  if (interaction.customId === 'send_dm_batch_final_check') {
+  if (id === 'send_dm_batch_final_check') {
     await interaction.deferReply({ ephemeral: true });
     const now = Date.now();
     const allTracked = await db.collection('memberTracking').get();
@@ -135,7 +129,6 @@ async function handleMemberButtons(interaction) {
           if (staff?.isTextBased()) {
             await staff.send(`📨 נשלחה תזכורת סופית ל־<@${userId}>`);
           }
-
           count++;
         } catch (err) {
           failed.push(`<@${userId}>`);
@@ -149,7 +142,7 @@ async function handleMemberButtons(interaction) {
     return true;
   }
 
-  return false; // לא זוהה כפתור שלנו
+  return false; // לא כפתור שלנו
 }
 
 module.exports = { handleMemberButtons };

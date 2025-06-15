@@ -1,70 +1,54 @@
-// 📁 index.js — גרסה מתוקנת לאחר סריקה מלאה של כל הקבצים והייצוא שלהם
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
-const path = require('path');
-const fs = require('fs');
-
-// 📦 ייבוא תשתיות
 const db = require('./utils/firebase');
 const statTracker = require('./handlers/statTracker');
 const smartChat = require('./handlers/smartChat');
 const setupInteractions = require('./handlers/interactionHandler');
-
-// 🧠 רמות ו־XP
-const { handleXPMessage, rankCommand } = require('./handlers/engagementManager');
-
-// 🛡️ אימות
-const { setupVerificationMessage, startDmTracking } = require('./handlers/verificationButton');
-
-// 📃 חוקים ו־Welcome
-const { sendRulesToUser, sendPublicRulesEmbed } = require('./handlers/rulesEmbed');
-const welcomeImage = require('./handlers/welcomeImage');
-
-// 🧹 Schedulerים כלליים
+const { handleXPMessage } = require('./handlers/engagementManager');
+const { sendRulesToUser } = require('./handlers/rulesEmbed');
+const { handleSpam } = require('./handlers/antispam');
+const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
+const { trackGamePresence } = require('./handlers/presenceTracker');
+const { startBirthdayTracker } = require('./handlers/birthdayTracker');
+const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayReminder');
 const { startStatsUpdater } = require('./handlers/statsUpdater');
-const { startFifoWarzoneAnnouncer } = require('./handlers/fifoWarzoneAnnouncer');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
-const { startPresenceRotation } = require('./handlers/presenceRotator');
-const { startPresenceLoop, trackGamePresence, hardSyncPresenceOnReady } = require('./handlers/presenceTracker');
-const { startLeaderboardUpdater } = require('./handlers/leaderboardUpdater');
+const { startPresenceRotation, startPresenceLoop, hardSyncPresenceOnReady } = require('./handlers/presenceTracker');
 const { startMvpScheduler } = require('./handlers/mvpTracker');
 const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
-const { startWeeklyRulesUpdate } = require('./handlers/rulesEmbed');
-const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayReminder');
-const { setupMemberTracker, inactivityCommand } = require('./handlers/memberTracker');
+const { setupVerificationMessage, startDmTracking } = require('./handlers/verificationButton');
+const welcomeImage = require('./handlers/welcomeImage');
+const { startLeaderboardUpdater } = require('./handlers/leaderboardUpdater');
+const { startFifoWarzoneAnnouncer } = require('./handlers/fifoWarzoneAnnouncer');
+const { startWeeklyRulesUpdate, sendPublicRulesEmbed } = require('./handlers/rulesEmbed');
+const { setupMemberTracker } = require('./handlers/memberTracker');
 
-// 🔊 Voice & Music
-const handleMusicControls = require('./handlers/musicControls');
-const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
+// Slash commands imports
+const { data: birthdayData } = require('./commands/birthdayCommands');
+const { data: fifoData } = require('./commands/fifo');
+const { data: helpData } = require('./commands/help');
+const { data: inactivityData } = require('./commands/inactivity');
+const { data: leaderboardData } = require('./commands/leaderboard');
+const { data: mvpDisplayData, registerMvpCommand } = require('./commands/mvpDisplay');
+const { data: refreshRulesData } = require('./commands/refreshRules');
+const { data: rulesStatsData } = require('./commands/rulesStats');
+const { data: songData } = require('./commands/song');
+const { data: soundboardData } = require('./commands/soundboard');
+const { data: ttsData } = require('./commands/ttsCommand');
+const { data: verifyData } = require('./commands/verify');
+const { data: voiceDeleteData } = require('./commands/voiceDelete');
+const { data: voiceListData } = require('./commands/voiceList');
+const { data: voicePlaybackData } = require('./commands/voicePlayback');
+const { data: voiceRecorderData } = require('./commands/voiceRecorder');
+const { rankCommand } = require('./handlers/engagementManager');
+const { inactivityCommand } = require('./handlers/memberTracker');
 
-// ⚠️ אנטי-ספאם
-const { handleSpam } = require('./handlers/antispam');
-
-// 📘 Slash Commands - טעינה מדויקת (data + execute בלבד)
-const { data: birthdayCommandsData, execute: birthdayCommandsExecute } = require('./commands/birthdayCommands');
-const { data: fifoData, execute: fifoExecute } = require('./commands/fifo');
-const { data: helpData, execute: helpExecute, handleButton: helpHandleButton } = require('./commands/help');
-const { data: inactivityData, execute: inactivityExecute } = require('./commands/inactivity');
-const { data: leaderboardData, execute: leaderboardExecute } = require('./commands/leaderboard');
-const { data: mvpDisplayData, execute: mvpDisplayExecute, registerMvpCommand } = require('./commands/mvpDisplay');
-const { data: refreshRulesData, execute: refreshRulesExecute } = require('./commands/refreshRules');
-const { data: rulesStatsData, execute: rulesStatsExecute } = require('./commands/rulesStats');
-const { data: songData, execute: songExecute, autocomplete: songAutocomplete } = require('./commands/song');
-const { data: soundboardData, execute: soundboardExecute } = require('./commands/soundboard');
-const { data: ttsCommandData, execute: ttsCommandExecute } = require('./commands/ttsCommand');
-const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
-const { data: voiceDeleteData, execute: voiceDeleteExecute } = require('./commands/voiceDelete');
-const { data: voiceListData, execute: voiceListExecute } = require('./commands/voiceList');
-const { data: voicePlaybackData, execute: voicePlaybackExecute } = require('./commands/voicePlayback');
-const { data: voiceRecorderData, execute: voiceRecorderExecute } = require('./commands/voiceRecorder');
-
-// 🧾 בניית רשימת Slash Commands לרישום
 const commands = [];
 registerMvpCommand(commands);
 commands.push(
   rankCommand.data,
   inactivityCommand.data,
-  birthdayCommandsData,
+  birthdayData,
   fifoData,
   helpData,
   inactivityData,
@@ -74,7 +58,7 @@ commands.push(
   rulesStatsData,
   songData,
   soundboardData,
-  ttsCommandData,
+  ttsData,
   verifyData,
   voiceDeleteData,
   voiceListData,
@@ -82,7 +66,6 @@ commands.push(
   voiceRecorderData
 );
 
-// 🤖 יצירת בוט
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -95,13 +78,10 @@ const client = new Client({
 });
 client.db = db;
 
-// ▶️ הפעלת בוט
 client.once('ready', async () => {
   console.log(`🟢 ${client.user.tag} באוויר`);
-
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   const guildId = process.env.GUILD_ID;
-
   try {
     const existing = await rest.get(Routes.applicationGuildCommands(client.user.id, guildId));
     for (const cmd of existing) {
@@ -113,8 +93,6 @@ client.once('ready', async () => {
   } catch (err) {
     console.error('❌ שגיאה ברישום Slash:', err);
   }
-
-  // 📦 אתחולים
   await hardSyncPresenceOnReady(client);
   await setupVerificationMessage(client);
   await sendPublicRulesEmbed(client);
@@ -134,12 +112,10 @@ client.once('ready', async () => {
   await startMvpReactionWatcher(client, db);
 });
 
-// 📥 אירועים
 client.on('guildMemberAdd', member => sendRulesToUser(member));
 client.on('voiceStateUpdate', handleVoiceStateUpdate);
 client.on('presenceUpdate', (_, now) => trackGamePresence(now));
 
-// 💬 הודעות
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
   await statTracker.trackMessage(message);
@@ -152,15 +128,11 @@ client.on('messageCreate', async message => {
   await smartChat(message);
 });
 
-// 🟢 התחברות
 client.login(process.env.DISCORD_TOKEN);
 
-// 🧪 ניטור שגיאות מערכת
 process.on('exit', code => console.log(`[EXIT] קוד יציאה: ${code}`));
 process.on('SIGTERM', () => console.log('[SIGTERM] סיום תהליך'));
 process.on('uncaughtException', err => console.error('[UNCAUGHT EXCEPTION]', err));
 process.on('unhandledRejection', reason => console.error('[UNHANDLED REJECTION]', reason));
-
-// 📡 שמירה על חיות
 require('./shimonTelegram');
 setInterval(() => {}, 1000 * 60 * 60);

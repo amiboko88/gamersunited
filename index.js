@@ -45,7 +45,7 @@ const handleInteraction = require('./handlers/interactionHandler');
 // 📘 Slash Commands
 const {
   data: verifyData, execute: verifyExecute
-} = require('./commands/verify');
+} = require('../commands/verify');
 const {
   data: recordData, execute: recordExecute
 } = require('./commands/voiceRecorder');
@@ -82,7 +82,7 @@ const {
 } = require('./commands/rulesStats');
 const ttsCommand = require('./commands/ttsCommand');
 const { data: helpData, execute: helpExecute, handleButton: helpHandleButton } = require('./commands/help');
-const { execute: soundExecute, data: soundData } = require('./handlers/soundboard');
+const { execute: soundExecute, data: soundData } = require('./commands/soundboard');
 const { inactivityCommand } = require('./handlers/memberTracker');
 
 // 🧾 רישום Slash Commands

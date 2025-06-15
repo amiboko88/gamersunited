@@ -1,5 +1,5 @@
 const { songAutocomplete } = require('../commands/song');
-const { handleMemberButtons } = require('./buttons/memberButtons');
+const { handleMemberButtons } = require('./memberButtons');
 const { showBirthdayModal, handleBirthdayModalSubmit } = require('./birthdayModal');
 const { handleRulesInteraction, handleRSVP } = require('../utils/repartitionUtils');
 const { handleMusicControls } = require('./musicControls');

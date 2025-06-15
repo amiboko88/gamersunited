@@ -1,14 +1,26 @@
+// 📁 index.js — גרסה מתוקנת לאחר סריקה מלאה של כל הקבצים והייצוא שלהם
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
 
-// 📦 ייבוא פיצ'רים ותשתיות
+// 📦 ייבוא תשתיות
 const db = require('./utils/firebase');
 const statTracker = require('./handlers/statTracker');
 const smartChat = require('./handlers/smartChat');
+const setupInteractions = require('./handlers/interactionHandler');
 
-// 🎮 Schedulers
+// 🧠 רמות ו־XP
+const { handleXPMessage, rankCommand } = require('./handlers/engagementManager');
+
+// 🛡️ אימות
+const { setupVerificationMessage, startDmTracking } = require('./handlers/verificationButton');
+
+// 📃 חוקים ו־Welcome
+const { sendRulesToUser, sendPublicRulesEmbed } = require('./handlers/rulesEmbed');
+const welcomeImage = require('./handlers/welcomeImage');
+
+// 🧹 Schedulerים כלליים
 const { startStatsUpdater } = require('./handlers/statsUpdater');
 const { startFifoWarzoneAnnouncer } = require('./handlers/fifoWarzoneAnnouncer');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
@@ -19,92 +31,55 @@ const { startMvpScheduler } = require('./handlers/mvpTracker');
 const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
 const { startWeeklyRulesUpdate } = require('./handlers/rulesEmbed');
 const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayReminder');
+const { setupMemberTracker, inactivityCommand } = require('./handlers/memberTracker');
 
-// 👥 מערכת ניטור פעילות
-const { setupMemberTracker } = require('./handlers/memberTracker');
-const { handleXPMessage, rankCommand } = require('./handlers/engagementManager');
-
-// 🔊 מערכות נוספות
+// 🔊 Voice & Music
 const handleMusicControls = require('./handlers/musicControls');
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
-const { showBirthdayModal, handleBirthdayModalSubmit } = require('./handlers/birthdayModal');
-const welcomeImage = require('./handlers/welcomeImage');
+
+// ⚠️ אנטי-ספאם
 const { handleSpam } = require('./handlers/antispam');
-const { sendRulesToUser, sendPublicRulesEmbed } = require('./handlers/rulesEmbed');
 
-// 🧾 אימות
-const {
-  setupVerificationMessage,
-  startDmTracking,
-  handleInteraction: handleVerifyInteraction
-} = require('./handlers/verificationButton');
-
-// 🧠 ניהול אינטראקציות
-const setupInteractions = require('./handlers/interactionHandler');
-
-// 📘 Slash Commands
-const {
-  data: verifyData, execute: verifyExecute
-} = require('./commands/verify');
-const {
-  data: recordData, execute: recordExecute
-} = require('./commands/voiceRecorder');
-const {
-  data: playbackData, execute: playbackExecute
-} = require('./commands/voicePlayback');
-const {
-  data: listData, execute: listExecute
-} = require('./commands/voiceList');
-const {
-  data: deleteData, execute: deleteExecute
-} = require('./commands/voiceDelete');
-const {
-  data: fifoData, execute: fifoExecute
-} = require('./commands/fifo');
-const {
-  data: songData, execute: songExecute, autocomplete: songAutocomplete
-} = require('./commands/song');
-const {
-  data: birthdayCommands, execute: birthdayExecute
-} = require('./commands/birthdayCommands');
-const {
-  execute: mvpDisplayExecute,
-  registerMvpCommand
-} = require('./commands/mvpDisplay');
-const {
-  data: leaderboardData, execute: leaderboardExecute
-} = require('./commands/leaderboard');
-const {
-  data: refreshRulesData, execute: refreshRulesExecute
-} = require('./commands/refreshRules');
-const {
-  data: rulesStatsData, execute: rulesStatsExecute
-} = require('./commands/rulesStats');
-const ttsCommand = require('./commands/ttsCommand');
+// 📘 Slash Commands - טעינה מדויקת (data + execute בלבד)
+const { data: birthdayCommandsData, execute: birthdayCommandsExecute } = require('./commands/birthdayCommands');
+const { data: fifoData, execute: fifoExecute } = require('./commands/fifo');
 const { data: helpData, execute: helpExecute, handleButton: helpHandleButton } = require('./commands/help');
-const { execute: soundExecute, data: soundData } = require('./commands/soundboard');
-const { inactivityCommand } = require('./handlers/memberTracker');
+const { data: inactivityData, execute: inactivityExecute } = require('./commands/inactivity');
+const { data: leaderboardData, execute: leaderboardExecute } = require('./commands/leaderboard');
+const { data: mvpDisplayData, execute: mvpDisplayExecute, registerMvpCommand } = require('./commands/mvpDisplay');
+const { data: refreshRulesData, execute: refreshRulesExecute } = require('./commands/refreshRules');
+const { data: rulesStatsData, execute: rulesStatsExecute } = require('./commands/rulesStats');
+const { data: songData, execute: songExecute, autocomplete: songAutocomplete } = require('./commands/song');
+const { data: soundboardData, execute: soundboardExecute } = require('./commands/soundboard');
+const { data: ttsCommandData, execute: ttsCommandExecute } = require('./commands/ttsCommand');
+const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
+const { data: voiceDeleteData, execute: voiceDeleteExecute } = require('./commands/voiceDelete');
+const { data: voiceListData, execute: voiceListExecute } = require('./commands/voiceList');
+const { data: voicePlaybackData, execute: voicePlaybackExecute } = require('./commands/voicePlayback');
+const { data: voiceRecorderData, execute: voiceRecorderExecute } = require('./commands/voiceRecorder');
 
-// 🧾 רישום Slash Commands
+// 🧾 בניית רשימת Slash Commands לרישום
 const commands = [];
 registerMvpCommand(commands);
 commands.push(
   rankCommand.data,
   inactivityCommand.data,
-  recordData,
-  playbackData,
-  listData,
-  deleteData,
-  helpData,
-  verifyData,
-  songData,
-  soundData,
-  ...birthdayCommands,
-  leaderboardData,
+  birthdayCommandsData,
   fifoData,
+  helpData,
+  inactivityData,
+  leaderboardData,
+  mvpDisplayData,
+  refreshRulesData,
   rulesStatsData,
-  ttsCommand.data,
-  refreshRulesData
+  songData,
+  soundboardData,
+  ttsCommandData,
+  verifyData,
+  voiceDeleteData,
+  voiceListData,
+  voicePlaybackData,
+  voiceRecorderData
 );
 
 // 🤖 יצירת בוט
@@ -128,29 +103,18 @@ client.once('ready', async () => {
   const guildId = process.env.GUILD_ID;
 
   try {
-    // 🧹 מחיקה של כל Slash Commands הקיימים
-    const existing = await rest.get(
-      Routes.applicationGuildCommands(client.user.id, guildId)
-    );
-
+    const existing = await rest.get(Routes.applicationGuildCommands(client.user.id, guildId));
     for (const cmd of existing) {
-      await rest.delete(
-        Routes.applicationGuildCommand(client.user.id, guildId, cmd.id)
-      );
+      await rest.delete(Routes.applicationGuildCommand(client.user.id, guildId, cmd.id));
       console.log(`🗑️ נמחקה פקודה ישנה: /${cmd.name}`);
     }
-
-    // 📘 רישום Slash Commands חדשים
-    await rest.put(
-      Routes.applicationGuildCommands(client.user.id, guildId),
-      { body: commands }
-    );
+    await rest.put(Routes.applicationGuildCommands(client.user.id, guildId), { body: commands });
     console.log('✅ Slash Commands נרשמו בהצלחה');
   } catch (err) {
-    console.error('❌ שגיאה בניהול Slash:', err);
+    console.error('❌ שגיאה ברישום Slash:', err);
   }
 
-  // ▶️ סקריפטים וכל השאר
+  // 📦 אתחולים
   await hardSyncPresenceOnReady(client);
   await setupVerificationMessage(client);
   await sendPublicRulesEmbed(client);
@@ -170,11 +134,10 @@ client.once('ready', async () => {
   await startMvpReactionWatcher(client, db);
 });
 
-
 // 📥 אירועים
-client.on('guildMemberAdd', async member => sendRulesToUser(member));
+client.on('guildMemberAdd', member => sendRulesToUser(member));
 client.on('voiceStateUpdate', handleVoiceStateUpdate);
-client.on('presenceUpdate', (old, now) => trackGamePresence(now));
+client.on('presenceUpdate', (_, now) => trackGamePresence(now));
 
 // 💬 הודעות
 client.on('messageCreate', async message => {
@@ -188,7 +151,6 @@ client.on('messageCreate', async message => {
   await handleSpam(message);
   await smartChat(message);
 });
-
 
 // 🟢 התחברות
 client.login(process.env.DISCORD_TOKEN);

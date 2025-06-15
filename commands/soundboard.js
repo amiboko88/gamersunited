@@ -2,7 +2,7 @@ const { SlashCommandBuilder } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState, VoiceConnectionStatus, AudioPlayerStatus, StreamType } = require('@discordjs/voice');
 const fs = require('fs');
 const path = require('path');
-const statTracker = require('./statTracker'); // ✅ חדש
+const statTracker = require('../handlers/statTracker');
 
 // נתיב לתיקיית הסאונדים
 const soundsDir = path.join(__dirname, '..', 'sounds');

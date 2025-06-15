@@ -1,6 +1,6 @@
 // 📁 handlers/interactionHandler.js
 const { EmbedBuilder } = require('discord.js');
-const statTracker = require('../handlers/statTracker');
+const statTracker = require('./statTracker');
 const {
   handleRulesInteraction,
   handleBirthdayModalSubmit,
@@ -12,7 +12,7 @@ const {
   startGroupTracking,
   resetReplayVotes,
   createGroupsAndChannels
-} = require('../handlers/repartitionUtils');
+} = require('./repartitionUtils');
 const { songAutocomplete, handleMusicControls } = require('../commands/song');
 const { showBirthdayModal } = require('../commands/birthdayCommands');
 const {
@@ -30,10 +30,10 @@ const recordExecute = require('../commands/voiceRecorder').execute;
 const playbackExecute = require('../commands/voicePlayback').execute;
 const listExecute = require('../commands/voiceList').execute;
 const deleteExecute = require('../commands/voiceDelete').execute;
-const { rankCommand } = require('../handlers/engagementManager');
+const { rankCommand } = require('./engagementManager');
 const soundExecute = require('../commands/soundboard').execute;
 const birthdayExecute = require('../commands/birthdayCommands').execute;
-const smartChat = require('../handlers/smartChat');
+const smartChat = require('./smartChat');
 const db = require('../utils/firebase');
 
 // ⚠️ שמור גם את מה שעשינו ב־memberButtons

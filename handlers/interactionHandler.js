@@ -26,10 +26,10 @@ const leaderboardExecute = require('../commands/leaderboard').execute;
 const mvpDisplayExecute = require('../commands/mvpDisplay').execute;
 const refreshRulesExecute = require('../commands/refreshRules').execute;
 const rulesStatsExecute = require('../commands/rulesStats').execute;
-const recordExecute = require('../commands/record').execute;
-const playbackExecute = require('../commands/playback').execute;
-const listExecute = require('../commands/list').execute;
-const deleteExecute = require('../commands/delete').execute;
+const recordExecute = require('../commands/voiceRecorder').execute;
+const playbackExecute = require('../commands/voicePlayback').execute;
+const listExecute = require('../commands/voiceList').execute;
+const deleteExecute = require('../commands/voiceDelete').execute;
 const rankCommand = require('../commands/rank');
 const soundExecute = require('../commands/soundboard').execute;
 const birthdayExecute = require('../commands/birthdayCommands').execute;
@@ -39,7 +39,7 @@ const db = require('../utils/firebase');
 // ⚠️ שמור גם את מה שעשינו ב־memberButtons
 const {
   handleCustomDMButtons
-} = require('../commands/inactivity/memberButtons');
+} = require('../commands/memberButtons');
 
 module.exports = function setupInteractions(client) {
   client.on('interactionCreate', async interaction => {
@@ -166,7 +166,7 @@ module.exports = function setupInteractions(client) {
 
     const commandMap = {
       עזרה: helpExecute,
-      inactivity: require('../commands/inactivity/inactivity').execute,
+      inactivity: require('../commands/inactivity').execute,
       updaterules: refreshRulesExecute,
       rulestats: rulesStatsExecute,
       tts: ttsCommand.execute,

@@ -40,7 +40,7 @@ const {
 } = require('./handlers/verificationButton');
 
 // 🧠 ניהול אינטראקציות
-const handleInteraction = require('./interactionHandler');
+const handleInteraction = require('./handlers/interactionHandler');
 
 // 📘 Slash Commands
 const {

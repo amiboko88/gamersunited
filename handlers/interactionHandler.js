@@ -30,7 +30,7 @@ const recordExecute = require('../commands/voiceRecorder').execute;
 const playbackExecute = require('../commands/voicePlayback').execute;
 const listExecute = require('../commands/voiceList').execute;
 const deleteExecute = require('../commands/voiceDelete').execute;
-const rankCommand = require('../commands/rank');
+const { rankCommand } = require('../handlers/engagementManager');
 const soundExecute = require('../commands/soundboard').execute;
 const birthdayExecute = require('../commands/birthdayCommands').execute;
 const smartChat = require('../handlers/smartChat');
@@ -58,7 +58,11 @@ module.exports = function setupInteractions(client) {
       const id = interaction.customId;
 
       // ניהול DM
-      if (id.startsWith('send_dm_')) return handleCustomDMButtons(interaction);
+      if (
+  id.startsWith('send_dm_') ||
+  id === 'send_dm_batch_list' ||
+  id === 'send_dm_batch_final_check'
+) return handleCustomDMButtons(interaction);
 
       // מוסיקה
       if (['pause', 'resume', 'stop'].includes(id)) {

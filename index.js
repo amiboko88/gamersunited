@@ -45,7 +45,7 @@ const handleInteraction = require('./handlers/interactionHandler');
 // 📘 Slash Commands
 const {
   data: verifyData, execute: verifyExecute
-} = require('../commands/verify');
+} = require('./commands/verify');
 const {
   data: recordData, execute: recordExecute
 } = require('./commands/voiceRecorder');

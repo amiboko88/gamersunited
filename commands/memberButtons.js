@@ -1,5 +1,6 @@
-const db = require('../../utils/firebase');
-const smartChat = require('./smartChat');
+const db = require('../utils/firebase');
+const smartChat = require('./handlers/smartChat');
+
 
 const STAFF_CHANNEL_ID = '881445829100060723';
 const INACTIVITY_DAYS = 30;

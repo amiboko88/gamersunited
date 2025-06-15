@@ -122,6 +122,35 @@ client.db = db;
 
 // ▶️ הפעלת בוט
 client.once('ready', async () => {
+  console.log(`🟢 ${client.user.tag} באוויר`);
+
+  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+  const guildId = process.env.GUILD_ID;
+
+  try {
+    // 🧹 מחיקה של כל Slash Commands הקיימים
+    const existing = await rest.get(
+      Routes.applicationGuildCommands(client.user.id, guildId)
+    );
+
+    for (const cmd of existing) {
+      await rest.delete(
+        Routes.applicationGuildCommand(client.user.id, guildId, cmd.id)
+      );
+      console.log(`🗑️ נמחקה פקודה ישנה: /${cmd.name}`);
+    }
+
+    // 📘 רישום Slash Commands חדשים
+    await rest.put(
+      Routes.applicationGuildCommands(client.user.id, guildId),
+      { body: commands }
+    );
+    console.log('✅ Slash Commands נרשמו בהצלחה');
+  } catch (err) {
+    console.error('❌ שגיאה בניהול Slash:', err);
+  }
+
+  // ▶️ סקריפטים וכל השאר
   await hardSyncPresenceOnReady(client);
   await setupVerificationMessage(client);
   await sendPublicRulesEmbed(client);
@@ -138,21 +167,8 @@ client.once('ready', async () => {
   startCleanupScheduler(client);
   startMvpScheduler(client, db);
   await startMvpReactionWatcher(client, db);
-
-  console.log(`🟢 ${client.user.tag} באוויר`);
-
-  // 🧾 שליחת פקודות
-  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-  try {
-    await rest.put(
-      Routes.applicationGuildCommands(client.user.id, process.env.GUILD_ID),
-      { body: commands }
-    );
-    console.log('✅ Slash Commands נרשמו בהצלחה');
-  } catch (err) {
-    console.error('❌ שגיאה ברישום Slash:', err);
-  }
 });
+
 
 // 📥 אירועים
 client.on('guildMemberAdd', async member => sendRulesToUser(member));

@@ -171,9 +171,7 @@ async function runList(interaction) {
     .setColor(0xffaa00)
     .setTimestamp();
 
-  const rows = [];
-
-  for (const doc of inactiveUsers.slice(0, 5)) {
+  for (const doc of inactiveUsers.slice(0, 25)) {
     const userId = doc.id;
     const data = doc.data();
     let username = `לא ידוע (${userId})`;
@@ -187,16 +185,16 @@ async function runList(interaction) {
       value: `📆 פעילות אחרונה: ${data.lastActivity?.split('T')[0] || 'לא ידוע'}\n✉️ DM נשלח: ${data.dmSent ? '✅' : '❌'}`,
       inline: false
     });
-
-    rows.push(new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`send_dm_again_${userId}`)
-        .setLabel('📨 שלח DM עכשיו')
-        .setStyle(ButtonStyle.Primary)
-    ));
   }
 
-  await interaction.editReply({ embeds: [embed], components: rows });
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('send_dm_batch_list')
+      .setLabel('📨 שלח תזכורת לכולם')
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  await interaction.editReply({ embeds: [embed], components: [row] });
 }
 
 async function runFinalCheck(interaction) {

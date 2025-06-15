@@ -348,6 +348,58 @@ client.on('interactionCreate', async interaction => {
       resetReplayVotes();
       return;
     }
+    // 🔘 שלח תזכורת לכולם מתוך /inactivity list
+    if (interaction.customId === 'send_dm_batch_list') {
+      await interaction.deferReply({ ephemeral: true });
+
+      const now = Date.now();
+      const allTracked = await db.collection('memberTracking').get();
+      const guild = await interaction.client.guilds.fetch(process.env.GUILD_ID);
+      const members = await guild.members.fetch();
+      const staff = await interaction.client.channels.fetch(STAFF_CHANNEL_ID);
+
+      let count = 0;
+      let failed = [];
+
+      for (const doc of allTracked.docs) {
+        const d = doc.data();
+        const userId = doc.id;
+        const last = new Date(d.lastActivity || d.joinedAt);
+        const daysInactive = (now - last.getTime()) / 86400000;
+
+        if (daysInactive > INACTIVITY_DAYS && !d.dmSent && members.has(userId)) {
+          try {
+            const user = await interaction.client.users.fetch(userId).catch(() => null);
+            if (!user || !user.id) throw new Error('User not found');
+            const prompt = `אתה שמעון, בוט גיימרים ישראלי. כתוב תזכורת נעימה למשתמש לא פעיל חודש.`;
+            const dm = await smartChat.smartRespond({ content: '', author: user }, 'שובב', prompt);
+            await user.send(dm);
+
+            await db.collection('memberTracking').doc(userId).set({
+              dmSent: true,
+              dmSentAt: new Date().toISOString(),
+              reminderCount: 1
+            }, { merge: true });
+
+            if (staff?.isTextBased()) {
+              await staff.send(`📨 נשלחה תזכורת ל־<@${userId}>`);
+            }
+
+            count++;
+          } catch (err) {
+            failed.push(`<@${userId}>`);
+          }
+        }
+      }
+
+      let msg = `✅ נשלחו תזכורות ל־${count} משתמשים.`;
+      if (failed.length > 0) {
+        msg += `\n❌ נכשלו (${failed.length}): ${failed.join(', ')}`;
+      }
+
+      await interaction.editReply({ content: msg });
+      return;
+    }
 
     return handleVerifyInteraction(interaction);
   }

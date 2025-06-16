@@ -15,7 +15,7 @@ const {
 
 const activeQueue = new Map();
 const recentUsers = new Map();
-const connectionLocks = new Set();
+const connectionLocks = new Map();
 const channelConnections = new Map();
 
 const TTS_TIMEOUT = 5000;
@@ -156,9 +156,6 @@ if (connectionLocks.has(key)) {
   }
 }
 connectionLocks.set(key, Date.now());
-
-
-  connectionLocks.add(key);
 
   try {
     while (queue.length > 0) {

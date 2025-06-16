@@ -55,22 +55,50 @@ setInterval(() => {
 }, 20000);
 
 async function playAudio(connection, audioBuffer) {
+  console.log('🔊 התחלת playAudio – קיבל buffer בגודל:', audioBuffer?.length);
+
   if (!Buffer.isBuffer(audioBuffer)) {
-    console.error('🛑 Buffer לא תקין');
+    console.error('🛑 Buffer לא תקין או לא קיים!');
     return;
   }
-  const stream = Readable.from(audioBuffer);
-  const resource = createAudioResource(stream);
-  const player = createAudioPlayer();
-  connection.subscribe(player);
-  player.play(resource);
+
   try {
+    const stream = Readable.from(audioBuffer);
+    const resource = createAudioResource(stream);
+    const player = createAudioPlayer();
+
+    connection.subscribe(player);
+    console.log('🎧 הבוט מחובר ומוכן לנגן...');
+
+    player.play(resource);
+    console.log('▶️ התחל לנגן את שמעון...');
+
+    player.on(AudioPlayerStatus.Playing, () => {
+      console.log('🔊 AudioPlayer במצב Playing – שמעון התחיל לדבר');
+    });
+
+    player.on(AudioPlayerStatus.Idle, () => {
+      console.log('✅ AudioPlayer במצב Idle – שמעון סיים לדבר');
+    });
+
+    player.on('error', (err) => {
+      console.error('💥 שגיאה בהשמעה:', err.message);
+    });
+
     await entersState(player, AudioPlayerStatus.Idle, 15000);
+    console.log('🏁 השמעה הושלמה בהצלחה');
   } catch (e) {
-    console.error('⛔ Timeout בהשמעה');
+    console.error('⛔ Timeout או תקלה ב־entersState:', e.message);
   }
-  player.stop();
+
+  try {
+    player.stop();
+    console.log('🛑 AudioPlayer הופסק ידנית');
+  } catch (e) {
+    console.warn('⚠️ שגיאה בעת ניסיון לעצור את AudioPlayer:', e.message);
+  }
 }
+
 
 function isUserAnnoying(userId) {
   const now = Date.now();

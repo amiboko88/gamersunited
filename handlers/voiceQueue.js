@@ -45,11 +45,14 @@ async function getOrCreateConnection(channel) {
   }
 
   console.log('🔌 יוצר connection חדש...');
-  const connection = joinVoiceChannel({
-    channelId: channel.id,
-    guildId: channel.guild.id,
-    adapterCreator: channel.guild.voiceAdapterCreator
-  });
+const connection = joinVoiceChannel({
+  channelId: channel.id,
+  guildId: channel.guild.id,
+  adapterCreator: channel.guild.voiceAdapterCreator,
+  selfDeaf: false,
+  selfMute: false
+});
+
 
   try {
     await entersState(connection, VoiceConnectionStatus.Ready, 5000);

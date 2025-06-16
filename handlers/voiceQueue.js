@@ -86,7 +86,7 @@ async function playAudio(connection, audioBuffer) {
   }
 
   const stream = Readable.from(audioBuffer);
-  const resource = createAudioResource(stream);
+  const resource = createAudioResource(stream, { inputType: 1 });
   const player = createAudioPlayer();
   let played = false;
 

@@ -36,23 +36,17 @@ async function getOrCreateConnection(channel) {
     try { record.connection.destroy(); } catch {}
   }
 
-  // ✅ הפקת adapter ישירות מה־channel בצורה מאובטחת
-  const adapterCreator = channel?.guild?.voiceAdapterCreator;
-  if (typeof adapterCreator !== 'function') {
-    console.error(`❌ voiceAdapterCreator חסר או לא תקף עבור guild ${channel.guild?.id}`);
-    throw new Error('voiceAdapterCreator is not available');
-  }
-
-  const connection = joinVoiceChannel({
-    channelId: channel.id,
-    guildId: channel.guild.id,
-    adapterCreator: adapterCreator,
-    selfDeaf: false,
-    selfMute: false
-  });
-
+  let connection;
   try {
-    await entersState(connection, VoiceConnectionStatus.Ready, 5_000);
+    connection = joinVoiceChannel({
+      channelId: channel.id,
+      guildId: channel.guild.id,
+      adapterCreator: channel.guild.voiceAdapterCreator,
+      selfDeaf: false,
+      selfMute: false
+    });
+
+    await entersState(connection, VoiceConnectionStatus.Ready, 5000);
     console.log('✅ התחבר לערוץ קול');
   } catch (err) {
     console.error('❌ נכשל להתחבר לערוץ קול:', err.message);
@@ -62,7 +56,6 @@ async function getOrCreateConnection(channel) {
   channelConnections.set(channel.id, { connection, lastUsed: now });
   return connection;
 }
-
 
 // ניקוי חיבורים לא פעילים כל 20 שניות
 setInterval(() => {
@@ -98,8 +91,8 @@ async function playAudio(connection, audioBuffer) {
 
   try {
     player.play(resource);
-    await entersState(player, AudioPlayerStatus.Playing, 5_000);
-    await entersState(player, AudioPlayerStatus.Idle, 15_000);
+    await entersState(player, AudioPlayerStatus.Playing, 5000);
+    await entersState(player, AudioPlayerStatus.Idle, 15000);
   } catch (e) {
     console.warn('⚠️ שמעון לא הגיע למצב Idle:', e.message);
   }
@@ -132,6 +125,11 @@ async function processUserSmart(member, channel) {
     buffer = await getShortTTSByProfile(member);
   } catch (err) {
     console.error(`❌ שגיאה בהפקת TTS ל־${member.displayName}: ${err.message}`);
+    return;
+  }
+
+  if (!buffer || !Buffer.isBuffer(buffer)) {
+    console.error(`❌ קיבלנו buffer לא תקין – ${member.displayName}`);
     return;
   }
 

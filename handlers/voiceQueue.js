@@ -16,7 +16,7 @@ const {
 const recentJoins = new Map(); // userId => timestamp
 const lastPlayed = new Map();  // userId => timestamp
 const CONNECTION_IDLE_TIMEOUT = 60000;
-const USER_COOLDOWN = 45000; // per-user cooldown
+const USER_COOLDOWN = 45000;
 
 const channelConnections = new Map();
 
@@ -65,8 +65,6 @@ async function playAudio(connection, audioBuffer) {
   const player = createAudioPlayer();
   connection.subscribe(player);
 
-  player.play(resource);
-
   let played = false;
 
   player.on(AudioPlayerStatus.Playing, () => {
@@ -83,6 +81,7 @@ async function playAudio(connection, audioBuffer) {
   });
 
   try {
+    player.play(resource);
     await entersState(player, AudioPlayerStatus.Idle, 15000);
   } catch (e) {
     console.warn('⚠️ שמעון לא הגיע למצב Idle:', e.message);
@@ -96,7 +95,6 @@ async function playAudio(connection, audioBuffer) {
 async function processUserSmart(member, channel) {
   const now = Date.now();
   const userId = member.id;
-  const lastJoin = recentJoins.get(userId) || 0;
   const lastSpeak = lastPlayed.get(userId) || 0;
 
   recentJoins.set(userId, now);
@@ -131,7 +129,7 @@ async function processUserSmart(member, channel) {
   try {
     console.log(`🎤 שמעון מדבר עם ${member.displayName}`);
     await playAudio(connection, buffer);
-    lastPlayed.set(userId, now);
+    lastPlayed.set(userId, now); // ⬅️ נשמר רק אם הצליח!
   } catch (err) {
     console.error(`💥 שגיאה בהשמעה ל־${member.displayName}: ${err.message}`);
   }

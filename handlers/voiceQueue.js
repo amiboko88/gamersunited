@@ -41,7 +41,14 @@ async function getOrCreateConnection(channel) {
     selfMute: false
   });
 
-  await entersState(connection, VoiceConnectionStatus.Ready, 5000);
+  try {
+    await entersState(connection, VoiceConnectionStatus.Ready, 5_000);
+    console.log('✅ התחבר לערוץ קול');
+  } catch (err) {
+    console.error('❌ נכשל להתחבר לערוץ קול:', err.message);
+    throw err;
+  }
+
   channelConnections.set(channel.id, { connection, lastUsed: now });
   return connection;
 }
@@ -82,7 +89,8 @@ async function playAudio(connection, audioBuffer) {
 
   try {
     player.play(resource);
-    await entersState(player, AudioPlayerStatus.Idle, 15000);
+    await entersState(player, AudioPlayerStatus.Playing, 5_000);
+    await entersState(player, AudioPlayerStatus.Idle, 15_000);
   } catch (e) {
     console.warn('⚠️ שמעון לא הגיע למצב Idle:', e.message);
   }
@@ -122,14 +130,13 @@ async function processUserSmart(member, channel) {
   try {
     connection = await getOrCreateConnection(channel);
   } catch (err) {
-    console.error(`❌ שגיאה ביצירת connection: ${err.message}`);
     return;
   }
 
   try {
     console.log(`🎤 שמעון מדבר עם ${member.displayName}`);
     await playAudio(connection, buffer);
-    lastPlayed.set(userId, now); // ⬅️ נשמר רק אם הצליח!
+    lastPlayed.set(userId, now);
   } catch (err) {
     console.error(`💥 שגיאה בהשמעה ל־${member.displayName}: ${err.message}`);
   }

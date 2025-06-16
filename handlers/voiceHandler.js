@@ -53,24 +53,33 @@ async function handleVoiceStateUpdate(oldState, newState) {
   }
 
   // ✅ רישום זמן יציאה ועדכון סטטיסטיקות
-  if (oldChannelId === CHANNEL_ID && newChannelId !== CHANNEL_ID) {
-    const joinedAt = joinTimestamps.get(member.id) || Date.now();
-    const now = Date.now();
-    const durationMinutes = Math.round((now - joinedAt) / 1000 / 60);
+// ✅ רישום זמן יציאה ועדכון סטטיסטיקות
+if (oldChannelId === CHANNEL_ID && newChannelId !== CHANNEL_ID) {
+  const now = Date.now();
+  let joinedAt = joinTimestamps.get(member.id);
 
-    if (durationMinutes > 0 && durationMinutes < 600) {
-      await updateVoiceActivity(member.id, durationMinutes, db);
-      await trackVoiceMinutes(member.id, durationMinutes);
-      await trackJoinCount(member.id);
-      await trackJoinDuration(member.id, durationMinutes);
-      await trackActiveHour(member.id);
-      console.log(`📈 ${member.user.tag} עודכן במערכת – ${durationMinutes} דקות`);
-    } else {
-      console.log(`⚠️ ${member.user.tag} – משך לא תקין (${durationMinutes} דקות)`);
-    }
-
-    joinTimestamps.delete(member.id);
+  if (!joinedAt) {
+    console.warn(`⚠️ לא נמצא זמן כניסה בזיכרון עבור ${member.user.tag} – מניח 1 דקה`);
+    joinedAt = now - 60000; // נניח דקה אחורה
   }
+
+  const durationMs = now - joinedAt;
+  const durationMinutes = Math.max(1, Math.round(durationMs / 1000 / 60)); // מינימום דקה אחת
+
+  if (durationMinutes > 0 && durationMinutes < 600) {
+    await updateVoiceActivity(member.id, durationMinutes, db);
+    await trackVoiceMinutes(member.id, durationMinutes);
+    await trackJoinCount(member.id);
+    await trackJoinDuration(member.id, durationMinutes);
+    await trackActiveHour(member.id);
+    console.log(`📈 ${member.user.tag} עודכן במערכת – ${durationMinutes} דקות`);
+  } else {
+    console.log(`⚠️ ${member.user.tag} – משך לא תקין (חושב ${durationMinutes} דקות, ${durationMs}ms)`);
+  }
+
+  joinTimestamps.delete(member.id);
+}
+
 }
 
 module.exports = {

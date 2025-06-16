@@ -118,55 +118,63 @@ async function processUserSmart(member, channel) {
 
   queue.push({ member, timestamp: Date.now() });
   console.log(`🎤 הוסף ל־Queue: ${member.displayName}`);
+  console.log(`📊 Queue נוכחי (${key}):`, queue.map(x => x.member.displayName));
 
-  if (connectionLocks.has(key)) return;
-  connectionLocks.add(key);
-
-  while (queue.length > 0) {
-    const now = Date.now();
-    const batch = [queue.shift()];
-    while (queue.length > 0 && (queue[0].timestamp - batch[0].timestamp) <= MULTI_JOIN_WINDOW) {
-      batch.push(queue.shift());
-    }
-
-    const userIds = batch.map(x => x.member.id);
-    const displayNames = batch.map(x => x.member.displayName);
-    const joinTimestamps = Object.fromEntries(batch.map(x => [x.member.id, x.timestamp]));
-
-    if (userIds.some(isUserAnnoying)) {
-      console.log(`🚫 קרציות נחסמות`);
-      continue;
-    }
-
-    const allowed = await Promise.all(userIds.map(id => canUserUseTTS(id)));
-    if (allowed.includes(false)) continue;
-
-    const usePodcast = batch.length >= GROUP_MIN;
-    let buffer;
-
-    try {
-      if (usePodcast) {
-        buffer = await getPodcastAudioAzure(displayNames, userIds, joinTimestamps);
-      } else {
-        buffer = await getShortTTSByProfile(batch[0].member);
-      }
-    } catch (err) {
-      console.error(`❌ שגיאה בהפקת TTS: ${err.message}`);
-      continue;
-    }
-
-    try {
-      const connection = await getOrCreateConnection(channel);
-      await playAudio(connection, buffer);
-    } catch (err) {
-      console.error(`🔌 שגיאה בחיבור קול: ${err.message}`);
-    }
-
-    await wait(TTS_TIMEOUT);
+  if (connectionLocks.has(key)) {
+    console.log(`🔒 דילוג – כבר פועל נגן עבור ${key}`);
+    return;
   }
 
-  connectionLocks.delete(key);
+  connectionLocks.add(key);
+
+  try {
+    while (queue.length > 0) {
+      const now = Date.now();
+      const batch = [queue.shift()];
+
+      while (queue.length > 0 && (queue[0].timestamp - batch[0].timestamp) <= MULTI_JOIN_WINDOW) {
+        batch.push(queue.shift());
+      }
+
+      const userIds = batch.map(x => x.member.id);
+      const displayNames = batch.map(x => x.member.displayName);
+      const joinTimestamps = Object.fromEntries(batch.map(x => [x.member.id, x.timestamp]));
+
+      if (userIds.some(isUserAnnoying)) {
+        console.log(`🚫 קרציות נחסמות`);
+        continue;
+      }
+
+      const allowed = await Promise.all(userIds.map(id => canUserUseTTS(id)));
+      if (allowed.includes(false)) continue;
+
+      const usePodcast = batch.length >= GROUP_MIN;
+      let buffer;
+
+      try {
+        buffer = usePodcast
+          ? await getPodcastAudioAzure(displayNames, userIds, joinTimestamps)
+          : await getShortTTSByProfile(batch[0].member);
+      } catch (err) {
+        console.error(`❌ שגיאה בהפקת TTS: ${err.message}`);
+        continue;
+      }
+
+      try {
+        const connection = await getOrCreateConnection(channel);
+        await playAudio(connection, buffer);
+      } catch (err) {
+        console.error(`🔌 שגיאה בחיבור קול או בהשמעה: ${err.message}`);
+      }
+
+      await wait(TTS_TIMEOUT);
+    }
+  } finally {
+    connectionLocks.delete(key);
+    console.log(`🔓 שוחרר lock עבור ${key}`);
+  }
 }
+
 
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));

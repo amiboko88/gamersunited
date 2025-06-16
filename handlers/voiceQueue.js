@@ -41,7 +41,11 @@ async function getOrCreateConnection(channel) {
     connection = joinVoiceChannel({
       channelId: channel.id,
       guildId: channel.guild.id,
-      adapterCreator: channel.guild.voiceAdapterCreator,
+      adapterCreator: (typeof channel.guild.voiceAdapterCreator === 'function')
+        ? channel.guild.voiceAdapterCreator
+        : (typeof channel.guild?.voiceAdapterCreator === 'object' && 'bind' in channel.guild.voiceAdapterCreator)
+          ? channel.guild.voiceAdapterCreator.bind(channel.guild)
+          : () => { throw new Error('❌ adapterCreator חסר או לא תקף') },
       selfDeaf: false,
       selfMute: false
     });
@@ -56,6 +60,7 @@ async function getOrCreateConnection(channel) {
   channelConnections.set(channel.id, { connection, lastUsed: now });
   return connection;
 }
+
 
 // ניקוי חיבורים לא פעילים כל 20 שניות
 setInterval(() => {

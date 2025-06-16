@@ -100,7 +100,10 @@ async function saveTTSAudit(data) {
 async function getShortTTSByProfile(member) {
   const userId = member.id;
   const displayName = member.displayName;
-  let text = getLineForUser(userId, displayName);
+  const text = getLineForUser(userId, displayName);
+
+  console.log(`🗣️ טקסט לשמעון עבור ${displayName}: ${text}`);
+
   return await synthesizeAzureTTS(text, 'shimon');
 }
 

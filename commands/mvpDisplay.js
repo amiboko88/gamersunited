@@ -3,14 +3,10 @@ const { createCanvas, loadImage } = require('canvas');
 const fs = require('fs');
 const path = require('path');
 
-function registerMvpCommand(commands) {
-  commands.push(
-    new SlashCommandBuilder()
-      .setName('מצטיין_שבוע')
-      .setDescription('📈 טבלת התקדמות חיה למצטיין השבועי (גרפי)')
-      .toJSON()
-  );
-}
+// פקודת Slash (data בלבד)
+const data = new SlashCommandBuilder()
+  .setName('מצטיין')
+  .setDescription('📈 טבלת התקדמות חיה למצטיין השבועי (גרפי)');
 
 async function execute(interaction, client) {
   await interaction.deferReply({ flags: 64 });
@@ -19,7 +15,6 @@ async function execute(interaction, client) {
   const voiceRef = await db.collection('voiceTime').get();
 
   const active = [];
-
   voiceRef.forEach(doc => {
     const data = doc.data();
     if (data.minutes > 0) {
@@ -38,7 +33,7 @@ async function execute(interaction, client) {
   const maxMinutes = active[0].minutes;
   const top = active.slice(0, 10);
 
-  // Canvas config
+  // קנבס
   const WIDTH = 1260;
   const PADDING = 40;
   const ROW_HEIGHT = 100;
@@ -50,17 +45,8 @@ async function execute(interaction, client) {
   const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx = canvas.getContext('2d');
 
-  // רקע
   ctx.fillStyle = '#0f172a';
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
-
-  // פונטים
-  const fontBold = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
-  const fontRegular = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
-  const fontTitle = await loadFont(fontBold, 46);
-  const fontName = await loadFont(fontBold, 28);
-  const fontStats = await loadFont(fontRegular, 22);
-  const fontPercent = await loadFont(fontBold, 20);
 
   function drawText(text, x, y, font, color = '#ffffff') {
     ctx.font = font;
@@ -75,7 +61,6 @@ async function execute(interaction, client) {
     ctx.fillText(text, WIDTH - padding - w, y);
   }
 
-  // כותרת
   drawRightAligned('?מי יהיה מצטיין השבוע', PADDING + 10, '46px DejaVuSans-Bold', '#facc15');
 
   for (let i = 0; i < top.length; i++) {
@@ -85,7 +70,6 @@ async function execute(interaction, client) {
     const percent = Math.round((minutes / maxMinutes) * 100);
     const y = PADDING + 60 + i * ROW_HEIGHT;
 
-    // אווטאר
     try {
       const avatar = await loadImage(user.displayAvatarURL({ extension: 'png', size: 128 }));
       ctx.save();
@@ -96,11 +80,9 @@ async function execute(interaction, client) {
       ctx.restore();
     } catch {}
 
-    // שם
     drawText(username, PADDING + AVATAR_SIZE + 20, y + 28, '28px DejaVuSans-Bold');
     drawText(`${minutes} דקות`, PADDING + AVATAR_SIZE + 20, y + 60, '22px DejaVuSans');
 
-    // בר התקדמות
     const barX = WIDTH - PADDING - BAR_WIDTH;
     const barY = y + 20;
     const fillWidth = Math.round((percent / 100) * BAR_WIDTH);
@@ -109,7 +91,6 @@ async function execute(interaction, client) {
     ctx.fillStyle = '#10b981';
     ctx.fillRect(barX, barY, fillWidth, BAR_HEIGHT);
 
-    // אחוז בתוך הבר
     const percentText = `${percent}%`;
     const textW = ctx.measureText(percentText).width;
     const inside = fillWidth > textW + 16;
@@ -118,7 +99,6 @@ async function execute(interaction, client) {
     drawText(percentText, percentX, barY + 23, '20px DejaVuSans-Bold', percentColor);
   }
 
-  // שמירה
   const outputPath = path.join(__dirname, '../temp/mvp_live.png');
   const dirPath = path.dirname(outputPath);
   if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
@@ -131,12 +111,7 @@ async function execute(interaction, client) {
   });
 }
 
-// פונקציית טעינת פונט
-async function loadFont(path, size) {
-  return `${size}px DejaVuSans`;
-}
-
 module.exports = {
-  registerMvpCommand,
+  data,
   execute
 };

@@ -27,7 +27,7 @@ const { data: fifoData, execute: fifoExecute } = require('./commands/fifo');
 const { data: songData, execute: songExecute, autocomplete: songAutocomplete } = require('./commands/song');
 const { execute: soundExecute, data: soundData } = require('./commands/soundboard');
 const { data: birthdayCommands, execute: birthdayExecute } = require('./commands/birthdayCommands');
-const { execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
+const { data: mvpData, execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
 const { registerMvpCommand } = require('./commands/mvpDisplay');
 const { startBirthdayTracker } = require('./handlers/birthdayTracker');
 const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayReminder');
@@ -52,10 +52,10 @@ const { handleSpam } = require('./handlers/antispam');
 const { handleMemberButtons } = require('./commands/memberButtons'); // שים לב — מתוך commands!
 
 const commands = [];
-registerMvpCommand(commands);
 commands.push(
   rankCommand.data,
   inactivityCommand.data,
+  mvpData,
   birthdayCommands,
   fifoData,
   helpData,
@@ -317,7 +317,7 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'אימות') return verifyExecute(interaction);
   if (commandName === 'מוזיקה') return songExecute(interaction, client);
   if (commandName === 'פיפו') return fifoExecute(interaction);
-  if (commandName === 'מצטיין_שבוע') return mvpDisplayExecute(interaction, client);
+  if (commandName === 'מצטיין') return mvpDisplayExecute(interaction, client);
   if (
     ['הוסף_יום_הולדת', 'ימי_הולדת', 'היום_הולדת_הבא', 'ימי_הולדת_חסרים']
       .includes(commandName)

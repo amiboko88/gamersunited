@@ -185,11 +185,22 @@ async function processUserSmart(member, channel) {
         continue;
       }
 
+      console.log('🔌 מתחבר לערוץ עם getOrCreateConnection...');
+      let connection;
+
       try {
-        const connection = await getOrCreateConnection(channel);
-        await playAudio(connection, buffer);
+        connection = await getOrCreateConnection(channel);
+        console.log('✅ חיבור קול התקבל – מנסה להשמיע...');
       } catch (err) {
-        console.error(`🔌 שגיאה בחיבור קול או בהשמעה: ${err.message}`);
+        console.error('❌ שגיאה ביצירת connection:', err.message);
+        continue;
+      }
+
+      try {
+        await playAudio(connection, buffer);
+        console.log('✅ הסתיימה הקריאה ל־playAudio()');
+      } catch (err) {
+        console.error('💥 שגיאה ב־playAudio:', err.message);
       }
 
       await wait(TTS_TIMEOUT);
@@ -199,6 +210,7 @@ async function processUserSmart(member, channel) {
     console.log(`🔓 שוחרר lock עבור ${key}`);
   }
 }
+
 
 
 function wait(ms) {

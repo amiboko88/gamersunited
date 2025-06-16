@@ -15,12 +15,15 @@ const {
 
 const recentJoins = new Map(); // userId => timestamp
 const lastPlayed = new Map();  // userId => timestamp
+
 const CONNECTION_IDLE_TIMEOUT = 60000;
 const USER_COOLDOWN = 45000;
 
 const channelConnections = new Map();
 
 async function getOrCreateConnection(channel) {
+  console.log(`🎤 מנסה להתחבר לערוץ ${channel.name} (${channel.id})`);
+
   const now = Date.now();
   const record = channelConnections.get(channel.id);
 
@@ -33,10 +36,17 @@ async function getOrCreateConnection(channel) {
     try { record.connection.destroy(); } catch {}
   }
 
+  // ✅ הפקת adapter ישירות מה־channel בצורה מאובטחת
+  const adapterCreator = channel?.guild?.voiceAdapterCreator;
+  if (typeof adapterCreator !== 'function') {
+    console.error(`❌ voiceAdapterCreator חסר או לא תקף עבור guild ${channel.guild?.id}`);
+    throw new Error('voiceAdapterCreator is not available');
+  }
+
   const connection = joinVoiceChannel({
     channelId: channel.id,
     guildId: channel.guild.id,
-    adapterCreator: channel.guild.voiceAdapterCreator,
+    adapterCreator: adapterCreator,
     selfDeaf: false,
     selfMute: false
   });
@@ -53,6 +63,8 @@ async function getOrCreateConnection(channel) {
   return connection;
 }
 
+
+// ניקוי חיבורים לא פעילים כל 20 שניות
 setInterval(() => {
   const now = Date.now();
   for (const [channelId, record] of channelConnections) {
@@ -72,10 +84,7 @@ async function playAudio(connection, audioBuffer) {
   const player = createAudioPlayer();
   connection.subscribe(player);
 
-  let played = false;
-
   player.on(AudioPlayerStatus.Playing, () => {
-    played = true;
     console.log('🔊 שמעון התחיל לדבר');
   });
 
@@ -130,6 +139,7 @@ async function processUserSmart(member, channel) {
   try {
     connection = await getOrCreateConnection(channel);
   } catch (err) {
+    console.error(`❌ לא הצלחנו להתחבר לערוץ עבור ${member.displayName}: ${err.message}`);
     return;
   }
 

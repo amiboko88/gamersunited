@@ -62,42 +62,60 @@ async function playAudio(connection, audioBuffer) {
     return;
   }
 
+  const stream = Readable.from(audioBuffer);
+  const resource = createAudioResource(stream);
+  const player = createAudioPlayer();
+
+  connection.subscribe(player);
+  console.log('🎧 הבוט התחבר לערוץ – מנסה לנגן...');
+
+  let played = false;
+
+  player.on(AudioPlayerStatus.Playing, () => {
+    played = true;
+    console.log('🔊 AudioPlayer במצב Playing – שמעון התחיל לדבר');
+  });
+
+  player.on(AudioPlayerStatus.Idle, () => {
+    console.log('✅ AudioPlayer במצב Idle – שמעון סיים לדבר');
+  });
+
+  player.on('error', (err) => {
+    console.error('💥 שגיאה בהשמעה:', err.message);
+  });
+
   try {
-    const stream = Readable.from(audioBuffer);
-    const resource = createAudioResource(stream);
-    const player = createAudioPlayer();
-
-    connection.subscribe(player);
-    console.log('🎧 הבוט מחובר ומוכן לנגן...');
-
     player.play(resource);
-    console.log('▶️ התחל לנגן את שמעון...');
-
-    player.on(AudioPlayerStatus.Playing, () => {
-      console.log('🔊 AudioPlayer במצב Playing – שמעון התחיל לדבר');
-    });
-
-    player.on(AudioPlayerStatus.Idle, () => {
-      console.log('✅ AudioPlayer במצב Idle – שמעון סיים לדבר');
-    });
-
-    player.on('error', (err) => {
-      console.error('💥 שגיאה בהשמעה:', err.message);
-    });
-
     await entersState(player, AudioPlayerStatus.Idle, 15000);
-    console.log('🏁 השמעה הושלמה בהצלחה');
+    console.log('🏁 ההשמעה הסתיימה (Idle)');
   } catch (e) {
     console.error('⛔ Timeout או תקלה ב־entersState:', e.message);
+
+    const staffChannelId = process.env.STAFF_CHANNEL_ID;
+    const guild = connection.joinConfig?.guild;
+    const staffChannel = guild?.channels?.cache?.get?.(staffChannelId);
+
+    if (staffChannel?.isTextBased?.()) {
+      staffChannel.send(`⚠️ **בעיה בהשמעת שמעון** – כנראה תקוע ב־entersState או התחברות לקול.`);
+    }
   }
 
-  try {
-    player.stop();
-    console.log('🛑 AudioPlayer הופסק ידנית');
-  } catch (e) {
-    console.warn('⚠️ שגיאה בעת ניסיון לעצור את AudioPlayer:', e.message);
+  if (!played) {
+    console.warn('🤐 שמעון לא התחיל לדבר בכלל!');
+
+    const staffChannelId = process.env.STAFF_CHANNEL_ID;
+    const guild = connection.joinConfig?.guild;
+    const staffChannel = guild?.channels?.cache?.get?.(staffChannelId);
+
+    if (staffChannel?.isTextBased?.()) {
+      staffChannel.send(`⚠️ **שמעון לא התחיל לדבר בכלל** – buffer הועבר, אך השמעה לא התבצעה.`);
+    }
   }
+
+  player.stop();
+  console.log('🛑 AudioPlayer הופסק ידנית');
 }
+
 
 
 function isUserAnnoying(userId) {

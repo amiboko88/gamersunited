@@ -4,15 +4,15 @@ const {
   createAudioResource,
   entersState,
   AudioPlayerStatus,
-  VoiceConnectionStatus
+  VoiceConnectionStatus,
+  StreamType
 } = require('@discordjs/voice');
 const { Readable } = require('stream');
-
 const {
   getShortTTSByProfile,
   getPodcastAudioAzure,
   canUserUseTTS
-} = require('../tts/ttsEngine.azure'); // 👈 שימוש במנוע החדש
+} = require('../tts/ttsEngine.azure');
 
 const activeQueue = new Map();
 const recentUsers = new Map();
@@ -45,14 +45,13 @@ async function getOrCreateConnection(channel) {
   }
 
   console.log('🔌 יוצר connection חדש...');
-const connection = joinVoiceChannel({
-  channelId: channel.id,
-  guildId: channel.guild.id,
-  adapterCreator: channel.guild.voiceAdapterCreator,
-  selfDeaf: false,
-  selfMute: false
-});
-
+  const connection = joinVoiceChannel({
+    channelId: channel.id,
+    guildId: channel.guild.id,
+    adapterCreator: channel.guild.voiceAdapterCreator,
+    selfDeaf: false,
+    selfMute: false
+  });
 
   try {
     await entersState(connection, VoiceConnectionStatus.Ready, 5000);
@@ -86,7 +85,7 @@ async function playAudio(connection, audioBuffer) {
   }
 
   const stream = Readable.from(audioBuffer);
-  const resource = createAudioResource(stream, { inputType: 1 });
+  const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary });
   const player = createAudioPlayer();
   let played = false;
 

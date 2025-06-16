@@ -10,20 +10,24 @@ const {
 const { Readable } = require('stream');
 const {
   getShortTTSByProfile,
+  getPodcastAudioAzure,
   canUserUseTTS
 } = require('../tts/ttsEngine.azure');
 
-const recentJoins = new Map(); 
-const lastPlayed = new Map(); 
-
-const CONNECTION_IDLE_TIMEOUT = 60000;
-const USER_COOLDOWN = 45000;
-
 const channelConnections = new Map();
+const connectionLocks = new Set();
+const activeQueue = new Map();
+const recentUsers = new Map();
+
+const TTS_TIMEOUT = 3500;
+const GROUP_MIN = 2;
+const CONNECTION_IDLE_TIMEOUT = 60000;
+
+function wait(ms) {
+  return new Promise(res => setTimeout(res, ms));
+}
 
 async function getOrCreateConnection(channel) {
-  console.log(`🎤 מנסה להתחבר לערוץ ${channel.name} (${channel.id})`);
-
   const now = Date.now();
   const record = channelConnections.get(channel.id);
 
@@ -36,32 +40,21 @@ async function getOrCreateConnection(channel) {
     try { record.connection.destroy(); } catch {}
   }
 
-  let connection;
-  try {
-    connection = joinVoiceChannel({
-      channelId: channel.id,
-      guildId: channel.guild.id,
-      adapterCreator: (typeof channel.guild.voiceAdapterCreator === 'function')
-        ? channel.guild.voiceAdapterCreator
-        : (typeof channel.guild?.voiceAdapterCreator === 'object' && 'bind' in channel.guild.voiceAdapterCreator)
-          ? channel.guild.voiceAdapterCreator.bind(channel.guild)
-          : () => { throw new Error('❌ adapterCreator חסר או לא תקף') },
-      selfDeaf: false,
-      selfMute: false
-    });
+  const connection = joinVoiceChannel({
+    channelId: channel.id,
+    guildId: channel.guild.id,
+    adapterCreator: channel.guild.voiceAdapterCreator,
+    selfDeaf: false,
+    selfMute: false
+  });
 
-    await entersState(connection, VoiceConnectionStatus.Ready, 5000);
-    console.log('✅ התחבר לערוץ קול');
-  } catch (err) {
-    console.error('❌ נכשל להתחבר לערוץ קול:', err.message);
-    throw err;
-  }
+  await entersState(connection, VoiceConnectionStatus.Ready, 5000);
+  console.log('✅ התחבר לערוץ קול');
 
   channelConnections.set(channel.id, { connection, lastUsed: now });
   return connection;
 }
 
-// ניקוי חיבורים לא פעילים כל 20 שניות
 setInterval(() => {
   const now = Date.now();
   for (const [channelId, record] of channelConnections) {
@@ -73,85 +66,109 @@ setInterval(() => {
 }, 20000);
 
 async function playAudio(connection, audioBuffer) {
-  const stream = Readable.from(audioBuffer);
-  const resource = createAudioResource(stream, {
-    inputType: StreamType.Arbitrary
-  });
-
-  const player = createAudioPlayer();
-  connection.subscribe(player);
-
-  player.on(AudioPlayerStatus.Playing, () => {
-    console.log('🔊 שמעון התחיל לדבר');
-  });
-
-  player.on(AudioPlayerStatus.Idle, () => {
-    console.log('✅ שמעון סיים לדבר');
-  });
-
-  player.on('error', (err) => {
-    console.error('💥 שגיאת נגן שמעון:', err.message);
-  });
-
   try {
+    if (!Buffer.isBuffer(audioBuffer)) {
+      console.error('🛑 Buffer לא תקין!', typeof audioBuffer, audioBuffer);
+      return;
+    }
+
+    const stream = Readable.from(audioBuffer);
+    const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary });
+    const player = createAudioPlayer();
+    connection.subscribe(player);
     player.play(resource);
-    await entersState(player, AudioPlayerStatus.Playing, 5000);
-    await entersState(player, AudioPlayerStatus.Idle, 15000);
-  } catch (e) {
-    console.warn('⚠️ שמעון לא הגיע למצב Idle:', e.message);
-  }
 
-  try {
-    player.stop();
-  } catch {}
+    console.log(`🔊 השמעה התחילה (גודל: ${audioBuffer.length} bytes)`);
+
+    await entersState(player, AudioPlayerStatus.Idle, 15000);
+    if (player) player.stop();
+  } catch (err) {
+    console.error('🛑 השמעה נכשלה – exception:', err.message);
+  }
+}
+
+function isUserAnnoying(userId) {
+  const key = `spam-${userId}`;
+  const timestamps = recentUsers.get(key) || [];
+  const now = Date.now();
+  const newTimestamps = timestamps.filter(t => now - t < 30000);
+  newTimestamps.push(now);
+  recentUsers.set(key, newTimestamps);
+  return newTimestamps.length >= 3;
 }
 
 async function processUserSmart(member, channel) {
-  const now = Date.now();
   const userId = member.id;
-  const lastSpeak = lastPlayed.get(userId) || 0;
+  const guildId = channel.guild.id;
+  const key = `${guildId}-${channel.id}`;
+  if (!activeQueue.has(key)) activeQueue.set(key, []);
+  const queue = activeQueue.get(key);
 
-  recentJoins.set(userId, now);
+  queue.push({ member, timestamp: Date.now() });
+  console.log(`➡️ הוסף ל־TTS Queue: ${member.user.tag}`);
 
-  if (now - lastSpeak < USER_COOLDOWN) {
-    console.log(`🤐 ${member.displayName} עדיין בקולדאון`);
+  if (connectionLocks.has(key)) {
+    console.log(`⏳ חיבור פעיל קיים – ממתין`);
     return;
   }
+  connectionLocks.add(key);
 
-  const allowed = await canUserUseTTS(userId);
-  if (!allowed) {
-    console.log(`🚫 ${member.displayName} לא מורשה ל־TTS`);
-    return;
+  while (queue.length > 0) {
+    const batch = queue.splice(0);
+    const userIds = batch.map(x => x.member.id);
+    const displayNames = batch.map(x => x.member.displayName);
+    const joinTimestamps = Object.fromEntries(batch.map(x => [x.member.id, x.timestamp]));
+
+    console.log(`📦 TTS Batch: ${displayNames.join(', ')}`);
+
+    if (userIds.some(isUserAnnoying)) {
+      console.log(`❌ חסימת קרציות`);
+      continue;
+    }
+
+    let blocked = false;
+    for (const user of batch) {
+      const ok = await canUserUseTTS(user.member.id, 10);
+      if (!ok) blocked = true;
+    }
+    if (blocked) {
+      console.log(`⛔ חסימה לפי שימוש`);
+      continue;
+    }
+
+    const usePodcast = batch.length >= GROUP_MIN;
+    console.log(`🧠 שימוש ב־${usePodcast ? 'Podcast' : 'Single'}`);
+
+    let audioBuffer;
+
+    try {
+      if (usePodcast) {
+        audioBuffer = await getPodcastAudioAzure(displayNames, userIds, joinTimestamps);
+      } else {
+        audioBuffer = await getShortTTSByProfile(batch[0].member);
+      }
+    } catch (err) {
+      console.error(`❌ שגיאה ב־TTS`, err);
+      continue;
+    }
+
+    if (!Buffer.isBuffer(audioBuffer)) {
+      console.error('🛑 Buffer לא חוקי:', audioBuffer);
+      continue;
+    }
+
+    try {
+      const connection = await getOrCreateConnection(channel);
+      console.log(`🔊 משמיע אודיו (${audioBuffer.length} bytes)`);
+      await playAudio(connection, audioBuffer);
+    } catch (err) {
+      console.error('🔌 שגיאה בהשמעה:', err);
+    }
+
+    await wait(TTS_TIMEOUT);
   }
 
-  let buffer;
-  try {
-    buffer = await getShortTTSByProfile(member);
-  } catch (err) {
-    console.error(`❌ שגיאה בהפקת TTS ל־${member.displayName}: ${err.message}`);
-    return;
-  }
-
-  if (!buffer || !Buffer.isBuffer(buffer)) {
-    console.error(`❌ קיבלנו buffer לא תקין – ${member.displayName}`);
-    return;
-  }
-
-  let connection;
-  try {
-    connection = await getOrCreateConnection(channel);
-  } catch (err) {
-    console.error(`❌ לא הצלחנו להתחבר לערוץ עבור ${member.displayName}: ${err.message}`);
-    return;
-  }
-
-  try {
-    console.log(`🎤 שמעון מדבר עם ${member.displayName}`);
-    await playAudio(connection, buffer);
-    lastPlayed.set(userId, now);
-  } catch (err) {
-    console.error(`💥 שגיאה בהשמעה ל־${member.displayName}: ${err.message}`);
-  }
+  connectionLocks.delete(key);
 }
 
 module.exports = {

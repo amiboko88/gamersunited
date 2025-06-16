@@ -61,7 +61,6 @@ async function getOrCreateConnection(channel) {
   return connection;
 }
 
-
 // ניקוי חיבורים לא פעילים כל 20 שניות
 setInterval(() => {
   const now = Date.now();

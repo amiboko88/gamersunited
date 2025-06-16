@@ -17,7 +17,7 @@
   "author": "Shimon Bot",
   "license": "MIT",
   "dependencies": {
-    "@discordjs/voice": "^0.14.0",
+    "@discordjs/voice": "0.14.0",
     "@grammyjs/runner": "^2.0.3",
     "axios": "^1.9.0",
     "canvas": "^3.1.0",

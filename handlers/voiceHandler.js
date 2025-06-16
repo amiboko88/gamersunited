@@ -1,5 +1,5 @@
-const { processUserSmart } = require('./handlers/voiceQueue');
-const { updateVoiceActivity } = require('./handlers/mvpTracker');
+const { processUserSmart } = require('./voiceQueue');
+const { updateVoiceActivity } = require('./mvpTracker');
 const {
   trackVoiceMinutes,
   trackJoinCount,

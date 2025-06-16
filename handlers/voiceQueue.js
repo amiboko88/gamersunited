@@ -28,6 +28,7 @@ function wait(ms) {
 }
 
 async function getOrCreateConnection(channel) {
+  console.log(`⚡ נכנסנו ל־getOrCreateConnection עבור ${channel.name}`);
   const now = Date.now();
   const record = channelConnections.get(channel.id);
 
@@ -98,6 +99,7 @@ function isUserAnnoying(userId) {
 }
 
 async function processUserSmart(member, channel) {
+  console.log(`🚀 processUserSmart התחיל עבור ${member.displayName}`);
   const userId = member.id;
   const guildId = channel.guild.id;
   const key = `${guildId}-${channel.id}`;

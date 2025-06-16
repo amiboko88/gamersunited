@@ -4,7 +4,7 @@ const db = require('../utils/firebase');
  * כפתורים לשליחת הודעות DM קבוצתיות/ספציפיות עבור memberTracker / inactivity
  */
 async function handleMemberButtons(interaction, client) {
-  const STAFF_CHANNEL_ID = process.env.STAFF_CHANNEL_ID;
+  const STAFF_CHANNEL_ID = '881445829100060723'
   const INACTIVITY_DAYS = 30;
 
   // שליחה יחידנית — DM ראשון

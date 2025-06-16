@@ -3,7 +3,8 @@ const {
   createAudioPlayer,
   createAudioResource,
   entersState,
-  AudioPlayerStatus
+  AudioPlayerStatus,
+  VoiceConnectionStatus
 } = require('@discordjs/voice');
 const { Readable } = require('stream');
 
@@ -22,24 +23,43 @@ const TTS_TIMEOUT = 5000;
 const CRITICAL_SPAM_WINDOW = 10000;
 const MULTI_JOIN_WINDOW = 6000;
 const GROUP_MIN = 3;
-const SHIMON_COOLDOWN = 45000;
 const CONNECTION_IDLE_TIMEOUT = 60000;
 
 async function getOrCreateConnection(channel) {
-  let record = channelConnections.get(channel.id);
   const now = Date.now();
-  if (record && record.connection && now - record.lastUsed < CONNECTION_IDLE_TIMEOUT) {
+  const record = channelConnections.get(channel.id);
+
+  if (record?.connection && now - record.lastUsed < CONNECTION_IDLE_TIMEOUT) {
     record.lastUsed = now;
+    console.log('🔁 שימוש ב־connection קיים');
     return record.connection;
   }
-  if (record && record.connection) {
-    try { record.connection.destroy(); } catch (e) {}
+
+  if (record?.connection) {
+    try {
+      record.connection.destroy();
+      console.log('💥 חיבור ישן נהרס');
+    } catch (e) {
+      console.warn('⚠️ שגיאה בהריסת חיבור קודם:', e.message);
+    }
   }
+
+  console.log('🔌 יוצר connection חדש...');
   const connection = joinVoiceChannel({
     channelId: channel.id,
     guildId: channel.guild.id,
     adapterCreator: channel.guild.voiceAdapterCreator
   });
+
+  try {
+    await entersState(connection, VoiceConnectionStatus.Ready, 5000);
+    console.log('✅ connection מוכן (READY)');
+  } catch (err) {
+    console.error('❌ connection לא הגיע ל־READY:', err.message);
+    try { connection.destroy(); } catch {}
+    throw new Error('החיבור לקול נכשל – Discord לא מגיב');
+  }
+
   channelConnections.set(channel.id, { connection, lastUsed: now });
   return connection;
 }
@@ -93,7 +113,6 @@ async function playAudio(connection, audioBuffer) {
   } catch (e) {
     console.error('⛔ Timeout או תקלה ב־entersState:', e.message);
 
-    // 🟡 אופציונלי – שלח ל־STAFF אם יש ערוץ מוגדר
     const staffChannelId = process.env.STAFF_CHANNEL_ID;
     const guild = connection.joinConfig?.guild;
     const staffChannel = guild?.channels?.cache?.get?.(staffChannelId);
@@ -122,9 +141,6 @@ async function playAudio(connection, audioBuffer) {
   }
 }
 
-
-
-
 function isUserAnnoying(userId) {
   const now = Date.now();
   const timestamps = recentUsers.get(userId) || [];
@@ -144,18 +160,19 @@ async function processUserSmart(member, channel) {
   queue.push({ member, timestamp: Date.now() });
   console.log(`🎤 הוסף ל־Queue: ${member.displayName}`);
   console.log(`📊 Queue נוכחי (${key}):`, queue.map(x => x.member.displayName));
-if (connectionLocks.has(key)) {
-  const timeSinceLock = Date.now() - (connectionLocks.get(key) || 0);
-  if (timeSinceLock > 30000) {
-    console.warn(`⏱️ lock ישן מדי – מנקה את ${key}`);
-    connectionLocks.delete(key);
-    console.log(`🔓 שוחרר lock עבור ${key}`);
-  } else {
-    console.log(`🔒 דילוג – כבר פועל נגן עבור ${key}`);
-    return;
+
+  if (connectionLocks.has(key)) {
+    const timeSinceLock = Date.now() - (connectionLocks.get(key) || 0);
+    if (timeSinceLock > 30000) {
+      console.warn(`⏱️ lock ישן מדי – מנקה את ${key}`);
+      connectionLocks.delete(key);
+      console.log(`🔓 שוחרר lock עבור ${key}`);
+    } else {
+      console.log(`🔒 דילוג – כבר פועל נגן עבור ${key}`);
+      return;
+    }
   }
-}
-connectionLocks.set(key, Date.now());
+  connectionLocks.set(key, Date.now());
 
   try {
     while (queue.length > 0) {
@@ -215,8 +232,6 @@ connectionLocks.set(key, Date.now());
     console.log(`🔓 שוחרר lock עבור ${key}`);
   }
 }
-
-
 
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));

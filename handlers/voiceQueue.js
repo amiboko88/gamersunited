@@ -55,7 +55,7 @@ setInterval(() => {
 }, 20000);
 
 async function playAudio(connection, audioBuffer) {
-  console.log('🔊 התחלת playAudio – קיבל buffer בגודל:', audioBuffer?.length);
+  console.log('🔔 נכנס ל־playAudio() – התחלה');
 
   if (!Buffer.isBuffer(audioBuffer)) {
     console.error('🛑 Buffer לא תקין או לא קיים!');
@@ -65,10 +65,6 @@ async function playAudio(connection, audioBuffer) {
   const stream = Readable.from(audioBuffer);
   const resource = createAudioResource(stream);
   const player = createAudioPlayer();
-
-  connection.subscribe(player);
-  console.log('🎧 הבוט התחבר לערוץ – מנסה לנגן...');
-
   let played = false;
 
   player.on(AudioPlayerStatus.Playing, () => {
@@ -85,36 +81,47 @@ async function playAudio(connection, audioBuffer) {
   });
 
   try {
+    console.log('🎧 מנסה לחבר את player לערוץ...');
+    connection.subscribe(player);
+
+    console.log('▶️ קורא player.play(resource)...');
     player.play(resource);
+
+    console.log('⏳ ממתין ל־AudioPlayerStatus.Idle...');
     await entersState(player, AudioPlayerStatus.Idle, 15000);
     console.log('🏁 ההשמעה הסתיימה (Idle)');
   } catch (e) {
     console.error('⛔ Timeout או תקלה ב־entersState:', e.message);
 
+    // 🟡 אופציונלי – שלח ל־STAFF אם יש ערוץ מוגדר
     const staffChannelId = process.env.STAFF_CHANNEL_ID;
     const guild = connection.joinConfig?.guild;
     const staffChannel = guild?.channels?.cache?.get?.(staffChannelId);
 
     if (staffChannel?.isTextBased?.()) {
-      staffChannel.send(`⚠️ **בעיה בהשמעת שמעון** – כנראה תקוע ב־entersState או התחברות לקול.`);
+      staffChannel.send(`⚠️ **בעיה בהשמעת שמעון** – תקלה ב־entersState.`);
     }
   }
 
   if (!played) {
     console.warn('🤐 שמעון לא התחיל לדבר בכלל!');
-
     const staffChannelId = process.env.STAFF_CHANNEL_ID;
     const guild = connection.joinConfig?.guild;
     const staffChannel = guild?.channels?.cache?.get?.(staffChannelId);
 
     if (staffChannel?.isTextBased?.()) {
-      staffChannel.send(`⚠️ **שמעון לא התחיל לדבר בכלל** – buffer הועבר, אך השמעה לא התבצעה.`);
+      staffChannel.send(`⚠️ **שמעון לא התחיל לדבר בכלל** – buffer נשלח אך לא הושמע.`);
     }
   }
 
-  player.stop();
-  console.log('🛑 AudioPlayer הופסק ידנית');
+  try {
+    player.stop();
+    console.log('🛑 AudioPlayer הופסק ידנית');
+  } catch (err) {
+    console.warn('⚠️ שגיאה בעצירת AudioPlayer:', err.message);
+  }
 }
+
 
 
 

@@ -133,9 +133,10 @@ client.on('messageCreate', async message => {
 
 // אינטראקציות
 client.on('interactionCreate', async interaction => {
+  // 🟢 אוטוקומפליט
   if (interaction.isAutocomplete()) return songAutocomplete(interaction);
 
-  // עזרה (כפתורי עזרה)
+  // 🟠 עזרה (כפתורים)
   if (
     (interaction.isButton() && interaction.customId?.startsWith('help_')) ||
     (interaction.type === 5 && interaction.customId === 'help_ai_modal')
@@ -143,11 +144,11 @@ client.on('interactionCreate', async interaction => {
     if (await helpHandleButton(interaction)) return;
   }
 
-  // כפתורים
+  // 🟡 כפתורים (Buttons)
   if (interaction.isButton()) {
     const id = interaction.customId;
 
-    // DM, אינאקטיביות וכו'
+    // כפתורי DM, אינאקטיביות
     if (
       id.startsWith('send_dm_again_') ||
       id.startsWith('send_final_dm_') ||
@@ -159,7 +160,7 @@ client.on('interactionCreate', async interaction => {
     if (['pause', 'resume', 'stop', 'skip', 'queue', 'volume_up', 'volume_down'].includes(id))
       return handleMusicControls(interaction);
 
-    // RSVP (לוח פעילות/הצבעות)
+    // RSVP (הצבעות)
     if (id.startsWith('vote_') || id === 'show_stats') return handleRSVP(interaction, client);
 
     // כפתורי חוקים
@@ -180,7 +181,6 @@ client.on('interactionCreate', async interaction => {
       }
       await interaction.reply({ content: '💬 ההצבעה שלך נרשמה.', ephemeral: true });
 
-      // אם כל הקבוצה הצביעה
       const opponentGroup = [...voteResult.allGroups.entries()].find(([name]) => name !== teamName);
       if (opponentGroup) {
         const [_, opponentData] = opponentGroup;
@@ -192,8 +192,6 @@ client.on('interactionCreate', async interaction => {
           );
         }
       }
-
-      // אם גם הקבוצה השנייה הצביעה — איפוס מלא
       if (hasReplayVotes(teamName) && hasBothTeamsVoted()) {
         await executeReplayReset(interaction.guild, interaction.channel, teamName);
       }
@@ -255,55 +253,40 @@ client.on('interactionCreate', async interaction => {
       return;
     }
 
+    // כאן תוכל להוסיף עוד כפתורים עתידיים
   }
 
-  // מודל יום הולדת
+  // 🟢 מודלים (Modal)
   if (interaction.isModalSubmit() && interaction.customId === 'birthday_modal') {
     return handleBirthdayModalSubmit(interaction, client);
   }
 
-  // פקודות Slash
-  if (!interaction.isCommand()) return;
-  await statTracker.trackSlash(interaction);
-  const name = interaction.commandName;
-  const map = {
-    עזרה: helpExecute,
-    inactivity: inactivityExecute,
-    updaterules: refreshRulesExecute,
-    rulestats: rulesStatsExecute,
-    tts: ttsCommandExecute,
-    leaderboard: leaderboardExecute,
-    הקלט: voiceRecorderExecute,
-    השמע_אחרון: voicePlaybackExecute,
-    רשימת_הקלטות: voiceListExecute,
-    מחק_הקלטות: voiceDeleteExecute,
-    רמה_שלי: rankCommand.execute,
-    סאונדבורד: soundboardExecute,
-    אימות: verifyExecute,
-    מוזיקה: songExecute,
-    פיפו: fifoExecute,
-    מצטיין_שבוע: mvpDisplayExecute,
-    הוסף_יום_הולדת: birthdayCommandsExecute,
-    ימי_הולדת: birthdayCommandsExecute,
-    היום_הולדת_הבא: birthdayCommandsExecute,
-    ימי_הולדת_חסרים: birthdayCommandsExecute
-  };
-  // דיבאג: מה שם הפקודה, מה יש במפה
-  console.log('התקבלה פקודת Slash:', name, 'נמצא במפה?', typeof map[name] === 'function');
-
-  const cmd = map[name];
-  if (typeof cmd === 'function') {
-    return cmd(interaction, client);
-  } else {
-    // אם לא נמצאה או לא מוגדרת נכון
-    await interaction.reply({
-      content: `⚠️ פקודה "${name}" לא נמצאה או לא הוגדרה נכון במפה.`,
-      ephemeral: true
-    });
-    // לוג שגיאה למעקב
-    console.error('❌ פקודת Slash לא קיימת או לא פונקציה:', name, cmd);
+  // 🔵 פקודות Slash — ישן וטיפש, בטוח!
+  if (interaction.isCommand()) {
+    if (interaction.commandName === 'עזרה')                 return helpExecute(interaction, client);
+    if (interaction.commandName === 'inactivity')           return inactivityExecute(interaction, client);
+    if (interaction.commandName === 'updaterules')          return refreshRulesExecute(interaction, client);
+    if (interaction.commandName === 'rulestats')            return rulesStatsExecute(interaction, client);
+    if (interaction.commandName === 'tts')                  return ttsCommandExecute(interaction, client);
+    if (interaction.commandName === 'leaderboard')          return leaderboardExecute(interaction, client);
+    if (interaction.commandName === 'הקלט')                 return voiceRecorderExecute(interaction, client);
+    if (interaction.commandName === 'השמע_אחרון')           return voicePlaybackExecute(interaction, client);
+    if (interaction.commandName === 'רשימת_הקלטות')        return voiceListExecute(interaction, client);
+    if (interaction.commandName === 'מחק_הקלטות')          return voiceDeleteExecute(interaction, client);
+    if (interaction.commandName === 'רמה_שלי')              return rankCommand.execute(interaction, client);
+    if (interaction.commandName === 'סאונדבורד')           return soundboardExecute(interaction, client);
+    if (interaction.commandName === 'אימות')                return verifyExecute(interaction, client);
+    if (interaction.commandName === 'מוזיקה')               return songExecute(interaction, client);
+    if (interaction.commandName === 'פיפו')                 return fifoExecute(interaction, client);
+    if (interaction.commandName === 'מצטיין_שבוע')         return mvpDisplayExecute(interaction, client);
+    if (interaction.commandName === 'הוסף_יום_הולדת')      return birthdayCommandsExecute(interaction, client);
+    if (interaction.commandName === 'ימי_הולדת')           return birthdayCommandsExecute(interaction, client);
+    if (interaction.commandName === 'היום_הולדת_הבא')      return birthdayCommandsExecute(interaction, client);
+    if (interaction.commandName === 'ימי_הולדת_חסרים')     return birthdayCommandsExecute(interaction, client);
+    // תוסיף כאן פקודות עתידיות כמו פעם!
   }
 });
+
 
 
 // 🧪 ניטור שגיאות מערכת

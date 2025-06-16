@@ -144,11 +144,19 @@ async function processUserSmart(member, channel) {
   queue.push({ member, timestamp: Date.now() });
   console.log(`🎤 הוסף ל־Queue: ${member.displayName}`);
   console.log(`📊 Queue נוכחי (${key}):`, queue.map(x => x.member.displayName));
-
-  if (connectionLocks.has(key)) {
+if (connectionLocks.has(key)) {
+  const timeSinceLock = Date.now() - (connectionLocks.get(key) || 0);
+  if (timeSinceLock > 30000) {
+    console.warn(`⏱️ lock ישן מדי – מנקה את ${key}`);
+    connectionLocks.delete(key);
+    console.log(`🔓 שוחרר lock עבור ${key}`);
+  } else {
     console.log(`🔒 דילוג – כבר פועל נגן עבור ${key}`);
     return;
   }
+}
+connectionLocks.set(key, Date.now());
+
 
   connectionLocks.add(key);
 

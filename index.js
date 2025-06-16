@@ -288,8 +288,21 @@ client.on('interactionCreate', async interaction => {
     היום_הולדת_הבא: birthdayCommandsExecute,
     ימי_הולדת_חסרים: birthdayCommandsExecute
   };
+  // דיבאג: מה שם הפקודה, מה יש במפה
+  console.log('התקבלה פקודת Slash:', name, 'נמצא במפה?', typeof map[name] === 'function');
+
   const cmd = map[name];
-  if (cmd) return cmd(interaction, client);
+  if (typeof cmd === 'function') {
+    return cmd(interaction, client);
+  } else {
+    // אם לא נמצאה או לא מוגדרת נכון
+    await interaction.reply({
+      content: `⚠️ פקודה "${name}" לא נמצאה או לא הוגדרה נכון במפה.`,
+      ephemeral: true
+    });
+    // לוג שגיאה למעקב
+    console.error('❌ פקודת Slash לא קיימת או לא פונקציה:', name, cmd);
+  }
 });
 
 

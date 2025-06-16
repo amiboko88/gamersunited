@@ -13,8 +13,8 @@ const {
   canUserUseTTS
 } = require('../tts/ttsEngine.azure');
 
-const recentJoins = new Map(); // userId => timestamp
-const lastPlayed = new Map();  // userId => timestamp
+const recentJoins = new Map(); 
+const lastPlayed = new Map(); 
 
 const CONNECTION_IDLE_TIMEOUT = 60000;
 const USER_COOLDOWN = 45000;

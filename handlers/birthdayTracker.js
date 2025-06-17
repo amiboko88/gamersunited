@@ -1,6 +1,15 @@
+// 📁 birthdayTracker.js – גרסה מעודכנת ל־ElevenLabs בלבד
 const { EmbedBuilder, ChannelType } = require('discord.js');
-const { synthesizeGeminiTTS } = require('../tts/ttsEngine.openai');
+const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs');
 const db = require('../utils/firebase');
+const { Readable } = require('stream');
+const {
+  joinVoiceChannel,
+  createAudioPlayer,
+  createAudioResource,
+  entersState,
+  AudioPlayerStatus
+} = require('@discordjs/voice');
 
 const CHANNEL_ID = process.env.BIRTHDAY_CHANNEL_ID;
 const ROLE_ID = process.env.BIRTHDAY_ROLE_ID;
@@ -83,7 +92,7 @@ async function checkBirthdays(client) {
       createdAt: new Date().toISOString()
     });
 
-    // מאזין כניסה לערוץ קול
+    // השמעת ברכה כשעולה לערוץ
     const filter = (oldState, newState) =>
       newState.member?.id === userId &&
       !oldState.channelId &&
@@ -93,16 +102,22 @@ async function checkBirthdays(client) {
       if (!filter(oldState, newState)) return;
 
       const phrase = `מזל טוב ל־${member.displayName}! אתה בן ${age} היום, וזה אומר שאתה עדיין משחק ולא פרשת כמו הגדולים! שנה של ניצחונות, פינג נמוך, וקבוצה שלא נוטשת באמצע.`;
-      const audioBuffer = await synthesizeGeminiTTS(phrase);
+      const buffer = await synthesizeElevenTTS(phrase, 'shimon');
 
       try {
-        const connection = await newState.channel.join();
-        const receiver = connection.receiver;
-        const dispatcher = connection.play(audioBuffer);
-
-        dispatcher.on('finish', () => {
-          connection.disconnect();
+        const connection = joinVoiceChannel({
+          channelId: newState.channelId,
+          guildId: newState.guild.id,
+          adapterCreator: newState.guild.voiceAdapterCreator
         });
+
+        const resource = createAudioResource(Readable.from(buffer));
+        const player = createAudioPlayer();
+        connection.subscribe(player);
+        player.play(resource);
+
+        await entersState(player, AudioPlayerStatus.Idle, 15000);
+        connection.destroy();
 
         client.off('voiceStateUpdate', listener);
         await logRef.set({ status: 'tts_played' }, { merge: true });
@@ -113,7 +128,7 @@ async function checkBirthdays(client) {
 
     client.on('voiceStateUpdate', listener);
 
-    // אם לא עלה עד 22:00, שלח פינג בצ׳אט
+    // תזכורת אם לא עלה עד 22:00
     setTimeout(async () => {
       const voiceMember = guild.members.cache.get(userId);
       if (!voiceMember?.voice?.channel) {

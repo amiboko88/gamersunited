@@ -1,4 +1,4 @@
-// 📁 voiceQueue.js - גרסה מלאה עם מנוע ElevenLabs בלבד כולל Cooldown חכם
+// 📁 voiceQueue.js – גרסה נקייה ומדויקת: שמעון חייב לדבר!
 const {
   joinVoiceChannel,
   createAudioPlayer,
@@ -13,35 +13,26 @@ const {
   canUserUseTTS
 } = require('../tts/ttsEngine.elevenlabs');
 
+const CONNECTION_IDLE_TIMEOUT = 60000;
+const MULTI_JOIN_WINDOW = 6000;
+const TTS_TIMEOUT = 5000;
+const GROUP_MIN = 3;
+
 const activeQueue = new Map();
-const recentUsers = new Map();
 const connectionLocks = new Set();
 const channelConnections = new Map();
-const userCooldowns = new Map(); // ⏱️ Cooldown לשמעון
-
-const TTS_TIMEOUT = 5000;
-const CRITICAL_SPAM_WINDOW = 10000;
-const MULTI_JOIN_WINDOW = 6000;
-const GROUP_MIN = 3;
-const SHIMON_COOLDOWN = 45000;
-const CONNECTION_IDLE_TIMEOUT = 60000;
-
-function isInCooldown(userId) {
-  const lastTime = userCooldowns.get(userId) || 0;
-  return (Date.now() - lastTime) < SHIMON_COOLDOWN;
-}
 
 async function getOrCreateConnection(channel) {
-  let record = channelConnections.get(channel.id);
   const now = Date.now();
+  let record = channelConnections.get(channel.id);
 
-  if (record && record.connection && now - record.lastUsed < CONNECTION_IDLE_TIMEOUT) {
+  if (record && now - record.lastUsed < CONNECTION_IDLE_TIMEOUT) {
     record.lastUsed = now;
     return record.connection;
   }
 
-  if (record && record.connection) {
-    try { record.connection.destroy(); } catch (e) {}
+  if (record?.connection) {
+    try { record.connection.destroy(); } catch {}
   }
 
   const connection = joinVoiceChannel({
@@ -58,17 +49,13 @@ setInterval(() => {
   const now = Date.now();
   for (const [channelId, record] of channelConnections) {
     if (now - record.lastUsed > CONNECTION_IDLE_TIMEOUT) {
-      try { record.connection.destroy(); } catch (e) {}
+      try { record.connection.destroy(); } catch {}
       channelConnections.delete(channelId);
     }
   }
 }, 20000);
 
 async function playAudio(connection, audioBuffer) {
-  if (!Buffer.isBuffer(audioBuffer)) {
-    console.error('🛑 Buffer לא תקין');
-    return;
-  }
   const stream = Readable.from(audioBuffer);
   const resource = createAudioResource(stream);
   const player = createAudioPlayer();
@@ -76,25 +63,14 @@ async function playAudio(connection, audioBuffer) {
   player.play(resource);
   try {
     await entersState(player, AudioPlayerStatus.Idle, 15000);
-  } catch (e) {
-    console.error('⛔ Timeout בהשמעה');
+  } catch {
+    console.error('⛔ Timeout או שגיאה בהשמעה');
   }
   player.stop();
 }
 
-function isUserAnnoying(userId) {
-  const now = Date.now();
-  const timestamps = recentUsers.get(userId) || [];
-  const newTimestamps = [...timestamps.filter(t => now - t < CRITICAL_SPAM_WINDOW), now];
-  recentUsers.set(userId, newTimestamps);
-  return newTimestamps.length >= 3;
-}
-
 async function processUserSmart(member, channel) {
-  const userId = member.id;
-  const guildId = channel.guild.id;
-  const key = `${guildId}-${channel.id}`;
-
+  const key = `${channel.guild.id}-${channel.id}`;
   if (!activeQueue.has(key)) activeQueue.set(key, []);
   const queue = activeQueue.get(key);
 
@@ -105,9 +81,8 @@ async function processUserSmart(member, channel) {
   connectionLocks.add(key);
 
   while (queue.length > 0) {
-    const now = Date.now();
     const batch = [queue.shift()];
-    while (queue.length > 0 && (queue[0].timestamp - batch[0].timestamp) <= MULTI_JOIN_WINDOW) {
+    while (queue.length > 0 && queue[0].timestamp - batch[0].timestamp <= MULTI_JOIN_WINDOW) {
       batch.push(queue.shift());
     }
 
@@ -115,40 +90,21 @@ async function processUserSmart(member, channel) {
     const displayNames = batch.map(x => x.member.displayName);
     const joinTimestamps = Object.fromEntries(batch.map(x => [x.member.id, x.timestamp]));
 
-    if (userIds.some(isUserAnnoying)) {
-      console.log(`🚫 קרציות נחסמות`);
-      continue;
-    }
-
-    if (userIds.some(isInCooldown)) {
-      console.log(`⏳ משתמשים תחת cooldown – מדלגים`);
-      continue;
-    }
-
-    const allowed = await Promise.all(userIds.map(id => canUserUseTTS(id)));
-    if (allowed.includes(false)) continue;
-
-    const usePodcast = batch.length >= GROUP_MIN;
-    let buffer;
-
     try {
-      buffer = usePodcast
+      const allowed = await Promise.all(userIds.map(id => canUserUseTTS(id)));
+      if (allowed.includes(false)) {
+        console.warn('🚫 למשתמשים אין הרשאה ל־TTS');
+        continue;
+      }
+
+      const buffer = batch.length >= GROUP_MIN
         ? await getPodcastAudioEleven(displayNames, userIds, joinTimestamps)
         : await getShortTTSByProfile(batch[0].member);
-    } catch (err) {
-      console.error(`❌ שגיאה בהפקת TTS: ${err.message}`);
-      continue;
-    }
 
-    try {
       const connection = await getOrCreateConnection(channel);
       await playAudio(connection, buffer);
     } catch (err) {
-      console.error(`🔌 שגיאה בחיבור קול: ${err.message}`);
-    }
-
-    for (const id of userIds) {
-      userCooldowns.set(id, Date.now());
+      console.error('❌ שגיאה כללית בהשמעה:', err.message);
     }
 
     await wait(TTS_TIMEOUT);

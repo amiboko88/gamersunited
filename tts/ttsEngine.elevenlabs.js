@@ -1,17 +1,16 @@
-// 📁 ttsEngine.elevenlabs.js – פתרון ביניים לקולות ציבוריים בעברית (ל־Starter)
+// 📁 ttsEngine.elevenlabs.js – מוחלף זמנית ל־OpenAI TTS עם עברית טבעית
 const axios = require('axios');
 const admin = require('firebase-admin');
 const { log } = require('../utils/logger');
 const { getLineForUser, getScriptByUserId, fallbackScripts } = require('../data/fifoLines');
 const { registerTTSUsage } = require('./ttsQuotaManager.eleven');
 
-const ELEVEN_API_KEY = process.env.ELEVEN_API_KEY;
-const ELEVEN_BASE_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_TTS_URL = 'https://api.openai.com/v1/audio/speech';
 
-// 🟢 קול ציבורי שזמין גם ב־Starter (למשל גבר רגיל)
 const VOICE_MAP = {
-  shimon: '21m00Tcm4TlvDq8ikWAM', // קול ברירת מחדל ציבורי
-  shirley: '21m00Tcm4TlvDq8ikWAM' // אותו קול – אין סגנון נשי אמיתי ב־Starter
+  shimon: 'nova',
+  shirley: 'shimmer'
 };
 
 function getVoiceId(speaker = 'shimon') {
@@ -19,31 +18,29 @@ function getVoiceId(speaker = 'shimon') {
 }
 
 async function synthesizeElevenTTS(text, speaker = 'shimon') {
-  const voiceId = getVoiceId(speaker);
+  const voice = getVoiceId(speaker);
   const cleanText = text.trim().replace(/\s+/g, ' ').replace(/\.{3,}/g, '...');
 
-  log(`🎙️ ElevenLabs TTS (${speaker}) – ${cleanText.length} תווים`);
+  log(`🎙️ OpenAI TTS (${speaker}) – ${cleanText.length} תווים`);
 
   const response = await axios.post(
-    `${ELEVEN_BASE_URL}/${voiceId}/stream`,
+    OPENAI_TTS_URL,
     {
-      text: cleanText,
-      voice_settings: {
-        stability: 0.5,
-        similarity_boost: 0.75
-      }
+      model: 'tts-1',
+      voice,
+      input: cleanText
     },
     {
       responseType: 'arraybuffer',
       headers: {
-        'xi-api-key': ELEVEN_API_KEY,
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
         'Content-Type': 'application/json'
       }
     }
   );
 
   if (!response.data || response.data.length < 1200) {
-    throw new Error('🔇 ElevenLabs לא החזיר קול תקין');
+    throw new Error('🔇 OpenAI לא החזיר קול תקין');
   }
 
   await registerTTSUsage(cleanText.length, 1);

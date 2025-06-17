@@ -170,12 +170,18 @@ client.on('interactionCreate', async interaction => {
     const id = interaction.customId;
 
     // כפתורי ניהול DM/inactivity — דרך הקובץ ב־commands
-    if (
-      id.startsWith('send_dm_again_') ||
-      id.startsWith('send_final_dm_') ||
-      id === 'send_dm_batch_list' ||
-      id === 'send_dm_batch_final_check'
-    ) return handleMemberButtons(interaction, client);
+const isMemberButton = [
+  'send_dm_batch_list',
+  'send_dm_batch_final_check',
+  'show_failed_list',
+  'show_replied_list',
+  'kick_failed_users'
+].includes(id) || id.startsWith('send_dm_again_') || id.startsWith('send_final_dm_');
+
+if (isMemberButton) {
+  return handleMemberButtons(interaction, client);
+}
+
 
     // כפתורי מוסיקה
     if (['pause', 'resume', 'stop'].includes(id)) {

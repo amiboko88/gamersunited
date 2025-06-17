@@ -346,6 +346,33 @@ async function runKickFailed(interaction) {
   await interaction.editReply(msg);
 }
 
+async function runPanel(interaction) {
+  const { ButtonBuilder, ButtonStyle, ActionRowBuilder, EmbedBuilder } = require('discord.js');
+
+  const embed = new EmbedBuilder()
+    .setTitle('📋 לוח ניהול משתמשים לא פעילים')
+    .setDescription('בחר באחת מהפעולות הבאות כדי לנהל משתמשים שלא היו פעילים לאחרונה.')
+    .setColor(0x007acc)
+    .setFooter({ text: 'Shimon BOT — Inactivity Manager' });
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('send_dm_batch_list')
+      .setLabel('📨 שלח DM לכולם')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('send_dm_batch_final_check')
+      .setLabel('🚨 שלח תזכורת סופית')
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  await interaction.reply({
+    embeds: [embed],
+    components: [row],
+    ephemeral: true
+  });
+}
+
 const inactivityCommand = {
   data: new SlashCommandBuilder()
     .setName('inactivity')
@@ -354,8 +381,9 @@ const inactivityCommand = {
     .addSubcommand(sub => sub.setName('not_replied').setDescription('📛 קיבלו DM ולא ענו'))
     .addSubcommand(sub => sub.setName('replied').setDescription('📨 הצג מי שענה ל־DM'))
     .addSubcommand(sub => sub.setName('failed_list').setDescription('❌ הצג משתמשים שנכשל DM אליהם'))
-    .addSubcommand(sub => sub.setName('kick_failed').setDescription('🛑 העף ומחק משתמשים שנכשלו DM (Admin בלבד)')),
-
+    .addSubcommand(sub => sub.setName('kick_failed').setDescription('🛑 העף ומחק משתמשים שנכשלו DM (Admin בלבד)'))
+    .addSubcommand(sub => sub.setName('panel').setDescription('📋 פתח לוח ניהול משתמשים')),
+    
   execute: async interaction => {
     const sub = interaction.options.getSubcommand();
     if (sub === 'list') return await runList(interaction);
@@ -363,6 +391,7 @@ const inactivityCommand = {
     if (sub === 'replied') return await runRepliedList(interaction);
     if (sub === 'failed_list') return await runFailedList(interaction);
     if (sub === 'kick_failed') return await runKickFailed(interaction);
+    if (sub === 'panel') return await runPanel(interaction);
   }
 };
 

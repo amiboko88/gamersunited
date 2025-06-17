@@ -1,3 +1,4 @@
+// 📁 ttsEngine.elevenlabs.js – פתרון ביניים לקולות ציבוריים בעברית (ל־Starter)
 const axios = require('axios');
 const admin = require('firebase-admin');
 const { log } = require('../utils/logger');
@@ -7,55 +8,28 @@ const { registerTTSUsage } = require('./ttsQuotaManager.eleven');
 const ELEVEN_API_KEY = process.env.ELEVEN_API_KEY;
 const ELEVEN_BASE_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 
+// 🟢 קול ציבורי שזמין גם ב־Starter (למשל גבר רגיל)
 const VOICE_MAP = {
-  shimon: 'YOq2y2Up4RgXP2HyXjE5', // קול אמיתי שלך
-  shirley: 'tnSpp4vdxKPjI9w0GnoV' // קול אמיתי שלך
+  shimon: '21m00Tcm4TlvDq8ikWAM', // קול ברירת מחדל ציבורי
+  shirley: '21m00Tcm4TlvDq8ikWAM' // אותו קול – אין סגנון נשי אמיתי ב־Starter
 };
+
 function getVoiceId(speaker = 'shimon') {
   return VOICE_MAP[speaker] || VOICE_MAP['shimon'];
 }
 
-function getV3Tags(text, speaker) {
-  if (!text || typeof text !== 'string') return text;
-  const lowered = text.toLowerCase();
-
-  const isInsult = /תמות|פתטי|זבל|הפסד|קרציה|עוף/.test(lowered);
-  const isSexy = /אוי|יאו+|נמסתי|חם לי|בוא|תירה בי/.test(text);
-  const isSarcastic = /ברוך הבא|מדהים|כל הכבוד|כפרה/.test(text);
-  const isShout = /!{1,}/.test(text);
-  const isShort = text.length < 20;
-
-  if (speaker === 'shimon') {
-    if (isInsult) return `<shouting><angry>${text}</angry></shouting>`;
-    if (isShout) return `<shouting>${text}</shouting>`;
-    if (isSarcastic) return `<sarcastic>${text}</sarcastic>`;
-    if (isShort) return `<excited>${text}</excited>`;
-    return `<neutral>${text}</neutral>`;
-  }
-
-  if (speaker === 'shirley') {
-    if (isSexy) return `<excited>${text}</excited>`;
-    if (isSarcastic) return `<sarcastic>${text}</sarcastic>`;
-    if (isShort) return `<emotional>${text}</emotional>`;
-    return `<soft>${text}</soft>`;
-  }
-
-  return text;
-}
-
 async function synthesizeElevenTTS(text, speaker = 'shimon') {
   const voiceId = getVoiceId(speaker);
-  const styledText = getV3Tags(cleanTextForTTS(text), speaker);
+  const cleanText = text.trim().replace(/\s+/g, ' ').replace(/\.{3,}/g, '...');
 
-  log(`🎙️ ElevenLabs V3 TTS (${speaker}) – ${styledText.length} תווים`);
+  log(`🎙️ ElevenLabs TTS (${speaker}) – ${cleanText.length} תווים`);
 
   const response = await axios.post(
     `${ELEVEN_BASE_URL}/${voiceId}/stream`,
     {
-      text: styledText,
-      model_id: 'eleven_v3',
+      text: cleanText,
       voice_settings: {
-        stability: 0.45,
+        stability: 0.5,
         similarity_boost: 0.75
       }
     },
@@ -69,38 +43,19 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
   );
 
   if (!response.data || response.data.length < 1200) {
-    throw new Error("🔇 ElevenLabs לא החזיר קול תקין");
+    throw new Error('🔇 ElevenLabs לא החזיר קול תקין');
   }
 
-  await registerTTSUsage(styledText.length, 1);
-
-  await saveTTSAudit({
-    text: styledText,
-    speaker,
-    voiceId,
-    model: 'eleven_v3',
-    length: styledText.length,
-    timestamp: new Date().toISOString()
-  });
+  await registerTTSUsage(cleanText.length, 1);
 
   return Buffer.from(response.data);
-}
-
-async function saveTTSAudit(data) {
-  try {
-    const db = admin.firestore();
-    await db.collection('elevenTtsAudit').add(data);
-  } catch (e) {
-    log(`⚠️ לא נשמר ל־Firestore (audit): ${e.message}`);
-  }
 }
 
 async function getShortTTSByProfile(member) {
   const userId = member.id;
   const displayName = member.displayName;
   let text = getLineForUser(userId, displayName);
-  const mp3Buffer = await synthesizeElevenTTS(text, 'shimon');
-  return mp3Buffer;
+  return await synthesizeElevenTTS(text, 'shimon');
 }
 
 async function getPodcastAudioEleven(displayNames = [], ids = [], joinTimestamps = {}) {
@@ -127,8 +82,7 @@ async function getPodcastAudioEleven(displayNames = [], ids = [], joinTimestamps
   if (participants.some(p => p.script)) {
     const punchScript = getRandomFallbackScript().punch;
     if (punchScript) {
-      const randomSpeaker = Math.random() < 0.5 ? 'shimon' : 'shirley';
-      buffers.push(await synthesizeElevenTTS(punchScript, randomSpeaker));
+      buffers.push(await synthesizeElevenTTS(punchScript, 'shimon'));
     }
   }
 
@@ -139,12 +93,7 @@ function getRandomFallbackScript() {
   return fallbackScripts[Math.floor(Math.random() * fallbackScripts.length)];
 }
 
-function cleanTextForTTS(text) {
-  if (!text || typeof text !== 'string') return '';
-  return text.trim().replace(/\s+/g, ' ').replace(/\.{3,}/g, '...');
-}
-
-async function canUserUseTTS() {
+async function canUserUseTTS(userId, limit = 5) {
   return true;
 }
 

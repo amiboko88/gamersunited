@@ -48,6 +48,7 @@ const { data: refreshRulesData, execute: refreshRulesExecute } = require('./comm
 const { data: rulesStatsData, execute: rulesStatsExecute } = require('./commands/rulesStats');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
 const { handleSpam } = require('./handlers/antispam');
+const fixInactivityCommand = require('./commands/fixInactivity');
 
 // ********* החיבור החדש שלך לכפתורים ********
 const { handleMemberButtons } = require('./commands/memberButtons'); // שים לב — מתוך commands!
@@ -59,6 +60,7 @@ commands.push(
   mvpData,
   birthdayCommands,
   fifoData,
+  fixInactivityCommand.data,
   helpData,
   leaderboardData,
   ttsCommand.data,
@@ -317,6 +319,7 @@ if (isMemberButton) {
   if (commandName === 'השמע_אחרון') return playbackExecute(interaction);
   if (commandName === 'רשימת_הקלטות') return listExecute(interaction);
   if (commandName === 'מחק_הקלטות') return deleteExecute(interaction);
+  if (commandName === 'fix_inactivity') return fixInactivityCommand.execute(interaction);
 
   // Slash משתמשים
   if (commandName === 'רמה_שלי') return rankCommand.execute(interaction);

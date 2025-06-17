@@ -1,4 +1,4 @@
-// 📁 voiceQueue.js – גרסה נקייה ומדויקת: שמעון חייב לדבר!
+// 📁 voiceQueue.js – גרסה סופית: חיבור קול, TTS, והכל בצורה מבצעית
 const {
   joinVoiceChannel,
   createAudioPlayer,
@@ -35,6 +35,8 @@ async function getOrCreateConnection(channel) {
     try { record.connection.destroy(); } catch {}
   }
 
+  console.log(`🎧 מנסה להתחבר לערוץ ${channel.name} (${channel.id})`);
+
   const connection = joinVoiceChannel({
     channelId: channel.id,
     guildId: channel.guild.id,
@@ -55,16 +57,17 @@ setInterval(() => {
   }
 }, 20000);
 
-async function playAudio(connection, audioBuffer) {
+async function playAudio(connection, audioBuffer, displayName) {
   const stream = Readable.from(audioBuffer);
   const resource = createAudioResource(stream);
   const player = createAudioPlayer();
   connection.subscribe(player);
   player.play(resource);
   try {
+    console.log(`🔊 ${displayName} – מתחיל השמעה...`);
     await entersState(player, AudioPlayerStatus.Idle, 15000);
-  } catch {
-    console.error('⛔ Timeout או שגיאה בהשמעה');
+  } catch (err) {
+    console.error(`⛔ שגיאה בזמן השמעה:`, err.message);
   }
   player.stop();
 }
@@ -102,9 +105,9 @@ async function processUserSmart(member, channel) {
         : await getShortTTSByProfile(batch[0].member);
 
       const connection = await getOrCreateConnection(channel);
-      await playAudio(connection, buffer);
+      await playAudio(connection, buffer, displayNames.join(', '));
     } catch (err) {
-      console.error('❌ שגיאה כללית בהשמעה:', err.message);
+      console.error('❌ שגיאה כללית בתהליך:', err.message);
     }
 
     await wait(TTS_TIMEOUT);

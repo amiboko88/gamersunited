@@ -8,22 +8,19 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
-module.exports = {
-  data: new SlashCommandBuilder()
-    .setName('inactivity')
-    .setDescription('ניהול משתמשים לא פעילים')
-    .addSubcommand(sub =>
-      sub.setName('panel').setDescription('📋 פתח לוח ניהול משתמשים')
-    ),
+const data = new SlashCommandBuilder()
+  .setName('inactivity')
+  .setDescription('ניהול משתמשים לא פעילים')
+  .addSubcommand(sub =>
+    sub.setName('panel').setDescription('📋 פתח לוח ניהול משתמשים')
+  );
 
-  async execute(interaction) {
-    const sub = interaction.options.getSubcommand();
-    if (sub === 'panel') return await runPanel(interaction);
-  },
+const execute = async (interaction) => {
+  const sub = interaction.options.getSubcommand();
+  if (sub === 'panel') return await runPanel(interaction);
 };
 
 async function runPanel(interaction) {
-  // בדיקת הרשאות ADMIN
   if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return await interaction.reply({
       content: '⛔ הפקודה הזו זמינה רק לאדמינים עם הרשאת ADMINISTRATOR.',
@@ -72,3 +69,8 @@ async function runPanel(interaction) {
     ephemeral: true,
   });
 }
+
+module.exports = {
+  data,
+  execute,
+};

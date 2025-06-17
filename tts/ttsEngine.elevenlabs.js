@@ -9,8 +9,8 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_TTS_URL = 'https://api.openai.com/v1/audio/speech';
 
 const VOICE_MAP = {
-  shimon: 'nova',
-  shirley: 'shimmer'
+  shimon: 'onyx',   // קול גברי איכותי
+  shirley: 'sage'   // קול נשי איכותי
 };
 
 function getVoiceId(speaker = 'shimon') {
@@ -26,7 +26,7 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
   const response = await axios.post(
     OPENAI_TTS_URL,
     {
-      model: 'tts-1',
+      model: 'tts-1-hd',
       voice,
       input: cleanText
     },

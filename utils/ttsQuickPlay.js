@@ -1,9 +1,16 @@
-// 📁 utils/ttsQuickPlay.js
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState, AudioPlayerStatus, VoiceConnectionStatus } = require('@discordjs/voice');
-const { synthesizeAzureTTS } = require('../tts/ttsEngine.azure');
+// 📁 utils/ttsQuickPlay.js – גרסה מעודכנת ל־ElevenLabs בלבד
+const {
+  joinVoiceChannel,
+  createAudioPlayer,
+  createAudioResource,
+  entersState,
+  AudioPlayerStatus,
+  VoiceConnectionStatus
+} = require('@discordjs/voice');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs');
 
 async function playTTSInVoiceChannel(channel, text, voice = 'shimon') {
   if (!channel || !channel.joinable) return;
@@ -12,8 +19,7 @@ async function playTTSInVoiceChannel(channel, text, voice = 'shimon') {
     const fileName = `tts_${uuidv4()}.mp3`;
     const filePath = path.join(__dirname, '..', 'temp', fileName);
 
-    // 🎙️ יצירת קובץ מתוך Azure TTS
-    const buffer = await synthesizeAzureTTS(text, voice);
+    const buffer = await synthesizeElevenTTS(text, voice);
     fs.writeFileSync(filePath, buffer);
 
     const connection = joinVoiceChannel({

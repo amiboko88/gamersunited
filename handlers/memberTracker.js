@@ -1,4 +1,4 @@
-// 📁 handlers/memberTracker.js - גרסה מלאה עם תיקון ואיחוד
+// 📁 handlers/memberTracker.js
 const cron = require('node-cron');
 const db = require('../utils/firebase');
 const statTracker = require('./statTracker');
@@ -71,7 +71,7 @@ async function runInactivityScan(client) {
     const userId = doc.id;
     const data = doc.data();
 
-    // 🔧 תיקון אוטומטי למשתמשים בלי joinedAt
+    // תיקון joinedAt חסר
     let joinedAt = data.joinedAt;
     if (!joinedAt) {
       const member = members.get(userId);
@@ -83,14 +83,18 @@ async function runInactivityScan(client) {
     const lastActivity = new Date(data.lastActivity || joinedAt);
     const daysInactive = (now - lastActivity.getTime()) / 86400000;
 
-    if (daysInactive < INACTIVITY_DAYS || data.dmSent) continue;
+    if (daysInactive < INACTIVITY_DAYS || data.dmSent || data.dmFailed) continue;
 
     let user;
     try {
       user = await client.users.fetch(userId);
-      if (!user || !user.id) throw new Error('לא קיים');
+      if (!user || typeof user.send !== 'function') throw new Error('לא קיים');
     } catch (err) {
       console.warn(`⚠️ לא הצלחתי להביא את המשתמש ${userId}: ${err.message}`);
+      await db.collection('memberTracking').doc(userId).set({
+        dmFailed: true,
+        dmFailedAt: new Date().toISOString()
+      }, { merge: true });
       continue;
     }
 
@@ -101,6 +105,10 @@ async function runInactivityScan(client) {
       console.log(`📨 נשלחה הודעת DM ל־${user.username}`);
     } catch (err) {
       console.warn(`⚠️ שגיאה בשליחת DM ל־${userId}: ${err.message}`);
+      await db.collection('memberTracking').doc(userId).set({
+        dmFailed: true,
+        dmFailedAt: new Date().toISOString()
+      }, { merge: true });
       continue;
     }
 
@@ -128,7 +136,7 @@ async function runList(interaction) {
 
   const inactiveUsers = allTracked.docs.filter(doc => {
     const last = new Date(doc.data().lastActivity || doc.data().joinedAt);
-    return (now - last.getTime()) / 86400000 > INACTIVITY_DAYS && !doc.data().dmSent;
+    return (now - last.getTime()) / 86400000 > INACTIVITY_DAYS && !doc.data().dmSent && !doc.data().dmFailed;
   });
 
   if (inactiveUsers.length === 0) {
@@ -233,19 +241,128 @@ async function runRepliedList(interaction) {
   await interaction.editReply({ embeds: [embed] });
 }
 
+async function runFailedList(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+  const allTracked = await db.collection('memberTracking').get();
+  const client = interaction.client;
+  const failed = allTracked.docs.filter(doc => doc.data().dmFailed === true);
+
+  if (failed.length === 0) {
+    return interaction.editReply('✅ אין משתמשים עם DM שנכשל.');
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle('❌ משתמשים שחסמו DM מהבוט או לא נגישים')
+    .setColor(0xcc0000)
+    .setTimestamp();
+
+  for (const doc of failed.slice(0, 25)) {
+    const userId = doc.id;
+    const data = doc.data();
+    let username = `לא ידוע (${userId})`;
+
+    try {
+      const user = await client.users.fetch(userId);
+      username = user.username;
+    } catch {}
+
+    embed.addFields({
+      name: `${username} (<@${userId}>)`,
+      value: `📆 כישלון תיעוד: ${data.dmFailedAt?.split('T')[0] || 'N/A'}`,
+      inline: false
+    });
+  }
+
+  await interaction.editReply({ embeds: [embed] });
+}
+
+async function runKickFailed(interaction) {
+  const member = interaction.member;
+
+  if (!member.permissions.has('Administrator')) {
+    return await interaction.reply({
+      content: '❌ הפקודה הזו זמינה רק לאדמינים עם הרשאת ADMINISTRATOR.',
+      ephemeral: true
+    });
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+  const tracked = await db.collection('memberTracking').get();
+  const failedDocs = tracked.docs.filter(doc => doc.data().dmFailed === true);
+
+  if (failedDocs.length === 0) {
+    return interaction.editReply('✅ אין משתמשים לסילוק.');
+  }
+
+  const guild = await interaction.client.guilds.fetch(GUILD_ID);
+  const members = await guild.members.fetch();
+
+  let kicked = 0;
+  let notInGuild = 0;
+  let failedToKick = [];
+
+  for (const doc of failedDocs) {
+    const userId = doc.id;
+    const memberToKick = members.get(userId);
+
+    if (!memberToKick) {
+      notInGuild++;
+      await db.collection('memberTracking').doc(userId).delete();
+      continue;
+    }
+
+    try {
+      await memberToKick.kick('סומן כ־dmFailed ולא ענה');
+      await db.collection('memberTracking').doc(userId).delete();
+      kicked++;
+    } catch (err) {
+      failedToKick.push(`<@${userId}>`);
+    }
+  }
+
+  // דיווח לצוות
+  try {
+    const staff = await interaction.client.channels.fetch(STAFF_CHANNEL_ID).catch(() => null);
+    if (staff?.isTextBased()) {
+      const embed = new EmbedBuilder()
+        .setTitle('🚨 פעולת ניקוי משתמשים לא זמינים')
+        .setColor(0xff4444)
+        .addFields(
+          { name: '✅ הורחקו מהשרת', value: `${kicked}`, inline: true },
+          { name: '🚫 כבר לא היו בשרת', value: `${notInGuild}`, inline: true },
+          { name: '❌ שגיאות בהרחקה', value: failedToKick.length > 0 ? failedToKick.join(', ') : 'אין', inline: false }
+        )
+        .setFooter({ text: `הופעל ע״י ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() })
+        .setTimestamp();
+
+      await staff.send({ embeds: [embed] });
+    }
+  } catch (e) {
+    console.error('שגיאה בשליחת Embed לצוות:', e.message);
+  }
+
+  let msg = `🧹 **ניקוי הושלם:**\n✅ הורחקו: ${kicked}\n🚫 לא היו בשרת: ${notInGuild}`;
+  if (failedToKick.length > 0) msg += `\n❌ נכשלו בהרחקה: ${failedToKick.join(', ')}`;
+  await interaction.editReply(msg);
+}
+
 const inactivityCommand = {
   data: new SlashCommandBuilder()
     .setName('inactivity')
     .setDescription('🔍 ניהול משתמשים לא פעילים')
     .addSubcommand(sub => sub.setName('list').setDescription('📋 הצג משתמשים שטרם קיבלו DM'))
     .addSubcommand(sub => sub.setName('not_replied').setDescription('📛 קיבלו DM ולא ענו'))
-    .addSubcommand(sub => sub.setName('replied').setDescription('📨 הצג מי שענה ל־DM')),
+    .addSubcommand(sub => sub.setName('replied').setDescription('📨 הצג מי שענה ל־DM'))
+    .addSubcommand(sub => sub.setName('failed_list').setDescription('❌ הצג משתמשים שנכשל DM אליהם'))
+    .addSubcommand(sub => sub.setName('kick_failed').setDescription('🛑 העף ומחק משתמשים שנכשלו DM (Admin בלבד)')),
 
   execute: async interaction => {
     const sub = interaction.options.getSubcommand();
     if (sub === 'list') return await runList(interaction);
     if (sub === 'not_replied') return await runFinalCheck(interaction);
     if (sub === 'replied') return await runRepliedList(interaction);
+    if (sub === 'failed_list') return await runFailedList(interaction);
+    if (sub === 'kick_failed') return await runKickFailed(interaction);
   }
 };
 

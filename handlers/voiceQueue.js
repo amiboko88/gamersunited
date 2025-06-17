@@ -1,3 +1,4 @@
+// 📁 voiceQueue.js - גרסה מלאה עם מנוע ElevenLabs בלבד כולל Cooldown חכם
 const {
   joinVoiceChannel,
   createAudioPlayer,
@@ -6,17 +7,17 @@ const {
   AudioPlayerStatus
 } = require('@discordjs/voice');
 const { Readable } = require('stream');
-
 const {
   getShortTTSByProfile,
-  getPodcastAudioAzure,
+  getPodcastAudioEleven,
   canUserUseTTS
-} = require('../tts/ttsEngine.azure'); // 👈 שימוש במנוע החדש
+} = require('../tts/ttsEngine.elevenlabs');
 
 const activeQueue = new Map();
 const recentUsers = new Map();
 const connectionLocks = new Set();
 const channelConnections = new Map();
+const userCooldowns = new Map(); // ⏱️ Cooldown לשמעון
 
 const TTS_TIMEOUT = 5000;
 const CRITICAL_SPAM_WINDOW = 10000;
@@ -25,21 +26,30 @@ const GROUP_MIN = 3;
 const SHIMON_COOLDOWN = 45000;
 const CONNECTION_IDLE_TIMEOUT = 60000;
 
+function isInCooldown(userId) {
+  const lastTime = userCooldowns.get(userId) || 0;
+  return (Date.now() - lastTime) < SHIMON_COOLDOWN;
+}
+
 async function getOrCreateConnection(channel) {
   let record = channelConnections.get(channel.id);
   const now = Date.now();
+
   if (record && record.connection && now - record.lastUsed < CONNECTION_IDLE_TIMEOUT) {
     record.lastUsed = now;
     return record.connection;
   }
+
   if (record && record.connection) {
     try { record.connection.destroy(); } catch (e) {}
   }
+
   const connection = joinVoiceChannel({
     channelId: channel.id,
     guildId: channel.guild.id,
     adapterCreator: channel.guild.voiceAdapterCreator
   });
+
   channelConnections.set(channel.id, { connection, lastUsed: now });
   return connection;
 }
@@ -110,6 +120,11 @@ async function processUserSmart(member, channel) {
       continue;
     }
 
+    if (userIds.some(isInCooldown)) {
+      console.log(`⏳ משתמשים תחת cooldown – מדלגים`);
+      continue;
+    }
+
     const allowed = await Promise.all(userIds.map(id => canUserUseTTS(id)));
     if (allowed.includes(false)) continue;
 
@@ -117,11 +132,9 @@ async function processUserSmart(member, channel) {
     let buffer;
 
     try {
-      if (usePodcast) {
-        buffer = await getPodcastAudioAzure(displayNames, userIds, joinTimestamps);
-      } else {
-        buffer = await getShortTTSByProfile(batch[0].member);
-      }
+      buffer = usePodcast
+        ? await getPodcastAudioEleven(displayNames, userIds, joinTimestamps)
+        : await getShortTTSByProfile(batch[0].member);
     } catch (err) {
       console.error(`❌ שגיאה בהפקת TTS: ${err.message}`);
       continue;
@@ -132,6 +145,10 @@ async function processUserSmart(member, channel) {
       await playAudio(connection, buffer);
     } catch (err) {
       console.error(`🔌 שגיאה בחיבור קול: ${err.message}`);
+    }
+
+    for (const id of userIds) {
+      userCooldowns.set(id, Date.now());
     }
 
     await wait(TTS_TIMEOUT);

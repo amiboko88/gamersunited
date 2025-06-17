@@ -23,6 +23,10 @@ async function handleMemberButtons(interaction, client) {
       }, { merge: true });
       await interaction.reply({ content: `✅ נשלחה תזכורת ל־<@${userId}>`, ephemeral: true });
     } catch (err) {
+      await db.collection('memberTracking').doc(userId).set({
+        dmFailed: true,
+        dmFailedAt: new Date().toISOString()
+      }, { merge: true });
       await interaction.reply({ content: `❌ לא ניתן לשלוח ל־<@${userId}>: ${err.message}`, ephemeral: true });
     }
     return true;
@@ -43,6 +47,10 @@ async function handleMemberButtons(interaction, client) {
       }, { merge: true });
       await interaction.reply({ content: `📨 נשלחה תזכורת סופית ל־<@${userId}>`, ephemeral: true });
     } catch (err) {
+      await db.collection('memberTracking').doc(userId).set({
+        dmFailed: true,
+        dmFailedAt: new Date().toISOString()
+      }, { merge: true });
       await interaction.reply({ content: `❌ שגיאה בשליחה ל־<@${userId}>: ${err.message}`, ephemeral: true });
     }
     return true;
@@ -105,9 +113,17 @@ async function handleMemberButtons(interaction, client) {
           count++;
         } catch (dmErr) {
           failed.push(`<@${userId}>`);
+          await db.collection('memberTracking').doc(userId).set({
+            dmFailed: true,
+            dmFailedAt: new Date().toISOString()
+          }, { merge: true });
         }
       } catch (err) {
         failed.push(`<@${userId}>`);
+        await db.collection('memberTracking').doc(userId).set({
+          dmFailed: true,
+          dmFailedAt: new Date().toISOString()
+        }, { merge: true });
       }
     }
 
@@ -157,7 +173,6 @@ async function handleMemberButtons(interaction, client) {
     }
     return true;
   }
-
   // --- שליחה קבוצתית — סופית (תזכורת אחרונה) ---
   if (interaction.customId === 'send_dm_batch_final_check') {
     await interaction.deferReply({ ephemeral: true });
@@ -188,7 +203,7 @@ async function handleMemberButtons(interaction, client) {
         notInGuild.push(`<@${userId}>`);
         continue;
       }
-      // עונה על התנאים: קיבל DM ראשוני, לא ענה, עדיין לא ענה, ועדיין לא פעיל
+      // עונה על התנאים: קיבל DM ראשוני, לא ענה, ועדיין לא פעיל
       if (!(daysInactive > INACTIVITY_DAYS && d.dmSent && !d.replied)) {
         continue;
       }
@@ -214,9 +229,17 @@ async function handleMemberButtons(interaction, client) {
           count++;
         } catch (dmErr) {
           failed.push(`<@${userId}>`);
+          await db.collection('memberTracking').doc(userId).set({
+            dmFailed: true,
+            dmFailedAt: new Date().toISOString()
+          }, { merge: true });
         }
       } catch (err) {
         failed.push(`<@${userId}>`);
+        await db.collection('memberTracking').doc(userId).set({
+          dmFailed: true,
+          dmFailedAt: new Date().toISOString()
+        }, { merge: true });
       }
     }
 
@@ -263,6 +286,7 @@ async function handleMemberButtons(interaction, client) {
         console.error('שגיאה בשליחת Embed לערוץ הכללי:', e.message);
       }
     }
+
     return true;
   }
 
@@ -271,3 +295,4 @@ async function handleMemberButtons(interaction, client) {
 }
 
 module.exports = { handleMemberButtons };
+

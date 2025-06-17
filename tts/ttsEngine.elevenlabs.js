@@ -8,10 +8,9 @@ const ELEVEN_API_KEY = process.env.ELEVEN_API_KEY;
 const ELEVEN_BASE_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 
 const VOICE_MAP = {
-  shimon: '876MHA6EtWKaHTEGzjy5',   // קול עברי גברי
-  shirley: 'tnSpp4vdxKPjI9w0GnoV'   // קול עברי נשי
+  shimon: 'YOq2y2Up4RgXP2HyXjE5', // קול אמיתי שלך
+  shirley: 'tnSpp4vdxKPjI9w0GnoV' // קול אמיתי שלך
 };
-
 function getVoiceId(speaker = 'shimon') {
   return VOICE_MAP[speaker] || VOICE_MAP['shimon'];
 }
@@ -20,7 +19,7 @@ function getV3Tags(text, speaker) {
   if (!text || typeof text !== 'string') return text;
   const lowered = text.toLowerCase();
 
-  const isInsult = /תמות|פתטי|זבל|הפסד|קרציה|עוף/.test(text);
+  const isInsult = /תמות|פתטי|זבל|הפסד|קרציה|עוף/.test(lowered);
   const isSexy = /אוי|יאו+|נמסתי|חם לי|בוא|תירה בי/.test(text);
   const isSarcastic = /ברוך הבא|מדהים|כל הכבוד|כפרה/.test(text);
   const isShout = /!{1,}/.test(text);
@@ -145,7 +144,7 @@ function cleanTextForTTS(text) {
   return text.trim().replace(/\s+/g, ' ').replace(/\.{3,}/g, '...');
 }
 
-async function canUserUseTTS(userId, limit = 5) {
+async function canUserUseTTS() {
   return true;
 }
 

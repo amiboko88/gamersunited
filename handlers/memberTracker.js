@@ -1,76 +1,28 @@
-// 📁 memberTracker.js
-const {
-  SlashCommandBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ActionRowBuilder,
-  EmbedBuilder,
-  PermissionFlagsBits,
-} = require('discord.js');
+// 📁 handlers/memberTracker.js
+const db = require('../utils/firebase');
 
-const data = new SlashCommandBuilder()
-  .setName('inactivity')
-  .setDescription('ניהול משתמשים לא פעילים')
-  .addSubcommand(sub =>
-    sub.setName('panel').setDescription('📋 פתח לוח ניהול משתמשים')
-  );
-
-const execute = async (interaction) => {
-  const sub = interaction.options.getSubcommand();
-  if (sub === 'panel') return await runPanel(interaction);
-};
-
-async function runPanel(interaction) {
-  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-    return await interaction.reply({
-      content: '⛔ הפקודה הזו זמינה רק לאדמינים עם הרשאת ADMINISTRATOR.',
-      ephemeral: true,
-    });
-  }
-
-  const embed = new EmbedBuilder()
-    .setTitle('📋 לוח ניהול משתמשים לא פעילים')
-    .setDescription('בחר פעולה לניהול משתמשים שלא היו פעילים לאחרונה.')
-    .setColor(0x007acc)
-    .setFooter({ text: 'Shimon BOT — Inactivity Manager' });
-
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('send_dm_batch_list')
-      .setLabel('שלח DM לכולם 🔵')
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId('send_dm_batch_final_check')
-      .setLabel('שלח תזכורת סופית 🔴')
-      .setStyle(ButtonStyle.Danger),
-
-    new ButtonBuilder()
-      .setCustomId('show_failed_list')
-      .setLabel('רשימת נכשלים ❌')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('show_replied_list')
-      .setLabel('הגיבו ל־DM 💬')
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId('kick_failed_users')
-      .setLabel('העף חסומים 🛑')
-      .setStyle(ButtonStyle.Danger)
-  );
-
-  await interaction.reply({
-    embeds: [embed],
-    components: [row1, row2],
-    ephemeral: true,
+function setupMemberTracker(client) {
+  // 🟢 בעת הצטרפות משתמש
+  client.on('guildMemberAdd', async member => {
+    await db.collection('memberTracking').doc(member.id).set({
+      joinedAt: new Date().toISOString(),
+      lastActivity: new Date().toISOString(),
+      dmSent: false,
+      dmFailed: false,
+      replied: false,
+    }, { merge: true });
   });
+
+  // 🟡 בעת שליחת הודעה
+  client.on('messageCreate', async message => {
+    if (message.author.bot || !message.guild) return;
+
+    await db.collection('memberTracking').doc(message.author.id).set({
+      lastActivity: new Date().toISOString(),
+    }, { merge: true });
+  });
+
+  console.log('✅ ניטור משתמשים לא פעילים הופעל');
 }
 
-module.exports = {
-  data,
-  execute,
-};
+module.exports = { setupMemberTracker };

@@ -1,4 +1,3 @@
-// 📁 commands/memberButtons.js
 const db = require('../utils/firebase');
 const { EmbedBuilder } = require('discord.js');
 
@@ -10,7 +9,7 @@ async function handleMemberButtons(interaction, client) {
   const guild = await client.guilds.fetch(process.env.GUILD_ID);
   const members = await guild.members.fetch();
 
-  // 🔵 שליחת DM ראשוני
+  // 🔵 שליחת DM רגיל
   if (interaction.customId === 'send_dm_batch_list') {
     await interaction.deferReply({ ephemeral: true });
 
@@ -32,9 +31,13 @@ async function handleMemberButtons(interaction, client) {
       }
 
       const user = await client.users.fetch(userId).catch(() => null);
-      if (!user) {
+      if (!user || typeof user.send !== 'function') {
+        console.error(`❌ לא ניתן לשלוף או לשלוח ל־${userId}`);
         failed.push(`<@${userId}>`);
-        await db.collection('memberTracking').doc(userId).set({ dmFailed: true, dmFailedAt: new Date().toISOString() }, { merge: true });
+        await db.collection('memberTracking').doc(userId).set({
+          dmFailed: true,
+          dmFailedAt: new Date().toISOString()
+        }, { merge: true });
         continue;
       }
 
@@ -44,7 +47,6 @@ async function handleMemberButtons(interaction, client) {
         const dm = await smartChat.smartRespond({ content: '', author: user }, 'שובב', prompt);
 
         console.log(`📤 תזכורת רגילה ל־${userId}:`, dm);
-
         if (!dm || typeof dm !== 'string' || dm.length < 2) throw new Error('הודעת DM ריקה או שגויה');
 
         await user.send(dm);
@@ -95,9 +97,13 @@ async function handleMemberButtons(interaction, client) {
       }
 
       const user = await client.users.fetch(userId).catch(() => null);
-      if (!user) {
+      if (!user || typeof user.send !== 'function') {
+        console.error(`❌ לא ניתן לשלוף או לשלוח ל־${userId}`);
         failed.push(`<@${userId}>`);
-        await db.collection('memberTracking').doc(userId).set({ dmFailed: true, dmFailedAt: new Date().toISOString() }, { merge: true });
+        await db.collection('memberTracking').doc(userId).set({
+          dmFailed: true,
+          dmFailedAt: new Date().toISOString()
+        }, { merge: true });
         continue;
       }
 
@@ -107,7 +113,6 @@ async function handleMemberButtons(interaction, client) {
         const dm = await smartChat.smartRespond({ content: '', author: user }, 'שובב', prompt);
 
         console.log(`📤 תזכורת סופית ל־${userId}:`, dm);
-
         if (!dm || typeof dm !== 'string' || dm.length < 2) throw new Error('הודעת תזכורת סופית ריקה או שגויה');
 
         await user.send(dm);
@@ -134,7 +139,8 @@ async function handleMemberButtons(interaction, client) {
     await interaction.editReply({ content: msg });
     return true;
   }
-  // ❌ רשימת משתמשים שנכשל להם DM
+
+  // ❌ DM נכשל
   if (interaction.customId === 'show_failed_list') {
     const failedUsers = allTracked.docs.filter(doc => doc.data().dmFailed);
     if (!failedUsers.length) {
@@ -149,7 +155,7 @@ async function handleMemberButtons(interaction, client) {
     return interaction.reply({ embeds: [embed], ephemeral: true });
   }
 
-  // 💬 רשימת מי שהגיב ל-DM
+  // 💬 רשימת מי שהגיב
   if (interaction.customId === 'show_replied_list') {
     const replied = allTracked.docs.filter(doc => doc.data().replied);
     if (!replied.length) {
@@ -164,7 +170,7 @@ async function handleMemberButtons(interaction, client) {
     return interaction.reply({ embeds: [embed], ephemeral: true });
   }
 
-  // 🛑 בעיטת משתמשים חסומים ולא פעילים
+  // 🛑 בעיטה
   if (interaction.customId === 'kick_failed_users') {
     await interaction.deferReply({ ephemeral: true });
 
@@ -219,7 +225,6 @@ async function handleMemberButtons(interaction, client) {
     return interaction.editReply({ content: '✅ הפעולה בוצעה. סיכום נשלח לצוות.', ephemeral: true });
   }
 
-  // ברירת מחדל — לא הופעל כפתור מטופל
   return false;
 }
 

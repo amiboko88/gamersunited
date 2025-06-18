@@ -80,29 +80,36 @@ async function sendWarzoneEmbed(client) {
     }
   }
 
-  if (connected.length === 0) return;
+  if (connected.length === 0) {
+    console.log('ℹ️ אין אף שחקן מחובר שפעיל ב־Warzone');
+    return;
+  }
 
-  const embed = new EmbedBuilder()
-    .setColor('#2F3136')
-    .setTitle('🎮 FIFO SQUAD כבר מחוברים!')
-    .setDescription(getRandomMessage())
-    .setImage('attachment://probanner.webp')
-    .setFooter({ text: `שחקנים בערוץ: ${connected.length}` })
-    .setTimestamp();
+  const firstGame = getGameName(connected[0]?.presence);
+  const description = `${getRandomMessage()}\n🎲 המשחק הפעיל: **${firstGame}**`;
 
-  // 🎨 יצירת התמונה
   const imageBuffer = await generateProBanner(connected);
 
-  // 🧪 בדיקת תקינות
   if (!imageBuffer || !(imageBuffer instanceof Buffer) || !imageBuffer.length) {
     console.error('❌ imageBuffer לא תקין — שליחה מבוטלת');
     return;
   }
 
+  const embed = new EmbedBuilder()
+    .setColor('#2F3136')
+    .setTitle('🎮 FIFO SQUAD כבר מחוברים!')
+    .setDescription(description)
+    .setImage('attachment://probanner.webp')
+    .setFooter({ text: `שחקנים בערוץ: ${connected.length}` })
+    .setTimestamp();
+
   const file = new AttachmentBuilder(imageBuffer, { name: 'probanner.webp' });
 
   const channel = await client.channels.fetch(TARGET_CHANNEL_ID);
-  if (!channel || channel.type !== ChannelType.GuildText) return;
+  if (!channel || channel.type !== ChannelType.GuildText) {
+    console.warn('⚠️ ערוץ יעד לא תקין או לא טקסטואלי');
+    return;
+  }
 
   await deletePreviousMessage(channel);
 

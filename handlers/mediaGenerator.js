@@ -1,5 +1,3 @@
-const sharp = require('sharp');
-const axios = require('axios');
 const { createCanvas, loadImage } = require('canvas');
 
 const AVATAR_SIZE = 72;
@@ -15,6 +13,8 @@ async function generateProBanner(players) {
   const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx = canvas.getContext('2d');
 
+  console.log(`🖼️ יצירת באנר ל־${players.size} שחקנים...`);
+
   // רקע כהה
   ctx.fillStyle = '#181a1b';
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
@@ -24,11 +24,14 @@ async function generateProBanner(players) {
   ctx.font = 'bold 36px "Arial"';
   ctx.fillText('🎮 FIFO SQUAD מחוברים עכשיו', 40, 60);
 
-  // אוואטרים + שמות
   let y = 110;
+  let renderedCount = 0;
+
   for (const member of [...players.values()].slice(0, 7)) {
     try {
       const avatarURL = member.displayAvatarURL({ extension: 'png', size: 128 });
+      if (!avatarURL) throw new Error('לא נמצא URL לאוואטר');
+
       const avatarImage = await loadImage(avatarURL);
       const x = 50;
 
@@ -59,9 +62,19 @@ async function generateProBanner(players) {
       ctx.fillText(displayName, x + AVATAR_SIZE + 20, y + AVATAR_SIZE / 1.5);
 
       y += AVATAR_SIZE + 24;
+      renderedCount++;
+
+      console.log(`✅ ${member.displayName} נוסף לבאנר`);
     } catch (err) {
-      console.warn(`⚠️ שגיאה באוואטר של ${member.displayName}: ${err.message}`);
+      console.warn(`⚠️ ${member.displayName}: שגיאה בטעינת אוואטר - ${err.message}`);
     }
+  }
+
+  if (renderedCount === 0) {
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '28px "Arial"';
+    ctx.fillText('לא נמצאו שחקנים להצגה 🥲', 50, HEIGHT / 2);
+    console.log('⚠️ לא נוצרו אוואטרים בפועל, נשלח באנר ריק');
   }
 
   // חתימה תחתונה

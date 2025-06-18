@@ -18,8 +18,12 @@ async function handleVoiceStateUpdate(oldState, newState) {
   const member = newState.member;
   if (!member || member.user.bot) return;
 
+  const userId = member.id;
   const oldChannelId = oldState.channelId;
   const newChannelId = newState.channelId;
+
+  const joined = !oldChannelId && newChannelId;
+  const left = oldChannelId && !newChannelId;
 
   console.log(`🎧 voiceStateUpdate – ${member.user.tag} עבר מ־${oldChannelId} ל־${newChannelId}`);
 
@@ -42,39 +46,39 @@ async function handleVoiceStateUpdate(oldState, newState) {
     }
   }
 
-  // ✅ רישום זמן כניסה
-  if (newChannelId === CHANNEL_ID && oldChannelId !== newChannelId) {
-    console.log(`📢 ${member.user.tag} נכנס לערוץ TTS`);
-    joinTimestamps.set(member.id, Date.now());
-
-    const channel = newState.channel;
-    if (channel) {
-      await processUserSmart(member, channel);
-    }
+  // ✅ רישום זמן כניסה – רק אם נכנס לאיזשהו ערוץ קול
+  if (joined) {
+    const timestamp = Date.now();
+    joinTimestamps.set(userId, timestamp);
+    await db.collection('voiceEntries').doc(userId).set({ joinedAt: timestamp });
   }
 
-  // ✅ רישום זמן יציאה ועדכון סטטיסטיקות
-  if (oldChannelId === CHANNEL_ID && newChannelId !== CHANNEL_ID) {
+  // ✅ רישום זמן יציאה – גם אם לא היה בזיכרון (נשלוף מ־DB)
+  if (left) {
     const now = Date.now();
-    let joinedAt = joinTimestamps.get(member.id);
+    let joinedAt = joinTimestamps.get(userId);
 
     if (!joinedAt) {
-      console.warn(`⚠️ לא נמצא זמן כניסה בזיכרון עבור ${member.user.tag} – מניח 1 דקה`);
-      joinedAt = now - 60000; // נניח דקה אחורה
+      const doc = await db.collection('voiceEntries').doc(userId).get();
+      joinedAt = doc.exists ? doc.data().joinedAt : null;
+    }
+
+    if (!joinedAt) {
+      console.warn(`⚠️ לא נמצא זמן כניסה בזיכרון או DB עבור ${member.user.tag} – מניח 1 דקה`);
+      joinedAt = now - 60000;
     }
 
     const durationMs = now - joinedAt;
-    const durationMinutes = Math.max(1, Math.round(durationMs / 1000 / 60)); // מינימום דקה אחת
+    const durationMinutes = Math.max(1, Math.round(durationMs / 1000 / 60));
 
     if (durationMinutes > 0 && durationMinutes < 600) {
-      await updateVoiceActivity(member.id, durationMinutes, db);
-      await trackVoiceMinutes(member.id, durationMinutes);
-      await trackJoinCount(member.id);
-      await trackJoinDuration(member.id, durationMinutes);
-      await trackActiveHour(member.id);
+      await updateVoiceActivity(userId, durationMinutes, db);
+      await trackVoiceMinutes(userId, durationMinutes);
+      await trackJoinCount(userId);
+      await trackJoinDuration(userId, durationMinutes);
+      await trackActiveHour(userId);
 
-      // ✅ עדכון פעילות משמעותית (קול)
-      await db.collection('memberTracking').doc(member.id).set({
+      await db.collection('memberTracking').doc(userId).set({
         lastActivity: new Date().toISOString(),
         activityWeight: 2
       }, { merge: true });
@@ -84,7 +88,16 @@ async function handleVoiceStateUpdate(oldState, newState) {
       console.log(`⚠️ ${member.user.tag} – משך לא תקין (חושב ${durationMinutes} דקות, ${durationMs}ms)`);
     }
 
-    joinTimestamps.delete(member.id);
+    joinTimestamps.delete(userId);
+    await db.collection('voiceEntries').doc(userId).delete().catch(() => {});
+  }
+
+  // 📥 טיפול חכם כשנכנס לערוץ FIFO
+  if (newChannelId === CHANNEL_ID && oldChannelId !== newChannelId) {
+    const channel = newState.channel;
+    if (channel) {
+      await processUserSmart(member, channel);
+    }
   }
 }
 

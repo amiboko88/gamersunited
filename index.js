@@ -1,7 +1,12 @@
+// 📁 index.js
+
 require('dotenv').config();
-const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
+const { Client, GatewayIntentBits } = require('discord.js');
 
 // 🔗 בסיס נתונים ועזרי מערכת
+const { registerSlashCommands } = require('./utils/commandsLoader');
 const db = require('./utils/firebase');
 const { playTTSInVoiceChannel } = require('./utils/ttsQuickPlay');
 const { executeReplayReset } = require('./utils/repartitionUtils');
@@ -9,17 +14,15 @@ const { createGroupsAndChannels } = require('./utils/squadBuilder');
 
 // 🧠 ניתוח / סטטיסטיקות / XP
 const statTracker = require('./handlers/statTracker');
-const { handleXPMessage, rankCommand } = require('./handlers/engagementManager');
+const { handleXPMessage } = require('./handlers/engagementManager');
 const { startStatsUpdater } = require('./handlers/statsUpdater');
 
 // 🏆 MVP ו־Reactions
-const { data: mvpData, execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
 const { startMvpScheduler } = require('./handlers/mvpTracker');
 const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
 
 // 📊 לוחות ומעקב
 const { startLeaderboardUpdater } = require('./handlers/leaderboardUpdater');
-const { data: leaderboardData, execute: leaderboardExecute } = require('./commands/leaderboard');
 
 // 🧑‍🤝‍🧑 Replay ופיפו
 const { startGroupTracking } = require('./handlers/groupTracker');
@@ -46,58 +49,25 @@ const welcomeImage = require('./handlers/welcomeImage');
 // 🧹 תחזוקה תקופתית
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
 
-// 🪅 מערכת ימי הולדת (חדשה!)
-const birthdayPanel = require('./commands/birthdayPanel');
+// 🪅 מערכת ימי הולדת
 const handleBirthdayPanel = require('./handlers/birthdayPanelHandler');
 const { startBirthdayTracker } = require('./handlers/birthdayTracker');
 const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayReminder');
 
-// 🧠 עזרה / עיצוב / כפתורים
-const { data: helpData, execute: helpExecute, handleButton: helpHandleButton } = require('./commands/help');
+// 🧠 עזרה / כפתורים
+const { handleButton: helpHandleButton } = require('./commands/help');
 const { handleMemberButtons } = require('./commands/memberButtons');
 
-// 🔊 הקלטות / סאונדבורד / מוזיקה
-const { data: songData, execute: songExecute, autocomplete: songAutocomplete } = require('./commands/song');
+// 🔊 מוזיקה וסאונד
+const { autocomplete: songAutocomplete } = require('./commands/song');
 const handleMusicControls = require('./handlers/musicControls');
-const { data: soundData, execute: soundExecute } = require('./commands/soundboard');
-const { data: recordData, execute: recordExecute } = require('./commands/voiceRecorder');
-const { data: playbackData, execute: playbackExecute } = require('./commands/voicePlayback');
-const { data: listData, execute: listExecute } = require('./commands/voiceList');
-const { data: deleteData, execute: deleteExecute } = require('./commands/voiceDelete');
-const ttsCommand = require('./commands/ttsCommand');
 
-// 📌 פיפו + ניהול מערכת
-const { data: fifoData, execute: fifoExecute } = require('./commands/fifo');
-const inactivityCommand = require('./commands/inactivity');
-const fixInactivityCommand = require('./commands/fixInactivity');
-
-// 🛡️ אימות / סטטיסטיקות חוקים
-const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
+// 🛡️ אימות
 const { startInactivityReminder } = require('./handlers/inactivityReminder');
 
 // 📡 טלגרם
 require('./shimonTelegram');
 
-
-const commands = [];
-commands.push(
-  rankCommand.data,
-  inactivityCommand.data,
-  fixInactivityCommand.data,
-  mvpData,
-  fifoData,
-  birthdayPanel.data, 
-  helpData,
-  leaderboardData,
-  ttsCommand.data,
-  verifyData,
-  recordData,
-  playbackData,
-  listData,
-  deleteData,
-  songData,
-  soundData
-);
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -110,9 +80,22 @@ const client = new Client({
 });
 client.db = db;
 
+// 🧠 טעינת Slash Commands (Map)
+const commandMap = new Map();
+const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
+for (const file of commandFiles) {
+  const command = require(`./commands/${file}`);
+  if (command?.data?.name && typeof command.execute === 'function') {
+    commandMap.set(command.data.name, command);
+  }
+}
+
 client.once('ready', async () => {
   await hardSyncPresenceOnReady(client);
   await setupVerificationMessage(client);
+  await registerSlashCommands(client.user.id, client); // רישום Slash מול Discord
+  await startMvpReactionWatcher(client, db);
+
   startFifoWarzoneAnnouncer(client);
   startStatsUpdater(client);
   welcomeImage(client);
@@ -125,32 +108,12 @@ client.once('ready', async () => {
   startWeeklyBirthdayReminder(client);
   startCleanupScheduler(client);
   startMvpScheduler(client, db);
-  await startMvpReactionWatcher(client, db);
 
   console.log(` הבוט באוויר! ${client.user.tag}`);
-
-  // פקודות Slash
-  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-  const guildId = process.env.GUILD_ID;
-  try {
-    const allSlashCommands = commands
-      .flat(Infinity)
-      .filter(cmd => cmd && typeof cmd.toJSON === 'function')
-      .map(cmd => cmd.toJSON());
-    await rest.put(
-      Routes.applicationGuildCommands(client.user.id, guildId),
-      { body: allSlashCommands }
-    );
-    console.log('✅ פקודות Slash עודכנו בהצלחה');
-  } catch (err) {
-    console.error('❌ שגיאה ברישום Slash Commands:', err);
-  }
 });
 
 // --- EVENTS ---
-client.on('guildMemberAdd', async member => {
-
-});
+client.on('guildMemberAdd', async member => { });
 
 client.on('voiceStateUpdate', (oldState, newState) => {
   handleVoiceStateUpdate(oldState, newState);
@@ -193,7 +156,6 @@ client.on('interactionCreate', async interaction => {
   if (interaction.isButton()) {
     const id = interaction.customId;
 
-    // 👥 כפתורי ניהול DM/inactivity
     const isMemberButton = [
       'send_dm_batch_list',
       'send_dm_batch_final_check',
@@ -201,17 +163,12 @@ client.on('interactionCreate', async interaction => {
       'show_replied_list',
       'kick_failed_users'
     ].includes(id) || id.startsWith('send_dm_again_') || id.startsWith('send_final_dm_');
+    if (isMemberButton) return handleMemberButtons(interaction, client);
 
-    if (isMemberButton) {
-      return handleMemberButtons(interaction, client);
-    }
-
-    // 🎶 כפתורי מוזיקה
     if (['pause', 'resume', 'stop'].includes(id)) {
       return handleMusicControls(interaction);
     }
 
-    // 🎂 כפתורי פאנל יום הולדת
     if (
       [
         'bday_list',
@@ -224,19 +181,15 @@ client.on('interactionCreate', async interaction => {
       return handleBirthdayPanel(interaction);
     }
 
-    // 🗳️ RSVP כפתורים
     if (id.startsWith('vote_') || id === 'show_stats') {
       return handleRSVP(interaction, client);
     }
 
-    // 🎮 replay system
     if (id.startsWith('replay_')) {
       const teamName = id.replace('replay_', '').replace('_', ' ');
       const voteResult = registerReplayVote(teamName, interaction.user.id);
 
-      if (!voteResult) {
-        return await interaction.reply({ content: '⚠️ שגיאה פנימית בריפליי.', ephemeral: true });
-      }
+      if (!voteResult) return interaction.reply({ content: '⚠️ שגיאה פנימית בריפליי.', ephemeral: true });
 
       await interaction.reply({ content: '💬 ההצבעה שלך נרשמה.', ephemeral: true });
 
@@ -260,7 +213,6 @@ client.on('interactionCreate', async interaction => {
       return;
     }
 
-    // 🌀 חלוקה לפיפו
     if (id === 'repartition_now') {
       const FIFO_CHANNEL_ID = '123456789012345678'; // עדכן לפי הצורך
       const FIFO_CATEGORY_ID = process.env.FIFO_CATEGORY_ID;
@@ -314,11 +266,9 @@ client.on('interactionCreate', async interaction => {
       return;
     }
 
-    // ✅ אימות משתמשים
     return handleVerifyInteraction(interaction);
   }
 
-  // 📬 קלט ממודל של יום הולדת
   if (interaction.isModalSubmit() && interaction.customId === 'birthday_modal') {
     return handleBirthdayPanel(interaction);
   }
@@ -326,51 +276,21 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isCommand()) return;
   await statTracker.trackSlash(interaction);
 
-  const { commandName } = interaction;
+  // 🧠 הפעלת פקודות Slash
+  const command = commandMap.get(interaction.commandName);
+  if (!command) return;
 
-  // פקודת עזרה
-  if (commandName === 'עזרה') return helpExecute(interaction);
-
-  // פקודות אדמין
-  if (commandName === 'inactivity') return inactivityCommand.execute(interaction);
-  if (commandName === 'tts') return ttsCommand.execute(interaction);
-  if (commandName === 'leaderboard') return leaderboardExecute(interaction);
-  if (commandName === 'הקלט') return recordExecute(interaction);
-  if (commandName === 'השמע_אחרון') return playbackExecute(interaction);
-  if (commandName === 'רשימת_הקלטות') return listExecute(interaction);
-  if (commandName === 'מחק_הקלטות') return deleteExecute(interaction);
-  if (commandName === 'fix_inactivity') return fixInactivityCommand.execute(interaction);
-
-  // פקודות ציבוריות
-  if (commandName === 'רמה_שלי') return rankCommand.execute(interaction);
-  if (commandName === 'סאונדבורד') return soundExecute(interaction, client);
-  if (commandName === 'אימות') return verifyExecute(interaction);
-  if (commandName === 'מוזיקה') return songExecute(interaction, client);
-  if (commandName === 'פיפו') return fifoExecute(interaction);
-  if (commandName === 'מצטיין') return mvpDisplayExecute(interaction, client);
-  if (commandName === 'ימי_הולדת') return birthdayPanel.execute(interaction); // 🎂 פאנל החדש בלבד
+  try {
+    await command.execute(interaction, client);
+  } catch (err) {
+    console.error(`❌ שגיאה בביצוע Slash "${interaction.commandName}":`, err);
+    if (!interaction.replied) {
+      await interaction.reply({ content: '❌ שגיאה בביצוע הפקודה.', ephemeral: true });
+    }
+  }
 });
 
-
-// 🚀 הפעלה
+// 🚀 הפעלת הבוט
 client.login(process.env.DISCORD_TOKEN);
-
-// 🧪 ניטור קריסות והודעות מערכת
-process.on('exit', (code) => {
-  console.log(`[EXIT] התהליך הסתיים עם קוד: ${code}`);
-});
-process.on('SIGTERM', () => {
-  console.log('[SIGTERM] התקבלה בקשת סיום מהמערכת');
-});
-process.on('uncaughtException', (err) => {
-  console.error('[UNCAUGHT EXCEPTION]', err);
-});
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('[UNHANDLED REJECTION]', reason);
-});
-
-// ✅ תוספת אחת בלבד: הפעלת בוט טלגרם
 require('./shimonTelegram');
-
-// ✅ מחזיק את התהליך חי כל הזמן
 setInterval(() => {}, 1000 * 60 * 60);

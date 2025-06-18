@@ -37,14 +37,6 @@ const { setupVerificationMessage, startDmTracking, handleInteraction: handleVeri
 const { handleSpam } = require('./handlers/antispam');
 const smartChat = require('./handlers/smartChat');
 
-// 📜 חוקים והודעות
-const {
-  sendPublicRulesEmbed,
-  sendRulesToUser,
-  handleRulesInteraction,
-  startWeeklyRulesUpdate
-} = require('./handlers/rulesEmbed');
-
 // 👤 נוכחות וזיהוי
 const { trackGamePresence, hardSyncPresenceOnReady, startPresenceLoop } = require('./handlers/presenceTracker');
 const { startPresenceRotation } = require('./handlers/presenceRotator');
@@ -81,8 +73,7 @@ const fixInactivityCommand = require('./commands/fixInactivity');
 
 // 🛡️ אימות / סטטיסטיקות חוקים
 const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
-const { data: refreshRulesData, execute: refreshRulesExecute } = require('./commands/refreshRules');
-const { data: rulesStatsData, execute: rulesStatsExecute } = require('./commands/rulesStats');
+const { startInactivityReminder } = require('./handlers/inactivityReminder');
 
 // 📡 טלגרם
 require('./shimonTelegram');
@@ -99,8 +90,6 @@ commands.push(
   helpData,
   leaderboardData,
   ttsCommand.data,
-  refreshRulesData,
-  rulesStatsData,
   verifyData,
   recordData,
   playbackData,
@@ -124,16 +113,14 @@ client.db = db;
 client.once('ready', async () => {
   await hardSyncPresenceOnReady(client);
   await setupVerificationMessage(client);
-  await sendPublicRulesEmbed(client);
   startFifoWarzoneAnnouncer(client);
   startStatsUpdater(client);
-  startWeeklyRulesUpdate(client);
   welcomeImage(client);
+  startInactivityReminder(client);
   startDmTracking(client);
   startLeaderboardUpdater(client);
   startPresenceLoop(client);
   startPresenceRotation(client);
-  setupMemberTracker(client);
   startBirthdayTracker(client);
   startWeeklyBirthdayReminder(client);
   startCleanupScheduler(client);
@@ -162,7 +149,7 @@ client.once('ready', async () => {
 
 // --- EVENTS ---
 client.on('guildMemberAdd', async member => {
-  await sendRulesToUser(member);
+
 });
 
 client.on('voiceStateUpdate', (oldState, newState) => {
@@ -222,11 +209,6 @@ client.on('interactionCreate', async interaction => {
     // 🎶 כפתורי מוזיקה
     if (['pause', 'resume', 'stop'].includes(id)) {
       return handleMusicControls(interaction);
-    }
-
-    // 📜 כפתורי חוקים
-    if (id.startsWith('rules_') || id === 'accept_rules') {
-      return handleRulesInteraction(interaction);
     }
 
     // 🎂 כפתורי פאנל יום הולדת
@@ -351,8 +333,6 @@ client.on('interactionCreate', async interaction => {
 
   // פקודות אדמין
   if (commandName === 'inactivity') return inactivityCommand.execute(interaction);
-  if (commandName === 'updaterules') return refreshRulesExecute(interaction);
-  if (commandName === 'rulestats') return rulesStatsExecute(interaction);
   if (commandName === 'tts') return ttsCommand.execute(interaction);
   if (commandName === 'leaderboard') return leaderboardExecute(interaction);
   if (commandName === 'הקלט') return recordExecute(interaction);

@@ -20,7 +20,7 @@ module.exports = (client) => {
       const avatar = await loadImage(avatarURL);
 
       // טוען את הלוגו החדש (רק G שקוף)
-      const logo = await loadImage(path.join(__dirname, '..', 'assets', 'logoG.png'));
+      const logo = await loadImage(path.join(__dirname, '..', 'assets', 'onlyg.png'));
 
       // הגדרת קנבס
       const width = 1000;

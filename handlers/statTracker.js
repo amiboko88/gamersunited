@@ -26,6 +26,12 @@ module.exports.trackMessage = async message => {
 
   await incrementStat(userId, 'messagesSent');
 
+  // עדכון פעילות מבוססת טקסט בלבד (משקל חלקי)
+  await db.collection('memberTracking').doc(userId).set({
+    lastActivity: new Date().toISOString(),
+    activityWeight: admin.firestore.FieldValue.maximum(1)
+  }, { merge: true });
+
   // חישוב ממוצע מילים
   const words = message.content.trim().split(/\s+/).length;
   const ref = db.collection('userStats').doc(userId);
@@ -42,6 +48,7 @@ module.exports.trackMessage = async message => {
     await incrementStat(userId, 'linksShared');
   }
 };
+
 
 // 📊 שימוש ב
 module.exports.trackSlash = async interaction => {

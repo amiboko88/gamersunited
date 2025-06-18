@@ -164,48 +164,64 @@ async function handleMemberButtons(interaction, client) {
     return interaction.reply({ embeds: [embed], ephemeral: true });
   }
   // 🛑 בעיטת משתמשים שנכשלו
-  if (interaction.customId === 'kick_failed_users') {
-    await interaction.deferReply({ ephemeral: true });
+  // 🛑 בעיטת משתמשים שנכשלו
+if (interaction.customId === 'kick_failed_users') {
+  await interaction.deferReply({ ephemeral: true });
 
-    const failed = allTracked.docs.filter(doc => doc.data().dmFailed);
-    let count = 0;
-    let notInGuild = [];
-    let failedKick = [];
+  const now = Date.now();
+  let count = 0;
+  let notInGuild = [];
+  let failedKick = [];
 
-    for (const doc of failed) {
-      const userId = doc.id;
-      const member = members.get(userId);
+  const eligibleToKick = allTracked.docs.filter(doc => {
+    const d = doc.data();
 
-      if (!member) {
-        notInGuild.push(`<@${userId}>`);
-        await db.collection('memberTracking').doc(userId).delete();
-        continue;
-      }
+    const last = new Date(d.lastActivity || d.joinedAt);
+    const daysInactive = (now - last.getTime()) / 86400000;
 
-      try {
-        await member.kick('לא פעיל + חסום DM');
-        await db.collection('memberTracking').doc(userId).delete();
-        count++;
-      } catch {
-        failedKick.push(`<@${userId}>`);
-      }
+    return (
+      daysInactive > INACTIVITY_DAYS &&
+      d.dmFailed === true &&
+      d.replied !== true &&
+      (d.reminderCount || 0) >= 1
+    );
+  });
+
+  for (const doc of eligibleToKick) {
+    const userId = doc.id;
+    const member = members.get(userId);
+
+    if (!member) {
+      notInGuild.push(`<@${userId}>`);
+      await db.collection('memberTracking').doc(userId).delete();
+      continue;
     }
 
-    const embed = new EmbedBuilder()
-      .setTitle('🛑 סיכום בעיטות משתמשים חסומים')
-      .setDescription(
-        `👢 הורחקו: ${count}\n🚫 לא בשרת: ${notInGuild.length}\n⚠️ נכשלו בהרחקה: ${failedKick.length}`
-      )
-      .setColor(0xff6600)
-      .setTimestamp();
-
-    const staff = await client.channels.fetch(STAFF_CHANNEL_ID).catch(() => null);
-    if (staff?.isTextBased()) {
-      await staff.send({ embeds: [embed] });
+    try {
+      await member.kick('לא פעיל + חסום DM + לא הגיב');
+      await db.collection('memberTracking').doc(userId).delete();
+      count++;
+    } catch {
+      failedKick.push(`<@${userId}>`);
     }
-
-    return interaction.editReply({ content: '✅ הפעולה בוצעה. סיכום נשלח לצוות.', ephemeral: true });
   }
+
+  const embed = new EmbedBuilder()
+    .setTitle('🛑 בעיטת משתמשים חסומים ולא פעילים')
+    .setDescription(
+      `👢 הורחקו: ${count}\n🚫 לא בשרת: ${notInGuild.length}\n⚠️ נכשלו בהרחקה: ${failedKick.length}`
+    )
+    .setColor(0xff3300)
+    .setTimestamp();
+
+  const staff = await client.channels.fetch(STAFF_CHANNEL_ID).catch(() => null);
+  if (staff?.isTextBased()) {
+    await staff.send({ embeds: [embed] });
+  }
+
+  return interaction.editReply({ content: '✅ הפעולה בוצעה. סיכום נשלח לצוות.', ephemeral: true });
+}
+
 
   // ברירת מחדל — לא הופעל כפתור מטופל
   return false;

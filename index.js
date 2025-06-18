@@ -32,6 +32,7 @@ const {
 } = require('./utils/replayManager');
 
 // 👥 אימות, אנטי-ספאם ודיבור חכם
+const { startFifoWarzoneAnnouncer } = require('./handlers/fifoWarzoneAnnouncer');
 const { setupVerificationMessage, startDmTracking, handleInteraction: handleVerifyInteraction } = require('./handlers/verificationButton');
 const { handleSpam } = require('./handlers/antispam');
 const smartChat = require('./handlers/smartChat');

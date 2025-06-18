@@ -1,4 +1,4 @@
-const { EmbedBuilder, ChannelType } = require('discord.js');
+const { EmbedBuilder, ChannelType, AttachmentBuilder } = require('discord.js');
 const db = require('../utils/firebase');
 const schedule = require('node-schedule');
 const { generateProBanner } = require('./mediaGenerator');
@@ -90,7 +90,16 @@ async function sendWarzoneEmbed(client) {
     .setFooter({ text: `שחקנים בערוץ: ${connected.length}` })
     .setTimestamp();
 
+  // 🎨 יצירת התמונה
   const imageBuffer = await generateProBanner(connected);
+
+  // 🧪 בדיקת תקינות
+  if (!imageBuffer || !(imageBuffer instanceof Buffer) || !imageBuffer.length) {
+    console.error('❌ imageBuffer לא תקין — שליחה מבוטלת');
+    return;
+  }
+
+  const file = new AttachmentBuilder(imageBuffer, { name: 'probanner.webp' });
 
   const channel = await client.channels.fetch(TARGET_CHANNEL_ID);
   if (!channel || channel.type !== ChannelType.GuildText) return;
@@ -102,7 +111,7 @@ async function sendWarzoneEmbed(client) {
       ? `🧟 ${missing.map(m => `<@${m.id}>`).join(' ')}`
       : null,
     embeds: [embed],
-    files: [{ attachment: imageBuffer, name: 'probanner.webp' }]
+    files: [file]
   });
 
   await saveLastMessageId(message.id);

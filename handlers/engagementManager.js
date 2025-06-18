@@ -50,6 +50,9 @@ const rankCommand = {
     .setDescription('📊 הצג את הרמה ו־XP הנוכחיים שלך'),
 
   execute: async interaction => {
+    // שליחת defer מיידי כדי למנוע פקיעת תוקף
+    await interaction.deferReply({ ephemeral: true });
+
     const userId = interaction.user.id;
     const ref = db.collection('userLevels').doc(userId);
     const snap = await ref.get();
@@ -62,9 +65,11 @@ const rankCommand = {
     const canvas = Canvas.createCanvas(600, 200);
     const ctx = canvas.getContext('2d');
 
+    // רקע כללי
     ctx.fillStyle = '#1e1e2f';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // טקסט משתמש וסטטיסטיקות
     ctx.fillStyle = '#ffffff';
     ctx.font = '28px sans-serif';
     ctx.fillText(`${interaction.user.username}`, 150, 50);
@@ -78,7 +83,7 @@ const rankCommand = {
     ctx.fillStyle = '#00ff88';
     ctx.fillRect(150, 130, 300 * percent, 25);
 
-    // תמונת פרופיל
+    // תמונת פרופיל מעוגלת
     const avatar = await Canvas.loadImage(interaction.user.displayAvatarURL({ extension: 'jpg' }));
     ctx.save();
     ctx.beginPath();
@@ -89,9 +94,12 @@ const rankCommand = {
     ctx.restore();
 
     const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: 'rank.png' });
-    await interaction.reply({ files: [attachment], ephemeral: true });
+
+    // שליחה סופית של ההודעה עם התמונה
+    await interaction.editReply({ files: [attachment] });
   }
 };
+
 
 module.exports = {
   handleXPMessage,

@@ -119,11 +119,50 @@ module.exports = {
         .setStyle(ButtonStyle.Danger)
     );
 
-    await interaction.editReply({ embeds: [embed], components: [row] });
+   const controlMessage = await interaction.editReply({ embeds: [embed], components: [row] });
 
-    player.on(AudioPlayerStatus.Idle, () => {
-      clearState(channel.guild.id);
+
+player.on(AudioPlayerStatus.Idle, async () => {
+  try {
+    await controlMessage.delete().catch(() => {});
+  } catch (err) {
+    console.warn('לא ניתן היה למחוק את הודעת הנגינה:', err);
+  }
+
+  try {
+    const endEmbed = new EmbedBuilder()
+      .setColor('DarkRed')
+      .setTitle('🎵 השיר הסתיים')
+      .setDescription(`**${songName}** נגמר. רוצה להשמיע משהו אחר?`)
+      .setFooter({ text: 'שמעון נגן – תמיד כאן לבחירתך 🎧' })
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('new_song')
+        .setLabel('🎶 השמע שיר נוסף')
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    await controlMessage.edit({
+      embeds: [endEmbed],
+      components: [row]
     });
+
+    // מחיקה אוטומטית אחרי שעה
+    setTimeout(async () => {
+      await controlMessage.delete().catch(() => {});
+    }, 60 * 60 * 1000);
+
+  } catch (err) {
+    console.warn('שגיאה בעריכת הודעת סיום שיר:', err);
+  }
+
+  clearState(channel.guild.id);
+});
+
+
+
 
     player.on('error', err => {
       console.error('שגיאת נגן:', err);

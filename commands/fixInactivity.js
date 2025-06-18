@@ -18,7 +18,20 @@ module.exports = {
       const data = doc.data();
       const updates = {};
 
-      if (!data.lastActivity) updates.lastActivity = new Date().toISOString();
+      // 🧠 אם lastActivity חסר או עתידי (מזויף) – נשחזר מ־joinedAt אם קיים
+      if (
+        !data.lastActivity ||
+        new Date(data.lastActivity).getTime() > Date.now()
+      ) {
+        if (data.joinedAt) {
+          updates.lastActivity = data.joinedAt;
+        } else {
+          // אם גם joinedAt חסר – נכניס תאריך כללי ישן
+          updates.lastActivity = new Date(Date.now() - 45 * 86400000).toISOString();
+        }
+      }
+
+      // 🧩 השלמת שדות נוספים אם חסרים
       if (typeof data.dmSent !== 'boolean') updates.dmSent = false;
       if (typeof data.dmFailed !== 'boolean') updates.dmFailed = false;
       if (typeof data.replied !== 'boolean') updates.replied = false;
@@ -29,6 +42,6 @@ module.exports = {
       }
     }
 
-    await interaction.editReply(`✅ עודכנו ${updated} משתמשים עם שדות חסרים.`);
+    await interaction.editReply(`✅ עודכנו ${updated} משתמשים עם שדות חסרים או מתוקנים.`);
   }
 };

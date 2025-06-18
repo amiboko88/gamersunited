@@ -1,4 +1,3 @@
-// 📁 birthdayTracker.js – גרסה מעודכנת ל־ElevenLabs בלבד
 const { EmbedBuilder, ChannelType } = require('discord.js');
 const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs');
 const db = require('../utils/firebase');
@@ -13,6 +12,14 @@ const {
 
 const CHANNEL_ID = process.env.BIRTHDAY_CHANNEL_ID;
 const ROLE_ID = process.env.BIRTHDAY_ROLE_ID;
+
+const birthdayMessages = [
+  age => `עוד שנה של ניצחונות, rage quit וחברים שנוטשים באמצע 🎮 (גיל ${age})`,
+  age => `כמו יין טוב – משתבח בטירוף. שנה של קלאצ'ים והרבה 💣 (בן ${age})`,
+  age => `גיל ${age} זה בדיוק הזמן לפרוש… או לא 😏`,
+  age => `לחגוג אותך זו משימה פשוטה – רק תעלה לקול ונברך אותך 🎙️`,
+  age => `שתזכה לפינג נמוך, קבוצה טובה, ואוזניות שלא מקרטעות 🎧 (גיל ${age})`
+];
 
 function isTodayBirthday(dateString) {
   const today = new Date();
@@ -36,11 +43,14 @@ function calculateAge(birthday) {
 }
 
 function createBirthdayEmbed(member, age) {
+  const random = birthdayMessages[Math.floor(Math.random() * birthdayMessages.length)];
+  const message = random(age);
+
   return new EmbedBuilder()
     .setColor('Gold')
     .setTitle(`🎉 יום הולדת שמח ל־${member.displayName}!`)
-    .setDescription(`היום ${member} חוגג/ת יום הולדת **${age}** 🎂\nתנו ❤️ או איחול קולני!`)
-    .setImage(member.user.displayAvatarURL({ extension: 'png', size: 512 }))
+    .setDescription(`**${message}**\n\n🎈 תנו ❤️, תגידו מילה טובה, או פשוט תעלו לקול 🎤`)
+    .setImage(member.user.displayAvatarURL({ size: 1024 }))
     .setThumbnail('attachment://logo.png')
     .setFooter({ text: 'Gamer of the Day • UNITED IL' })
     .setTimestamp();
@@ -81,7 +91,7 @@ async function checkBirthdays(client) {
     const embed = createBirthdayEmbed(member, age);
 
     await channel.send({
-      content: `🎂 מזל טוב ל־${member} שחוגג/ת **${age}** שנים של עצבים מ־Warzone!\n@everyone`,
+      content: `@everyone 🎂 מזל טוב ל־${member} שחוגג/ת **${age}** שנים של עצבים מ־Warzone!`,
       embeds: [embed],
       files: ['assets/logo.png']
     });
@@ -92,43 +102,51 @@ async function checkBirthdays(client) {
       createdAt: new Date().toISOString()
     });
 
-    // השמעת ברכה כשעולה לערוץ
-    const filter = (oldState, newState) =>
-      newState.member?.id === userId &&
-      !oldState.channelId &&
-      newState.channelId;
-
+    // TTS עם ברכה אישית
     const listener = async (oldState, newState) => {
-      if (!filter(oldState, newState)) return;
+      if (
+        newState.member?.id === userId &&
+        !oldState.channelId &&
+        newState.channelId
+      ) {
+const ttsMessages = [
+  ({ name, age }) => `מזל טוב ל־${name}! אתה בן ${age} היום, וזה אומר שאתה עדיין משחק ולא פרשת כמו הגדולים!`,
+  ({ name, age }) => `${name}, ${age} שנה שאתה מחזיק שליטה – אולי השנה תלמד גם להרים קבוצה?`,
+  ({ name, age }) => `היי ${name}, בגיל ${age} כבר מגיעה לך קבוצה קבועה ו־ping יציב. יאללה תעשה סדר!`,
+  ({ name, age }) => `יום הולדת שמח ${name}! גיל ${age} זה בדיוק הזמן לפרוש… סתם, תישאר איתנו 🎉`,
+  ({ name, age }) => `וואו ${name}, ${age} שנה ואתה עדיין rage quit כל סיבוב? חוגגים אותך בכל זאת!`
+];
 
-      const phrase = `מזל טוב ל־${member.displayName}! אתה בן ${age} היום, וזה אומר שאתה עדיין משחק ולא פרשת כמו הגדולים! שנה של ניצחונות, פינג נמוך, וקבוצה שלא נוטשת באמצע.`;
-      const buffer = await synthesizeElevenTTS(phrase, 'shimon');
+const randomTTS = ttsMessages[Math.floor(Math.random() * ttsMessages.length)];
+const phrase = randomTTS({ name: member.displayName, age });
 
-      try {
-        const connection = joinVoiceChannel({
-          channelId: newState.channelId,
-          guildId: newState.guild.id,
-          adapterCreator: newState.guild.voiceAdapterCreator
-        });
+        const buffer = await synthesizeElevenTTS(phrase, 'shimon');
+        try {
+          const connection = joinVoiceChannel({
+            channelId: newState.channelId,
+            guildId: newState.guild.id,
+            adapterCreator: newState.guild.voiceAdapterCreator
+          });
 
-        const resource = createAudioResource(Readable.from(buffer));
-        const player = createAudioPlayer();
-        connection.subscribe(player);
-        player.play(resource);
+          const resource = createAudioResource(Readable.from(buffer));
+          const player = createAudioPlayer();
+          connection.subscribe(player);
+          player.play(resource);
 
-        await entersState(player, AudioPlayerStatus.Idle, 15000);
-        connection.destroy();
+          await entersState(player, AudioPlayerStatus.Idle, 15000);
+          connection.destroy();
 
-        client.off('voiceStateUpdate', listener);
-        await logRef.set({ status: 'tts_played' }, { merge: true });
-      } catch (err) {
-        console.error('שגיאה בהשמעת ברכה:', err.message);
+          client.off('voiceStateUpdate', listener);
+          await logRef.set({ status: 'tts_played' }, { merge: true });
+        } catch (err) {
+          console.error('שגיאה בהשמעת ברכה:', err.message);
+        }
       }
     };
 
     client.on('voiceStateUpdate', listener);
 
-    // תזכורת אם לא עלה עד 22:00
+    // תזכורת אם לא עלה לקול עד 22:00
     setTimeout(async () => {
       const voiceMember = guild.members.cache.get(userId);
       if (!voiceMember?.voice?.channel) {

@@ -1,66 +1,100 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder } = require('discord.js');
 
-// כל הייבוא הישיר
-const schedule = require('node-schedule');
+// 🔗 בסיס נתונים ועזרי מערכת
 const db = require('./utils/firebase');
-const statTracker = require('./handlers/statTracker');
-const smartChat = require('./handlers/smartChat');
+const { playTTSInVoiceChannel } = require('./utils/ttsQuickPlay');
 const { executeReplayReset } = require('./utils/repartitionUtils');
 const { createGroupsAndChannels } = require('./utils/squadBuilder');
-const { startGroupTracking } = require('./handlers/groupTracker');
-const { registerReplayVote, resetReplayVotes, hasReplayVotes, hasBothTeamsVoted, activeGroups } = require('./utils/replayManager');
-const { playTTSInVoiceChannel } = require('./utils/ttsQuickPlay');
-const { EmbedBuilder } = require('discord.js');
-const { startStatsUpdater } = require('./handlers/statsUpdater');
-const { startFifoWarzoneAnnouncer } = require('./handlers/fifoWarzoneAnnouncer');
-const { data: helpData, execute: helpExecute, handleButton: helpHandleButton } = require('./commands/help');
-const { setupMemberTracker } = require('./handlers/memberTracker');
+
+// 🧠 ניתוח / סטטיסטיקות / XP
+const statTracker = require('./handlers/statTracker');
 const { handleXPMessage, rankCommand } = require('./handlers/engagementManager');
-const { sendPublicRulesEmbed, sendRulesToUser, handleRulesInteraction, startWeeklyRulesUpdate } = require('./handlers/rulesEmbed');
-const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
+const { startStatsUpdater } = require('./handlers/statsUpdater');
+
+// 🏆 MVP ו־Reactions
+const { data: mvpData, execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
+const { startMvpScheduler } = require('./handlers/mvpTracker');
+const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
+
+// 📊 לוחות ומעקב
+const { startLeaderboardUpdater } = require('./handlers/leaderboardUpdater');
+const { data: leaderboardData, execute: leaderboardExecute } = require('./commands/leaderboard');
+
+// 🧑‍🤝‍🧑 Replay ופיפו
+const { startGroupTracking } = require('./handlers/groupTracker');
+const {
+  registerReplayVote,
+  resetReplayVotes,
+  hasReplayVotes,
+  hasBothTeamsVoted,
+  activeGroups
+} = require('./utils/replayManager');
+
+// 👥 אימות, אנטי-ספאם ודיבור חכם
+const { setupVerificationMessage, startDmTracking, handleInteraction: handleVerifyInteraction } = require('./handlers/verificationButton');
+const { handleSpam } = require('./handlers/antispam');
+const smartChat = require('./handlers/smartChat');
+
+// 📜 חוקים והודעות
+const {
+  sendPublicRulesEmbed,
+  sendRulesToUser,
+  handleRulesInteraction,
+  startWeeklyRulesUpdate
+} = require('./handlers/rulesEmbed');
+
+// 👤 נוכחות וזיהוי
+const { trackGamePresence, hardSyncPresenceOnReady, startPresenceLoop } = require('./handlers/presenceTracker');
+const { startPresenceRotation } = require('./handlers/presenceRotator');
+const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
+const welcomeImage = require('./handlers/welcomeImage');
+
+// 🧹 תחזוקה תקופתית
+const { startCleanupScheduler } = require('./handlers/channelCleaner');
+
+// 🪅 מערכת ימי הולדת (חדשה!)
+const birthdayPanel = require('./commands/birthdayPanel');
+const handleBirthdayPanel = require('./handlers/birthdayPanelHandler');
+const { startBirthdayTracker } = require('./handlers/birthdayTracker');
+const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayReminder');
+
+// 🧠 עזרה / עיצוב / כפתורים
+const { data: helpData, execute: helpExecute, handleButton: helpHandleButton } = require('./commands/help');
+const { handleMemberButtons } = require('./commands/memberButtons');
+
+// 🔊 הקלטות / סאונדבורד / מוזיקה
+const { data: songData, execute: songExecute, autocomplete: songAutocomplete } = require('./commands/song');
+const handleMusicControls = require('./handlers/musicControls');
+const { data: soundData, execute: soundExecute } = require('./commands/soundboard');
 const { data: recordData, execute: recordExecute } = require('./commands/voiceRecorder');
 const { data: playbackData, execute: playbackExecute } = require('./commands/voicePlayback');
 const { data: listData, execute: listExecute } = require('./commands/voiceList');
 const { data: deleteData, execute: deleteExecute } = require('./commands/voiceDelete');
-const { data: fifoData, execute: fifoExecute } = require('./commands/fifo');
-const { data: songData, execute: songExecute, autocomplete: songAutocomplete } = require('./commands/song');
-const { execute: soundExecute, data: soundData } = require('./commands/soundboard');
-const { data: birthdayCommands, execute: birthdayExecute } = require('./commands/birthdayCommands');
-const { data: mvpData, execute: mvpDisplayExecute } = require('./commands/mvpDisplay');
-const { registerMvpCommand } = require('./commands/mvpDisplay');
-const { startBirthdayTracker } = require('./handlers/birthdayTracker');
-const inactivityCommand = require('./commands/inactivity');
-const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayReminder');
-const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
-const handleMusicControls = require('./handlers/musicControls');
 const ttsCommand = require('./commands/ttsCommand');
-const welcomeImage = require('./handlers/welcomeImage');
-const { showBirthdayModal, handleBirthdayModalSubmit } = require('./handlers/birthdayModal');
-const { setupVerificationMessage, startDmTracking, handleInteraction: handleVerifyInteraction } = require('./handlers/verificationButton');
-const { trackGamePresence, hardSyncPresenceOnReady, startPresenceLoop } = require('./handlers/presenceTracker');
-const { startPresenceRotation } = require('./handlers/presenceRotator');
-const { startMvpScheduler } = require('./handlers/mvpTracker');
-const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
-const { startLeaderboardUpdater } = require('./handlers/leaderboardUpdater');
-const { data: leaderboardData, execute: leaderboardExecute } = require('./commands/leaderboard');
-const { data: refreshRulesData, execute: refreshRulesExecute } = require('./commands/refreshRules');
-const { data: rulesStatsData, execute: rulesStatsExecute } = require('./commands/rulesStats');
-const { startCleanupScheduler } = require('./handlers/channelCleaner');
-const { handleSpam } = require('./handlers/antispam');
+
+// 📌 פיפו + ניהול מערכת
+const { data: fifoData, execute: fifoExecute } = require('./commands/fifo');
+const inactivityCommand = require('./commands/inactivity');
 const fixInactivityCommand = require('./commands/fixInactivity');
 
-// ********* החיבור החדש שלך לכפתורים ********
-const { handleMemberButtons } = require('./commands/memberButtons'); // שים לב — מתוך commands!
+// 🛡️ אימות / סטטיסטיקות חוקים
+const { data: verifyData, execute: verifyExecute } = require('./commands/verify');
+const { data: refreshRulesData, execute: refreshRulesExecute } = require('./commands/refreshRules');
+const { data: rulesStatsData, execute: rulesStatsExecute } = require('./commands/rulesStats');
+
+// 📡 טלגרם
+require('./shimonTelegram');
+
 
 const commands = [];
 commands.push(
   rankCommand.data,
   inactivityCommand.data,
-  mvpData,
-  birthdayCommands,
-  fifoData,
   fixInactivityCommand.data,
+  mvpData,
+  fifoData,
+  birthdayPanel.data, 
   helpData,
   leaderboardData,
   ttsCommand.data,
@@ -74,7 +108,6 @@ commands.push(
   songData,
   soundData
 );
-
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -160,7 +193,7 @@ client.on('messageCreate', async message => {
 client.on('interactionCreate', async interaction => {
   if (interaction.isAutocomplete()) return songAutocomplete(interaction);
 
-  // עזרה עם כפתורים
+  // 🆘 כפתורי עזרה
   if (
     (interaction.isButton() && interaction.customId && interaction.customId.startsWith('help_')) ||
     (interaction.type === 5 && interaction.customId === 'help_ai_modal')
@@ -168,45 +201,52 @@ client.on('interactionCreate', async interaction => {
     if (await helpHandleButton(interaction)) return;
   }
 
-  // כפתורים - כולל MEMBERBUTTONS!
+  // 🔘 כפתורים רגילים
   if (interaction.isButton()) {
     const id = interaction.customId;
 
-    // כפתורי ניהול DM/inactivity — דרך הקובץ ב־commands
-const isMemberButton = [
-  'send_dm_batch_list',
-  'send_dm_batch_final_check',
-  'show_failed_list',
-  'show_replied_list',
-  'kick_failed_users'
-].includes(id) || id.startsWith('send_dm_again_') || id.startsWith('send_final_dm_');
+    // 👥 כפתורי ניהול DM/inactivity
+    const isMemberButton = [
+      'send_dm_batch_list',
+      'send_dm_batch_final_check',
+      'show_failed_list',
+      'show_replied_list',
+      'kick_failed_users'
+    ].includes(id) || id.startsWith('send_dm_again_') || id.startsWith('send_final_dm_');
 
-if (isMemberButton) {
-  return handleMemberButtons(interaction, client);
-}
+    if (isMemberButton) {
+      return handleMemberButtons(interaction, client);
+    }
 
-
-    // כפתורי מוסיקה
+    // 🎶 כפתורי מוזיקה
     if (['pause', 'resume', 'stop'].includes(id)) {
       return handleMusicControls(interaction);
     }
 
-    // כפתורי חוקים
+    // 📜 כפתורי חוקים
     if (id.startsWith('rules_') || id === 'accept_rules') {
       return handleRulesInteraction(interaction);
     }
 
-    // כפתור יום הולדת
-    if (id === 'open_birthday_modal') {
-      return showBirthdayModal(interaction);
+    // 🎂 כפתורי פאנל יום הולדת
+    if (
+      [
+        'bday_list',
+        'bday_next',
+        'bday_add',
+        'bday_missing',
+        'bday_remind_missing'
+      ].includes(id)
+    ) {
+      return handleBirthdayPanel(interaction);
     }
 
-    // כפתורי RSVP
+    // 🗳️ RSVP כפתורים
     if (id.startsWith('vote_') || id === 'show_stats') {
       return handleRSVP(interaction, client);
     }
 
-    // replay
+    // 🎮 replay system
     if (id.startsWith('replay_')) {
       const teamName = id.replace('replay_', '').replace('_', ' ');
       const voteResult = registerReplayVote(teamName, interaction.user.id);
@@ -217,7 +257,6 @@ if (isMemberButton) {
 
       await interaction.reply({ content: '💬 ההצבעה שלך נרשמה.', ephemeral: true });
 
-      // ✅ אם כולם בקבוצה הזו הצביעו – השמע לקבוצה השנייה
       if (voteResult.allVoted) {
         const opponentGroup = [...activeGroups.entries()].find(([name]) => name !== teamName);
         if (opponentGroup) {
@@ -232,16 +271,15 @@ if (isMemberButton) {
         }
       }
 
-      // ✅ אם גם הקבוצה השנייה הצביעה — איפוס מלא
       if (hasReplayVotes(teamName) && hasBothTeamsVoted()) {
         await executeReplayReset(interaction.guild, interaction.channel, teamName);
       }
       return;
     }
 
-    // פיפו (חלוקה)
+    // 🌀 חלוקה לפיפו
     if (id === 'repartition_now') {
-      const FIFO_CHANNEL_ID = '123456789012345678'; // עדכן ל־ID של הערוץ הראשי
+      const FIFO_CHANNEL_ID = '123456789012345678'; // עדכן לפי הצורך
       const FIFO_CATEGORY_ID = process.env.FIFO_CATEGORY_ID;
       const DEFAULT_GROUP_SIZE = 3;
 
@@ -293,12 +331,13 @@ if (isMemberButton) {
       return;
     }
 
-    // אימות משתמשים (כפתור ייעודי)
+    // ✅ אימות משתמשים
     return handleVerifyInteraction(interaction);
   }
 
+  // 📬 קלט ממודל של יום הולדת
   if (interaction.isModalSubmit() && interaction.customId === 'birthday_modal') {
-    return handleBirthdayModalSubmit(interaction, client);
+    return handleBirthdayPanel(interaction);
   }
 
   if (!interaction.isCommand()) return;
@@ -306,10 +345,10 @@ if (isMemberButton) {
 
   const { commandName } = interaction;
 
-  // עזרה (פקודת Slash עזרה)
+  // פקודת עזרה
   if (commandName === 'עזרה') return helpExecute(interaction);
 
-  // Slash מנהלים
+  // פקודות אדמין
   if (commandName === 'inactivity') return inactivityCommand.execute(interaction);
   if (commandName === 'updaterules') return refreshRulesExecute(interaction);
   if (commandName === 'rulestats') return rulesStatsExecute(interaction);
@@ -321,20 +360,16 @@ if (isMemberButton) {
   if (commandName === 'מחק_הקלטות') return deleteExecute(interaction);
   if (commandName === 'fix_inactivity') return fixInactivityCommand.execute(interaction);
 
-  // Slash משתמשים
+  // פקודות ציבוריות
   if (commandName === 'רמה_שלי') return rankCommand.execute(interaction);
   if (commandName === 'סאונדבורד') return soundExecute(interaction, client);
   if (commandName === 'אימות') return verifyExecute(interaction);
   if (commandName === 'מוזיקה') return songExecute(interaction, client);
   if (commandName === 'פיפו') return fifoExecute(interaction);
   if (commandName === 'מצטיין') return mvpDisplayExecute(interaction, client);
-  if (
-    ['הוסף_יום_הולדת', 'ימי_הולדת', 'היום_הולדת_הבא', 'ימי_הולדת_חסרים']
-      .includes(commandName)
-  ) {
-    return birthdayExecute(interaction);
-  }
+  if (commandName === 'ימי_הולדת') return birthdayPanel.execute(interaction); // 🎂 פאנל החדש בלבד
 });
+
 
 // 🚀 הפעלה
 client.login(process.env.DISCORD_TOKEN);

@@ -96,15 +96,22 @@ async function handleInteraction(interaction) {
       sentAt: new Date().toISOString(),
       guildId: interaction.guild.id
     });
-
+    const { sendFallbackButton } = require('./dmFallbackModal');
     try {
-      await user.send(
-        '🎉 ברוך הבא ל־Gamers United IL!\n\n' +
-        'אם אתה רואה רק אפור או מרגיש קצת אבוד – תכתוב לי כאן ואשמח לעזור. 💬'
-      );
-    } catch (err) {
-      console.warn('⚠️ לא ניתן לשלוח DM לאחר אימות:', err.message);
-    }
+  await user.send(
+    '🎉 ברוך הבא ל־Gamers United IL!\n\n' +
+    'אם אתה רואה רק אפור או מרגיש קצת אבוד – תכתוב לי כאן ואשמח לעזור. 💬'
+  );
+} catch (err) {
+  console.warn('⚠️ לא ניתן לשלוח DM לאחר אימות:', err.message);
+  const channel = interaction.channel;
+  if (channel?.isTextBased()) {
+    await channel.send({
+      content: `<@${user.id}> לא הצלחנו לשלוח לך הודעה בפרטי. תגיב כאן במקום:`,
+      components: sendFallbackButton(user.id).components
+    });
+  }
+}
   } catch (err) {
     console.error('❌ שגיאה באימות:', err);
     await interaction.reply({

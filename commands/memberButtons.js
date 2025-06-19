@@ -76,7 +76,15 @@ try {
   console.log(`📤 תזכורת רגילה ל־${userId}:`, dm);
 
   if (!dm || typeof dm !== 'string' || dm.length < 2) throw new Error('הודעת DM ריקה או שגויה');
+  try {
   await user.send(dm);
+} catch (err) {
+  console.warn(`❌ נכשל DM ל־${userId}, נשלח fallback`);
+  const { sendFallbackButton } = require('./dmFallbackModal');
+  const memberChannel = memberReal?.dmChannel || await user.createDM();
+  await memberChannel.send(sendFallbackButton(userId));
+}
+
 
   await db.collection('memberTracking').doc(userId).set({
     dmSent: true,
@@ -166,7 +174,15 @@ try {
         console.log(`📤 תזכורת סופית ל־${userId}:`, dm);
 
         if (!dm || typeof dm !== 'string' || dm.length < 2) throw new Error('הודעת תזכורת סופית ריקה או שגויה');
-        await user.send(dm);
+        try {
+  await user.send(dm);
+} catch (err) {
+  console.warn(`❌ נכשל DM ל־${userId}, נשלח fallback`);
+  const { sendFallbackButton } = require('./dmFallbackModal');
+  const memberChannel = memberReal?.dmChannel || await user.createDM();
+  await memberChannel.send(sendFallbackButton(userId));
+}
+
 
         await db.collection('memberTracking').doc(userId).set({
           reminderCount: 3,

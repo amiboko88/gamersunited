@@ -35,6 +35,7 @@ const {
 } = require('./utils/replayManager');
 
 // 👥 אימות, אנטי-ספאם ודיבור חכם
+const { setupDmFallbackListener } = require('./handlers/dmFallbackModal');
 const { startFifoWarzoneAnnouncer } = require('./handlers/fifoWarzoneAnnouncer');
 const { setupVerificationMessage, startDmTracking, handleInteraction: handleVerifyInteraction } = require('./handlers/verificationButton');
 const { handleSpam } = require('./handlers/antispam');
@@ -101,6 +102,7 @@ client.once('ready', async () => {
 
   startFifoWarzoneAnnouncer(client);
   startStatsUpdater(client);
+  setupDmFallbackListener(client);
   welcomeImage(client);
   startInactivityReminder(client);
   startDmTracking(client);
@@ -182,23 +184,26 @@ client.on('messageCreate', async message => {
   const inviteUrl = 'https://discord.gg/2DGAwxDtKW'; // עדכן לקישור שלך
 
   const isDM = !message.guild;
+  const guild = client.guilds.cache.get(GUILD_ID);
+  const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
 
   if (blockedUsers.has(message.author.id)) return;
 
   let member = null;
-  const guild = client.guilds.cache.get(GUILD_ID);
-  const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
 
   if (isDM) {
+    try {
+      member = await guild?.members.fetch(message.author.id).catch(() => null);
+      message.member = member || null; // ✅ התיקון: מאפשר ל־smartChat לזהות שהמשתמש כן בשרת
+    } catch {}
+
     await db.collection('memberTracking').doc(message.author.id).set({
-     replied: true,
-     repliedAt: new Date().toISOString()
-     }, { merge: true });
+      replied: true,
+      repliedAt: new Date().toISOString()
+    }, { merge: true });
 
     const now = Date.now();
     const last = dmCooldown.get(message.author.id) || 0;
-
-    member = await guild?.members.fetch({ user: message.author.id, force: true }).catch(() => null);
 
     // ⏱️ Cooldown
     if (now - last < 60000) {
@@ -278,7 +283,6 @@ client.on('messageCreate', async message => {
   await smartChat(message);
 });
 
-// -------- אינטראקציות ---------
 client.on('interactionCreate', async interaction => {
   if (interaction.isAutocomplete()) return songAutocomplete(interaction);
 
@@ -290,7 +294,19 @@ client.on('interactionCreate', async interaction => {
     if (await helpHandleButton(interaction)) return;
   }
 
-  // 🔘 כפתורים רגילים
+  // 🔘 כפתורי fallback ל־DM
+  if (interaction.isButton() && interaction.customId === 'dm_fallback_reply') {
+    const { showDmFallbackModal } = require('./handlers/dmFallbackModal');
+    return showDmFallbackModal(interaction);
+  }
+
+  // 📝 שליחת תגובה ב־modal
+  if (interaction.isModalSubmit() && interaction.customId === 'dm_fallback_modal') {
+    const { handleDmFallbackModalSubmit } = require('./handlers/dmFallbackModal');
+    return handleDmFallbackModalSubmit(interaction, client);
+  }
+
+  // 🔘 כפתורים אחרים
   if (interaction.isButton()) {
     const id = interaction.customId;
 
@@ -301,6 +317,7 @@ client.on('interactionCreate', async interaction => {
       'show_replied_list',
       'kick_failed_users'
     ].includes(id) || id.startsWith('send_dm_again_') || id.startsWith('send_final_dm_');
+
     if (isMemberButton) return handleMemberButtons(interaction, client);
 
     if (['pause', 'resume', 'stop'].includes(id)) {
@@ -348,6 +365,7 @@ client.on('interactionCreate', async interaction => {
       if (hasReplayVotes(teamName) && hasBothTeamsVoted()) {
         await executeReplayReset(interaction.guild, interaction.channel, teamName);
       }
+
       return;
     }
 
@@ -407,14 +425,15 @@ client.on('interactionCreate', async interaction => {
     return handleVerifyInteraction(interaction);
   }
 
+  // 📝 מודאלים נוספים
   if (interaction.isModalSubmit() && interaction.customId === 'birthday_modal') {
     return handleBirthdayPanel(interaction);
   }
 
+  // 🧠 פקודות סלאש
   if (!interaction.isCommand()) return;
   await statTracker.trackSlash(interaction);
 
-  // 🧠 הפעלת פקודות Slash
   const command = commandMap.get(interaction.commandName);
   if (!command) return;
 

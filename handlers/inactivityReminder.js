@@ -35,34 +35,40 @@ async function startInactivityReminder(client) {
         continue;
       }
 
-      try {
-        await member.send(
-          '👋 היי! שמנו לב שעברת אימות אבל עדיין לא התחלת להשתתף.\n\n' +
-          'אם משהו לא הסתדר או יש לך שאלה – תכתוב לי כאן. 💬'
-        );
+try {
+  await member.send(
+    '👋 היי! שמנו לב שעברת אימות אבל עדיין לא התחלת להשתתף.\n\n' +
+    'אם משהו לא הסתדר או יש לך שאלה – תכתוב לי כאן. 💬'
+  );
 
-        await doc.ref.set({
-          dmSent: true,
-          dmSentAt: new Date().toISOString()
-        }, { merge: true });
+  await doc.ref.set({
+    dmSent: true,
+    dmSentAt: new Date().toISOString()
+  }, { merge: true });
 
-        console.log(`📩 נשלח DM ל־${member.user.username || userId}`);
+  console.log(`📩 נשלח DM ל־${member.user.username || userId}`);
 
-        const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
-        if (staffChannel?.isTextBased()) {
-          staffChannel.send(`📬 <@${userId}> קיבל תזכורת לאחר 3 ימים של אי־פעילות.`);
-        }
+  const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
+  if (staffChannel?.isTextBased()) {
+    staffChannel.send(`📬 <@${userId}> קיבל תזכורת לאחר 3 ימים של אי־פעילות.`);
+  }
 
-      } catch (err) {
-        console.warn(`⚠️ לא ניתן לשלוח DM ל־${userId}: ${err.message}`);
+} catch (err) {
+  console.warn(`⚠️ לא ניתן לשלוח DM ל־${userId}: ${err.message}`);
 
-        await doc.ref.set({ dmSent: true, dmFailed: true }, { merge: true });
+  await doc.ref.set({ dmSent: true, dmFailed: true }, { merge: true });
 
-        const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
-        if (staffChannel?.isTextBased()) {
-          staffChannel.send(`❌ לא ניתן לשלוח תזכורת ל־<@${userId}> לאחר 3 ימים.`);
-        }
-      }
+  const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
+  if (staffChannel?.isTextBased()) {
+    staffChannel.send(`❌ לא ניתן לשלוח תזכורת ל־<@${userId}> לאחר 3 ימים.`);
+    const { sendFallbackButton } = require('./dmFallbackModal');
+    staffChannel.send({
+      content: `<@${userId}> תוכל להגיב גם כאן במקום ב־DM:`,
+      components: sendFallbackButton(userId).components
+    });
+  }
+}
+
     }
 
   }, 1000 * 60 * 60 * 6); // כל 6 שעות

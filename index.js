@@ -82,7 +82,6 @@ const client = new Client({
 
 });
 client.db = db;
-require('./handlers/dmEcho')(client);
 
 // 🧠 טעינת Slash Commands (Map)
 const commandMap = new Map();
@@ -176,11 +175,6 @@ const spamAttempts = new Map();
 const blockedUsers = new Set();
 
 client.on('messageCreate', async message => {
-  console.log('[DEBUG] New Message');
-  console.log(' - author:', message.author?.tag);
-  console.log(' - guild:', message.guild?.id || 'DM');
-  console.log(' - content:', message.content);
-
   if (message.author.bot) return;
 
   const GUILD_ID = process.env.GUILD_ID;
@@ -196,6 +190,11 @@ client.on('messageCreate', async message => {
   const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
 
   if (isDM) {
+    await db.collection('memberTracking').doc(message.author.id).set({
+     replied: true,
+     repliedAt: new Date().toISOString()
+     }, { merge: true });
+
     const now = Date.now();
     const last = dmCooldown.get(message.author.id) || 0;
 
@@ -278,9 +277,6 @@ client.on('messageCreate', async message => {
   await handleSpam(message);
   await smartChat(message);
 });
-
-
-
 
 // -------- אינטראקציות ---------
 client.on('interactionCreate', async interaction => {

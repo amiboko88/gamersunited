@@ -78,7 +78,7 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.DirectMessages
   ],
-partials: ['CHANNEL'] // ← חובה בשביל הודעות פרטיות
+ partials: ['CHANNEL', 'MESSAGE'] // ← זו התוספת שחסרה!
 
 });
 client.db = db;
@@ -175,7 +175,10 @@ const spamAttempts = new Map();
 const blockedUsers = new Set();
 
 client.on('messageCreate', async message => {
-  console.log('[DEBUG] messageCreate fired from:', message.author.tag, '| isDM:', !message.guild);
+  console.log('[DEBUG] New Message');
+  console.log(' - author:', message.author?.tag);
+  console.log(' - guild:', message.guild?.id || 'DM');
+  console.log(' - content:', message.content);
 
   if (message.author.bot) return;
 

@@ -1,5 +1,3 @@
-// 📁 utils/commandsLoader.js
-
 const fs = require('fs');
 const path = require('path');
 const { REST, Routes } = require('discord.js');
@@ -21,11 +19,27 @@ async function registerSlashCommands(clientId) {
   const guildId = process.env.GUILD_ID;
 
   try {
-    const response = await rest.put(
+    // 🧼 מחיקת כל הפקודות הקיימות (Guild)
+    console.log('🧼 מוחק את כל Slash Commands מהשרת...');
+    await rest.put(
+      Routes.applicationGuildCommands(clientId, guildId),
+      { body: [] }
+    );
+
+    // 🧼 מחיקת כל הפקודות הגלובליות
+    console.log('🧼 מוחק את כל Slash Commands הגלובליים...');
+    await rest.put(
+      Routes.applicationCommands(clientId),
+      { body: [] }
+    );
+
+    // 📥 רישום מחדש לפי תיקיית commands בלבד
+    const registered = await rest.put(
       Routes.applicationGuildCommands(clientId, guildId),
       { body: slashCommands }
     );
-    console.log(`✅ Slash Commands עודכנו (${response.length} פקודות)`);
+
+    console.log(`✅ ${registered.length} Slash Commands נרשמו מחדש מהתיקייה.`);
   } catch (err) {
     console.error('❌ שגיאה ברישום Slash Commands:', err);
   }

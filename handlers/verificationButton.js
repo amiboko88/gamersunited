@@ -165,20 +165,57 @@ async function startDmTracking(client) {
           });
 
           collector.on('collect', async response => {
+            const content = response.content.toLowerCase();
+            const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
+            const guild = client.guilds.cache.get(data.guildId);
+            const member = await guild?.members.fetch(userId).catch(() => null);
+
+            let status = '🔴 לא בשרת';
+            let isVerified = false;
+
+            if (member) {
+              status = '🟢 בשרת';
+              isVerified = member.roles.cache.has(VERIFIED_ROLE_ID);
+              if (!isVerified) status = '🟠 לא מאומת';
+            }
+
+            const isNegative = ['עזוב', 'שחרר', 'לא רוצה', 'לא צריך'].some(w => content.includes(w));
+            const isQuestion = ['מה', 'איך', 'צריך', 'לעשות'].some(w => content.includes(w));
+            const isPositive = ['תודה', 'סבבה', 'בכיף', 'מעולה'].some(w => content.includes(w));
+
+            let replyText = null;
+
+            if (!member) {
+              replyText = 'נראה שאתה כבר לא נמצא בשרת שלנו 😕\nאם תרצה לחזור — הנה קישור קבוע: https://discord.gg/2DGAwxDtKW';
+            } else if (!isVerified) {
+              replyText = 'אתה עדיין לא אומת לשרת שלנו 😅 תיכנס לערוץ הראשי ולחץ על כפתור האימות כדי להתחיל.';
+            } else if (isNegative) {
+              replyText = 'אין בעיה. רק שתדע — אם לא תהיה פעיל בהמשך, תוסר מהשרת 🙃';
+            } else if (isQuestion) {
+              replyText = 'פשוט תכתוב משהו בצ׳אט או תקפוץ לשיחה בקול. זה כל מה שצריך 🎧';
+            } else if (isPositive) {
+              replyText = 'תודה! תמיד כיף לראות חיוך מהצד השני של המסך ✌️';
+            } else {
+              replyText = 'קיבלתי. אני פה אם תצטרך עוד משהו 💬';
+            }
+
+            try {
+              await response.channel.send(replyText);
+            } catch (err) {
+              console.warn(`⚠️ לא ניתן להשיב ל־${userId}:`, err.message);
+            }
+
             await db.collection(TRACKING_COLLECTION).doc(userId).update({
               status: 'responded',
               response: response.content
             });
 
-            logToWebhook({
-              title: '📩 תגובת DM לאחר אימות',
-              description: `<@${userId}> הגיב: ${response.content}`,
-              color: 0x3498db
-            });
-
-            const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
             if (staffChannel?.isTextBased()) {
-              staffChannel.send(`📩 <@${userId}> הגיב ל־DM: ${response.content}`);
+              staffChannel.send(
+                `📩 <@${userId}> הגיב ל־DM: ${response.content}\n` +
+                `🧠 סטטוס: ${status}\n` +
+                `🤖 שמעון ענה: ${replyText}`
+              );
             }
           });
 
@@ -190,6 +227,7 @@ async function startDmTracking(client) {
     }
   }, 1000 * 60 * 10); // כל 10 דקות
 }
+
 
 module.exports = {
   setupVerificationMessage,

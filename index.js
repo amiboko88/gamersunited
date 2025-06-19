@@ -170,13 +170,12 @@ const {
 const dmCooldown = new Map();
 const spamAttempts = new Map();
 const blockedUsers = new Set();
-
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
 
   const GUILD_ID = process.env.GUILD_ID;
-  const STAFF_CHANNEL_ID = '123456789012345678'; // ⬅️ עדכן לפי ערוץ הצוות שלך
-  const inviteUrl = 'https://discord.gg/2DGAwxDtKW'; // ⬅️ לינק ההצטרפות
+  const STAFF_CHANNEL_ID = '123456789012345678'; // עדכן לפי ערוץ הצוות שלך
+  const inviteUrl = 'https://discord.gg/2DGAwxDtKW'; // עדכן לפי הקישור שלך
 
   const isDM = !message.guild;
 
@@ -190,7 +189,7 @@ client.on('messageCreate', async message => {
     const last = dmCooldown.get(message.author.id) || 0;
 
     const guild = client.guilds.cache.get(GUILD_ID);
-    member = await guild?.members.fetch(message.author.id).catch(() => null);
+    member = await guild?.members.fetch({ user: message.author.id, force: true }).catch(() => null);
 
     const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
 
@@ -204,12 +203,10 @@ client.on('messageCreate', async message => {
       record.count++;
       spamAttempts.set(message.author.id, record);
 
-      // 🟡 התראה על חריגת תדירות
       if (record.count === 2 && staffChannel?.isTextBased()) {
         staffChannel.send(`⚠️ <@${message.author.id}> ניסה לשלוח יותר מהודעה אחת בדקה.`);
       }
 
-      // 🔴 חריגה שנמשכת מעל 5 דקות
       if (now - record.firstAttempt > 5 * 60 * 1000) {
         blockedUsers.add(message.author.id);
         spamAttempts.delete(message.author.id);
@@ -222,7 +219,6 @@ client.on('messageCreate', async message => {
       return;
     }
 
-    // איפוס ניסיונות אם עברו יותר מ־5 דקות מאז הפעם האחרונה
     spamAttempts.delete(message.author.id);
     dmCooldown.set(message.author.id, now);
 
@@ -264,7 +260,7 @@ client.on('messageCreate', async message => {
     }
   }
 
-  // ✅ בשלב הזה: הודעה משרת או מחבר קיים – ממשיך רגיל
+  // ✅ משתמש קיים — ממשיכים רגיל
   await statTracker.trackMessage(message);
   await handleXPMessage(message);
 
@@ -277,34 +273,6 @@ client.on('messageCreate', async message => {
   await handleSpam(message);
   await smartChat(message);
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 // -------- אינטראקציות ---------

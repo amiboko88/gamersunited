@@ -82,6 +82,7 @@ const client = new Client({
 
 });
 client.db = db;
+require('./handlers/dmEcho')(client);
 
 // 🧠 טעינת Slash Commands (Map)
 const commandMap = new Map();

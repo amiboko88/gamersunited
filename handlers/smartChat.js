@@ -171,7 +171,9 @@ async function smartRespond(message, moodOverride = null) {
   if (recentReplies.size > 6) recentReplies.delete([...recentReplies][0]); // שמור 6 אחרונים
 
   // תגובה צבעונית/הומוריסטית – אפשר גם לשלב Embed/GIF/Sticker לפי תוכן
-  if (!message._simulateOnly) {
+ if (message._simulateOnly) {
+  return reply;
+} else {
   await message.reply({ content: reply });
 }
   logToFirestore(message, reply, mood).catch(() => {});

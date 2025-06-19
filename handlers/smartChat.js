@@ -199,7 +199,7 @@ if (!isDM && BLACKLISTED_CHANNELS.includes(message.channel.id)) return;
   const reacting = containsEmoji(content) || isLink(content) || isBattleTag(content) || isBirthdayMention(content);
 
   // טריגר ראשי: תגיב רק אם פנו לשמעון/ירדו עליו/שאלה/קללה/חגיגה
-  if (targetsBot || reacting || confused || isOffensive(content)) {
+  if (isDM || targetsBot || reacting || confused || isOffensive(content)) {
     return smartRespond(message);
   }
 };

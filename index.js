@@ -75,8 +75,11 @@ const client = new Client({
     GatewayIntentBits.GuildPresences,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers
-  ]
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.DirectMessages
+  ],
+partials: ['CHANNEL'] // ← חובה בשביל הודעות פרטיות
+
 });
 client.db = db;
 

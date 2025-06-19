@@ -35,7 +35,6 @@ const {
 } = require('./utils/replayManager');
 
 // 👥 אימות, אנטי-ספאם ודיבור חכם
-const { setupDmFallbackListener } = require('./handlers/dmFallbackModal');
 const { startFifoWarzoneAnnouncer } = require('./handlers/fifoWarzoneAnnouncer');
 const { setupVerificationMessage, startDmTracking, handleInteraction: handleVerifyInteraction } = require('./handlers/verificationButton');
 const { handleSpam } = require('./handlers/antispam');
@@ -102,7 +101,6 @@ client.once('ready', async () => {
 
   startFifoWarzoneAnnouncer(client);
   startStatsUpdater(client);
-  setupDmFallbackListener(client);
   welcomeImage(client);
   startInactivityReminder(client);
   startDmTracking(client);

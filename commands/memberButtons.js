@@ -1,5 +1,5 @@
 const db = require('../utils/firebase');
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, Collection } = require('discord.js');
 const smartChat = require('../handlers/smartChat');
 
 const STAFF_CHANNEL_ID = '881445829100060723';
@@ -43,7 +43,7 @@ async function handleMemberButtons(interaction, client) {
       }
 
       try {
-        const prompt = 'אתה שמעון, בוט גיימרים ישראלי. כתוב תזכורת נעימה למשתמש לא פעיל חודש.';
+        const memberReal = await guild.members.fetch(user.id).catch(() => null);
         const fakeMessage = {
           content: 'אני לא פעיל כבר חודש',
           author: {
@@ -52,10 +52,10 @@ async function handleMemberButtons(interaction, client) {
             avatar: user.avatar,
             bot: user.bot
           },
-          member: {
+          member: memberReal || {
             displayName: user.username,
             permissions: { has: () => false },
-            roles: { cache: new Map() }
+            roles: { cache: new Collection() }
           },
           channel: { id: '000' },
           client
@@ -90,7 +90,6 @@ async function handleMemberButtons(interaction, client) {
     await interaction.editReply({ content: msg });
     return true;
   }
-
   // 🔴 שליחת תזכורת סופית
   if (interaction.customId === 'send_dm_batch_final_check') {
     await interaction.deferReply({ ephemeral: true });
@@ -124,7 +123,7 @@ async function handleMemberButtons(interaction, client) {
       }
 
       try {
-        const prompt = 'אתה שמעון, בוט גיימרים ישראלי. תכתוב תזכורת סופית למשתמש שהתעלם מהודעות קודמות.';
+        const memberReal = await guild.members.fetch(user.id).catch(() => null);
         const fakeMessage = {
           content: 'אתה מתעלם כבר חודשיים',
           author: {
@@ -133,10 +132,10 @@ async function handleMemberButtons(interaction, client) {
             avatar: user.avatar,
             bot: user.bot
           },
-          member: {
+          member: memberReal || {
             displayName: user.username,
             permissions: { has: () => false },
-            roles: { cache: new Map() }
+            roles: { cache: new Collection() }
           },
           channel: { id: '000' },
           client
@@ -170,6 +169,7 @@ async function handleMemberButtons(interaction, client) {
     await interaction.editReply({ content: msg });
     return true;
   }
+
   // ❌ הצגת משתמשים שנכשל DM אליהם
   if (interaction.customId === 'show_failed_list') {
     const failedUsers = allTracked.docs.filter(doc => doc.data().dmFailed);

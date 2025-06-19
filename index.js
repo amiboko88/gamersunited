@@ -167,18 +167,66 @@ const {
   ButtonStyle
 } = require('discord.js');
 
+const dmCooldown = new Map();
+const spamAttempts = new Map();
+const blockedUsers = new Set();
+
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
-    // 📩 הודעה פרטית ל־DM
-  if (!message.guild) {
-    const GUILD_ID = process.env.GUILD_ID;
-    const STAFF_CHANNEL_ID = '123456789012345678'; // ⬅️ עדכן את זה!
+
+  const GUILD_ID = process.env.GUILD_ID;
+  const STAFF_CHANNEL_ID = '123456789012345678'; // ⬅️ עדכן לפי ערוץ הצוות שלך
+  const inviteUrl = 'https://discord.gg/2DGAwxDtKW'; // ⬅️ לינק ההצטרפות
+
+  const isDM = !message.guild;
+
+  // 🔒 חסומים קבועים
+  if (blockedUsers.has(message.author.id)) return;
+
+  // 🕵️‍♂️ ניתוח DM
+  let member = null;
+  if (isDM) {
+    const now = Date.now();
+    const last = dmCooldown.get(message.author.id) || 0;
 
     const guild = client.guilds.cache.get(GUILD_ID);
-    const member = await guild?.members.fetch(message.author.id).catch(() => null);
+    member = await guild?.members.fetch(message.author.id).catch(() => null);
 
-    // שליחת לוג לצוות
     const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
+
+    // 🚫 ניהול Cooldown והצפה
+    if (now - last < 60000) {
+      const record = spamAttempts.get(message.author.id) || {
+        firstAttempt: now,
+        count: 1
+      };
+
+      record.count++;
+      spamAttempts.set(message.author.id, record);
+
+      // 🟡 התראה על חריגת תדירות
+      if (record.count === 2 && staffChannel?.isTextBased()) {
+        staffChannel.send(`⚠️ <@${message.author.id}> ניסה לשלוח יותר מהודעה אחת בדקה.`);
+      }
+
+      // 🔴 חריגה שנמשכת מעל 5 דקות
+      if (now - record.firstAttempt > 5 * 60 * 1000) {
+        blockedUsers.add(message.author.id);
+        spamAttempts.delete(message.author.id);
+
+        if (staffChannel?.isTextBased()) {
+          staffChannel.send(`⛔ <@${message.author.id}> נחסם לאחר חריגה מתמשכת של יותר מ־5 דקות.`);
+        }
+      }
+
+      return;
+    }
+
+    // איפוס ניסיונות אם עברו יותר מ־5 דקות מאז הפעם האחרונה
+    spamAttempts.delete(message.author.id);
+    dmCooldown.set(message.author.id, now);
+
+    // 📬 לוג לצוות
     if (staffChannel?.isTextBased()) {
       const logEmbed = new EmbedBuilder()
         .setTitle('📩 הודעת DM לבוט')
@@ -192,45 +240,31 @@ client.on('messageCreate', async message => {
       staffChannel.send({ embeds: [logEmbed] });
     }
 
-    // אם המשתמש כבר חבר בשרת — מתנהג רגיל
-    if (member) {
-      await statTracker.trackMessage(message);
-      await handleXPMessage(message);
+    // 👋 משתמש לא בשרת – מקבל הזמנה
+    if (!member) {
+      const embed = new EmbedBuilder()
+        .setTitle('🎮 Gamers United IL')
+        .setDescription(
+          'נראה שאתה לא נמצא כרגע בקהילת **Gamers United IL**.\n\n' +
+          'כדי להצטרף, לחץ על הכפתור למטה וגש לערוץ האימות לקבלת גישה מלאה.'
+        )
+        .setColor(0x5865f2)
+        .setThumbnail('https://cdn-icons-png.flaticon.com/512/5968/5968756.png')
+        .setFooter({ text: 'מחכים לך בקהילה 💬' });
 
-      const lowered = message.content.toLowerCase();
-      const targetBot = lowered.includes('שמעון') || lowered.includes('bot') || lowered.includes('shim');
-      const curseWords = require('./handlers/antispam').allCurseWords;
-      const hasCurse = curseWords.some(w => lowered.includes(w));
-      if (targetBot && hasCurse) return smartChat(message);
+      const button = new ButtonBuilder()
+        .setLabel('⏎ הצטרף לשרת')
+        .setStyle(ButtonStyle.Link)
+        .setURL(inviteUrl);
 
-      await handleSpam(message);
-      return smartChat(message);
+      const row = new ActionRowBuilder().addComponents(button);
+
+      await message.reply({ embeds: [embed], components: [row] });
+      return;
     }
-
-    // 🧲 משתמש לא בשרת – מקבל הזמנה
-    const inviteUrl = 'https://discord.gg/2DGAwxDtKW'; // ⬅️ עדכן לפי הצורך
-
-    const embed = new EmbedBuilder()
-      .setTitle('🎮 Gamers United IL')
-      .setDescription(
-        'נראה שאתה לא נמצא כרגע בקהילת **Gamers United IL**.\n\n' +
-        'כדי להצטרף, לחץ על הכפתור למטה וגש לערוץ האימות לקבלת גישה מלאה.'
-      )
-      .setColor(0x5865f2)
-      .setThumbnail('https://cdn-icons-png.flaticon.com/512/5968/5968756.png')
-      .setFooter({ text: 'מחכים לך בקהילה 💬' });
-
-    const button = new ButtonBuilder()
-      .setLabel('⏎ הצטרף לשרת')
-      .setStyle(ButtonStyle.Link)
-      .setURL(inviteUrl);
-
-    const row = new ActionRowBuilder().addComponents(button);
-
-    return message.reply({ embeds: [embed], components: [row] });
   }
 
-  // ✉️ הודעה רגילה בתוך שרת
+  // ✅ בשלב הזה: הודעה משרת או מחבר קיים – ממשיך רגיל
   await statTracker.trackMessage(message);
   await handleXPMessage(message);
 
@@ -238,13 +272,40 @@ client.on('messageCreate', async message => {
   const targetBot = lowered.includes('שמעון') || lowered.includes('bot') || lowered.includes('shim');
   const curseWords = require('./handlers/antispam').allCurseWords;
   const hasCurse = curseWords.some(w => lowered.includes(w));
-  if (targetBot && hasCurse) {
-    return smartChat(message);
-  }
+  if (targetBot && hasCurse) return smartChat(message);
 
   await handleSpam(message);
   await smartChat(message);
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // -------- אינטראקציות ---------
 client.on('interactionCreate', async interaction => {

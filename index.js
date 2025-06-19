@@ -170,41 +170,36 @@ const {
 const dmCooldown = new Map();
 const spamAttempts = new Map();
 const blockedUsers = new Set();
+
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
 
   const GUILD_ID = process.env.GUILD_ID;
-  const STAFF_CHANNEL_ID = '123456789012345678'; // עדכן לפי ערוץ הצוות שלך
-  const inviteUrl = 'https://discord.gg/2DGAwxDtKW'; // עדכן לפי הקישור שלך
+  const STAFF_CHANNEL_ID = '123456789012345678'; // עדכן לערוץ הצוות שלך
+  const inviteUrl = 'https://discord.gg/2DGAwxDtKW'; // עדכן לקישור שלך
 
   const isDM = !message.guild;
 
-  // 🔒 חסומים קבועים
   if (blockedUsers.has(message.author.id)) return;
 
-  // 🕵️‍♂️ ניתוח DM
   let member = null;
+  const guild = client.guilds.cache.get(GUILD_ID);
+  const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
+
   if (isDM) {
     const now = Date.now();
     const last = dmCooldown.get(message.author.id) || 0;
 
-    const guild = client.guilds.cache.get(GUILD_ID);
     member = await guild?.members.fetch({ user: message.author.id, force: true }).catch(() => null);
 
-    const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
-
-    // 🚫 ניהול Cooldown והצפה
+    // ⏱️ Cooldown
     if (now - last < 60000) {
-      const record = spamAttempts.get(message.author.id) || {
-        firstAttempt: now,
-        count: 1
-      };
-
+      const record = spamAttempts.get(message.author.id) || { firstAttempt: now, count: 1 };
       record.count++;
       spamAttempts.set(message.author.id, record);
 
       if (record.count === 2 && staffChannel?.isTextBased()) {
-        staffChannel.send(`⚠️ <@${message.author.id}> ניסה לשלוח יותר מהודעה אחת בדקה.`);
+        staffChannel.send(`⚠️ <@${message.author.id}> שלח כמה הודעות תוך דקה.`);
       }
 
       if (now - record.firstAttempt > 5 * 60 * 1000) {
@@ -212,37 +207,37 @@ client.on('messageCreate', async message => {
         spamAttempts.delete(message.author.id);
 
         if (staffChannel?.isTextBased()) {
-          staffChannel.send(`⛔ <@${message.author.id}> נחסם לאחר חריגה מתמשכת של יותר מ־5 דקות.`);
+          staffChannel.send(`⛔ <@${message.author.id}> נחסם לאחר ספאם מתמשך.`);
         }
       }
 
       return;
     }
 
-    spamAttempts.delete(message.author.id);
     dmCooldown.set(message.author.id, now);
+    spamAttempts.delete(message.author.id);
 
-    // 📬 לוג לצוות
+    // 📬 לוג ל־STAFF
     if (staffChannel?.isTextBased()) {
       const logEmbed = new EmbedBuilder()
         .setTitle('📩 הודעת DM לבוט')
         .addFields(
           { name: 'משתמש', value: `<@${message.author.id}> (${message.author.tag})`, inline: false },
           { name: 'תוכן', value: message.content || '*הודעה ריקה*', inline: false },
-          { name: 'סטטוס', value: member ? '✅ נמצא בשרת' : '❌ לא חבר בשרת', inline: true }
+          { name: 'סטטוס', value: member ? '✅ נמצא בשרת' : '❌ לא בשרת', inline: true }
         )
-        .setTimestamp()
-        .setColor(member ? 0x00cc99 : 0xff6666);
+        .setColor(member ? 0x00cc99 : 0xff6666)
+        .setTimestamp();
       staffChannel.send({ embeds: [logEmbed] });
     }
 
-    // 👋 משתמש לא בשרת – מקבל הזמנה
+    // 🔗 לא בשרת – שלח הזמנה
     if (!member) {
       const embed = new EmbedBuilder()
         .setTitle('🎮 Gamers United IL')
         .setDescription(
-          'נראה שאתה לא נמצא כרגע בקהילת **Gamers United IL**.\n\n' +
-          'כדי להצטרף, לחץ על הכפתור למטה וגש לערוץ האימות לקבלת גישה מלאה.'
+          'נראה שאתה לא נמצא בקהילת **Gamers United IL**.\n\n' +
+          'כדי להצטרף, לחץ על הכפתור למטה וגש לערוץ האימות.'
         )
         .setColor(0x5865f2)
         .setThumbnail('https://cdn-icons-png.flaticon.com/512/5968/5968756.png')
@@ -254,13 +249,14 @@ client.on('messageCreate', async message => {
         .setURL(inviteUrl);
 
       const row = new ActionRowBuilder().addComponents(button);
-
-      await message.reply({ embeds: [embed], components: [row] });
-      return;
+      return message.reply({ embeds: [embed], components: [row] });
     }
+
+    // ✅ משתמש בשרת — הפעל smartChat ב־DM
+    return smartChat(message);
   }
 
-  // ✅ משתמש קיים — ממשיכים רגיל
+  // ✉️ הודעה בשרת — הפעל לוגיקת פעילות רגילה
   await statTracker.trackMessage(message);
   await handleXPMessage(message);
 
@@ -273,6 +269,8 @@ client.on('messageCreate', async message => {
   await handleSpam(message);
   await smartChat(message);
 });
+
+
 
 
 // -------- אינטראקציות ---------

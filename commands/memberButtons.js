@@ -62,7 +62,16 @@ try {
     _simulateOnly: true
   };
 
-  const dm = await smartChat.smartRespond(fakeMessage, 'שובב');
+  const isFinal = false;
+
+  const prompt = `${user.username} לא היה פעיל כבר ${Math.floor(daysInactive)} ימים.\n` +
+  `${isFinal ? 'זוהי תזכורת סופית' : 'זו תזכורת רגילה'}.\n` +
+  `כתוב לו הודעה ${isFinal ? 'ישירה וקשוחה' : 'חברית ומעודדת'}, שתעודד אותו להשתתף בשרת.\n` +
+  `הסבר לו שהוא עבר אימות אך עדיין לא לקח חלק.`;
+
+  fakeMessage.content = prompt;
+  const dm = await smartChat.smartRespond(fakeMessage, isFinal ? 'קשוח' : 'רגיש');
+
 
   console.log(`📤 תזכורת רגילה ל־${userId}:`, dm);
 
@@ -145,7 +154,15 @@ try {
           _simulateOnly: true
         };
 
-        const dm = await smartChat.smartRespond(fakeMessage, 'שובב');
+        const isFinal = true;
+        const prompt = `${user.username} לא היה פעיל כבר ${Math.floor(daysInactive)} ימים.\n` +
+        `${isFinal ? 'זוהי תזכורת סופית' : 'זו תזכורת רגילה'}.\n` +
+        `כתוב לו הודעה ${isFinal ? 'ישירה וקשוחה' : 'חברית ומעודדת'}, שתעודד אותו להשתתף בשרת.\n` +
+        `הסבר לו שהוא עבר אימות אך עדיין לא לקח חלק.`;
+
+       fakeMessage.content = prompt;
+       const dm = await smartChat.smartRespond(fakeMessage, isFinal ? 'קשוח' : 'רגיש');
+
         console.log(`📤 תזכורת סופית ל־${userId}:`, dm);
 
         if (!dm || typeof dm !== 'string' || dm.length < 2) throw new Error('הודעת תזכורת סופית ריקה או שגויה');

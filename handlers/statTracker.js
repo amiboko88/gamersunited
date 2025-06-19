@@ -29,7 +29,7 @@ module.exports.trackMessage = async message => {
   // עדכון פעילות מבוססת טקסט בלבד (משקל חלקי)
   await db.collection('memberTracking').doc(userId).set({
     lastActivity: new Date().toISOString(),
-    activityWeight: admin.firestore.FieldValue.maximum(1)
+    activityWeight: admin.firestore.FieldValue.increment(1)
   }, { merge: true });
 
   // חישוב ממוצע מילים

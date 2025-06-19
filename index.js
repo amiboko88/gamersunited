@@ -78,7 +78,7 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.DirectMessages
   ],
- partials: ['CHANNEL', 'MESSAGE'] // ← זו התוספת שחסרה!
+ partials: ['CHANNEL', 'MESSAGE', 'USER'] // ← זו התוספת שחסרה!
 
 });
 client.db = db;

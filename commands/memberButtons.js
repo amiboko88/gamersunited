@@ -42,46 +42,49 @@ async function handleMemberButtons(interaction, client) {
         continue;
       }
 
-      try {
-        const memberReal = await guild.members.fetch(user.id).catch(() => null);
-        const fakeMessage = {
-          content: 'אני לא פעיל כבר חודש',
-          author: {
-            id: user.id,
-            username: user.username,
-            avatar: user.avatar,
-            bot: user.bot
-          },
-          member: memberReal || {
-            displayName: user.username,
-            permissions: { has: () => false },
-            roles: { cache: new Collection() }
-          },
-          channel: { id: '000' },
-          client
-        };
+try {
+  const memberReal = await guild.members.fetch(user.id).catch(() => null);
+  const fakeMessage = {
+    content: 'אתה נעלמת, לא אמרת שלום אפילו...',
+    author: {
+      id: user.id,
+      username: user.username,
+      avatar: user.avatar,
+      bot: user.bot
+    },
+    member: memberReal || {
+      displayName: user.username,
+      permissions: { has: () => false },
+      roles: { cache: new Collection() }
+    },
+    channel: { id: '000' },
+    client,
+    _simulateOnly: true
+  };
 
-        const dm = await smartChat.smartRespond(fakeMessage, 'שובב');
-        console.log(`📤 תזכורת רגילה ל־${userId}:`, dm);
+  const dm = await smartChat.smartRespond(fakeMessage, 'שובב');
 
-        if (!dm || typeof dm !== 'string' || dm.length < 2) throw new Error('הודעת DM ריקה או שגויה');
-        await user.send(dm);
+  console.log(`📤 תזכורת רגילה ל־${userId}:`, dm);
 
-        await db.collection('memberTracking').doc(userId).set({
-          dmSent: true,
-          dmSentAt: new Date().toISOString(),
-          reminderCount: 1
-        }, { merge: true });
+  if (!dm || typeof dm !== 'string' || dm.length < 2) throw new Error('הודעת DM ריקה או שגויה');
+  await user.send(dm);
 
-        count++;
-      } catch (err) {
-        console.error(`❌ נכשל DM ל־${userId}:`, err.message);
-        failed.push(`<@${userId}>`);
-        await db.collection('memberTracking').doc(userId).set({
-          dmFailed: true,
-          dmFailedAt: new Date().toISOString()
-        }, { merge: true });
-      }
+  await db.collection('memberTracking').doc(userId).set({
+    dmSent: true,
+    dmSentAt: new Date().toISOString(),
+    reminderCount: 1
+  }, { merge: true });
+
+  count++;
+} catch (err) {
+  console.error(`❌ נכשל DM ל־${userId}:`, err.message);
+  failed.push(`<@${userId}>`);
+  await db.collection('memberTracking').doc(userId).set({
+    dmFailed: true,
+    dmFailedAt: new Date().toISOString()
+  }, { merge: true });
+}
+
     }
 
     let msg = `✅ נשלחו תזכורות ל־${count} משתמשים.`;

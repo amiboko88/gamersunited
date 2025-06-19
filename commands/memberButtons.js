@@ -138,7 +138,8 @@ async function handleMemberButtons(interaction, client) {
             roles: { cache: new Collection() }
           },
           channel: { id: '000' },
-          client
+          client,
+          _simulateOnly: true
         };
 
         const dm = await smartChat.smartRespond(fakeMessage, 'שובב');

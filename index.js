@@ -112,8 +112,45 @@ client.once('ready', async () => {
   console.log(` הבוט באוויר! ${client.user.tag}`);
 });
 
-// --- EVENTS ---
-client.on('guildMemberAdd', async member => { });
+client.on('guildMemberAdd', async member => {
+  const ref = db.collection('memberTracking').doc(member.id);
+  const existing = await ref.get();
+
+  if (!existing.exists) {
+    await ref.set({
+      guildId: member.guild.id,
+      joinedAt: new Date().toISOString(),
+      status: 'active',
+      dmSent: false,
+      replied: false,
+      dmFailed: false,
+      activityWeight: 0,
+      reminderCount: 0,
+      isInactive: false,
+      inactivityLevel: 0
+    });
+  }
+
+  try {
+    await member.send(
+      'במידה והסתבכת — פשוט לחץ על הלינק הבא:\n\n' +
+      'https://discord.com/channels/583574396686434304/1120791404583587971\n\n' +
+      'זה יוביל אותך ישירות לאימות וכניסה מלאה לשרת 👋'
+    );
+    console.log(`📩 נשלח DM הצטרפות ל־${member.user.tag}`);
+  } catch (err) {
+    console.warn(`⚠️ לא ניתן לשלוח DM ל־${member.user.tag}: ${err.message}`);
+  }
+});
+
+client.on('guildMemberRemove', async member => {
+  await db.collection('memberTracking').doc(member.id).set({
+    status: 'left',
+    leftAt: new Date().toISOString()
+  }, { merge: true });
+
+  console.log(`👋 ${member.user.tag} עזב – עודכן במעקב`);
+});
 
 client.on('voiceStateUpdate', (oldState, newState) => {
   handleVoiceStateUpdate(oldState, newState);
@@ -123,8 +160,77 @@ client.on('presenceUpdate', (oldPresence, newPresence) => {
   trackGamePresence(newPresence);
 });
 
+const {
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
+} = require('discord.js');
+
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
+    // 📩 הודעה פרטית ל־DM
+  if (!message.guild) {
+    const GUILD_ID = process.env.GUILD_ID;
+    const STAFF_CHANNEL_ID = '123456789012345678'; // ⬅️ עדכן את זה!
+
+    const guild = client.guilds.cache.get(GUILD_ID);
+    const member = await guild?.members.fetch(message.author.id).catch(() => null);
+
+    // שליחת לוג לצוות
+    const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
+    if (staffChannel?.isTextBased()) {
+      const logEmbed = new EmbedBuilder()
+        .setTitle('📩 הודעת DM לבוט')
+        .addFields(
+          { name: 'משתמש', value: `<@${message.author.id}> (${message.author.tag})`, inline: false },
+          { name: 'תוכן', value: message.content || '*הודעה ריקה*', inline: false },
+          { name: 'סטטוס', value: member ? '✅ נמצא בשרת' : '❌ לא חבר בשרת', inline: true }
+        )
+        .setTimestamp()
+        .setColor(member ? 0x00cc99 : 0xff6666);
+      staffChannel.send({ embeds: [logEmbed] });
+    }
+
+    // אם המשתמש כבר חבר בשרת — מתנהג רגיל
+    if (member) {
+      await statTracker.trackMessage(message);
+      await handleXPMessage(message);
+
+      const lowered = message.content.toLowerCase();
+      const targetBot = lowered.includes('שמעון') || lowered.includes('bot') || lowered.includes('shim');
+      const curseWords = require('./handlers/antispam').allCurseWords;
+      const hasCurse = curseWords.some(w => lowered.includes(w));
+      if (targetBot && hasCurse) return smartChat(message);
+
+      await handleSpam(message);
+      return smartChat(message);
+    }
+
+    // 🧲 משתמש לא בשרת – מקבל הזמנה
+    const inviteUrl = 'https://discord.gg/2DGAwxDtKW'; // ⬅️ עדכן לפי הצורך
+
+    const embed = new EmbedBuilder()
+      .setTitle('🎮 Gamers United IL')
+      .setDescription(
+        'נראה שאתה לא נמצא כרגע בקהילת **Gamers United IL**.\n\n' +
+        'כדי להצטרף, לחץ על הכפתור למטה וגש לערוץ האימות לקבלת גישה מלאה.'
+      )
+      .setColor(0x5865f2)
+      .setThumbnail('https://cdn-icons-png.flaticon.com/512/5968/5968756.png')
+      .setFooter({ text: 'מחכים לך בקהילה 💬' });
+
+    const button = new ButtonBuilder()
+      .setLabel('⏎ הצטרף לשרת')
+      .setStyle(ButtonStyle.Link)
+      .setURL(inviteUrl);
+
+    const row = new ActionRowBuilder().addComponents(button);
+
+    return message.reply({ embeds: [embed], components: [row] });
+  }
+
+  // ✉️ הודעה רגילה בתוך שרת
   await statTracker.trackMessage(message);
   await handleXPMessage(message);
 

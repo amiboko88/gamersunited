@@ -175,6 +175,8 @@ const spamAttempts = new Map();
 const blockedUsers = new Set();
 
 client.on('messageCreate', async message => {
+  console.log('[DEBUG] messageCreate fired from:', message.author.tag, '| isDM:', !message.guild);
+
   if (message.author.bot) return;
 
   const GUILD_ID = process.env.GUILD_ID;

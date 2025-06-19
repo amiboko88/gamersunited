@@ -137,7 +137,9 @@ async function smartRespond(message, moodOverride = null) {
   setUserCooldown(userId);
 
   // 2. BLACKLIST
-  if (BLACKLISTED_CHANNELS.includes(message.channel.id)) return;
+  const isDM = !message.guild;
+if (!isDM && BLACKLISTED_CHANNELS.includes(message.channel.id)) return;
+
 
   // 3. פרופיל אישי (אופציונלי)
   let profileLine = null;
@@ -186,7 +188,9 @@ module.exports = async function smartChat(message) {
   if (message.content.startsWith('/')) return;
 
   // דילוג על ערוצים מסויימים
-  if (BLACKLISTED_CHANNELS.includes(message.channel.id)) return;
+  const isDM = !message.guild;
+if (!isDM && BLACKLISTED_CHANNELS.includes(message.channel.id)) return;
+
 
   const content = message.content.trim();
 

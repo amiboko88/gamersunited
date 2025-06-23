@@ -4,7 +4,14 @@ const express = require("express");
 
 const db = require("./utils/firebase");
 const registerCommands = require("./telegramCommands");
-const registerBirthdayHandler = require("./telegramBirthday");
+const {
+  registerBirthdayHandler,
+  validateBirthday,
+  saveBirthday
+} = require("./telegramBirthday");
+
+registerBirthdayHandler(bot, WAITING_USERS);
+
 const { handleCurses } = require("./telegramCurses");
 const { handleTrigger } = require("./telegramTriggers");
 const { updateXP, checkNameTags , handleTop } = require("./telegramLevelSystem");

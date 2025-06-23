@@ -6,12 +6,15 @@ const db = require("./utils/firebase");
 const registerCommands = require("./telegramCommands");
 const { handleCurses } = require("./telegramCurses");
 const { handleTrigger } = require("./telegramTriggers");
+const { updateXP, checkNameTags , handleInline, handleTop } = require("./telegramLevelSystem");
 const handleSmartReply = require("./shimonSmart");
 const { sendBirthdayMessages } = require("./birthdayNotifierTelegram");
 
 const WAITING_USERS = new Map(); // userId -> מצב הזנה
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
 registerCommands(bot);
+handleInline(bot);
+handleTop(bot);
 
 // 📌 דיאלוג בין משתתפים
 const activeDialog = {
@@ -86,6 +89,12 @@ bot.on("message", async (ctx) => {
     lastMessagesMap.set(userId, text);
     spamCountMap.set(userId, 0);
   }
+
+  // 🧠 תיוג לפי שם
+const mention = checkNameTags(text);
+if (mention) {
+  await ctx.reply(`👀 נראה שאתה מדבר על ${mention}`, { parse_mode: "HTML" });
+}
   // ☣️ קללות, טריגרים, תגובות חכמות
   const cursed = await handleCurses(ctx, text.toLowerCase());
   if (cursed) return;
@@ -121,6 +130,13 @@ bot.on("message", async (ctx) => {
     }, 25000);
     return;
   }
+  
+// 🎮 XP ורמות
+const levelUp = await updateXP(ctx.from);
+if (levelUp) {
+  await ctx.reply(`🎉 <b>${ctx.from.first_name}</b> עלה לרמה <b>${levelUp}</b>!`, { parse_mode: "HTML" });
+}
+
 
   // 🧱 fallback אקראי
   await ctx.reply(

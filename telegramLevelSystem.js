@@ -4,9 +4,9 @@ const db = require("./utils/firebase");
 
 // 📣 תיוג לפי שם משתמש (username בלבד)
 const NAME_TAGS = {
-  "עומרי עמר": "@Tokyo1987",
-  "עייש": "@talayash",
-  "קלי": "@kalimeromit"
+  "omri_amr": "@omri_amr",
+  "ayash": "@ayash",
+  "barvaz": "@barvaz"
 };
 
 function checkNameTags(text) {
@@ -46,7 +46,7 @@ async function updateXP(user) {
   return leveledUp ? data.level : null;
 }
 
-// 🎮 תצוגת פרופיל אישי (INLINE)
+// 🎮 תצוגת פרופיל אישי (XP)
 function getLevelBadge(level) {
   if (level >= 30) return { badge: "👑", title: "אלוף" };
   if (level >= 20) return { badge: "🔥", title: "וותיק" };
@@ -81,15 +81,12 @@ ${xpBar}
   return { text, photo };
 }
 
-function handleInline(bot) {
-  bot.command("inline", async (ctx) => {
+function handleXPProfile(bot) {
+  bot.callbackQuery("profile_xp", async (ctx) => {
     const result = await getUserLevelCanvas(bot, ctx.from.id);
-    if (!result) {
-      return ctx.reply("😕 אין נתונים עדיין. כתוב קצת בצ'אט כדי להתקדם.");
-    }
+    if (!result) return ctx.reply("😕 אין נתונים עדיין. כתוב קצת בצ'אט כדי להתקדם.");
 
     const { text, photo } = result;
-
     if (photo) {
       await ctx.replyWithPhoto(photo, {
         caption: text,
@@ -98,6 +95,7 @@ function handleInline(bot) {
     } else {
       await ctx.reply(text, { parse_mode: "HTML" });
     }
+    await ctx.answerCallbackQuery();
   });
 }
 
@@ -111,7 +109,7 @@ function createShortBar(current, max) {
 }
 
 function handleTop(bot) {
-  bot.command("top", async (ctx) => {
+  bot.callbackQuery("profile_top", async (ctx) => {
     const snapshot = await db.collection("levels").get();
     if (snapshot.empty) return ctx.reply("😕 אין עדיין משתמשים עם XP.");
 
@@ -136,12 +134,14 @@ function handleTop(bot) {
     });
 
     await ctx.reply(text.trim(), { parse_mode: "HTML" });
+    await ctx.answerCallbackQuery();
   });
 }
 
 module.exports = {
   updateXP,
   checkNameTags,
-  handleInline,
-  handleTop
+  handleXPProfile,
+  handleTop,
+  getUserLevelCanvas
 };

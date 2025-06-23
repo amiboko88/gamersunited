@@ -34,7 +34,6 @@ async function saveLastMessageId(messageId) {
   await db.collection('fifoWarzoneAnnouncer').doc('latestMessage').set({ messageId });
 }
 
-// ✨ משפטים רנדומליים חכמים
 const dynamicMessages = [
   "🎯 הצוות כבר בפנים — ואתם עדיין מתלבטים? הגיע הזמן להצטרף.",
   "🎮 WARZONE בשיאו. החברים בערוץ, ואתם? רק לחיצה ואתם שם.",
@@ -88,22 +87,26 @@ async function sendWarzoneEmbed(client) {
   const firstGame = getGameName(connected[0]?.presence);
   const description = `${getRandomMessage()}\n🎲 המשחק הפעיל: **${firstGame}**`;
 
-  const imageBuffer = await generateProBanner(connected);
-
-  if (!imageBuffer || !(imageBuffer instanceof Buffer) || !imageBuffer.length) {
-    console.error('❌ imageBuffer לא תקין — שליחה מבוטלת');
-    return;
+  let file = null;
+  try {
+    const imageBuffer = await generateProBanner(connected);
+    if (imageBuffer && imageBuffer instanceof Buffer && imageBuffer.length > 0) {
+      file = new AttachmentBuilder(imageBuffer, { name: 'probanner.webp' });
+    } else {
+      console.warn('⚠️ buffer ריק — נשלח embed בלי באנר');
+    }
+  } catch (err) {
+    console.warn(`⚠️ שגיאה ביצירת באנר: ${err.message}`);
   }
 
   const embed = new EmbedBuilder()
     .setColor('#2F3136')
     .setTitle('🎮 FIFO SQUAD כבר מחוברים!')
     .setDescription(description)
-    .setImage('attachment://probanner.webp')
     .setFooter({ text: `שחקנים בערוץ: ${connected.length}` })
     .setTimestamp();
 
-  const file = new AttachmentBuilder(imageBuffer, { name: 'probanner.webp' });
+  if (file) embed.setImage('attachment://probanner.webp');
 
   const channel = await client.channels.fetch(TARGET_CHANNEL_ID);
   if (!channel || channel.type !== ChannelType.GuildText) {
@@ -118,7 +121,7 @@ async function sendWarzoneEmbed(client) {
       ? `🧟 ${missing.map(m => `<@${m.id}>`).join(' ')}`
       : null,
     embeds: [embed],
-    files: [file]
+    files: file ? [file] : []
   });
 
   await saveLastMessageId(message.id);

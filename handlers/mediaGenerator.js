@@ -13,7 +13,13 @@ async function generateProBanner(players) {
   const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx = canvas.getContext('2d');
 
-  console.log(`🖼️ יצירת באנר ל־${players.size} שחקנים...`);
+  const playerArray = [...players.values()].slice(0, 7);
+  if (playerArray.length === 0) {
+    console.warn('⚠️ אין שחקנים להצגה בבאנר — דילוג על יצירה');
+    throw new Error('❌ אין מספיק שחקנים להצגת באנר');
+  }
+
+  console.log(`🖼️ יצירת באנר ל־${playerArray.length} שחקנים...`);
 
   // רקע כהה
   ctx.fillStyle = '#181a1b';
@@ -26,16 +32,14 @@ async function generateProBanner(players) {
 
   let y = 110;
   let renderedCount = 0;
-  let errorCount = 0;
 
-  for (const member of [...players.values()].slice(0, 7)) {
+  for (const member of playerArray) {
     try {
       const avatarURL = member.user.displayAvatarURL({
         extension: 'png',
         size: 128,
         forceStatic: true
       });
-      if (!avatarURL) throw new Error('לא נמצא URL לאוואטר');
 
       const avatarImage = await loadImage(avatarURL);
       const x = 50;
@@ -46,7 +50,6 @@ async function generateProBanner(players) {
       ctx.arc(x + AVATAR_SIZE / 2, y + AVATAR_SIZE / 2, AVATAR_SIZE / 2, 0, Math.PI * 2, true);
       ctx.closePath();
       ctx.clip();
-
       ctx.drawImage(avatarImage, x, y, AVATAR_SIZE, AVATAR_SIZE);
       ctx.restore();
 
@@ -72,7 +75,6 @@ async function generateProBanner(players) {
       console.log(`✅ ${member.displayName} נוסף לבאנר`);
     } catch (err) {
       console.warn(`⚠️ ${member.displayName}: שגיאה בטעינת אוואטר - ${err.message}`);
-      errorCount++;
     }
   }
 
@@ -80,7 +82,7 @@ async function generateProBanner(players) {
     ctx.fillStyle = '#ffffff';
     ctx.font = '28px "Arial"';
     ctx.fillText('לא נמצאו שחקנים להצגה 🥲', 50, HEIGHT / 2);
-    console.log('⚠️ לא נוצרו אוואטרים בפועל, נשלח באנר ריק');
+    console.log('⚠️ כל טעינות האוואטר נכשלו — נשלח באנר ריק');
   }
 
   // חתימה תחתונה
@@ -91,7 +93,7 @@ async function generateProBanner(players) {
   const buffer = canvas.toBuffer('image/webp');
 
   if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
-    throw new Error('❌ buffer ריק או לא תקין');
+    throw new Error('❌ יצירת buffer נכשלה — התמונה ריקה');
   }
 
   return buffer;

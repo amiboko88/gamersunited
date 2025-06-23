@@ -106,7 +106,11 @@ async function sendLeaderboardEmbed(client) {
       await docRef.set({ messageId: message.id, lastUpdated: new Date().toISOString() }, { merge: true });
       console.log('✅ לוח הפעילות נשלח כהודעה חדשה.');
     }
-
+    
+await db.collection("leaderboard").doc("mvp").set({
+  url: message.attachments.first()?.url || "",
+  updatedAt: new Date().toISOString()
+});
     await message.react('🏅');
     return true;
 

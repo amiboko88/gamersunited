@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 // טעינת פונט עברי תקני עם תמיכה מלאה
-registerFont(path.join(__dirname, '../assets/fonts/DejaVuSans.ttf'), {
+registerFont(path.join(__dirname, '../assets/DejaVuSans.ttf'), {
   family: 'DejaVuSans'
 });
 

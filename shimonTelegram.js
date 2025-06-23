@@ -4,14 +4,7 @@ const express = require("express");
 
 const db = require("./utils/firebase");
 const registerCommands = require("./telegramCommands");
-const {
-  registerBirthdayHandler,
-  validateBirthday,
-  saveBirthday
-} = require("./telegramBirthday");
-
-registerBirthdayHandler(bot, WAITING_USERS);
-
+const { registerBirthdayHandler, validateBirthday, saveBirthday } = require("./telegramBirthday");
 const { handleCurses } = require("./telegramCurses");
 const { handleTrigger } = require("./telegramTriggers");
 const { updateXP, checkNameTags , handleTop } = require("./telegramLevelSystem");
@@ -21,9 +14,9 @@ const { sendBirthdayMessages } = require("./birthdayNotifierTelegram");
 const WAITING_USERS = new Map(); // userId -> מצב הזנה
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
 
-registerCommands(bot, WAITING_USERS); // 🟢 מעביר את המפה
-registerBirthdayHandler(bot, WAITING_USERS);         // 🟢 מאפשר תמיכה בכפתורים
-handleTop(bot);                       // 🟢 טבלת רמות
+registerCommands(bot, WAITING_USERS);
+registerBirthdayHandler(bot, WAITING_USERS);
+handleTop(bot);
 
 // 📌 דיאלוג בין משתתפים
 const activeDialog = {
@@ -32,8 +25,8 @@ const activeDialog = {
 };
 
 // 📌 שמירת הודעות אחרונות לגילוי ספאם
-const lastMessagesMap = new Map(); // userId -> text
-const spamCountMap = new Map();    // userId -> int
+const lastMessagesMap = new Map();
+const spamCountMap = new Map();
 
 // 📌 תגובות fallback אם אין טריגר/קללה/חוכמה
 const fallbackReplies = [
@@ -89,7 +82,6 @@ bot.on("message", async (ctx) => {
   if (lastMsg === text) {
     const spamCount = (spamCountMap.get(userId) || 0) + 1;
     spamCountMap.set(userId, spamCount);
-
     if (spamCount >= 3) {
       return ctx.reply("שמעון מזהיר: להדביק שוב ושוב את אותו דבר? לא חכם. 😤");
     }
@@ -179,30 +171,4 @@ if (process.env.RAILWAY_STATIC_URL) {
   });
 } else {
   console.error("❌ חסר RAILWAY_STATIC_URL");
-}
-
-// 🎂 עזרי תאריך יום הולדת
-function validateBirthday(input) {
-  const match = input.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  if (!match) return null;
-  const [_, day, month, year] = match.map(Number);
-  const now = new Date();
-  const age = now.getFullYear() - year;
-  if (age < 10 || age > 100 || month < 1 || month > 12 || day < 1 || day > 31) return null;
-  return { day, month, year, age };
-}
-
-async function saveBirthday(user, bday) {
-  const doc = {
-    birthday: {
-      day: bday.day,
-      month: bday.month,
-      year: bday.year,
-      age: bday.age,
-    },
-    fullName: user.first_name || "חבר",
-    addedBy: "telegram",
-    createdAt: Date.now(),
-  };
-  await db.collection("birthdays").doc(user.id.toString()).set(doc, { merge: true });
 }

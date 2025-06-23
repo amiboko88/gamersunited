@@ -13,6 +13,7 @@ const { executeReplayReset } = require('./utils/repartitionUtils');
 const { createGroupsAndChannels } = require('./utils/squadBuilder');
 
 // 🧠 ניתוח / סטטיסטיקות / XP
+const { generateWeeklyReport } = require('./utils/weeklyInactivityReport');
 const statTracker = require('./handlers/statTracker');
 const { handleXPMessage } = require('./handlers/engagementManager');
 const { startStatsUpdater } = require('./handlers/statsUpdater');
@@ -50,6 +51,7 @@ const welcomeImage = require('./handlers/welcomeImage');
 const { startCleanupScheduler } = require('./handlers/channelCleaner');
 
 // 🪅 מערכת ימי הולדת
+const { startBirthdayCongratulator } = require('./handlers/birthdayCongratulator');
 const handleBirthdayPanel = require('./handlers/birthdayPanelHandler');
 const { startBirthdayTracker } = require('./handlers/birthdayTracker');
 const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayReminder');
@@ -99,6 +101,7 @@ client.once('ready', async () => {
   await registerSlashCommands(client.user.id, client); // רישום Slash מול Discord
   await startMvpReactionWatcher(client, db);
 
+  startBirthdayCongratulator(client);
   startFifoWarzoneAnnouncer(client);
   startStatsUpdater(client);
   welcomeImage(client);
@@ -163,96 +166,27 @@ client.on('presenceUpdate', (oldPresence, newPresence) => {
   trackGamePresence(newPresence);
 });
 
-const {
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle
-} = require('discord.js');
-
-const dmCooldown = new Map();
-const spamAttempts = new Map();
-const blockedUsers = new Set();
-
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
 
-  const GUILD_ID = process.env.GUILD_ID;
-  const STAFF_CHANNEL_ID = '123456789012345678'; // עדכן לערוץ הצוות שלך
-  const inviteUrl = 'https://discord.gg/2DGAwxDtKW'; // עדכן לקישור שלך
-
   const isDM = !message.guild;
-  const guild = client.guilds.cache.get(GUILD_ID);
-  const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
-
-  if (blockedUsers.has(message.author.id)) return;
-
-  let member = null;
-
   if (isDM) {
     try {
-      member = await guild?.members.fetch(message.author.id).catch(() => null);
-      message.member = member || null; // ✅ התיקון: מאפשר ל־smartChat לזהות שהמשתמש כן בשרת
-    } catch {}
+      const inviteUrl = 'https://discord.gg/2DGAwxDtKW'; // הקישור הקבוע לשרת שלך
 
-    await db.collection('memberTracking').doc(message.author.id).set({
-      replied: true,
-      repliedAt: new Date().toISOString()
-    }, { merge: true });
-
-    const now = Date.now();
-    const last = dmCooldown.get(message.author.id) || 0;
-
-    // ⏱️ Cooldown
-    if (now - last < 60000) {
-      const record = spamAttempts.get(message.author.id) || { firstAttempt: now, count: 1 };
-      record.count++;
-      spamAttempts.set(message.author.id, record);
-
-      if (record.count === 2 && staffChannel?.isTextBased()) {
-        staffChannel.send(`⚠️ <@${message.author.id}> שלח כמה הודעות תוך דקה.`);
-      }
-
-      if (now - record.firstAttempt > 5 * 60 * 1000) {
-        blockedUsers.add(message.author.id);
-        spamAttempts.delete(message.author.id);
-
-        if (staffChannel?.isTextBased()) {
-          staffChannel.send(`⛔ <@${message.author.id}> נחסם לאחר ספאם מתמשך.`);
-        }
-      }
-
-      return;
-    }
-
-    dmCooldown.set(message.author.id, now);
-    spamAttempts.delete(message.author.id);
-
-    // 📬 לוג ל־STAFF
-    if (staffChannel?.isTextBased()) {
-      const logEmbed = new EmbedBuilder()
-        .setTitle('📩 הודעת DM לבוט')
-        .addFields(
-          { name: 'משתמש', value: `<@${message.author.id}> (${message.author.tag})`, inline: false },
-          { name: 'תוכן', value: message.content || '*הודעה ריקה*', inline: false },
-          { name: 'סטטוס', value: member ? '✅ נמצא בשרת' : '❌ לא בשרת', inline: true }
-        )
-        .setColor(member ? 0x00cc99 : 0xff6666)
-        .setTimestamp();
-      staffChannel.send({ embeds: [logEmbed] });
-    }
-
-    // 🔗 לא בשרת – שלח הזמנה
-    if (!member) {
       const embed = new EmbedBuilder()
-        .setTitle('🎮 Gamers United IL')
-        .setDescription(
-          'נראה שאתה לא נמצא בקהילת **Gamers United IL**.\n\n' +
-          'כדי להצטרף, לחץ על הכפתור למטה וגש לערוץ האימות.'
-        )
+        .setTitle('📭 שמעון לא מגיב בפרטי')
+        .setDescription([
+          'היי 👋',
+          'נראה שניסית לשלוח הודעה פרטית לשמעון.',
+          '',
+          '⚠️ הוא לא מגיב ל־DMים רגילים.',
+          '📢 כדי לדבר עם שמעון, הצטרף אלינו לשרת 👇'
+        ].join('\n'))
+        .setThumbnail('attachment://logo.png')
         .setColor(0x5865f2)
-        .setThumbnail('https://cdn-icons-png.flaticon.com/512/5968/5968756.png')
-        .setFooter({ text: 'מחכים לך בקהילה 💬' });
+        .setFooter({ text: 'Gamers United IL - קהילת הגיימרים של ישראל 🎮' })
+        .setTimestamp();
 
       const button = new ButtonBuilder()
         .setLabel('⏎ הצטרף לשרת')
@@ -260,14 +194,22 @@ client.on('messageCreate', async message => {
         .setURL(inviteUrl);
 
       const row = new ActionRowBuilder().addComponents(button);
-      return message.reply({ embeds: [embed], components: [row] });
-    }
 
-    // ✅ משתמש בשרת — הפעל smartChat ב־DM
-    return smartChat(message);
+      await message.reply({
+        embeds: [embed],
+        components: [row],
+        files: [{
+          attachment: './assets/logo.png',
+          name: 'logo.png'
+        }]
+      });
+    } catch (err) {
+      console.warn('❌ לא ניתן היה להשיב ב־DM:', err.message);
+    }
+    return;
   }
 
-  // ✉️ הודעה בשרת — הפעל לוגיקת פעילות רגילה
+  // הודעות בתוך שרת
   await statTracker.trackMessage(message);
   await handleXPMessage(message);
 
@@ -280,6 +222,7 @@ client.on('messageCreate', async message => {
   await handleSpam(message);
   await smartChat(message);
 });
+
 
 client.on('interactionCreate', async interaction => {
   if (interaction.isAutocomplete()) return songAutocomplete(interaction);
@@ -448,4 +391,14 @@ client.on('interactionCreate', async interaction => {
 // 🚀 הפעלת הבוט
 client.login(process.env.DISCORD_TOKEN);
 require('./shimonTelegram');
-setInterval(() => {}, 1000 * 60 * 60);
+setInterval(() => {
+  const now = new Date();
+  const israelTime = new Date(now.getTime() + (3 * 60 + now.getTimezoneOffset()) * 60000);
+  const hour = israelTime.getHours();
+  const day = israelTime.getDay(); // 0 = ראשון, 4 = חמישי
+
+  if (day === 4 && hour === 18) {
+    generateWeeklyReport(client);
+  }
+}, 60 * 60 * 1000); // בדיקה כל שעה
+

@@ -136,47 +136,64 @@ module.exports = async function handleBirthdayPanel(interaction) {
   }
 
   // 📨 שליחת תזכורות למי שלא הזין
-  if (customId === 'bday_remind_missing') {
-    const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
-    if (!isAdmin) {
-      return interaction.reply({ content: '⛔ אין הרשאה.', ephemeral: true });
-    }
-
-    await interaction.deferReply({ ephemeral: true });
-
-    await guild.members.fetch();
-    const allMembers = guild.members.cache.filter(
-      m => !m.user.bot && m.roles.cache.has(VERIFIED_ROLE_ID)
-    );
-
-    const snapshot = await db.collection(BIRTHDAY_COLLECTION).get();
-    const registeredIds = new Set(snapshot.docs.map(doc => doc.id));
-    const missing = allMembers.filter(m => !registeredIds.has(m.id));
-
-    const msg = `👋 היי! אנחנו מרכזים ימי הולדת בקהילה כדי לא לשכוח לאחל מזל טוב 🎉
-נשמח אם תוסיף את תאריך יום ההולדת שלך עם הפקודה:
-\`/הוסף_יום_הולדת\` או דרך כפתור בממשק \`/ימי_הולדת\`.
-
-— שמעון 🎂`;
-
-    let success = 0, failed = 0;
-
-    for (const user of missing.values()) {
-      try {
-        await user.send(msg);
-        success++;
-      } catch {
-        failed++;
-      }
-    }
-
-    const resultEmbed = new EmbedBuilder()
-      .setTitle('📬 סיום שליחת התזכורות')
-      .setColor('Green')
-      .setDescription(`ההודעות נשלחו ל־**${success}** משתמשים.\n${failed > 0 ? `❌ ${failed} נכשלו (אין DM פתוח?)` : '✅ כולם קיבלו!'}`);
-
-    return interaction.editReply({ embeds: [resultEmbed] });
+if (customId === 'bday_remind_missing') {
+  const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+  if (!isAdmin) {
+    return interaction.reply({ content: '⛔ אין הרשאה.', ephemeral: true });
   }
+
+  await interaction.deferReply({ ephemeral: true });
+
+  await guild.members.fetch();
+  const allMembers = guild.members.cache.filter(
+    m => !m.user.bot && m.roles.cache.has(VERIFIED_ROLE_ID)
+  );
+
+  const snapshot = await db.collection(BIRTHDAY_COLLECTION).get();
+  const registeredIds = new Set(snapshot.docs.map(doc => doc.id));
+  const missing = allMembers.filter(m => !registeredIds.has(m.id));
+
+  let success = 0, failed = 0;
+
+  for (const user of missing.values()) {
+    try {
+      const embed = new EmbedBuilder()
+        .setColor('Purple')
+        .setTitle('🎂 הצטרף ללוח ימי ההולדת שלנו!')
+        .setDescription([
+          '👋 היי! בקהילת **Gamers United IL** אנחנו אוהבים לחגוג 🎉',
+          '',
+          '📅 תוכל לעדכן את יום ההולדת שלך ולהיכנס ללוח הקהילתי.',
+          'כך נוכל לברך אותך בזמן – ולשלוח לך הודעה חגיגית! 🎈',
+          '',
+          '⬇️ לחץ על הכפתור כדי להוסיף את התאריך שלך:'
+        ].join('\n'))
+        .setFooter({ text: 'שמעון – זוכר את כולם 🎁' })
+        .setTimestamp();
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('open_birthday_modal')
+          .setLabel('📅 הוסף יום הולדת עכשיו')
+          .setStyle(ButtonStyle.Primary)
+      );
+
+      await user.send({ embeds: [embed], components: [row] });
+      success++;
+    } catch {
+      failed++;
+    }
+  }
+
+  const resultEmbed = new EmbedBuilder()
+    .setTitle('📬 סיום שליחת התזכורות')
+    .setColor('Green')
+    .setDescription(`ההודעות נשלחו ל־**${success}** משתמשים.\n${failed > 0 ? `❌ ${failed} נכשלו (אין DM פתוח?)` : '✅ כולם קיבלו!'}`);
+
+  return interaction.editReply({ embeds: [resultEmbed] });
+}
+
+ 
 
   // ✅ שליחה מתוך המודל
   if (interaction.isModalSubmit && interaction.customId === 'birthday_modal') {

@@ -22,8 +22,9 @@ async function handleVoiceStateUpdate(oldState, newState) {
   const oldChannelId = oldState.channelId;
   const newChannelId = newState.channelId;
 
-  const joined = !oldChannelId && newChannelId;
-  const left = oldChannelId && !newChannelId;
+  // 🔒 התעלמות ממעברים לערוץ AFK (לא נחשב פעילות אמיתית)
+  const afkChannelId = newState.guild.afkChannelId;
+  if (newChannelId === afkChannelId || oldChannelId === afkChannelId) return;
 
   console.log(`🎧 voiceStateUpdate – ${member.user.tag} עבר מ־${oldChannelId} ל־${newChannelId}`);
 
@@ -47,6 +48,9 @@ async function handleVoiceStateUpdate(oldState, newState) {
   }
 
   // ✅ רישום זמן כניסה – רק אם נכנס לאיזשהו ערוץ קול
+  const joined = !oldChannelId && newChannelId;
+  const left = oldChannelId && !newChannelId;
+
   if (joined) {
     const timestamp = Date.now();
     joinTimestamps.set(userId, timestamp);
@@ -77,6 +81,13 @@ async function handleVoiceStateUpdate(oldState, newState) {
       await trackJoinCount(userId);
       await trackJoinDuration(userId, durationMinutes);
       await trackActiveHour(userId);
+
+      // ✅ תיעוד ל־voiceTime עבור גרף מצטיין
+      await db.collection('voiceTime').add({
+        userId,
+        minutes: durationMinutes,
+        date: new Date()
+      });
 
       await db.collection('memberTracking').doc(userId).set({
         lastActivity: new Date().toISOString(),

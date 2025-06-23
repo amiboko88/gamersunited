@@ -26,10 +26,15 @@ async function generateProBanner(players) {
 
   let y = 110;
   let renderedCount = 0;
+  let errorCount = 0;
 
   for (const member of [...players.values()].slice(0, 7)) {
     try {
-      const avatarURL = member.displayAvatarURL({ extension: 'png', size: 128 });
+      const avatarURL = member.user.displayAvatarURL({
+        extension: 'png',
+        size: 128,
+        forceStatic: true
+      });
       if (!avatarURL) throw new Error('לא נמצא URL לאוואטר');
 
       const avatarImage = await loadImage(avatarURL);
@@ -67,6 +72,7 @@ async function generateProBanner(players) {
       console.log(`✅ ${member.displayName} נוסף לבאנר`);
     } catch (err) {
       console.warn(`⚠️ ${member.displayName}: שגיאה בטעינת אוואטר - ${err.message}`);
+      errorCount++;
     }
   }
 
@@ -82,7 +88,13 @@ async function generateProBanner(players) {
   ctx.font = '18px "Arial"';
   ctx.fillText('GAMERS UNITED IL | FIFO ACTIVE', WIDTH - 250, HEIGHT - 30);
 
-  return canvas.toBuffer('image/webp');
+  const buffer = canvas.toBuffer('image/webp');
+
+  if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
+    throw new Error('❌ buffer ריק או לא תקין');
+  }
+
+  return buffer;
 }
 
 module.exports = {

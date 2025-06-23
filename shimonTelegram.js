@@ -4,6 +4,7 @@ const express = require("express");
 
 const db = require("./utils/firebase");
 const registerCommands = require("./telegramCommands");
+const registerBirthdayHandler = require("./telegramBirthday");
 const { handleCurses } = require("./telegramCurses");
 const { handleTrigger } = require("./telegramTriggers");
 const { updateXP, checkNameTags , handleTop } = require("./telegramLevelSystem");
@@ -12,8 +13,10 @@ const { sendBirthdayMessages } = require("./birthdayNotifierTelegram");
 
 const WAITING_USERS = new Map(); // userId -> מצב הזנה
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
-registerCommands(bot);
-handleTop(bot);
+
+registerCommands(bot, WAITING_USERS); // 🟢 מעביר את המפה
+registerBirthdayHandler(bot);         // 🟢 מאפשר תמיכה בכפתורים
+handleTop(bot);                       // 🟢 טבלת רמות
 
 // 📌 דיאלוג בין משתתפים
 const activeDialog = {
@@ -71,7 +74,7 @@ bot.on("message", async (ctx) => {
     return;
   }
 
-  // ❌ התעלמות מפקודות, סטיקרים, אימוג'ים, הודעות קצרות
+  // ❌ התעלמות מפקודות, סטיקרים, אמוג'ים, הודעות קצרות
   if (text.startsWith("/") || isSticker || !text || text.length < 2 || /^[\p{Emoji}]+$/u.test(text)) return;
 
   // 🔁 זיהוי הודעה חוזרת
@@ -83,17 +86,18 @@ bot.on("message", async (ctx) => {
     if (spamCount >= 3) {
       return ctx.reply("שמעון מזהיר: להדביק שוב ושוב את אותו דבר? לא חכם. 😤");
     }
-    return; // התעלמות שקטה לחזרה ראשונה-שנייה
+    return;
   } else {
     lastMessagesMap.set(userId, text);
     spamCountMap.set(userId, 0);
   }
 
   // 🧠 תיוג לפי שם
-const mention = checkNameTags(text);
-if (mention) {
-  await ctx.reply(`👀 נראה שאתה מדבר על ${mention}`, { parse_mode: "HTML" });
-}
+  const mention = checkNameTags(text);
+  if (mention) {
+    await ctx.reply(`👀 נראה שאתה מדבר על ${mention}`, { parse_mode: "HTML" });
+  }
+
   // ☣️ קללות, טריגרים, תגובות חכמות
   const cursed = await handleCurses(ctx, text.toLowerCase());
   if (cursed) return;
@@ -129,13 +133,12 @@ if (mention) {
     }, 25000);
     return;
   }
-  
-// 🎮 XP ורמות
-const levelUp = await updateXP(ctx.from);
-if (levelUp) {
-  await ctx.reply(`🎉 <b>${ctx.from.first_name}</b> עלה לרמה <b>${levelUp}</b>!`, { parse_mode: "HTML" });
-}
 
+  // 🎮 XP ורמות
+  const levelUp = await updateXP(ctx.from);
+  if (levelUp) {
+    await ctx.reply(`🎉 <b>${ctx.from.first_name}</b> עלה לרמה <b>${levelUp}</b>!`, { parse_mode: "HTML" });
+  }
 
   // 🧱 fallback אקראי
   await ctx.reply(

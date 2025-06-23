@@ -6,14 +6,13 @@ const db = require("./utils/firebase");
 const registerCommands = require("./telegramCommands");
 const { handleCurses } = require("./telegramCurses");
 const { handleTrigger } = require("./telegramTriggers");
-const { updateXP, checkNameTags , handleInline, handleTop } = require("./telegramLevelSystem");
+const { updateXP, checkNameTags , handleTop } = require("./telegramLevelSystem");
 const handleSmartReply = require("./shimonSmart");
 const { sendBirthdayMessages } = require("./birthdayNotifierTelegram");
 
 const WAITING_USERS = new Map(); // userId -> מצב הזנה
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
 registerCommands(bot);
-handleInline(bot);
 handleTop(bot);
 
 // 📌 דיאלוג בין משתתפים

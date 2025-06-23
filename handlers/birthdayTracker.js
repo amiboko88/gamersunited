@@ -21,24 +21,22 @@ const birthdayMessages = [
   age => `שתזכה לפינג נמוך, קבוצה טובה, ואוזניות שלא מקרטעות 🎧 (גיל ${age})`
 ];
 
-function isTodayBirthday(dateString) {
+function isTodayBirthday(birthday) {
   const today = new Date();
-  const [month, day, year] = dateString.split('-');
   return (
-    today.getMonth() + 1 === parseInt(month) &&
-    today.getDate() === parseInt(day)
+    birthday?.day === today.getDate() &&
+    birthday?.month === today.getMonth() + 1
   );
 }
 
 function calculateAge(birthday) {
-  const [month, day, year] = birthday.split('-').map(Number);
-  const birthDate = new Date(year, month - 1, day);
+  const birthDate = new Date(birthday.year, birthday.month - 1, birthday.day);
   const today = new Date();
   let age = today.getFullYear() - birthDate.getFullYear();
-  const hasBirthdayPassedThisYear =
+  const hasPassed =
     today.getMonth() > birthDate.getMonth() ||
     (today.getMonth() === birthDate.getMonth() && today.getDate() >= birthDate.getDate());
-  if (!hasBirthdayPassedThisYear) age--;
+  if (!hasPassed) age--;
   return age;
 }
 
@@ -60,8 +58,7 @@ function getMsUntil22() {
   const now = new Date();
   const target = new Date();
   target.setHours(22, 0, 0, 0);
-  if (now > target) return 0;
-  return target - now;
+  return now > target ? 0 : target - now;
 }
 
 async function checkBirthdays(client) {
@@ -73,16 +70,20 @@ async function checkBirthdays(client) {
   const today = new Date();
   const keyPrefix = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-  for (const doc of snapshot.docs) {
-    const { birthday } = doc.data();
-    if (!isTodayBirthday(birthday)) continue;
+  const seenDiscordIds = new Set();
 
-    const userId = doc.id;
-    const logRef = db.collection('birthdayLogs').doc(`${keyPrefix}_${userId}`);
+  for (const doc of snapshot.docs) {
+    const { birthday, linkedAccounts = [] } = doc.data();
+    const discordId = linkedAccounts.find(id => id.startsWith('discord:'))?.split(':')[1];
+    if (!birthday || !isTodayBirthday(birthday) || !discordId || seenDiscordIds.has(discordId)) continue;
+
+    seenDiscordIds.add(discordId);
+
+    const logRef = db.collection('birthdayLogs').doc(`${keyPrefix}_${discordId}`);
     const logSnap = await logRef.get();
     if (logSnap.exists) continue;
 
-    const member = await guild.members.fetch(userId).catch(() => null);
+    const member = await guild.members.fetch(discordId).catch(() => null);
     if (!member) continue;
 
     const age = calculateAge(birthday);
@@ -102,25 +103,20 @@ async function checkBirthdays(client) {
       createdAt: new Date().toISOString()
     });
 
-    // TTS עם ברכה אישית
+    // TTS 🎙️
     const listener = async (oldState, newState) => {
-      if (
-        newState.member?.id === userId &&
-        !oldState.channelId &&
-        newState.channelId
-      ) {
-const ttsMessages = [
-  ({ name, age }) => `מזל טוב ל־${name}! אתה בן ${age} היום, וזה אומר שאתה עדיין משחק ולא פרשת כמו הגדולים!`,
-  ({ name, age }) => `${name}, ${age} שנה שאתה מחזיק שליטה – אולי השנה תלמד גם להרים קבוצה?`,
-  ({ name, age }) => `היי ${name}, בגיל ${age} כבר מגיעה לך קבוצה קבועה ו־ping יציב. יאללה תעשה סדר!`,
-  ({ name, age }) => `יום הולדת שמח ${name}! גיל ${age} זה בדיוק הזמן לפרוש… סתם, תישאר איתנו 🎉`,
-  ({ name, age }) => `וואו ${name}, ${age} שנה ואתה עדיין rage quit כל סיבוב? חוגגים אותך בכל זאת!`
-];
+      if (newState.member?.id === discordId && !oldState.channelId && newState.channelId) {
+        const ttsMessages = [
+          ({ name, age }) => `מזל טוב ל־${name}! אתה בן ${age} היום, וזה אומר שאתה עדיין משחק ולא פרשת כמו הגדולים!`,
+          ({ name, age }) => `${name}, ${age} שנה שאתה מחזיק שליטה – אולי השנה תלמד גם להרים קבוצה?`,
+          ({ name, age }) => `היי ${name}, בגיל ${age} כבר מגיעה לך קבוצה קבועה ו־ping יציב. יאללה תעשה סדר!`,
+          ({ name, age }) => `יום הולדת שמח ${name}! גיל ${age} זה בדיוק הזמן לפרוש… סתם, תישאר איתנו 🎉`,
+          ({ name, age }) => `וואו ${name}, ${age} שנה ואתה עדיין rage quit כל סיבוב? חוגגים אותך בכל זאת!`
+        ];
 
-const randomTTS = ttsMessages[Math.floor(Math.random() * ttsMessages.length)];
-const phrase = randomTTS({ name: member.displayName, age });
-
+        const phrase = ttsMessages[Math.floor(Math.random() * ttsMessages.length)]({ name: member.displayName, age });
         const buffer = await synthesizeElevenTTS(phrase, 'shimon');
+
         try {
           const connection = joinVoiceChannel({
             channelId: newState.channelId,
@@ -135,7 +131,6 @@ const phrase = randomTTS({ name: member.displayName, age });
 
           await entersState(player, AudioPlayerStatus.Idle, 15000);
           connection.destroy();
-
           client.off('voiceStateUpdate', listener);
           await logRef.set({ status: 'tts_played' }, { merge: true });
         } catch (err) {
@@ -148,7 +143,7 @@ const phrase = randomTTS({ name: member.displayName, age });
 
     // תזכורת אם לא עלה לקול עד 22:00
     setTimeout(async () => {
-      const voiceMember = guild.members.cache.get(userId);
+      const voiceMember = guild.members.cache.get(discordId);
       if (!voiceMember?.voice?.channel) {
         await channel.send(`${member} 🎤 יום הולדת ולא באת לשמוע את הברכה שלי?? יאללה תעלה!`);
       }
@@ -157,7 +152,7 @@ const phrase = randomTTS({ name: member.displayName, age });
 }
 
 function startBirthdayTracker(client) {
-  setInterval(() => checkBirthdays(client), 1000 * 60 * 30); // כל 30 דקות
+  setInterval(() => checkBirthdays(client), 1000 * 60 * 30);
 }
 
 module.exports = { startBirthdayTracker };

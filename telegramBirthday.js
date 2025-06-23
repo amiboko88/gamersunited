@@ -22,19 +22,65 @@ async function getUserBirthday(userId) {
 }
 
 async function saveBirthday(user, bday) {
-  const doc = {
+  const fullName = user.first_name || user.username || "חבר";
+  const sourceId = `telegram:${user.id}`;
+  const snapshot = await db.collection("birthdays").get();
+
+  let matchedDoc = null;
+
+  snapshot.forEach(doc => {
+    const data = doc.data();
+    const bd = data.birthday;
+    const linked = data.linkedAccounts || [];
+
+    // התאמה לפי שם ותאריך
+    if (
+      data.fullName === fullName &&
+      bd?.day === bday.day &&
+      bd?.month === bday.month &&
+      bd?.year === bday.year
+    ) {
+      matchedDoc = doc;
+    }
+
+    // או שכבר מקושר
+    if (linked.includes(sourceId)) {
+      matchedDoc = doc;
+    }
+  });
+
+  const newData = {
     birthday: {
       day: bday.day,
       month: bday.month,
       year: bday.year,
       age: bday.age
     },
-    fullName: user.first_name || "חבר",
+    fullName,
     addedBy: "telegram",
     createdAt: Date.now()
   };
-  await db.collection("birthdays").doc(user.id.toString()).set(doc, { merge: true });
+
+  if (matchedDoc) {
+    const existing = matchedDoc.data();
+    const updatedLinks = new Set(existing.linkedAccounts || []);
+    updatedLinks.add(sourceId);
+
+    await matchedDoc.ref.update({
+      ...newData,
+      linkedAccounts: Array.from(updatedLinks)
+    });
+    console.log(`🎯 עודכן קיים: ${matchedDoc.id}`);
+  } else {
+    // חדש לגמרי
+    await db.collection("birthdays").doc(user.id.toString()).set({
+      ...newData,
+      linkedAccounts: [sourceId]
+    });
+    console.log(`🎉 נוצר חדש: ${user.id}`);
+  }
 }
+
 
 async function deleteBirthday(userId) {
   await db.collection("birthdays").doc(userId.toString()).delete();
@@ -125,7 +171,7 @@ module.exports = function registerBirthdayHandler(bot) {
   // הזנת תאריך/ביטול/ניהול
   bot.on("message:text", async (ctx) => {
     const userId = ctx.from.id;
-   if (!WAITING_USERS.has(userId)) return await next(); // זה ההבדל הקריטי
+   if (!WAITING_USERS.has(userId)) return;
     
     const mode = WAITING_USERS.get(userId);
     const input = ctx.message.text.trim();

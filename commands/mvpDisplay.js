@@ -135,8 +135,15 @@ async function execute(interaction, client) {
     const fillWidth = Math.min(BAR_WIDTH, Math.round((percent / 100) * BAR_WIDTH));
     ctx.fillStyle = '#334155';
     ctx.fillRect(barX, barY, BAR_WIDTH, BAR_HEIGHT);
-    ctx.fillStyle = '#10b981';
-    ctx.fillRect(barX, barY, fillWidth, BAR_HEIGHT);
+    // גרדיאנט ירוק חי עם אפקט עומק
+const grad = ctx.createLinearGradient(barX, barY, barX + fillWidth, barY);
+grad.addColorStop(0.0, '#34d399');     // ירוק רענן
+grad.addColorStop(0.6, '#10b981');     // ירוק עמוק
+grad.addColorStop(1.0, '#6ee7b7');     // קצה בהיר (אשליית תנועה)
+
+ctx.fillStyle = grad;
+ctx.fillRect(barX, barY, fillWidth, BAR_HEIGHT);
+
 
     const percentText = `${percent}%`;
     const textW = ctx.measureText(percentText).width;

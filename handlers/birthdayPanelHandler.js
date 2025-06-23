@@ -44,37 +44,45 @@ module.exports = async function handleBirthdayPanel(interaction) {
     return interaction.reply({ embeds: [embed] });
   }
 
-  // 🔮 הצגת היום הולדת הבא
+// 🔮 הצגת היום הולדת הבא עם קנבס
   if (customId === 'bday_next') {
-    const snapshot = await db.collection(BIRTHDAY_COLLECTION).get();
-    if (snapshot.empty) {
-      return interaction.reply({ content: '😢 אין ימי הולדת בכלל.' });
-    }
-
-    const today = new Date();
-    const nowDay = today.getDate();
-    const nowMonth = today.getMonth() + 1;
-
-    const upcoming = snapshot.docs
-      .map(doc => {
-        const { birthday, fullName } = doc.data();
-        const { day, month, year, age } = birthday;
-        const date = new Date(today.getFullYear(), month - 1, day);
-        if (month < nowMonth || (month === nowMonth && day < nowDay)) {
-          date.setFullYear(today.getFullYear() + 1);
-        }
-        return { fullName, date, age };
-      })
-      .sort((a, b) => a.date - b.date)[0];
-
-    const embed = new EmbedBuilder()
-      .setColor('Gold')
-      .setTitle('🔮 יום ההולדת הבא!')
-      .setDescription(`🎉 הקרוב ביותר לחגוג הוא **${upcoming.fullName}** ב־${upcoming.date.toLocaleDateString('he-IL')}\n🎂 גיל: **${upcoming.age}**`)
-      .setFooter({ text: 'שמעון תמיד זוכר 🎈' });
-
-    return interaction.reply({ embeds: [embed] });
+  const snapshot = await db.collection(BIRTHDAY_COLLECTION).get();
+  if (snapshot.empty) {
+    return interaction.reply({ content: '😢 אין ימי הולדת בכלל.' });
   }
+
+  const today = new Date();
+  const nowDay = today.getDate();
+  const nowMonth = today.getMonth() + 1;
+
+  const upcoming = snapshot.docs
+    .map(doc => {
+      const { birthday, fullName } = doc.data();
+      const { day, month, year } = birthday;
+      const date = new Date(today.getFullYear(), month - 1, day);
+      if (month < nowMonth || (month === nowMonth && day < nowDay)) {
+        date.setFullYear(today.getFullYear() + 1);
+      }
+      return { fullName, day, month, year, date, userId: doc.id };
+    })
+    .sort((a, b) => a.date - b.date)[0];
+
+  const user = await interaction.guild.members.fetch(upcoming.userId).then(m => m.user).catch(() => null);
+  const profileUrl = user?.displayAvatarURL({ format: 'png', size: 128 }) || 'https://cdn.discordapp.com/embed/avatars/0.png';
+
+  const generateBirthdayCard = require('../utils/generateBirthdayCard');
+  const buffer = await generateBirthdayCard({
+    fullName: upcoming.fullName,
+    birthdate: `${upcoming.day}.${upcoming.month}.${upcoming.year}`,
+    profileUrl
+  });
+
+  await interaction.reply({
+    content: '🎉 הקרוב ביותר לחגוג:',
+    files: [{ attachment: buffer, name: 'birthday_banner.png' }]
+  });
+  }
+
 
   // ➕ פתיחת מודל הוספת יום הולדת
   if (customId === 'bday_add') {
@@ -218,12 +226,53 @@ if (customId === 'bday_remind_missing') {
 
     const { day, month, year, age } = parsed;
 
-    await db.collection(BIRTHDAY_COLLECTION).doc(userId).set({
-      birthday: { day, month, year, age },
-      fullName: interaction.member.displayName,
-      addedBy: userId,
-      createdAt: new Date().toISOString()
-    });
+    const sourceId = `discord:${userId}`;
+const fullName = interaction.member.displayName;
+
+let matchedDoc = null;
+const snapshot = await db.collection(BIRTHDAY_COLLECTION).get();
+
+snapshot.forEach(doc => {
+  const data = doc.data();
+  const bd = data.birthday;
+  const linked = data.linkedAccounts || [];
+
+  if (
+    data.fullName === fullName &&
+    bd?.day === day &&
+    bd?.month === month &&
+    bd?.year === year
+  ) {
+    matchedDoc = doc;
+  }
+
+  if (linked.includes(sourceId)) {
+    matchedDoc = doc;
+  }
+});
+
+const newData = {
+  birthday: { day, month, year, age },
+  fullName,
+  addedBy: sourceId,
+  createdAt: new Date().toISOString()
+};
+
+if (matchedDoc) {
+  const existing = matchedDoc.data();
+  const updatedLinks = new Set(existing.linkedAccounts || []);
+  updatedLinks.add(sourceId);
+  await matchedDoc.ref.update({
+    ...newData,
+    linkedAccounts: Array.from(updatedLinks)
+  });
+} else {
+  await db.collection(BIRTHDAY_COLLECTION).doc(userId).set({
+    ...newData,
+    linkedAccounts: [sourceId]
+  });
+}
+
 
     const embed = new EmbedBuilder()
       .setColor('Green')

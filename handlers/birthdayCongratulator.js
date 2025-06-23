@@ -3,12 +3,11 @@ const path = require('path');
 const db = require('../utils/firebase');
 const { log } = require('../utils/logger');
 
-// ✅ ערוץ ייעודי
-const TARGET_CHANNEL_ID = '583575179880431616'; // נקבע קבוע לפי בקשתך
+const TARGET_CHANNEL_ID = '583575179880431616'; // הערוץ הקבוע
 
-function isJustAfterMidnight() {
+function isNineAM() {
   const now = new Date();
-  return now.getHours() === 0 && now.getMinutes() <= 5;
+  return now.getHours() === 9 && now.getMinutes() <= 5;
 }
 
 function getTodaysBirthdays(snapshot) {
@@ -16,18 +15,25 @@ function getTodaysBirthdays(snapshot) {
   const day = today.getDate();
   const month = today.getMonth() + 1;
 
+  const seenDiscordIds = new Set(); // כדי להימנע מכפילויות
+
   return snapshot.docs
     .map(doc => {
       const data = doc.data();
-      const { birthday, fullName } = data;
+      const { birthday, fullName, linkedAccounts = [] } = data;
+
       if (!birthday) return null;
 
       const { day: bDay, month: bMonth, year } = birthday;
-      if (bDay === day && bMonth === month) {
-        const age = today.getFullYear() - year;
-        return { fullName, age };
-      }
-      return null;
+      if (bDay !== day || bMonth !== month) return null;
+
+      const discordId = linkedAccounts.find(id => id.startsWith('discord:'));
+      if (!discordId || seenDiscordIds.has(discordId)) return null;
+
+      seenDiscordIds.add(discordId);
+
+      const age = today.getFullYear() - year;
+      return { fullName, age, discordId: discordId.split(':')[1] };
     })
     .filter(Boolean);
 }
@@ -43,6 +49,9 @@ async function sendBirthdayMessage(client) {
   if (todayBirthdays.length === 0) return;
 
   for (const person of todayBirthdays) {
+    const member = await guild.members.fetch(person.discordId).catch(() => null);
+    if (!member) continue;
+
     const embed = new EmbedBuilder()
       .setTitle(`🎉 מזל טוב ל־${person.fullName}!`)
       .setDescription(`🎂 חוגג/ת היום **${person.age}** שנים!\n\nאיחולים חמים מקהילת **Gamers United IL** 🎈`)
@@ -63,10 +72,10 @@ async function sendBirthdayMessage(client) {
 
 function startBirthdayCongratulator(client) {
   setInterval(() => {
-    if (isJustAfterMidnight()) {
+    if (isNineAM()) {
       sendBirthdayMessage(client).catch(console.error);
     }
-  }, 1000 * 60 * 5); // כל 5 דקות
+  }, 1000 * 60 * 5); // בדיקה כל 5 דקות
 }
 
 module.exports = { startBirthdayCongratulator };

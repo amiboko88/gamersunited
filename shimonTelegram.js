@@ -15,7 +15,7 @@ const WAITING_USERS = new Map(); // userId -> מצב הזנה
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
 
 registerCommands(bot, WAITING_USERS); // 🟢 מעביר את המפה
-registerBirthdayHandler(bot);         // 🟢 מאפשר תמיכה בכפתורים
+registerBirthdayHandler(bot, WAITING_USERS);         // 🟢 מאפשר תמיכה בכפתורים
 handleTop(bot);                       // 🟢 טבלת רמות
 
 // 📌 דיאלוג בין משתתפים

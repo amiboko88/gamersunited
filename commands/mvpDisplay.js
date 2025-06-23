@@ -113,7 +113,12 @@ async function execute(interaction, client) {
     } catch {}
 
     const textStart = PADDING + AVATAR_SIZE + 20;
-    drawText(username, textStart, y + 26, '28px DejaVuSans');
+    ctx.font = '28px DejaVuSans';
+ctx.fillStyle = '#ffffff';
+ctx.textAlign = 'left'; // ✅ מיישר שמות לשמאל — קבוע!
+ctx.fillText(username, textStart, y + 26);
+ctx.textAlign = 'right'; // מחזיר לרגיל
+
     drawText(`${minutes} דקות`, textStart, y + 54, '22px DejaVuSans');
 
     if (i === 0) {

@@ -26,6 +26,8 @@ const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
 const { startLeaderboardUpdater } = require('./handlers/leaderboardUpdater');
 
 // 🧑‍🤝‍🧑 Replay ופיפו
+const { handleFifoButtons } = require('./handlers/fifoButtonHandler');
+
 const { startGroupTracking } = require('./handlers/groupTracker');
 const {
   registerReplayVote,
@@ -223,13 +225,12 @@ client.on('messageCreate', async message => {
   await smartChat(message);
 });
 
-
 client.on('interactionCreate', async interaction => {
   if (interaction.isAutocomplete()) return songAutocomplete(interaction);
 
   // 🆘 כפתורי עזרה
   if (
-    (interaction.isButton() && interaction.customId && interaction.customId.startsWith('help_')) ||
+    (interaction.isButton() && interaction.customId?.startsWith('help_')) ||
     (interaction.type === 5 && interaction.customId === 'help_ai_modal')
   ) {
     if (await helpHandleButton(interaction)) return;
@@ -250,6 +251,12 @@ client.on('interactionCreate', async interaction => {
   // 🔘 כפתורים אחרים
   if (interaction.isButton()) {
     const id = interaction.customId;
+
+    // 🎮 כפתורי FIFO (פיפו)
+    if (id.startsWith('replay_') || id.startsWith('reset_all_') || id === 'repartition_now') {
+      const { handleFifoButtons } = require('./handlers/fifoButtonHandler');
+      return handleFifoButtons(interaction, client);
+    }
 
     const isMemberButton = [
       'send_dm_batch_list',
@@ -281,88 +288,6 @@ client.on('interactionCreate', async interaction => {
       return handleRSVP(interaction, client);
     }
 
-    if (id.startsWith('replay_')) {
-      const teamName = id.replace('replay_', '').replace('_', ' ');
-      const voteResult = registerReplayVote(teamName, interaction.user.id);
-
-      if (!voteResult) return interaction.reply({ content: '⚠️ שגיאה פנימית בריפליי.', ephemeral: true });
-
-      await interaction.reply({ content: '💬 ההצבעה שלך נרשמה.', ephemeral: true });
-
-      if (voteResult.allVoted) {
-        const opponentGroup = [...activeGroups.entries()].find(([name]) => name !== teamName);
-        if (opponentGroup) {
-          const [_, opponentData] = opponentGroup;
-          const voiceChannel = interaction.guild.channels.cache.get(opponentData.channelId);
-          if (voiceChannel) {
-            await playTTSInVoiceChannel(
-              voiceChannel,
-              `שחקני ${teamName} רוצים ריפליי. מה דעתכם ${opponentData.name}?`
-            );
-          }
-        }
-      }
-
-      if (hasReplayVotes(teamName) && hasBothTeamsVoted()) {
-        await executeReplayReset(interaction.guild, interaction.channel, teamName);
-      }
-
-      return;
-    }
-
-    if (id === 'repartition_now') {
-      const FIFO_CHANNEL_ID = '123456789012345678'; // עדכן לפי הצורך
-      const FIFO_CATEGORY_ID = process.env.FIFO_CATEGORY_ID;
-      const DEFAULT_GROUP_SIZE = 3;
-
-      const voiceChannel = interaction.guild.channels.cache.get(FIFO_CHANNEL_ID);
-      if (!voiceChannel?.isVoiceBased()) return;
-
-      const members = voiceChannel.members.filter(m => !m.user.bot);
-      if (members.size < 2) {
-        return await interaction.reply({ content: '⛔ אין מספיק שחקנים.', ephemeral: true });
-      }
-
-      await interaction.deferReply({ ephemeral: true });
-
-      const { groups, waiting, channels } = await createGroupsAndChannels({
-        interaction,
-        members: [...members.values()],
-        groupSize: DEFAULT_GROUP_SIZE,
-        categoryId: FIFO_CATEGORY_ID,
-        openChannels: true
-      });
-
-      const summaryEmbed = new EmbedBuilder()
-        .setTitle('📢 בוצעה חלוקה מחדש!')
-        .setColor(0x00ff88)
-        .setTimestamp();
-
-      groups.forEach((group, i) => {
-        const name = `TEAM ${String.fromCharCode(65 + i)}`;
-        summaryEmbed.addFields({
-          name,
-          value: group.map(m => m.displayName).join(', '),
-          inline: false
-        });
-
-        const ch = channels[i];
-        if (ch) startGroupTracking(ch, group.map(m => m.id), name);
-      });
-
-      if (waiting.length > 0) {
-        summaryEmbed.addFields({
-          name: '⏳ ממתינים',
-          value: waiting.map(m => m.displayName).join(', '),
-          inline: false
-        });
-      }
-
-      await interaction.editReply({ content: '✅ החלוקה מחדש בוצעה!', embeds: [summaryEmbed] });
-      resetReplayVotes();
-      return;
-    }
-
     return handleVerifyInteraction(interaction);
   }
 
@@ -387,6 +312,7 @@ client.on('interactionCreate', async interaction => {
     }
   }
 });
+
 
 // 🚀 הפעלת הבוט
 client.login(process.env.DISCORD_TOKEN);

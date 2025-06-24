@@ -26,7 +26,7 @@ module.exports = {
 
   async execute(interaction) {
     try {
-      resetReplayVotes(); // איפוס כללי
+      resetReplayVotes();
 
       const groupSize = interaction.options.getInteger('כמות');
       const validSizes = [2, 3, 4];
@@ -59,42 +59,74 @@ module.exports = {
         openChannels: true
       });
 
-      const summaryEmbed = new EmbedBuilder()
-        .setTitle('📢 החלוקה בוצעה!')
-        .setColor(0x00AEFF)
-        .setTimestamp();
-
-      const rows = [];
-
-      groups.forEach((group, i) => {
-        const icon = TEAM_COLORS[i] || '🎯';
-        const teamName = `TEAM ${String.fromCharCode(65 + i)}`;
-        const names = group.map(m => m.displayName).join(', ');
-
-        summaryEmbed.addFields({ name: `${icon} ${teamName}`, value: names, inline: false });
-
-        const button = new ButtonBuilder()
-          .setCustomId(`replay_${teamName.replace(' ', '_')}`)
-          .setLabel('🔄 ריפליי')
-          .setStyle(ButtonStyle.Secondary);
-
-        const row = new ActionRowBuilder().addComponents(button);
-        rows.push(row);
-      });
-
-      if (waiting.length > 0) {
-        summaryEmbed.addFields({
-          name: '⏳ ממתינים',
-          value: waiting.map(m => m.displayName).join(', '),
-          inline: false
-        });
-      }
-
       const publicChannel = await interaction.guild.channels.fetch(PUBLIC_CHANNEL_ID).catch(() => null);
       if (publicChannel?.isTextBased()) {
-        await publicChannel.send({ embeds: [summaryEmbed], components: rows });
-      }
+        for (let i = 0; i < groups.length; i++) {
+          const group = groups[i];
+          const teamName = `TEAM ${String.fromCharCode(65 + i)}`;
+          const names = group.map(m => m.displayName).join(', ');
+          const icon = TEAM_COLORS[i] || '🎯';
 
+          const embed = new EmbedBuilder()
+            .setTitle(`${icon} ${teamName}`)
+            .setDescription(`**שחקנים:**\n${names}`)
+            .setColor(0x00AEFF)
+            .setTimestamp();
+
+          const button = new ButtonBuilder()
+            .setCustomId(`replay_${teamName.replace(' ', '_')}`)
+            .setLabel('🔄 איפוס קבוצה')
+            .setStyle(ButtonStyle.Secondary);
+
+          const row = new ActionRowBuilder().addComponents(button);
+          await publicChannel.send({ embeds: [embed], components: [row] });
+
+          // 🧠 שלב מעקב קבוצתי
+          if (channels[i]) {
+            startGroupTracking(channels[i], group.map(m => m.id), teamName);
+
+            // 🎙️ שמעון נכנס – תסריט קול קבוצתי
+            try {
+              const { getOrCreateConnection, playAudio } = require('../handlers/voiceQueue');
+              const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs');
+              const connection = await getOrCreateConnection(channels[i]);
+
+              // מחכה שכולם ייכנסו
+              await new Promise(res => setTimeout(res, 5000));
+
+              // משתיק את כולם
+              for (const member of group) {
+                try {
+                  await member.voice.setMute(true, 'שמעון משתיק לפני ברכה');
+                } catch {}
+              }
+
+              // בונה ברכה
+              const intro = `שלום ל־${teamName}... שמעון איתכם.`;
+              const nameList = `נראה לי שפה יש לנו את: ${group.map(m => m.displayName).join(', ')}`;
+              const roast = 'טוב, עם ההרכב הזה אני לא מצפה לכלום. בהצלחה עם ריספawns 🎮';
+
+              const buffer = Buffer.concat([
+                await synthesizeElevenTTS(intro),
+                await synthesizeElevenTTS(nameList),
+                await synthesizeElevenTTS(roast)
+              ]);
+
+              await playAudio(connection, buffer, teamName);
+
+              // ממתין ואז מבצע UNMUTE
+              await new Promise(res => setTimeout(res, 5000));
+              for (const member of group) {
+                try {
+                  await member.voice.setMute(false, 'שמעון סיים');
+                } catch {}
+              }
+            } catch (err) {
+              console.error(`❌ שגיאה בברכת שמעון לקבוצה ${teamName}:`, err.message);
+            }
+          }
+        }
+      }
       const groupSummary = groups
         .map((group, i) => `**TEAM ${String.fromCharCode(65 + i)}**: ${group.map(m => m.displayName).join(', ')}`)
         .join('\n');
@@ -107,16 +139,23 @@ module.exports = {
         content: `✅ החלוקה בוצעה:\n${groupSummary}${waitingText}`
       });
 
-      groups.forEach((group, i) => {
-        const ch = channels[i];
-        if (ch) {
-          startGroupTracking(
-            ch,
-            group.map(m => m.id),
-            `TEAM ${String.fromCharCode(65 + i)}`
-          );
-        }
+      const resetButton = new ButtonBuilder()
+        .setCustomId(`reset_all_${interaction.user.id}`)
+        .setLabel('🚨 אפס הכל')
+        .setStyle(ButtonStyle.Danger);
+
+      const resetRow = new ActionRowBuilder().addComponents(resetButton);
+
+      const resetMsg = await publicChannel.send({
+        content: `📛 **רק <@${interaction.user.id}> יכול לאפס את כל הקבוצות.**\n⌛ הכפתור יוסר בעוד 5 דקות.`,
+        components: [resetRow]
       });
+
+      setTimeout(async () => {
+        try {
+          await resetMsg.delete().catch(() => {});
+        } catch {}
+      }, 5 * 60 * 1000);
 
       log(`📊 ${interaction.user.tag} הריץ /פיפו עם ${members.size} שחקנים (גודל קבוצה: ${groupSize})`);
     } catch (err) {

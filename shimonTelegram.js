@@ -134,10 +134,13 @@ bot.on("message", async (ctx) => {
   }
 
   // 🎮 XP ורמות
-  const levelUp = await updateXP(ctx.from);
-  if (levelUp) {
-    await ctx.reply(`🎉 <b>${ctx.from.first_name}</b> עלה לרמה <b>${levelUp}</b>!`, { parse_mode: "HTML" });
-  }
+  const levelUp = await updateXP({
+  id: ctx.from.id,
+  first_name: ctx.from.first_name,
+  username: ctx.from.username,
+  text // נשלח ידנית לטובת חישוב XP
+});
+
 
   // 🧱 fallback אקראי
   await ctx.reply(

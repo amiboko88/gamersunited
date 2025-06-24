@@ -32,7 +32,7 @@ async function updateXP(user) {
     createdAt: Date.now()
   };
 
-  data.xp += calculateXP(user.message?.text || "");
+  data.xp += calculateXP(user.text || "");
   const xpNeeded = data.level * 100;
 
   let leveledUp = false;
@@ -45,6 +45,7 @@ async function updateXP(user) {
   await ref.set(data, { merge: true });
   return leveledUp ? data.level : null;
 }
+
 
 // 🎮 תצוגת פרופיל אישי (XP)
 function getLevelBadge(level) {

@@ -3,16 +3,16 @@ const { createCanvas, loadImage, registerFont } = require('canvas');
 const fs = require('fs');
 const path = require('path');
 
-// טעינת פונט עברי תקני עם תמיכה מלאה
+// טעינת פונט עברי איכותי
 registerFont(path.join(__dirname, '../assets/DejaVuSans.ttf'), {
   family: 'DejaVuSans'
 });
 
-const GOAL_MINUTES = 200;
+const GOAL_MINUTES = 500;
 
 const data = new SlashCommandBuilder()
   .setName('מצטיין')
-  .setDescription('📈 טבלת התקדמות חיה למצטיין השבועי (גרפי)');
+  .setDescription('טבלת התקדמות למצטייני השבוע (גרפי, מיושר ונקי)');
 
 function getStartOfWeek() {
   const now = new Date();
@@ -53,17 +53,17 @@ async function execute(interaction, client) {
 
   if (active.length === 0) {
     return interaction.editReply({
-      content: '😴 אף אחד לא התחבר השבוע לערוץ קול... תתעוררו!'
+      content: 'אף אחד לא התחבר השבוע לערוץ קול.'
     });
   }
 
   const WIDTH = 1260;
-  const PADDING = 50;
+  const PADDING = 60;
   const ROW_HEIGHT = 130;
   const BAR_WIDTH = 500;
   const BAR_HEIGHT = 28;
   const AVATAR_SIZE = 64;
-  const HEIGHT = PADDING + ROW_HEIGHT * active.length + 140;
+  const HEIGHT = PADDING + ROW_HEIGHT * active.length + 120;
 
   const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx = canvas.getContext('2d');
@@ -72,20 +72,20 @@ async function execute(interaction, client) {
   ctx.fillStyle = '#0f172a';
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-  const startDateStr = formatDate(weekStart);
   const now = new Date();
+  const startDateStr = formatDate(weekStart);
   const endDateStr = formatDate(now);
 
-  // כותרת מודגשת
+  // כותרת
   ctx.font = 'bold 52px DejaVuSans';
   ctx.fillStyle = '#facc15';
   ctx.textAlign = 'right';
-  ctx.fillText('מצטיין השבוע (מראשון עד עכשיו)', WIDTH - PADDING, PADDING + 10);
+  ctx.fillText('מצטייני השבוע - פעילות קול', WIDTH - PADDING, PADDING);
 
-  // שורת תאריכים
+  // תאריך
   ctx.font = '24px DejaVuSans';
   ctx.fillStyle = '#94a3b8';
-  ctx.fillText(`🗓️ ${startDateStr} – ${endDateStr}`, WIDTH - PADDING, PADDING + 50);
+  ctx.fillText(`טווח: ${startDateStr} עד ${endDateStr}`, WIDTH - PADDING, PADDING + 40);
 
   const maxMinutes = active[0].minutes;
 
@@ -93,7 +93,7 @@ async function execute(interaction, client) {
     const { id, minutes } = active[i];
     const user = await client.users.fetch(id).catch(() => null);
     const username = user?.username || `משתמש (${id.slice(-4)})`;
-    const percent = Math.round((minutes / GOAL_MINUTES) * 100);
+    const percent = Math.min(100, Math.round((minutes / GOAL_MINUTES) * 100));
     const y = PADDING + 80 + i * ROW_HEIGHT;
 
     // אוואטר
@@ -109,86 +109,76 @@ async function execute(interaction, client) {
 
     const textStart = PADDING + AVATAR_SIZE + 20;
 
-    // ✔️ שם משתמש מיושר שמאלה בלבד
+    // שם מיושר שמאלה
     ctx.font = '28px DejaVuSans';
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'left';
     ctx.fillText(username, textStart, y + 26);
 
     // דקות
-    drawText(`${minutes} דקות`, textStart, y + 54, '22px DejaVuSans');
+    ctx.font = '22px DejaVuSans';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${minutes} דקות`, textStart, y + 54);
 
-    // מוביל או פער
-    if (i === 0) {
-      drawText('👑 מוביל השבוע', textStart + 200, y + 26, '20px DejaVuSans', '#facc15');
-    } else {
-      const gap = maxMinutes - minutes;
-      drawText(`📉 פער של ${gap} דקות מהמוביל`, textStart, y + 80, '20px DejaVuSans', '#94a3b8');
-    }
-
+    // יעד
     const remaining = Math.max(0, GOAL_MINUTES - minutes);
     if (remaining <= 0) {
-      drawText('✅ השגת את היעד השבועי!', textStart, y + 105, '18px DejaVuSans', '#4ade80');
+      ctx.fillStyle = '#4ade80';
+      ctx.font = '18px DejaVuSans';
+      ctx.fillText('הושג היעד השבועי!', textStart, y + 105);
     } else {
-      drawText(`🎯 נותרו ${remaining} דקות ליעד`, textStart, y + 105, '18px DejaVuSans', '#f87171');
+      ctx.fillStyle = '#f87171';
+      ctx.font = '18px DejaVuSans';
+      ctx.fillText(`נותרו ${remaining} דקות ליעד`, textStart, y + 105);
     }
 
-    // גרף התקדמות
+    // גרף
     const barX = WIDTH - PADDING - BAR_WIDTH;
     const barY = y + 30;
-    const minWidth = 30;
-    const fillWidth = Math.max(minWidth, Math.round((percent / 100) * BAR_WIDTH));
+    const fillWidth = Math.max(30, Math.round((percent / 100) * BAR_WIDTH));
 
+    // רקע בר
     ctx.fillStyle = '#334155';
     ctx.fillRect(barX, barY, BAR_WIDTH, BAR_HEIGHT);
 
-    // צבע שונה למי שעבר יעד
+    // מילוי
     const grad = ctx.createLinearGradient(barX, barY, barX + fillWidth, barY);
     if (minutes >= GOAL_MINUTES) {
       grad.addColorStop(0, '#facc15');
       grad.addColorStop(1, '#fbbf24');
     } else {
-      grad.addColorStop(0.0, '#34d399');
-      grad.addColorStop(0.6, '#10b981');
-      grad.addColorStop(1.0, '#6ee7b7');
+      grad.addColorStop(0, '#34d399');
+      grad.addColorStop(1, '#10b981');
     }
 
     ctx.fillStyle = grad;
     ctx.fillRect(barX, barY, fillWidth, BAR_HEIGHT);
 
-    // אחוזים
+    // אחוז
     const percentText = `${percent}%`;
     ctx.font = '20px DejaVuSans-Bold';
     const textW = ctx.measureText(percentText).width;
     const inside = fillWidth > textW + 30;
     const percentX = inside ? barX + fillWidth - textW - 10 : barX + fillWidth + 10;
-    const percentColor = inside ? '#ffffff' : (minutes >= GOAL_MINUTES ? '#facc15' : '#10b981');
-    ctx.fillStyle = percentColor;
+    ctx.fillStyle = inside ? '#ffffff' : '#10b981';
     ctx.fillText(percentText, percentX, barY + 21);
   }
 
   // תאריך עדכון
-  const updateStr = now.toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' });
-  drawText(`📅 עדכון אחרון: ${updateStr}`, PADDING, HEIGHT - 30, '20px DejaVuSans', '#64748b');
+  ctx.font = '20px DejaVuSans';
+  ctx.fillStyle = '#64748b';
+  ctx.textAlign = 'left';
+  ctx.fillText(`עודכן: ${now.toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}`, PADDING, HEIGHT - 30);
 
+  // שמירה ושליחה
   const outputPath = path.join(__dirname, '../temp/mvp_live.png');
   if (!fs.existsSync(path.dirname(outputPath))) fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, canvas.toBuffer('image/png'));
 
   await interaction.editReply({
-    content: `⬇️ MVP LIVE ⬇️\n(נמדד מהשבוע הנוכחי: ${startDateStr} - ${endDateStr})`,
+    content: `טבלת מצטיינים שבועית מ־${startDateStr} עד ${endDateStr}`,
     files: [outputPath]
   });
-
-  // reset textAlign
-  ctx.textAlign = 'right';
-
-  // helper
-  function drawText(text, x, y, font, color = '#ffffff') {
-    ctx.font = font;
-    ctx.fillStyle = color;
-    ctx.fillText(text, x, y);
-  }
 }
 
 module.exports = {

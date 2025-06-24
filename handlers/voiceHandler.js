@@ -1,5 +1,5 @@
-// 📁 voiceHandler.js
-const { processUserSmart } = require('./voiceQueue');
+// 📁 voiceHandler.js – גרסה משודרגת עם תגובת יציאה וקטגוריה נוספת
+const { processUserSmart, processUserExit } = require('./voiceQueue');
 const { updateVoiceActivity } = require('./mvpTracker');
 const {
   trackVoiceMinutes,
@@ -11,8 +11,18 @@ const db = require('../utils/firebase');
 
 const CHANNEL_ID = process.env.TTS_TEST_CHANNEL_ID;
 const FIFO_ROLE_NAME = 'FIFO';
+const EXTRA_CATEGORY_ID = '1138785781322887233'; // קטגוריית ערוצים נוספת
 
 const joinTimestamps = new Map();
+
+// 🧠 האם הערוץ נמצא ברשימת המעקב (FIFO או הקטגוריה)?
+function channelIdIsMonitored(channelId, guild) {
+  const chan = guild.channels.cache.get(channelId);
+  return (
+    channelId === CHANNEL_ID ||
+    (chan?.parentId && chan.parentId === EXTRA_CATEGORY_ID)
+  );
+}
 
 async function handleVoiceStateUpdate(oldState, newState) {
   const member = newState.member;
@@ -21,17 +31,15 @@ async function handleVoiceStateUpdate(oldState, newState) {
   const userId = member.id;
   const oldChannelId = oldState.channelId;
   const newChannelId = newState.channelId;
+  const guild = member.guild;
 
-  // 🔒 התעלמות ממעברים לערוץ AFK (לא נחשב פעילות אמיתית)
-  const afkChannelId = newState.guild.afkChannelId;
-  if (newChannelId === afkChannelId || oldChannelId === afkChannelId) return;
+  // התעלמות מ־AFK
+  if (newChannelId === guild.afkChannelId || oldChannelId === guild.afkChannelId) return;
 
   console.log(`🎧 voiceStateUpdate – ${member.user.tag} עבר מ־${oldChannelId} ל־${newChannelId}`);
 
-  const guild = member.guild;
+  // ניהול תפקיד FIFO
   const fifoRole = guild.roles.cache.find(r => r.name === FIFO_ROLE_NAME);
-
-  // 🎖️ ניהול תפקיד FIFO
   if (fifoRole) {
     try {
       if (newChannelId === CHANNEL_ID && !member.roles.cache.has(fifoRole.id)) {
@@ -46,8 +54,6 @@ async function handleVoiceStateUpdate(oldState, newState) {
       console.error('⚠️ שגיאה בטיפול בתפקיד FIFO:', err.message);
     }
   }
-
-  // ✅ רישום זמן כניסה – רק אם נכנס לאיזשהו ערוץ קול
   const joined = !oldChannelId && newChannelId;
   const left = oldChannelId && !newChannelId;
 
@@ -57,20 +63,14 @@ async function handleVoiceStateUpdate(oldState, newState) {
     await db.collection('voiceEntries').doc(userId).set({ joinedAt: timestamp });
   }
 
-  // ✅ רישום זמן יציאה – גם אם לא היה בזיכרון (נשלוף מ־DB)
   if (left) {
     const now = Date.now();
     let joinedAt = joinTimestamps.get(userId);
-
     if (!joinedAt) {
       const doc = await db.collection('voiceEntries').doc(userId).get();
       joinedAt = doc.exists ? doc.data().joinedAt : null;
     }
-
-    if (!joinedAt) {
-      console.warn(`⚠️ לא נמצא זמן כניסה בזיכרון או DB עבור ${member.user.tag} – מניח 1 דקה`);
-      joinedAt = now - 60000;
-    }
+    if (!joinedAt) joinedAt = now - 60000;
 
     const durationMs = now - joinedAt;
     const durationMinutes = Math.max(1, Math.round(durationMs / 1000 / 60));
@@ -81,30 +81,26 @@ async function handleVoiceStateUpdate(oldState, newState) {
       await trackJoinCount(userId);
       await trackJoinDuration(userId, durationMinutes);
       await trackActiveHour(userId);
-
-      // ✅ תיעוד ל־voiceTime עבור גרף מצטיין
-      await db.collection('voiceTime').add({
-        userId,
-        minutes: durationMinutes,
-        date: new Date()
-      });
-
+      await db.collection('voiceTime').add({ userId, minutes: durationMinutes, date: new Date() });
       await db.collection('memberTracking').doc(userId).set({
         lastActivity: new Date().toISOString(),
         activityWeight: 2
       }, { merge: true });
 
-      console.log(`📈 ${member.user.tag} עודכן במערכת – ${durationMinutes} דקות`);
-    } else {
-      console.log(`⚠️ ${member.user.tag} – משך לא תקין (חושב ${durationMinutes} דקות, ${durationMs}ms)`);
+      console.log(`📈 ${member.user.tag} עודכן – ${durationMinutes} דקות`);
     }
 
     joinTimestamps.delete(userId);
     await db.collection('voiceEntries').doc(userId).delete().catch(() => {});
+
+    // 🗣️ תגובה ליציאה מערוץ קול אם זה ערוץ במעקב
+    if (channelIdIsMonitored(oldChannelId, guild)) {
+      await processUserExit(member, oldState.channel);
+    }
   }
 
-  // 📥 טיפול חכם כשנכנס לערוץ FIFO
-  if (newChannelId === CHANNEL_ID && oldChannelId !== newChannelId) {
+  // 🎙️ תגובה לכניסה לערוץ קול בפיקוח (FIFO או הקטגוריה)
+  if (newChannelId && channelIdIsMonitored(newChannelId, guild)) {
     const channel = newState.channel;
     if (channel) {
       await processUserSmart(member, channel);

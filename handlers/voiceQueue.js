@@ -1,4 +1,4 @@
-// 📁 voiceQueue.js – גרסה סופית: חיבור קול, TTS, והכל בצורה מבצעית
+// 📁 voiceQueue.js – גרסה סופית עם ping, volume, podcast ועוד
 const {
   joinVoiceChannel,
   createAudioPlayer,
@@ -7,6 +7,8 @@ const {
   AudioPlayerStatus
 } = require('@discordjs/voice');
 const { Readable } = require('stream');
+const path = require('path');
+const fs = require('fs');
 const {
   getShortTTSByProfile,
   getPodcastAudioEleven,
@@ -14,9 +16,9 @@ const {
 } = require('../tts/ttsEngine.elevenlabs');
 
 const CONNECTION_IDLE_TIMEOUT = 60000;
-const MULTI_JOIN_WINDOW = 6000;
+const MULTI_JOIN_WINDOW = 12000;
 const TTS_TIMEOUT = 5000;
-const GROUP_MIN = 3;
+const GROUP_MIN = 2;
 
 const activeQueue = new Map();
 const connectionLocks = new Set();
@@ -56,19 +58,33 @@ setInterval(() => {
     }
   }
 }, 20000);
-
 async function playAudio(connection, audioBuffer, displayName) {
-  const stream = Readable.from(audioBuffer);
-  const resource = createAudioResource(stream);
   const player = createAudioPlayer();
   connection.subscribe(player);
-  player.play(resource);
+
+  // 🔔 ניגון קובץ פתיחה (xbox ping)
   try {
-    console.log(`🔊 ${displayName} – מתחיל השמעה...`);
+    const pingPath = path.join(__dirname, '../assets/xbox.mp3');
+    if (fs.existsSync(pingPath)) {
+      const pingResource = createAudioResource(pingPath);
+      player.play(pingResource);
+      await entersState(player, AudioPlayerStatus.Idle, 3000);
+    }
+  } catch (e) {
+    console.warn(`⚠️ שגיאה בניגון ping: ${e.message}`);
+  }
+
+  // 🗣️ השמעת תוכן שמעון עם הגברה
+  try {
+    const stream = Readable.from(audioBuffer);
+    const ttsResource = createAudioResource(stream, { inlineVolume: true });
+    ttsResource.volume.setVolume(1.5);
+    player.play(ttsResource);
     await entersState(player, AudioPlayerStatus.Idle, 15000);
   } catch (err) {
-    console.error(`⛔ שגיאה בזמן השמעה:`, err.message);
+    console.error(`⛔ שגיאה בהשמעת שמעון: ${err.message}`);
   }
+
   player.stop();
 }
 
@@ -96,7 +112,7 @@ async function processUserSmart(member, channel) {
     try {
       const allowed = await Promise.all(userIds.map(id => canUserUseTTS(id)));
       if (allowed.includes(false)) {
-        console.warn('🚫 למשתמשים אין הרשאה ל־TTS');
+        console.warn('🚫 משתמשים לא מורשים ל־TTS');
         continue;
       }
 
@@ -107,7 +123,7 @@ async function processUserSmart(member, channel) {
       const connection = await getOrCreateConnection(channel);
       await playAudio(connection, buffer, displayNames.join(', '));
     } catch (err) {
-      console.error('❌ שגיאה כללית בתהליך:', err.message);
+      console.error('❌ שגיאה בתהליך השמעה:', err.message);
     }
 
     await wait(TTS_TIMEOUT);
@@ -116,10 +132,23 @@ async function processUserSmart(member, channel) {
   connectionLocks.delete(key);
 }
 
+async function processUserExit(member, channel) {
+  try {
+    const name = member.displayName;
+    const exitLine = `${name} ברח כמו עכבר מהקרב.`;
+    const buffer = await getShortTTSByProfile({ ...member, displayName: exitLine });
+    const connection = await getOrCreateConnection(channel);
+    await playAudio(connection, buffer, name);
+  } catch (err) {
+    console.error(`🎭 שגיאה בתגובה ליציאה: ${err.message}`);
+  }
+}
+
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 module.exports = {
-  processUserSmart
+  processUserSmart,
+  processUserExit
 };

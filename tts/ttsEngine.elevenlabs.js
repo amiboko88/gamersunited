@@ -19,7 +19,12 @@ function getVoiceId(speaker = 'shimon') {
 
 async function synthesizeElevenTTS(text, speaker = 'shimon') {
   const voice = getVoiceId(speaker);
-  const cleanText = text.trim().replace(/\s+/g, ' ').replace(/\.{3,}/g, '...');
+  const cleanText = text
+  .trim()
+  .replace(/\s+/g, ' ')
+  .replace(/\.{3,}/g, '...')
+  .replace(/[^\u0590-\u05FF\s\.\,\!\?]/g, '');
+
 
   log(`🎙️ OpenAI TTS (${speaker}) – ${cleanText.length} תווים`);
 

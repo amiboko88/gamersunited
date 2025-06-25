@@ -3,6 +3,8 @@ const { sendXPTextBar } = require("./telegramLevelSystem");
 const db = require("./utils/firebase");
 const lastStartCommand = new Map(); // userId -> timestamp
 const { generateRoastText } = require("./generateRoastText");
+const { OpenAI } = require("openai");
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 module.exports = function registerTelegramCommands(bot, WAITING_USERS) {
   const nameOf = (ctx) => ctx.from?.first_name || "חבר";

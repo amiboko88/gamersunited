@@ -1,6 +1,6 @@
 const db = require("./utils/firebase");
 
-// בר גרפי של XP
+// 🧪 בר גרפי של XP
 async function sendXPTextBar(ctx, userName, currentXP, level, nextLevelXP) {
   const percent = Math.min((currentXP / nextLevelXP) * 100, 100);
   const barLength = 10;
@@ -8,10 +8,10 @@ async function sendXPTextBar(ctx, userName, currentXP, level, nextLevelXP) {
   const filledCount = Math.round((percent / 100) * barLength);
   const emptyCount = barLength - filledCount;
 
-const progressBar = "🟦".repeat(filledCount) + "⬜".repeat(emptyCount);
+  const progressBar = "🟦".repeat(filledCount) + "⬜".repeat(emptyCount);
   const xpLeft = Math.max(nextLevelXP - currentXP, 0);
 
-  const message = 
+  const message =
 `✨ <b>${userName} התקדם ב־XP!</b>
 
 🧬 <b>רמה:</b> ${level}
@@ -26,6 +26,7 @@ async function updateXP({ id, first_name, username, text }, ctx = null) {
   try {
     const userId = id.toString();
     const name = first_name || "חבר";
+    const cleanText = text.replace(/\s+/g, ""); // מסיר רווחים
 
     const userRef = db.collection("levels").doc(userId);
     const doc = await userRef.get();
@@ -33,7 +34,7 @@ async function updateXP({ id, first_name, username, text }, ctx = null) {
     let xp = doc.exists ? doc.data().xp || 0 : 0;
     let level = doc.exists ? doc.data().level || 1 : 1;
 
-    const gain = Math.floor(text.length / 8); // נוסחה דינמית לצבירת XP
+    const gain = Math.floor(cleanText.length / 3); // שיפור נוסחת XP
     if (gain === 0) return { addedXp: 0 };
 
     xp += gain;
@@ -46,7 +47,18 @@ async function updateXP({ id, first_name, username, text }, ctx = null) {
       leveledUp = level;
     }
 
-    await userRef.set({ xp, level, username, fullName: name }, { merge: true });
+    const newUser = !doc.exists;
+
+    await userRef.set({
+      xp,
+      level,
+      username,
+      fullName: name,
+      ...(newUser && { createdAt: Date.now() })
+    }, { merge: true });
+
+    if (newUser) console.log("🆕 משתמש חדש הוסף ל־levels:", userId, name);
+    else console.log("📈 XP עודכן:", userId, `+${gain} XP`);
 
     if (ctx) {
       await sendXPTextBar(ctx, name, xp, level, level * 25);
@@ -59,7 +71,7 @@ async function updateXP({ id, first_name, username, text }, ctx = null) {
   }
 }
 
-// טבלת מובילים (אופציונלי)
+// 🏆 טבלת מובילים
 function handleTop(bot) {
   bot.command("topxp", async (ctx) => {
     const usersSnap = await db.collection("levels")
@@ -71,13 +83,14 @@ function handleTop(bot) {
 
     const list = usersSnap.docs.map((doc, i) => {
       const d = doc.data();
-      return `${i + 1}. <b>${d.first_name || "אנונימי"}</b> – רמה ${d.level} (${d.xp} XP)`;
+      return `${i + 1}. <b>${d.fullName || d.username || "אנונימי"}</b> – רמה ${d.level} (${d.xp} XP)`;
     }).join("\n");
 
     await ctx.reply(`🏆 <b>טבלת מצטייני XP</b>\n\n${list}`, { parse_mode: "HTML" });
   });
 }
 
+// 📈 כפתור טופ בפרופיל
 function registerTopButton(bot) {
   bot.callbackQuery("profile_top", async (ctx) => {
     const usersSnap = await db.collection("levels")
@@ -89,8 +102,7 @@ function registerTopButton(bot) {
 
     const list = usersSnap.docs.map((doc, i) => {
       const d = doc.data();
-      return `${i + 1}. <b>${d.fullName || "אנונימי"}</b> – רמה ${d.level} (${d.xp} XP)`;
-
+      return `${i + 1}. <b>${d.fullName || d.username || "אנונימי"}</b> – רמה ${d.level} (${d.xp} XP)`;
     }).join("\n");
 
     await ctx.reply(`📈 <b>טבלת מצטיינים</b>\n\n${list}`, { parse_mode: "HTML" });
@@ -102,5 +114,5 @@ module.exports = {
   updateXP,
   handleTop,
   registerTopButton,
-  sendXPTextBar 
+  sendXPTextBar
 };

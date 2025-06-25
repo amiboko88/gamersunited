@@ -231,34 +231,34 @@ bot.callbackQuery("demo_roast", async (ctx) => {
   }
 });
 
-
-  // 🎧 קול של שמעון (הדגמה טקסטואלית לעכשיו)
+// 🎧 קול של שמעון – עם הגנה מלאה
 const { generateRoastVoice } = require("./telegramTTSRoaster");
 const runningVoiceUsers = new Set();
 
 bot.callbackQuery("demo_voice", async (ctx) => {
   const userId = ctx.from.id;
 
+  // ✅ מניעת לחיצה כפולה
   if (runningVoiceUsers.has(userId)) {
-    return ctx.answerCallbackQuery({ text: "⏳ כבר פועל... חכה רגע", show_alert: false }).catch(() => {});
+    return ctx.answerCallbackQuery({
+      text: "⏳ כבר מופעל... חכה שההקלטה תגיע 🎤",
+      show_alert: false
+    }).catch(() => {});
   }
 
   runningVoiceUsers.add(userId);
 
-  // ✅ עונה מראש כדי למנוע שגיאת Timeout של Telegram
-  await ctx.answerCallbackQuery({ text: "🎧 מופעל...", show_alert: false }).catch(() => {});
+  // ✅ תגובה מיידית למניעת timeout
+  await ctx.answerCallbackQuery({ text: "🎧 מתחילים...", show_alert: false }).catch(() => {});
 
   try {
-    await ctx.reply("🎧 מחולל ירידה בקול מופעל... תכף זה מגיע 🔊");
+    await ctx.reply("🔊 שמעון מתחמם... מחולל קול מופעל 🎤");
     await generateRoastVoice(ctx);
   } catch (err) {
     console.error("🎤 שגיאה במחולל קול:", err);
-    await ctx.reply("😵 משהו נדפק ביצירת הקול. נסה שוב מאוחר יותר.");
+    await ctx.reply("😵 שמעון שתק הפעם. נסה שוב מאוחר יותר.");
   } finally {
-    runningVoiceUsers.delete(userId);
+    runningVoiceUsers.delete(userId); // שחרור ללחיצה הבאה
   }
 });
-
-
-
 };

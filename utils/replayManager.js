@@ -1,5 +1,5 @@
 // 📁 utils/replayManager.js – ניהול חכם של הצבעות Replay עם מעקב שחקנים
-
+const activeGroups = new Map();
 const replayVotes = new Map();
 /*
   מבנה:
@@ -85,9 +85,11 @@ function resetReplayVotes() {
 }
 
 module.exports = {
+  
   registerTeam,
   registerReplayVote,
   hasReplayVotes,
   getAllReplayStates,
-  resetReplayVotes
+  resetReplayVotes,
+  activeGroups
 };

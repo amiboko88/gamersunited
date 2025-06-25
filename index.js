@@ -8,9 +8,6 @@ const { Client, GatewayIntentBits } = require('discord.js');
 // 🔗 בסיס נתונים ועזרי מערכת
 const { registerSlashCommands } = require('./utils/commandsLoader');
 const db = require('./utils/firebase');
-const { playTTSInVoiceChannel } = require('./utils/ttsQuickPlay');
-const { executeReplayReset } = require('./utils/repartitionUtils');
-const { createGroupsAndChannels } = require('./utils/squadBuilder');
 
 // 🧠 ניתוח / סטטיסטיקות / XP
 const { generateWeeklyReport } = require('./utils/weeklyInactivityReport');
@@ -28,15 +25,6 @@ const { startLeaderboardUpdater } = require('./handlers/leaderboardUpdater');
 // 🧑‍🤝‍🧑 Replay ופיפו
 const { handleFifoButtons } = require('./handlers/fifoButtonHandler');
 
-const { startGroupTracking } = require('./handlers/groupTracker');
-const {
-  registerReplayVote,
-  resetReplayVotes,
-  hasReplayVotes,
-  hasBothTeamsVoted,
-  activeGroups
-} = require('./utils/replayManager');
-
 // 👥 אימות, אנטי-ספאם ודיבור חכם
 const { startFifoWarzoneAnnouncer } = require('./handlers/fifoWarzoneAnnouncer');
 const { setupVerificationMessage, startDmTracking, handleInteraction: handleVerifyInteraction } = require('./handlers/verificationButton');
@@ -44,6 +32,7 @@ const { handleSpam } = require('./handlers/antispam');
 const smartChat = require('./handlers/smartChat');
 
 // 👤 נוכחות וזיהוי
+const { scanForConsoleAndVerify } = require('./handlers/verificationButton');
 const { trackGamePresence, hardSyncPresenceOnReady, startPresenceLoop } = require('./handlers/presenceTracker');
 const { startPresenceRotation } = require('./handlers/presenceRotator');
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
@@ -149,7 +138,11 @@ client.on('guildMemberAdd', async member => {
   } catch (err) {
     console.warn(`⚠️ לא ניתן לשלוח DM ל־${member.user.tag}: ${err.message}`);
   }
+
+  // ← כאן תכניס את שורת הסריקה:
+  setTimeout(() => scanForConsoleAndVerify(member), 30000); // סריקה אחרי 30 שניות
 });
+
 
 client.on('guildMemberRemove', async member => {
   await db.collection('memberTracking').doc(member.id).set({
@@ -254,7 +247,7 @@ client.on('interactionCreate', async interaction => {
 
     // 🎮 כפתורי FIFO (פיפו)
     if (id.startsWith('replay_') || id.startsWith('reset_all_') || id === 'repartition_now') {
-      const { handleFifoButtons } = require('./handlers/fifoButtonHandler');
+      
       return handleFifoButtons(interaction, client);
     }
 

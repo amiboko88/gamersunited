@@ -1,99 +1,81 @@
 const { createCanvas, loadImage } = require('canvas');
+const path = require('path');
 
-const AVATAR_SIZE = 72;
 const WIDTH = 1000;
 const HEIGHT = 562;
+const AVATAR_SIZE = 100;
+const MAX_PLAYERS = 5;
 
 /**
- * יוצר באנר עוצמתי ב־1000x562 עם עיצוב גיימרי
- * @param {Collection<string, GuildMember>} players - שחקנים מחוברים
- * @returns {Promise<Buffer>} קובץ תמונה (webp) מוכן לדיסקורד
+ * @param {Collection<string, GuildMember>} players
+ * @returns {Promise<Buffer>}
  */
 async function generateProBanner(players) {
   const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx = canvas.getContext('2d');
 
-  const playerArray = [...players.values()].slice(0, 7);
-  if (playerArray.length === 0) {
-    console.warn('⚠️ אין שחקנים להצגה בבאנר — דילוג על יצירה');
-    throw new Error('❌ אין מספיק שחקנים להצגת באנר');
-  }
+  // טען רקע ולוגו
+  const background = await loadImage(path.join(__dirname, '../assets/war_bg.jpg'));
+  const logo = await loadImage(path.join(__dirname, '../assets/onlyg.png'));
 
-  console.log(`🖼️ יצירת באנר ל־${playerArray.length} שחקנים...`);
-
-  // רקע כהה
-  ctx.fillStyle = '#181a1b';
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  ctx.drawImage(background, 0, 0, WIDTH, HEIGHT);
 
   // כותרת
+  ctx.font = 'bold 48px Arial';
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 36px "Arial"';
-  ctx.fillText('🎮 FIFO SQUAD מחוברים עכשיו', 40, 60);
+  ctx.textAlign = 'center';
+  ctx.fillText('תצטרפו למלחמה!', WIDTH / 2, 60);
 
-  let y = 110;
-  let renderedCount = 0;
+  ctx.font = 'bold 52px Arial';
+  ctx.fillStyle = '#00ffff';
+  ctx.fillText('FIFO ROTATION', WIDTH / 2, 120);
 
-  for (const member of playerArray) {
+  // אוואטרים
+  const displayed = [...players.values()].slice(0, MAX_PLAYERS);
+  const spacing = WIDTH / (displayed.length + 1);
+  let x = spacing;
+
+  for (const member of displayed) {
     try {
-      const avatarURL = member.user.displayAvatarURL({
-        extension: 'png',
-        size: 128,
-        forceStatic: true
-      });
+      const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 128, forceStatic: true });
+      const avatar = await loadImage(avatarURL);
+      const y = 160;
 
-      const avatarImage = await loadImage(avatarURL);
-      const x = 50;
-
-      // אוואטר עגול
+      // עיגול
       ctx.save();
       ctx.beginPath();
       ctx.arc(x + AVATAR_SIZE / 2, y + AVATAR_SIZE / 2, AVATAR_SIZE / 2, 0, Math.PI * 2, true);
       ctx.closePath();
       ctx.clip();
-      ctx.drawImage(avatarImage, x, y, AVATAR_SIZE, AVATAR_SIZE);
+      ctx.drawImage(avatar, x, y, AVATAR_SIZE, AVATAR_SIZE);
       ctx.restore();
 
       // מסגרת
       ctx.strokeStyle = 'cyan';
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 4;
       ctx.beginPath();
       ctx.arc(x + AVATAR_SIZE / 2, y + AVATAR_SIZE / 2, AVATAR_SIZE / 2, 0, Math.PI * 2, true);
       ctx.stroke();
 
-      // שם
-      const displayName = member.displayName.length > 16
-        ? member.displayName.slice(0, 15) + '…'
-        : member.displayName;
-
-      ctx.font = '24px "Arial"';
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(displayName, x + AVATAR_SIZE + 20, y + AVATAR_SIZE / 1.5);
-
-      y += AVATAR_SIZE + 24;
-      renderedCount++;
-
-      console.log(`✅ ${member.displayName} נוסף לבאנר`);
+      x += spacing;
     } catch (err) {
-      console.warn(`⚠️ ${member.displayName}: שגיאה בטעינת אוואטר - ${err.message}`);
+      console.warn(`⚠️ שגיאה בטעינת אוואטר של ${member.displayName}: ${err.message}`);
     }
   }
 
-  if (renderedCount === 0) {
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '28px "Arial"';
-    ctx.fillText('לא נמצאו שחקנים להצגה 🥲', 50, HEIGHT / 2);
-    console.log('⚠️ כל טעינות האוואטר נכשלו — נשלח באנר ריק');
-  }
+  // לוגו בפינה
+  ctx.drawImage(logo, 30, HEIGHT - 110, 80, 80);
 
-  // חתימה תחתונה
-  ctx.fillStyle = '#888';
-  ctx.font = '18px "Arial"';
-  ctx.fillText('GAMERS UNITED IL | FIFO ACTIVE', WIDTH - 250, HEIGHT - 30);
+  // כפתור מדומה (ויזואלית בלבד)
+  ctx.fillStyle = 'black';
+  ctx.fillRect(WIDTH - 280, HEIGHT - 80, 220, 50);
+  ctx.font = '28px Arial';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('לחץ עליי', WIDTH - 170, HEIGHT - 45);
 
   const buffer = canvas.toBuffer('image/webp');
-
   if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
-    throw new Error('❌ יצירת buffer נכשלה — התמונה ריקה');
+    throw new Error('❌ יצירת buffer נכשלה');
   }
 
   return buffer;

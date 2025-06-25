@@ -1,9 +1,12 @@
-const { EmbedBuilder, ChannelType, AttachmentBuilder } = require('discord.js');
+const { EmbedBuilder, ChannelType, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const db = require('../utils/firebase');
 const schedule = require('node-schedule');
 const { generateProBanner } = require('./mediaGenerator');
 
-const TARGET_CHANNEL_ID = '1372283521447497759';
+const TARGET_CHANNEL_ID = '1372283521447497759'; // עדכן ל-ID של ערוץ הטקסט
+const VOICE_CHANNEL_ID = '1231453923387379783'; // עדכן ל-ID של הערוץ הקולי
+const GUILD_ID = '583574396686434304';         // עדכן ל-ID של השרת שלך
+
 const KEYWORDS = ['warzone', 'call of duty', 'black ops', 'mw3', 'mw2'];
 
 function isPlayingWarzone(presence) {
@@ -26,7 +29,7 @@ async function deletePreviousMessage(channel) {
       if (msg) await msg.delete().catch(() => {});
     }
   } catch (err) {
-    console.warn('⚠️ שגיאה במחיקת הודעת WARZONE קודמת:', err.message);
+    console.warn('⚠️ שגיאה במחיקת הודעה קודמת:', err.message);
   }
 }
 
@@ -34,30 +37,11 @@ async function saveLastMessageId(messageId) {
   await db.collection('fifoWarzoneAnnouncer').doc('latestMessage').set({ messageId });
 }
 
-const dynamicMessages = [
-  "🎯 הצוות כבר בפנים — ואתם עדיין מתלבטים? הגיע הזמן להצטרף.",
-  "🎮 WARZONE בשיאו. החברים בערוץ, ואתם? רק לחיצה ואתם שם.",
-  "🔊 כולם מדברים כבר בפנים. תראו נוכחות.",
-  "🧠 FIFO לא מחכה — מתחברים או מתייבשים בצד?",
-  "🔥 הערוץ פתוח. הקרב התחיל. תהיו חלק מזה.",
-  "🚀 עכשיו זה הרגע. כל מי שמחובר — כבר שומעים אותו.",
-  "💥 אתם במשחק, אבל לא בשיחה. מה הקטע?",
-  "🏆 מי שבערוץ — כבר עושה עבודה. תתייצבו.",
-  "📡 WARZONE בלי Voice זה כמו תימני בלי מנגל. תתחברו.",
-  "💣 FIFO פעיל. תשלים את הצוות, תפסיק להיעלם."
-];
-
-function getRandomMessage() {
-  return dynamicMessages[Math.floor(Math.random() * dynamicMessages.length)];
-}
-
 async function sendWarzoneEmbed(client) {
   const now = new Date();
-  const day = now.getDay(); // 5 = שישי
+  if (now.getDay() === 5) return;
 
-  if (day === 5) return;
-
-  const guild = client.guilds.cache.first();
+  const guild = client.guilds.cache.get(GUILD_ID);
   if (!guild) return;
 
   await guild.members.fetch({ withPresences: true });
@@ -72,56 +56,49 @@ async function sendWarzoneEmbed(client) {
 
     if (!presence || !isPlayingWarzone(presence)) continue;
 
-    if (voice) {
-      connected.push(member);
-    } else {
-      missing.push(member);
-    }
+    if (voice) connected.push(member);
+    else missing.push(member);
   }
 
   if (connected.length === 0) {
-    console.log('ℹ️ אין אף שחקן מחובר שפעיל ב־Warzone');
+    console.log('ℹ️ אין שחקנים פעילים כרגע');
     return;
   }
 
-  const firstGame = getGameName(connected[0]?.presence);
-  const description = `${getRandomMessage()}\n🎲 המשחק הפעיל: **${firstGame}**`;
-
   let file = null;
   try {
-    const imageBuffer = await generateProBanner(connected);
-    if (imageBuffer && imageBuffer instanceof Buffer && imageBuffer.length > 0) {
-      file = new AttachmentBuilder(imageBuffer, { name: 'probanner.webp' });
-    } else {
-      console.warn('⚠️ buffer ריק — נשלח embed בלי באנר');
-    }
+    const buffer = await generateProBanner(connected);
+    file = new AttachmentBuilder(buffer, { name: 'rotation.webp' });
   } catch (err) {
-    console.warn(`⚠️ שגיאה ביצירת באנר: ${err.message}`);
+    console.warn(`⚠️ בעיה ביצירת באנר: ${err.message}`);
   }
 
   const embed = new EmbedBuilder()
     .setColor('#2F3136')
     .setTitle('🎮 FIFO SQUAD כבר מחוברים!')
-    .setDescription(description)
+    .setDescription(`🎲 המשחק הפעיל: **${getGameName(connected[0]?.presence)}**`)
     .setFooter({ text: `שחקנים בערוץ: ${connected.length}` })
     .setTimestamp();
 
-  if (file) embed.setImage('attachment://probanner.webp');
+  if (file) embed.setImage('attachment://rotation.webp');
+
+  const joinButton = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setLabel('🎧 לחץ עליי להצטרף')
+      .setStyle(ButtonStyle.Link)
+      .setURL(`https://discord.com/channels/${GUILD_ID}/${VOICE_CHANNEL_ID}`)
+  );
 
   const channel = await client.channels.fetch(TARGET_CHANNEL_ID);
-  if (!channel || channel.type !== ChannelType.GuildText) {
-    console.warn('⚠️ ערוץ יעד לא תקין או לא טקסטואלי');
-    return;
-  }
+  if (!channel || channel.type !== ChannelType.GuildText) return;
 
   await deletePreviousMessage(channel);
 
   const message = await channel.send({
-    content: missing.length > 0
-      ? `🧟 ${missing.map(m => `<@${m.id}>`).join(' ')}`
-      : null,
+    content: missing.length > 0 ? `🧟 ${missing.map(m => `<@${m.id}>`).join(' ')}` : null,
     embeds: [embed],
-    files: file ? [file] : []
+    files: file ? [file] : [],
+    components: [joinButton]
   });
 
   await saveLastMessageId(message.id);

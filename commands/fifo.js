@@ -10,7 +10,10 @@ const {
 const { createGroupsAndChannels } = require('../utils/squadBuilder');
 const { log } = require('../utils/logger');
 const { startGroupTracking } = require('../handlers/groupTracker');
-const { resetReplayVotes } = require('../utils/replayManager');
+const { resetReplayVotes, registerTeam } = require('../utils/replayManager');
+const { playTTSInVoiceChannel } = require('../utils/ttsQuickPlay');
+const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs');
+const { deletePreviousFifoMessages, setFifoMessages } = require('../utils/fifoMemory');
 
 const TEAM_COLORS = ['🟦', '🟥', '🟩', '🟨', '🟪', '⬛'];
 const PUBLIC_CHANNEL_ID = '1372283521447497759';
@@ -27,6 +30,8 @@ module.exports = {
   async execute(interaction) {
     try {
       resetReplayVotes();
+      await deletePreviousFifoMessages(interaction.guild.id);
+      const fifoMessages = [];
 
       const groupSize = interaction.options.getInteger('כמות');
       const validSizes = [2, 3, 4];
@@ -79,29 +84,20 @@ module.exports = {
             .setStyle(ButtonStyle.Secondary);
 
           const row = new ActionRowBuilder().addComponents(button);
-          await publicChannel.send({ embeds: [embed], components: [row] });
+          const msg = await publicChannel.send({ embeds: [embed], components: [row] });
+          fifoMessages.push(msg);
 
-          // 🧠 שלב מעקב קבוצתי
           if (channels[i]) {
-            startGroupTracking(channels[i], group.map(m => m.id), teamName);
+            const userIds = group.map(m => m.id);
+            startGroupTracking(channels[i], userIds, teamName);
+            registerTeam(teamName, userIds);
 
-            // 🎙️ שמעון נכנס – תסריט קול קבוצתי
             try {
-              const { getOrCreateConnection, playAudio } = require('../handlers/voiceQueue');
-              const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs');
-              const connection = await getOrCreateConnection(channels[i]);
-
-              // מחכה שכולם ייכנסו
               await new Promise(res => setTimeout(res, 5000));
-
-              // משתיק את כולם
               for (const member of group) {
-                try {
-                  await member.voice.setMute(true, 'שמעון משתיק לפני ברכה');
-                } catch {}
+                try { await member.voice.setMute(true, 'שמעון משתיק'); } catch {}
               }
 
-              // בונה ברכה
               const intro = `שלום ל־${teamName}... שמעון איתכם.`;
               const nameList = `נראה לי שפה יש לנו את: ${group.map(m => m.displayName).join(', ')}`;
               const roast = 'טוב, עם ההרכב הזה אני לא מצפה לכלום. בהצלחה עם ריספawns 🎮';
@@ -112,14 +108,11 @@ module.exports = {
                 await synthesizeElevenTTS(roast)
               ]);
 
-              await playAudio(connection, buffer, teamName);
+              await playTTSInVoiceChannel(channels[i], buffer);
 
-              // ממתין ואז מבצע UNMUTE
               await new Promise(res => setTimeout(res, 5000));
               for (const member of group) {
-                try {
-                  await member.voice.setMute(false, 'שמעון סיים');
-                } catch {}
+                try { await member.voice.setMute(false, 'שמעון סיים'); } catch {}
               }
             } catch (err) {
               console.error(`❌ שגיאה בברכת שמעון לקבוצה ${teamName}:`, err.message);
@@ -127,6 +120,7 @@ module.exports = {
           }
         }
       }
+
       const groupSummary = groups
         .map((group, i) => `**TEAM ${String.fromCharCode(65 + i)}**: ${group.map(m => m.displayName).join(', ')}`)
         .join('\n');
@@ -151,10 +145,16 @@ module.exports = {
         components: [resetRow]
       });
 
+      fifoMessages.push(resetMsg);
+      setFifoMessages(interaction.guild.id, fifoMessages);
+
       setTimeout(async () => {
         try {
-          await resetMsg.delete().catch(() => {});
-        } catch {}
+          await resetMsg.delete();
+          console.log('🗑️ הודעת האיפוס הכללי נמחקה.');
+        } catch (err) {
+          console.warn('⚠️ לא ניתן היה למחוק את הודעת האיפוס:', err.message);
+        }
       }, 5 * 60 * 1000);
 
       log(`📊 ${interaction.user.tag} הריץ /פיפו עם ${members.size} שחקנים (גודל קבוצה: ${groupSize})`);

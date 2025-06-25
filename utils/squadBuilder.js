@@ -41,7 +41,7 @@ async function createGroupsAndChannels({ interaction, members, groupSize, catego
     const squad = squads[i];
     const baseName = `TEAM ${String.fromCharCode(65 + i)}`;
     const displayNames = squad.map(m => m.displayName).join(', ');
-    let name = `${baseName} | ${displayNames}`;
+    let name = baseName; // 🔒 שמות פשוטים בלבד
 
     // חיתוך אם ארוך מדי (מקסימום 100 תווים)
     if (name.length > 100) {

@@ -5,7 +5,6 @@ const {
   registerReplayVote,
   hasReplayVotes,
   hasBothTeamsVoted,
-  activeGroups,
   resetReplayVotes
 } = require('../utils/replayManager');
 const { playTTSInVoiceChannel } = require('../utils/ttsQuickPlay');
@@ -13,7 +12,7 @@ const { createGroupsAndChannels } = require('../utils/squadBuilder');
 const { startGroupTracking } = require('./groupTracker');
 const { log } = require('../utils/logger');
 
-const FIFO_CHANNEL_ID = '1231453923387379783'; // 🔄 עדכן לפי ערוץ הפיפו
+const FIFO_CHANNEL_ID = '1231453923387379783'; // 🔁 עדכן לפי ערוץ הפיפו שלך
 const FIFO_CATEGORY_ID = process.env.FIFO_CATEGORY_ID;
 const DEFAULT_GROUP_SIZE = 3;
 
@@ -31,18 +30,25 @@ async function handleFifoButtons(interaction, client) {
       return interaction.reply({ content: '⚠️ שגיאה פנימית בריפליי.', ephemeral: true });
     }
 
-    await interaction.reply({ content: '💬 ההצבעה שלך נרשמה.', ephemeral: true });
+    await interaction.reply({
+      content: `💬 ההצבעה שלך נרשמה. (${voteResult.voted}/${voteResult.total})`,
+      ephemeral: true
+    });
 
     if (voteResult.allVoted) {
       log(`🗳️ כל חברי ${teamName} הצביעו לריפליי.`);
-      const opponentGroup = [...activeGroups.entries()].find(([name]) => name !== teamName);
-      if (opponentGroup) {
-        const [_, opponentData] = opponentGroup;
-        const voiceChannel = interaction.guild.channels.cache.get(opponentData.channelId);
+
+      const allTeams = require('../utils/replayManager').getAllReplayStates();
+      const otherTeam = allTeams.find(t => t.teamName !== teamName);
+
+      if (otherTeam) {
+        const voiceChannel = interaction.guild.channels.cache.find(ch =>
+          ch.name.includes(otherTeam.teamName.replace('TEAM ', 'TEAM '))
+        );
         if (voiceChannel) {
           await playTTSInVoiceChannel(
             voiceChannel,
-            `שחקני ${teamName} רוצים ריפליי. מה דעתכם ${opponentData.name}?`
+            `שחקני ${teamName} רוצים ריפליי. מה דעתכם ${otherTeam.teamName}?`
           );
         }
       }
@@ -55,7 +61,6 @@ async function handleFifoButtons(interaction, client) {
 
     return;
   }
-
   // 🛑 איפוס כללי – רק ליוזם
   if (id.startsWith('reset_all_')) {
     const initiatorId = id.replace('reset_all_', '');
@@ -76,6 +81,7 @@ async function handleFifoButtons(interaction, client) {
   // ♻️ חלוקה מחדש
   if (id === 'repartition_now') {
     log(`🔄 ${interaction.user.tag} לחץ על חלוקה מחדש`);
+
     const voiceChannel = interaction.guild.channels.cache.get(FIFO_CHANNEL_ID);
     if (!voiceChannel?.isVoiceBased()) {
       return await interaction.reply({ content: '⛔ ערוץ הפיפו אינו זמין כרגע.', ephemeral: true });

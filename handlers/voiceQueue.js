@@ -62,31 +62,33 @@ async function playAudio(connection, audioBuffer, displayName) {
   const player = createAudioPlayer();
   connection.subscribe(player);
 
-  // 🔔 ניגון קובץ פתיחה (xbox ping)
   try {
     const pingPath = path.join(__dirname, '../assets/xbox.mp3');
-    if (fs.existsSync(pingPath)) {
-      const pingResource = createAudioResource(pingPath);
-      player.play(pingResource);
-      await entersState(player, AudioPlayerStatus.Idle, 3000);
-    }
-  } catch (e) {
-    console.warn(`⚠️ שגיאה בניגון ping: ${e.message}`);
-  }
+    const pingResource = fs.existsSync(pingPath)
+      ? createAudioResource(pingPath)
+      : null;
 
-  // 🗣️ השמעת תוכן שמעון עם הגברה
-  try {
-    const stream = Readable.from(audioBuffer);
-    const ttsResource = createAudioResource(stream, { inlineVolume: true });
+    const ttsResource = createAudioResource(Readable.from(audioBuffer), { inlineVolume: true });
     ttsResource.volume.setVolume(1.5);
-    player.play(ttsResource);
-    await entersState(player, AudioPlayerStatus.Idle, 15000);
-  } catch (err) {
-    console.error(`⛔ שגיאה בהשמעת שמעון: ${err.message}`);
-  }
 
-  player.stop();
+    const playSequence = [];
+
+    if (pingResource) playSequence.push(pingResource);
+    playSequence.push(ttsResource);
+
+    for (const resource of playSequence) {
+      player.play(resource);
+      await entersState(player, AudioPlayerStatus.Playing, 2000);
+      await entersState(player, AudioPlayerStatus.Idle, 20000);
+    }
+
+    player.stop();
+  } catch (e) {
+    console.error(`⛔ שגיאה בהשמעה: ${e.message}`);
+    player.stop();
+  }
 }
+
 
 async function processUserSmart(member, channel) {
   const key = `${channel.guild.id}-${channel.id}`;
@@ -149,6 +151,7 @@ function wait(ms) {
 }
 
 module.exports = {
-  processUserSmart,
-  processUserExit
+  getOrCreateConnection,
+  playAudio,
+  processUserSmart
 };

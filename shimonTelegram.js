@@ -5,8 +5,6 @@ const { analyzeTextForRoast } = require("./roastTelegram");
 const db = require("./utils/firebase");
 const registerCommands = require("./telegramCommands");
 const { registerBirthdayHandler, validateBirthday, saveBirthday } = require("./telegramBirthday");
-const { handleCurses } = require("./telegramCurses");
-const { handleTrigger } = require("./telegramTriggers");
 const { updateXP, handleTop, registerTopButton } = require("./telegramLevelSystem");
 const handleSmartReply = require("./shimonSmart");
 const { sendBirthdayMessages } = require("./birthdayNotifierTelegram");
@@ -96,14 +94,6 @@ bot.on("message", async (ctx) => {
   if (roast) {
     return await ctx.reply(roast, { parse_mode: "HTML" });
   }
-
-  // ☣️ קללות, טריגרים, תגובות חכמות
-  const cursed = await handleCurses(ctx, text.toLowerCase());
-  if (cursed) return;
-
-  const triggerResult = handleTrigger(ctx);
-  if (triggerResult.triggered) return;
-
   const smart = await handleSmartReply(ctx, triggerResult);
   if (smart) return;
 

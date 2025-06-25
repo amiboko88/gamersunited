@@ -1,5 +1,5 @@
-const { getUserLevelCanvas } = require("./telegramLevelSystem");
 const { getUpcomingBirthdaysText } = require("./telegramBirthday");
+const { sendXPTextBar } = require("./telegramLevelSystem");
 const db = require("./utils/firebase");
 
 // פונקציה לירידה חיה מ-GPT
@@ -77,18 +77,26 @@ module.exports = function registerTelegramCommands(bot, WAITING_USERS) {
   });
 
   // 🧬 פרופיל XP
-  bot.callbackQuery("profile_xp", async (ctx) => {
-    const result = await getUserLevelCanvas(bot, ctx.from.id);
-    if (!result) return ctx.reply("😕 אין נתונים עדיין. כתוב קצת בצ'אט כדי להתקדם.");
+bot.callbackQuery("profile_xp", async (ctx) => {
+  const userId = ctx.from.id.toString();
+  const userRef = db.collection("telegramUsers").doc(userId);
+  const doc = await userRef.get();
 
-    const { text, photo } = result;
-    if (photo) {
-      await ctx.replyWithPhoto(photo, { caption: text, parse_mode: "HTML" });
-    } else {
-      await ctx.reply(text, { parse_mode: "HTML" });
-    }
-    await ctx.answerCallbackQuery();
-  });
+  if (!doc.exists || !doc.data()?.xp) {
+    await ctx.reply("😕 אין נתונים עדיין. תכתוב קצת בצ'אט כדי להתקדם.");
+  } else {
+    const data = doc.data();
+    const xp = data.xp || 0;
+    const level = data.level || 1;
+    const name = ctx.from.first_name || "חבר";
+
+    const nextXP = level * 25;
+    await sendXPTextBar(ctx, name, xp, level, nextXP); // ✨ הבר הגרפי המוכר
+  }
+
+  await ctx.answerCallbackQuery();
+});
+
 
   // MVP מדיסקורד
   bot.callbackQuery("profile_mvp", async (ctx) => {

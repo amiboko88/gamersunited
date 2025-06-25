@@ -100,5 +100,6 @@ function registerTopButton(bot) {
 module.exports = {
   updateXP,
   handleTop,
-  registerTopButton
+  registerTopButton,
+  sendXPTextBar 
 };

@@ -30,6 +30,7 @@ const activeDialog = {
 const lastMessagesMap = new Map();
 const spamCountMap = new Map();
 const lastReplyTimestamps = new Map();
+const blockedUsers = new Map();         // userId -> ms עד מתי חסום
 
 // 📌 fallback אקראי
 const fallbackReplies = [
@@ -44,14 +45,25 @@ const fallbackReplies = [
 async function shouldBlockUserWithGPT(ctx) {
   const userId = ctx.from.id;
   const now = Date.now();
-  const last = lastReplyTimestamps.get(userId) || 0;
+  const text = ctx.message.text?.trim();
+  if (!text || text.length < 2) return false;
 
+  const blockUntil = blockedUsers.get(userId);
+  if (blockUntil && now < blockUntil) {
+    // עדיין חסום, שמעון לא מגיב בכלל
+    return true;
+  }
+
+  const last = lastReplyTimestamps.get(userId) || 0;
   if (now - last < 10000) {
-    const name = ctx.from.first_name || "משתמש";
+    // ספאם → שליחת עקיצה + חסימה לדקה
+    blockedUsers.set(userId, now + 60_000); // חסום לדקה
+
+    const name = ctx.from.first_name || "חבר";
 
     const prompt = `
-מישהו בשם ${name} שלח הודעה נוספת פחות מ־10 שניות אחרי הקודמת.
-תגיב אליו כמו שמעון – חד, בוטה, סרקסטי, ולא מסבירני. משפט אחד בלבד.
+המשתמש ${name} שולח הודעות בתדירות גבוהה מדי (פחות מ־10 שניות בין הודעות).
+תגיב אליו בסגנון שמעון – חכם, בוטה, חד, אבל בלי לקלל. שורה אחת בלבד שתחנוק אותו.
 `;
 
     try {
@@ -71,9 +83,12 @@ async function shouldBlockUserWithGPT(ctx) {
     return true;
   }
 
+  // אין ספאם → לעדכן זמן ולשחרר
   lastReplyTimestamps.set(userId, now);
   return false;
 }
+
+
 // 🎂 פקודת birthday ידנית
 bot.command("birthday", async (ctx) => {
   WAITING_USERS.set(ctx.from.id, "add");

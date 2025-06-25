@@ -94,7 +94,7 @@ bot.on("message", async (ctx) => {
   if (roast) {
     return await ctx.reply(roast, { parse_mode: "HTML" });
   }
-  const smart = await handleSmartReply(ctx, triggerResult);
+  const smart = await handleSmartReply(ctx);
   if (smart) return;
 
   // 🤝 שיחה בין שניים ומעלה

@@ -97,14 +97,6 @@ bot.on("message", async (ctx) => {
     await ctx.reply(`👀 נראה שאתה מדבר על ${mention}`, { parse_mode: "HTML" });
   }
 
-// 🧠 🔥 בדיקת Roast לפי כינויים
-  const roast = await analyzeTextForRoast(text);
-  if (roast) {
-    return await ctx.reply(roast, { parse_mode: "HTML" });
-  }
-
-
-
   // ☣️ קללות, טריגרים, תגובות חכמות
   const cursed = await handleCurses(ctx, text.toLowerCase());
   if (cursed) return;

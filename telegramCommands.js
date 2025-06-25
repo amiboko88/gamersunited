@@ -206,8 +206,14 @@ bot.callbackQuery("demo_tags", async (ctx) => {
 
 
   // 🔥 ירידה חיה
+let demoRoastInProgress = new Set(); // userId כדי למנוע לחיצות כפולות
+
 bot.callbackQuery("demo_roast", async (ctx) => {
-  await ctx.answerCallbackQuery(); // עונה מיידית כדי לא ליפול
+  const userId = ctx.from.id;
+  if (demoRoastInProgress.has(userId)) return; // חוסם לחיצות כפולות
+
+  demoRoastInProgress.add(userId);
+  await ctx.answerCallbackQuery().catch(() => {}); // עונה מיידית ומונע קריסה
 
   const name = ctx.from.first_name || "חבר";
   await ctx.reply("🔥 ירידה מתבשלת... תכף תקבל צלייה 🔪");
@@ -218,19 +224,41 @@ bot.callbackQuery("demo_roast", async (ctx) => {
       parse_mode: "HTML"
     });
   } catch (err) {
-    console.error("❌ שגיאה ב־generateRoast:", err);
-    await ctx.reply("😵 משהו נדפק עם הירידה. נסה שוב מאוחר יותר.");
+    console.error("❌ שגיאה בירידה:", err);
+    await ctx.reply("😵 משהו נדפק עם ה־GPT. נסה שוב תכף.");
+  } finally {
+    demoRoastInProgress.delete(userId); // משחרר את היכולת ללחוץ שוב
   }
 });
 
 
   // 🎧 קול של שמעון (הדגמה טקסטואלית לעכשיו)
 const { generateRoastVoice } = require("./telegramTTSRoaster");
+const runningVoiceUsers = new Set();
 
 bot.callbackQuery("demo_voice", async (ctx) => {
-  await ctx.answerCallbackQuery();
-  await ctx.reply("🎧 מחולל ירידה בקול מופעל... תכף זה מגיע 🔊");
-  await generateRoastVoice(ctx);
+  const userId = ctx.from.id;
+
+  if (runningVoiceUsers.has(userId)) {
+    return ctx.answerCallbackQuery({ text: "⏳ כבר פועל... חכה רגע", show_alert: false }).catch(() => {});
+  }
+
+  runningVoiceUsers.add(userId);
+
+  // ✅ עונה מראש כדי למנוע שגיאת Timeout של Telegram
+  await ctx.answerCallbackQuery({ text: "🎧 מופעל...", show_alert: false }).catch(() => {});
+
+  try {
+    await ctx.reply("🎧 מחולל ירידה בקול מופעל... תכף זה מגיע 🔊");
+    await generateRoastVoice(ctx);
+  } catch (err) {
+    console.error("🎤 שגיאה במחולל קול:", err);
+    await ctx.reply("😵 משהו נדפק ביצירת הקול. נסה שוב מאוחר יותר.");
+  } finally {
+    runningVoiceUsers.delete(userId);
+  }
 });
+
+
 
 };

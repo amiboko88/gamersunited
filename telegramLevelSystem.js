@@ -46,7 +46,7 @@ async function updateXP({ id, first_name, username, text }, ctx = null) {
       leveledUp = level;
     }
 
-    await userRef.set({ xp, level, username }, { merge: true });
+    await userRef.set({ xp, level, username, fullName: name }, { merge: true });
 
     if (ctx) {
       await sendXPTextBar(ctx, name, xp, level, level * 25);
@@ -89,7 +89,8 @@ function registerTopButton(bot) {
 
     const list = usersSnap.docs.map((doc, i) => {
       const d = doc.data();
-      return `${i + 1}. <b>${d.first_name || "?"}</b> – רמה ${d.level} (${d.xp} XP)`;
+      return `${i + 1}. <b>${d.fullName || "אנונימי"}</b> – רמה ${d.level} (${d.xp} XP)`;
+
     }).join("\n");
 
     await ctx.reply(`📈 <b>טבלת מצטיינים</b>\n\n${list}`, { parse_mode: "HTML" });

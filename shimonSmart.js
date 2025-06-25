@@ -1,4 +1,4 @@
-// 📁 shimonSmart.js – גרסה משודרגת עם GPT-4o לכל קטגוריה
+// 📁 shimonSmart.js – גרסה חכמה עם קטגוריות, חסימות ושימוש ב־createPrompt
 
 const { OpenAI } = require("openai");
 const db = require("./utils/firebase");
@@ -52,7 +52,7 @@ const questionWords = [
   "what", "why", "how", "who", "when", "where", "can", "should", "could", "is it", "do you", "would you", "may I"
 ];
 
-const triggerWords = ["שמעון", "בוט", "bot", "שימי", "שמשון", "shim"];
+const triggerWords = ["שמעון", "שימי", "bot", "שמשון", "shim"];
 
 function isOffensive(text) {
   return offensiveWords.some(w => text.toLowerCase().includes(w));
@@ -81,74 +81,95 @@ function isSticker(ctx) {
 function isPhoto(ctx) {
   return !!ctx.message?.photo;
 }
-
 function createPrompt(text, name) {
   if (isOffensive(text)) {
-    return `משתמש בשם ${name} קילל: "${text}"\nתן תגובה עוקצנית, גסה, חדה, ישראלית ומביכה ברמה שתשתיק אותו.`;
-  }
-  if (isNice(text)) {
-    return `משתמש בשם ${name} היה נחמד: "${text}"\nתן מחמאה קצרה, ישירה, עם חיוך חצי ציני אבל מפרגן.`;
-  }
-  if (isQuestion(text)) {
-    return `משתמש בשם ${name} שואל: "${text}"\nתן תשובה בוטה, ישירה, עם טון סמכותי ואפס סבלנות.`;
-  }
-  if (isTrigger(text)) {
-    return `מישהו פנה אליך בשם: "${text}"\nתן תגובה בגובה העיניים, בגסות עדינה עם קריצה.`;
-  }
-  if (isLink(text)) {
-    return `מישהו שלח לינק: "${text}"\nתן תגובה צינית ומוגזמת על ההרגל לשלוח קישורים בלי הסבר.`;
-  }
+  return `משתמש בשם ${name} שלח הודעה בוטה: "${text}"
 
-  return `מישהו כתב: "${text}"\nתן תגובה ישראלית, גברית, לא מתייפייפת, בסגנון חד וקצר.`;
+אתה שמעון – בוט חצוף בלי גבולות.
+אל תתאפק: תחזיר לו קללה מטורפת, ירידה משפילה ומצחיקה, כאילו מדובר בבדיחה על חשבון המשפחה שלו.
+מותר לקלל, להשפיל, להתפרע – כאילו אתה מזרחי עצבני ביום רע.
+שורה אחת – תן לו נוקאאוט 💥`;
 }
-async function handleSmartReply(ctx = {}) {
+
+  if (isNice(text)) {
+  return `משתמש בשם ${name} היה נחמד ואמר: "${text}"
+
+אתה שמעון – תן לו מחמאה עם קריצה.
+פרגן בסטייל: קצת ציני, קצת גברי, כאילו אתה לא באמת מתרגש אבל כן מכבד.
+שורה אחת בלבד – תן לו להרגיש מיוחד, אבל בלי להישפך.`;
+}
+
+ if (isQuestion(text)) {
+  return `משתמש בשם ${name} שואל: "${text}"
+
+ענה ישירות, בטון של מישהו שאין לו זמן לבולשיט.
+בלי התחנפויות, בלי סלנג מיותר.
+תהיה חד, סמכותי, ואפילו טיפה מתנשא אם צריך.
+שורה אחת בלבד.`;
+}
+
+  if (isTrigger(text)) {
+  return `משתמש כתב: "${text}" – תוך פנייה אליך, שמעון.
+
+ענה כאילו אתה מכיר אותו אישית:
+גסות עדינה, חיוך מתחת לשפם, טון כאילו אתה שופט אותו בלי לומר את זה במפורש.
+שורה אחת, מתוחכמת אבל חצופה.`;
+}
+
+
+ if (isLink(text)) {
+  return `משתמש שלח קישור: "${text}"
+
+תענה בציניות מוחלטת – כאילו הוא שלח לינק בלי להסביר כלום, כמו אימא ששולחת בוואטסאפ "תראה את זה".
+תן לו עקיצה בסגנון "מה זה הקישור הזה? איפה ההקשר אחי?".
+שורה אחת, קרה וחותכת.`;
+}
+
+
+  return `מישהו כתב: "${text}"\nענה בסגנון חד, עוקצני, ישראלי – בלי הצגות, כאילו אתה מדבר איתו.`;
+}
+
+async function handleSmartReply(ctx) {
   const userId = ctx.from?.id;
-  const name = ctx.from?.first_name || "חבר בלי שם";
-
-  if (!userId || isSticker(ctx) || isPhoto(ctx)) return;
-
+  const name = ctx.from?.first_name || "חבר";
   const text = ctx.message?.text?.trim();
-  if (!text || text.length < 2) return;
+  if (!userId || !text || text.length < 2 || isSticker(ctx) || isPhoto(ctx)) return false;
 
-  // ⛔ חסימת ספאמרים ל־10 שניות
-  if (isUserSpammedRecently(userId)) return;
-
+  if (isUserSpammedRecently(userId)) return false;
   lastReplyPerUser.set(userId, Date.now());
 
-  // 🧠 יצירת פרומפט לפי ניתוח
   const prompt = createPrompt(text, name);
 
   try {
     const gptRes = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.95,
+      temperature: 0.85,
       max_tokens: 100
     });
 
- const reply = gptRes.choices?.[0]?.message?.content?.trim();
-if (!reply) return;
+    let reply = gptRes.choices?.[0]?.message?.content?.trim();
+    if (!reply) return false;
 
-const clean = reply.replace(/^["“]|["”]$/g, "").trim();
+    reply = reply.replace(/^["“”'שמעון:,.\s]+/i, ""); // הסרת פתיחה מיותרת
 
-await ctx.reply(clean, { parse_mode: "HTML" });
+    await ctx.reply(reply, { parse_mode: "HTML" });
 
-await logToFirestore({
-  userId,
-  name,
-  text,
-  reply: clean, // שומר בלוג נקי בלי מרכאות
-  type: "smartGPT"
-});
+    await logToFirestore({
+      userId,
+      name,
+      text,
+      reply,
+      type: "smartGPT"
+    });
 
     return true;
   } catch (err) {
-    console.error("❌ GPT Error:", err);
-    await ctx.reply("🔌 שמעון קצת נפל על השכל. נסה שוב תכף.");
+    console.error("❌ GPT שגיאה:", err);
+    return false;
   }
 }
 
-// ✍️ לוגים ל־Firestore
 async function logToFirestore(data) {
   try {
     await db.collection("smartLogs").add({
@@ -156,7 +177,7 @@ async function logToFirestore(data) {
       timestamp: Date.now()
     });
   } catch (err) {
-    console.error("❌ שגיאה בשמירת לוג ל־Firestore:", err);
+    console.error("❌ שגיאה בלוג:", err);
   }
 }
 

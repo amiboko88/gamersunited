@@ -42,20 +42,25 @@ async function analyzeTextForRoast(text) {
   const match = findMatchInText(text);
   if (!match) return null;
 
-  if (match.left) {
-    return await generateRoastViaGPT(match.name, match.traits, match.description);
-  }
+if (match.left) {
+  return await generateRoastViaGPT(match.name, match.traits, match.description);
+}
 
-  if (match.user && match.traits?.length) {
-    const roast = await generateRoastViaGPT(match.name, match.traits, match.description);
-    return `👀 נראה שאתה מדבר על ${match.user}\n\n${roast}`;
-  }
+if (match.user && match.traits?.length) {
+  const roast = await generateRoastViaGPT(match.name, match.traits, match.description);
+  return `👀 נראה שאתה מדבר על ${match.user}\n\n${roast}`;
+}
 
-  if (match.user) {
-    return `👀 נראה שאתה מדבר על ${match.user}`;
-  }
+if (!match.user && match.phone && match.traits?.length) {
+  const roast = await generateRoastViaGPT(match.name, match.traits, match.description);
+  return `👀 נראה שאתה מדבר על ${match.name} (אין לו יוזר פומבי, אבל ברור שזה הוא)\n\n${roast}`;
+}
 
-  return `👀 אתה מדבר על ${match.name}, אבל אין לו יוזר ציבורי בטלגרם.`;
+if (match.user) {
+  return `👀 נראה שאתה מדבר על ${match.user}`;
+}
+
+return `👀 אתה מדבר על ${match.name}, אבל אין לו יוזר ציבורי בטלגרם.`;
 }
 
 module.exports = {

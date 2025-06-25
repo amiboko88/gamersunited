@@ -1,13 +1,13 @@
 require("dotenv").config();
 const { Bot, webhookCallback } = require("grammy");
 const express = require("express");
-
+const { analyzeTextForRoast } = require("./roastTelegram");
 const db = require("./utils/firebase");
 const registerCommands = require("./telegramCommands");
 const { registerBirthdayHandler, validateBirthday, saveBirthday } = require("./telegramBirthday");
 const { handleCurses } = require("./telegramCurses");
 const { handleTrigger } = require("./telegramTriggers");
-const { updateXP, checkNameTags , handleTop } = require("./telegramLevelSystem");
+const { updateXP, handleTop, registerTopButton } = require("./telegramLevelSystem");
 const handleSmartReply = require("./shimonSmart");
 const { sendBirthdayMessages } = require("./birthdayNotifierTelegram");
 
@@ -17,6 +17,7 @@ const bot = new Bot(process.env.TELEGRAM_TOKEN);
 registerCommands(bot, WAITING_USERS);
 registerBirthdayHandler(bot, WAITING_USERS);
 handleTop(bot);
+registerTopButton(bot);
 
 // 📌 דיאלוג בין משתתפים
 const activeDialog = {
@@ -42,7 +43,6 @@ bot.command("birthday", async (ctx) => {
   WAITING_USERS.set(ctx.from.id, "add");
   await ctx.reply("שלח לי את תאריך יום ההולדת שלך בפורמט 28.06.1993 או כתוב 'ביטול'.");
 });
-
 bot.on("message", async (ctx) => {
   const userId = ctx.from.id;
   const text = ctx.message.text?.trim() || "";
@@ -97,6 +97,14 @@ bot.on("message", async (ctx) => {
     await ctx.reply(`👀 נראה שאתה מדבר על ${mention}`, { parse_mode: "HTML" });
   }
 
+// 🧠 🔥 בדיקת Roast לפי כינויים
+  const roast = await analyzeTextForRoast(text);
+  if (roast) {
+    return await ctx.reply(roast, { parse_mode: "HTML" });
+  }
+
+
+
   // ☣️ קללות, טריגרים, תגובות חכמות
   const cursed = await handleCurses(ctx, text.toLowerCase());
   if (cursed) return;
@@ -133,14 +141,21 @@ bot.on("message", async (ctx) => {
     return;
   }
 
-  // 🎮 XP ורמות
-  const levelUp = await updateXP({
-  id: ctx.from.id,
-  first_name: ctx.from.first_name,
-  username: ctx.from.username,
-  text // נשלח ידנית לטובת חישוב XP
-});
+  // 🎮 XP ורמות – כולל צבירה והודעה
+  const { leveledUp, addedXp } = await updateXP({
+    id: ctx.from.id,
+    first_name: ctx.from.first_name,
+    username: ctx.from.username,
+    text
+  });
 
+  if (addedXp > 0) {
+    let msg = `🆙 +${addedXp} XP`;
+    if (leveledUp) {
+      msg += `\n🎉 <b>${ctx.from.first_name}</b> עלה לרמה <b>${leveledUp}</b>!`;
+    }
+    await ctx.reply(msg, { parse_mode: "HTML" });
+  }
 
   // 🧱 fallback אקראי
   await ctx.reply(

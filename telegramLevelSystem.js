@@ -1,25 +1,10 @@
-// 📁 telegramLevelSystem.js — XP, רמות, תיוג, פרופילים וטבלה
-
 const db = require("./utils/firebase");
 
-// 📣 תיוג לפי שם משתמש (username בלבד)
-const NAME_TAGS = {
-  "omri_amr": "@omri_amr",
-  "ayash": "@ayash",
-  "barvaz": "@barvaz"
-};
-
-function checkNameTags(text) {
-  const username = Object.keys(NAME_TAGS).find(un => text.toLowerCase().includes(un.toLowerCase()));
-  return username ? NAME_TAGS[username] : null;
-}
-
-// 🧮 חישוב XP לכל הודעה
 function calculateXP(text) {
-  return Math.min(text.length, 25); // הגבלה ל־25 XP להודעה
+  if (!text) return 0;
+  return Math.min(text.length, 25); // תקרה ל־25 תווים
 }
 
-// 🚀 עדכון XP ורמות במסד הנתונים
 async function updateXP(user) {
   const userId = user.id.toString();
   const ref = db.collection("levels").doc(userId);
@@ -32,117 +17,78 @@ async function updateXP(user) {
     createdAt: Date.now()
   };
 
-  data.xp += calculateXP(user.text || "");
-  const xpNeeded = data.level * 100;
+  const addedXp = calculateXP(user.text || "");
+  data.xp += addedXp;
 
   let leveledUp = false;
+  const xpNeeded = data.level * 100;
+
   if (data.xp >= xpNeeded) {
     data.level++;
     data.xp -= xpNeeded;
-    leveledUp = true;
+    leveledUp = data.level;
   }
 
   await ref.set(data, { merge: true });
-  return leveledUp ? data.level : null;
+
+  return { leveledUp, addedXp };
 }
 
-
-// 🎮 תצוגת פרופיל אישי (XP)
-function getLevelBadge(level) {
-  if (level >= 30) return { badge: "👑", title: "אלוף" };
-  if (level >= 20) return { badge: "🔥", title: "וותיק" };
-  if (level >= 10) return { badge: "🟣", title: "שחקן רציני" };
-  if (level >= 5) return { badge: "🔵", title: "עולה שלב" };
-  return { badge: "🟢", title: "מתחיל" };
-}
-
-function createXPBar(current, max) {
-  const percent = Math.floor((current / max) * 10);
-  return `[${"█".repeat(percent)}${"░".repeat(10 - percent)}]`;
-}
-
-async function getUserLevelCanvas(bot, userId) {
-  const doc = await db.collection("levels").doc(userId.toString()).get();
-  if (!doc.exists) return null;
-
-  const data = doc.data();
-  const profile = await bot.api.getUserProfilePhotos(userId).catch(() => null);
-  const photo = profile?.photos?.[0]?.[0]?.file_id;
-
-  const { badge, title } = getLevelBadge(data.level);
-  const xpBar = createXPBar(data.xp, data.level * 100);
-
-  const text = `
-<b>${badge} ${data.fullName}</b>
-🏆 רמה: <b>${data.level}</b> (${title})
-📈 XP: ${data.xp}/${data.level * 100}
-${xpBar}
-`.trim();
-
-  return { text, photo };
-}
-
-function handleXPProfile(bot) {
-  bot.callbackQuery("profile_xp", async (ctx) => {
-    const result = await getUserLevelCanvas(bot, ctx.from.id);
-    if (!result) return ctx.reply("😕 אין נתונים עדיין. כתוב קצת בצ'אט כדי להתקדם.");
-
-    const { text, photo } = result;
-    if (photo) {
-      await ctx.replyWithPhoto(photo, {
-        caption: text,
-        parse_mode: "HTML"
-      });
-    } else {
-      await ctx.reply(text, { parse_mode: "HTML" });
-    }
-    await ctx.answerCallbackQuery();
-  });
-}
-
-function getLevelEmoji(index) {
-  return ["🥇", "🥈", "🥉", "🏅", "🎖️"][index] || "🔸";
-}
-
-function createShortBar(current, max) {
-  const percent = Math.floor((current / max) * 5);
-  return `${"█".repeat(percent)}${"░".repeat(5 - percent)}`;
+async function getUserLevel(userId) {
+  const ref = db.collection("levels").doc(userId.toString());
+  const snap = await ref.get();
+  return snap.exists ? snap.data() : null;
 }
 
 function handleTop(bot) {
-  bot.callbackQuery("profile_top", async (ctx) => {
-    const snapshot = await db.collection("levels").get();
-    if (snapshot.empty) return ctx.reply("😕 אין עדיין משתמשים עם XP.");
+  bot.command("profile_xp", async (ctx) => {
+    const userId = ctx.from.id.toString();
+    const data = await getUserLevel(userId);
 
-    const top = snapshot.docs
-      .map(doc => {
-        const data = doc.data();
-        return {
-          name: data.fullName || "לא ידוע",
-          level: data.level || 1,
-          xp: data.xp || 0,
-          totalXp: (data.level || 1) * 100 + (data.xp || 0)
-        };
-      })
-      .sort((a, b) => b.totalXp - a.totalXp)
-      .slice(0, 5);
+    if (!data) {
+      return ctx.reply("😢 לא נמצא מידע XP עבורך. תתחיל לתקשר יותר עם שמעון!");
+    }
 
-    let text = `🏆 <b>טבלת הרמות של שמעון</b>\n━━━━━━━━━━━━━\n`;
-    top.forEach((u, i) => {
-      const emoji = getLevelEmoji(i);
-      const bar = createShortBar(u.xp, u.level * 100);
-      text += `${emoji} <b>${u.name}</b>\nרמה ${u.level} • XP: ${u.xp}/${u.level * 100}\n${bar}\n━━━━━━━━━━━━━\n`;
-    });
+    const progress = Math.floor((data.xp / (data.level * 100)) * 100);
+    const bar = `[${"█".repeat(progress / 10)}${"░".repeat(10 - progress / 10)}]`;
 
-    await ctx.reply(text.trim(), { parse_mode: "HTML" });
+    await ctx.reply(
+      `🎖️ <b>${data.fullName}</b>\n` +
+      `🔢 רמה: <b>${data.level}</b>\n` +
+      `📊 XP: ${data.xp}/${data.level * 100} ${bar}`,
+      { parse_mode: "HTML" }
+    );
+  });
+}
+
+function registerTopButton(bot) {
+  bot.callbackQuery("top_xp", async (ctx) => {
+    const snapshot = await db.collection("levels")
+      .orderBy("level", "desc")
+      .limit(10)
+      .get();
+
+    if (snapshot.empty) {
+      return ctx.answerCallbackQuery({ text: "אין נתונים כרגע", show_alert: true });
+    }
+
+    let msg = "🏆 <b>טבלת המצטיינים:</b>\n\n";
+    let rank = 1;
+
+    for (const doc of snapshot.docs) {
+      const d = doc.data();
+      const xpBar = "█".repeat(Math.floor((d.xp / (d.level * 100)) * 10)).padEnd(10, "░");
+      msg += `${rank}. <b>${d.fullName}</b> – רמה ${d.level} (${d.xp}/${d.level * 100})\n[${xpBar}]\n\n`;
+      rank++;
+    }
+
+    await ctx.editMessageText(msg, { parse_mode: "HTML" });
     await ctx.answerCallbackQuery();
   });
 }
 
 module.exports = {
   updateXP,
-  checkNameTags,
-  handleXPProfile,
-  handleTop,
-  getUserLevelCanvas
+  registerTopButton,
+  handleTop
 };

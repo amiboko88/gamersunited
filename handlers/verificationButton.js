@@ -27,7 +27,12 @@ async function setupVerificationMessage(client) {
   if (existing.exists) return;
 
   const embed = new EmbedBuilder()
-    .setTitle('GAMERS UNITED IL')
+    .setTitle('ברוך הבא ל־Gamers United IL 🎮')
+    .setDescription(
+      '**אם אתה משתמש XBOX / PlayStation ואינך רואה כפתור:**\n' +
+      'פשוט כתוב כאן “אמת אותי” או שלח הודעה ל־שמעון בפרטי.\n\n' +
+      'ברוב הקונסולות אין תמיכה בכפתורי Discord – זה בסדר. אנחנו כאן לעזור!'
+    )
     .setImage(embedImageUrl)
     .setColor('#ffa500');
 
@@ -79,6 +84,13 @@ async function handleInteraction(interaction) {
       reminderCount: 0
     }, { merge: true });
 
+    await db.collection(TRACKING_COLLECTION).doc(member.id).set({
+      type: 'verification',
+      status: 'pending',
+      sentAt: new Date().toISOString(),
+      guildId: interaction.guild.id
+    });
+
     await interaction.reply({ content: '✅ אומתת בהצלחה! ברוך הבא 🎉', ephemeral: true });
 
     logToWebhook({
@@ -90,34 +102,103 @@ async function handleInteraction(interaction) {
       staffChannel.send(`🟢 <@${member.id}> אומת בהצלחה.`);
     }
 
-    await db.collection(TRACKING_COLLECTION).doc(member.id).set({
-      type: 'verification',
-      status: 'pending',
-      sentAt: new Date().toISOString(),
-      guildId: interaction.guild.id
-    });
     const { sendFallbackButton } = require('./dmFallbackModal');
     try {
-  await user.send(
-    '🎉 ברוך הבא ל־Gamers United IL!\n\n' +
-    'אם אתה רואה רק אפור או מרגיש קצת אבוד – תכתוב לי כאן ואשמח לעזור. 💬'
-  );
-} catch (err) {
-  console.warn('⚠️ לא ניתן לשלוח DM לאחר אימות:', err.message);
-  const channel = interaction.channel;
-  if (channel?.isTextBased()) {
-    await channel.send({
-      content: `<@${user.id}> לא הצלחנו לשלוח לך הודעה בפרטי. תגיב כאן במקום:`,
-      components: sendFallbackButton(user.id).components
-    });
-  }
-}
+      await user.send(
+        '🎉 ברוך הבא ל־Gamers United IL!\n\n' +
+        'אם אתה רואה רק אפור או מרגיש קצת אבוד – תכתוב לי כאן ואשמח לעזור. 💬'
+      );
+    } catch (err) {
+      console.warn('⚠️ לא ניתן לשלוח DM לאחר אימות:', err.message);
+      const channel = interaction.channel;
+      if (channel?.isTextBased()) {
+        await channel.send({
+          content: `<@${user.id}> לא הצלחנו לשלוח לך הודעה בפרטי. תגיב כאן במקום:`,
+          components: sendFallbackButton(user.id).components
+        });
+      }
+    }
   } catch (err) {
     console.error('❌ שגיאה באימות:', err);
     await interaction.reply({
       content: '❌ משהו השתבש, נסה שוב או פנה למנהל.',
       ephemeral: true
     });
+  }
+}
+async function scanForConsoleAndVerify(member) {
+  const hasVerified = member.roles.cache.has(VERIFIED_ROLE_ID);
+  if (hasVerified) {
+    console.log(`🟡 ${member.user.tag} כבר אומת מראש – אין צורך בסריקה.`);
+    return;
+  }
+
+  const presence = member.presence?.clientStatus;
+  const statusKeys = presence ? Object.keys(presence) : [];
+
+  const isConsoleLikely =
+    !presence || (statusKeys.length === 1 && statusKeys[0] === 'web');
+
+  if (!isConsoleLikely) {
+    console.log(`🔺 ${member.user.tag} לא מזוהה כקונסוליסט – clientStatus:`, statusKeys);
+    return;
+  }
+
+  try {
+    await member.roles.add(VERIFIED_ROLE_ID);
+
+    await db.collection('memberTracking').doc(member.id).set({
+      joinedAt: new Date().toISOString(),
+      lastActivity: new Date().toISOString(),
+      status: 'active',
+      guildId: member.guild.id,
+      dmSent: false,
+      replied: false,
+      dmFailed: false,
+      activityWeight: 0,
+      reminderCount: 0,
+      verifiedBy: 'auto-console',
+      autoReason: statusKeys.length === 0 ? 'no presence' : 'web only'
+    }, { merge: true });
+
+    await db.collection(TRACKING_COLLECTION).doc(member.id).set({
+      type: 'verification',
+      status: 'pending',
+      sentAt: new Date().toISOString(),
+      guildId: member.guild.id
+    });
+
+    const staffChannel = member.guild.channels.cache.get(STAFF_CHANNEL_ID);
+    if (staffChannel?.isTextBased()) {
+      staffChannel.send(`🎮 <@${member.id}> אומת אוטומטית כקונסוליסט (clientStatus: ${statusKeys.join(', ') || 'none'}).`);
+    }
+
+    logToWebhook({
+      title: '🎮 אימות אוטומטי לפי סריקת קונסולה',
+      description: `<@${member.id}> אומת לפי clientStatus: ${statusKeys.join(', ') || 'none'}`,
+      color: 0x3498db
+    });
+
+    try {
+      await member.user.send(
+        '🎉 אומתת בהצלחה כקונסוליסט!\n\n' +
+        'אם אתה רואה רק אפור – תכתוב לי כאן או תיכנס ל־#fifo-chat ותגיד שלום 🎮'
+      );
+    } catch (err) {
+      console.warn(`⚠️ לא ניתן לשלוח DM לקונסוליסט ${member.user.tag}:`, err.message);
+      const channel = member.guild.systemChannel;
+      if (channel?.isTextBased()) {
+        const { sendFallbackButton } = require('./dmFallbackModal');
+        await channel.send({
+          content: `<@${member.id}> לא הצלחנו לשלוח לך הודעה בפרטי. תגיב כאן במקום:`,
+          components: sendFallbackButton(member.id).components
+        });
+      }
+    }
+
+    console.log(`✅ ${member.user.tag} אומת אוטומטית – זוהה כקונסוליסט (clientStatus: ${statusKeys.join(', ') || 'none'})`);
+  } catch (err) {
+    console.warn(`❌ שגיאה באימות קונסוליסט ${member.user.tag}:`, err.message);
   }
 }
 
@@ -235,9 +316,9 @@ async function startDmTracking(client) {
   }, 1000 * 60 * 10); // כל 10 דקות
 }
 
-
 module.exports = {
   setupVerificationMessage,
   handleInteraction,
-  startDmTracking
+  startDmTracking,
+  scanForConsoleAndVerify
 };

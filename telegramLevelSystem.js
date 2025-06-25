@@ -87,8 +87,21 @@ function registerTopButton(bot) {
   });
 }
 
+async function getUserLevelCanvas(bot, userId) {
+  const data = await getUserLevel(userId);
+  if (!data) return null;
+
+  // אם אין תמונה – שלח טקסט בלבד
+  const text = `🎖️ <b>${data.fullName}</b>\n` +
+               `🔢 רמה: <b>${data.level}</b>\n` +
+               `📊 XP: ${data.xp}/${data.level * 100}`;
+
+  // תוכל להוסיף כאן תמונה אם יש לך future `Canvas` או `URL`
+  return { text, photo: null };
+}
 module.exports = {
   updateXP,
   registerTopButton,
+  getUserLevelCanvas,
   handleTop
 };

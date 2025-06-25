@@ -153,5 +153,6 @@ function wait(ms) {
 module.exports = {
   getOrCreateConnection,
   playAudio,
-  processUserSmart
+  processUserSmart,
+  processUserExit
 };

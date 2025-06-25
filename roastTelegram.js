@@ -1,4 +1,5 @@
-const openai = require("openai"); // ודא שקונפיגורציה קיימת
+const { OpenAI } = require("openai");
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const PEOPLE = [
   {

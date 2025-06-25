@@ -2,26 +2,7 @@ const { getUpcomingBirthdaysText } = require("./telegramBirthday");
 const { sendXPTextBar } = require("./telegramLevelSystem");
 const db = require("./utils/firebase");
 const lastStartCommand = new Map(); // userId -> timestamp
-
-// פונקציה לירידה חיה מ-GPT
-const generateRoast = async (name) => {
-  const prompt = `כתוב ירידת צחוק שנונה, עוקצנית אך קלילה, עבור מישהו בשם "${name}". בלי קללות ישירות, אבל שתגרום לו לחשוב פעמיים לפני שיגיב שוב.`;
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: "gpt-4",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.9
-    })
-  });
-
-  const data = await response.json();
-  return data?.choices?.[0]?.message?.content?.trim() || "התגובה לא עבדה הפעם 😅";
-};
+const { generateRoastText } = require("./generateRoastText");
 
 module.exports = function registerTelegramCommands(bot, WAITING_USERS) {
   const nameOf = (ctx) => ctx.from?.first_name || "חבר";
@@ -206,30 +187,14 @@ bot.callbackQuery("demo_tags", async (ctx) => {
 
 
   // 🔥 ירידה חיה
-let demoRoastInProgress = new Set(); // userId כדי למנוע לחיצות כפולות
-
 bot.callbackQuery("demo_roast", async (ctx) => {
-  const userId = ctx.from.id;
-  if (demoRoastInProgress.has(userId)) return; // חוסם לחיצות כפולות
-
-  demoRoastInProgress.add(userId);
-  await ctx.answerCallbackQuery().catch(() => {}); // עונה מיידית ומונע קריסה
-
   const name = ctx.from.first_name || "חבר";
-  await ctx.reply("🔥 ירידה מתבשלת... תכף תקבל צלייה 🔪");
-
-  try {
-    const roast = await generateRoast(name);
-    await ctx.reply(`🧠 דוגמת ירידה:\n\n<b>${name}</b> – ${roast}`, {
-      parse_mode: "HTML"
-    });
-  } catch (err) {
-    console.error("❌ שגיאה בירידה:", err);
-    await ctx.reply("😵 משהו נדפק עם ה־GPT. נסה שוב תכף.");
-  } finally {
-    demoRoastInProgress.delete(userId); // משחרר את היכולת ללחוץ שוב
-  }
+  const roast = await generateRoastText(name);
+  await ctx.reply(`🧠 דוגמת ירידה:\n\n<b>${roast}</b>`, {
+    parse_mode: "HTML"
+  });
 });
+
 
 // 🎧 קול של שמעון – עם הגנה מלאה
 const { generateRoastVoice } = require("./telegramTTSRoaster");

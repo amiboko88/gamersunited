@@ -151,8 +151,7 @@ async function handleSmartReply(ctx) {
     let reply = gptRes.choices?.[0]?.message?.content?.trim();
     if (!reply) return false;
 
-    reply = reply.replace(/^["“”'שמעון:,.\s]+/i, ""); // הסרת פתיחה מיותרת
-
+    reply = reply.trim().replace(/^["“”'שמעון:,.\s]+|["“”'`.,:;!?…)\s]+$/gi, "");
     await ctx.reply(reply, { parse_mode: "HTML" });
 
     await logToFirestore({

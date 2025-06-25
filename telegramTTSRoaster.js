@@ -1,16 +1,13 @@
-// 📁 telegramTTSRoaster.js – גרסה מחוזקת ל־TTS קול
-
 const fetch = require("node-fetch");
 const { Readable } = require("stream");
 
 const generateRoastVoice = async (ctx) => {
   const name = ctx.from?.first_name || "חבר";
 
-  // 🧠 Prompt קצר למניעת תקלות
-  const prompt = `כתוב ירידת צחוק עוקצנית בעברית במשפט אחד לבנאדם בשם "${name}". בלי קללות, אבל עם חוצפה.`;
+  const prompt = `כתוב ירידת צחוק עוקצנית בעברית במשפט אחד לבנאדם בשם "${name}". בלי קללות, אבל עם חוצפה.`
 
   try {
-    // ⏳ מגבלת זמן ל־GPT
+    // מגבלת זמן ל־GPT
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000); // 10 שניות
 
@@ -32,15 +29,19 @@ const generateRoastVoice = async (ctx) => {
     clearTimeout(timeout);
 
     const gptData = await gptRes.json();
-    const text = gptData?.choices?.[0]?.message?.content?.trim();
+    let text = gptData?.choices?.[0]?.message?.content?.trim();
 
-    if (!text || text.length < 5 || text.length > 300) {
-      return ctx.reply("😕 GPT חזר עם תשובה מוזרה או ארוכה מדי. נסה שוב.");
+    // ניקוי טקסט מסוכן
+    if (!text || text.length < 5 || text.length > 250) {
+      console.warn("⚠️ GPT החזיר תגובה בעייתית:", text);
+      return ctx.reply("😕 ה־GPT לא סיפק טקסט קול תקני. נסה שוב.");
     }
 
-    await ctx.reply("🎧 צלייה קולית בדרך..."); // הודעה מקדימה
+    // ניקוי סוגרים או מרכאות בסוף
+    text = text.replace(/["'”)\s]+$/g, "").replace(/^["'“(]+/g, "");
 
-    // 🎙️ בקשת קול
+    await ctx.reply("🎧 שמעון מבשל צלייה קולית...");
+
     const ttsRes = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
       headers: {
@@ -57,24 +58,23 @@ const generateRoastVoice = async (ctx) => {
     const arrayBuffer = await ttsRes.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // 🛡️ בדיקת Buffer
-    if (!buffer || buffer.length < 1000) {
-      console.warn("⚠️ Buffer קצר או שגוי מה־TTS:", buffer.length);
-      return ctx.reply("🎧 משהו השתבש ביצירת הקול. נסה שוב.");
+    if (!buffer || buffer.length < 2000) {
+      console.warn("❌ Buffer קצר או ריק מ־TTS:", buffer.length);
+      return ctx.reply("🎧 שמעון השתתק – הקול לא נוצר כראוי. נסה שוב.");
     }
 
-    // ✅ שליחה כקול בטלגרם
+    const caption = `🎤 ${text}`;
     await ctx.replyWithVoice({ source: Readable.from(buffer) }, {
-      caption: `🎤 ${text}`,
+      caption: caption.slice(0, 1000),
       parse_mode: "HTML"
     });
 
   } catch (err) {
     console.error("❌ generateRoastVoice error:", err);
     if (err.name === "AbortError") {
-      await ctx.reply("⌛ GPT איטי מדי. תנסה עוד כמה שניות.");
+      await ctx.reply("⌛ שמעון התעייף מהמתנה ל־GPT. נסה שוב.");
     } else {
-      await ctx.reply("🔌 שמעון נתקע באמצע הצלייה. נסה שוב אחר כך.");
+      await ctx.reply("🔌 שמעון נתקע באמצע הצלייה. נסה שוב מאוחר יותר.");
     }
   }
 };

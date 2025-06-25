@@ -10,29 +10,21 @@ const { updateXP, handleTop, registerTopButton } = require("./telegramLevelSyste
 const handleSmartReply = require("./shimonSmart");
 const { sendBirthdayMessages } = require("./birthdayNotifierTelegram");
 
-const WAITING_USERS = new Map(); // userId -> מצב הזנה
+const WAITING_USERS = new Map();
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// תפריטים
 registerCommands(bot, WAITING_USERS);
 registerBirthdayHandler(bot, WAITING_USERS);
 handleTop(bot);
 registerTopButton(bot);
 
-// 🔁 שמירה לניתוח שיח
-const activeDialog = {
-  users: new Set(),
-  timeout: null,
-};
-
-// 📌 מעקב ספאם ותזמונים
+const activeDialog = { users: new Set(), timeout: null };
 const lastMessagesMap = new Map();
 const spamCountMap = new Map();
 const lastReplyTimestamps = new Map();
-const blockedUsers = new Map();         // userId -> ms עד מתי חסום
+const blockedUsers = new Map();
 
-// 📌 fallback אקראי
 const fallbackReplies = [
   "יאללה, תתאמץ — שמעון לא מגיב להודעות חלשות.",
   "זה כל מה שיש לך? אכזבה.",
@@ -41,7 +33,7 @@ const fallbackReplies = [
   "אפילו יוגי לא היה מגיב לזה.",
 ];
 
-// 🧠 חסימת משתמשים שמציפים בתדירות גבוהה
+// חסימת משתמשים שמציפים
 async function shouldBlockUserWithGPT(ctx) {
   const userId = ctx.from.id;
   const now = Date.now();
@@ -49,16 +41,11 @@ async function shouldBlockUserWithGPT(ctx) {
   if (!text || text.length < 2) return false;
 
   const blockUntil = blockedUsers.get(userId);
-  if (blockUntil && now < blockUntil) {
-    // עדיין חסום, שמעון לא מגיב בכלל
-    return true;
-  }
+  if (blockUntil && now < blockUntil) return true;
 
   const last = lastReplyTimestamps.get(userId) || 0;
   if (now - last < 10000) {
-    // ספאם → שליחת עקיצה + חסימה לדקה
-    blockedUsers.set(userId, now + 60_000); // חסום לדקה
-
+    blockedUsers.set(userId, now + 60000);
     const name = ctx.from.first_name || "חבר";
 
     const prompt = `
@@ -71,7 +58,7 @@ async function shouldBlockUserWithGPT(ctx) {
         model: "gpt-4o",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.85,
-        max_tokens: 50
+        max_tokens: 50,
       });
 
       const reply = gptRes.choices?.[0]?.message?.content?.trim();
@@ -83,13 +70,11 @@ async function shouldBlockUserWithGPT(ctx) {
     return true;
   }
 
-  // אין ספאם → לעדכן זמן ולשחרר
   lastReplyTimestamps.set(userId, now);
   return false;
 }
 
-
-// 🎂 פקודת birthday ידנית
+// פקודת birthday ידנית
 bot.command("birthday", async (ctx) => {
   WAITING_USERS.set(ctx.from.id, "add");
   await ctx.reply("שלח לי את תאריך יום ההולדת שלך בפורמט 28.06.1993 או כתוב 'ביטול'.");
@@ -100,10 +85,10 @@ bot.on("message", async (ctx) => {
   const text = ctx.message.text?.trim() || "";
   const isSticker = !!ctx.message.sticker;
 
-  // ⛔ חסימת מציפים: אם פחות מ־10 שניות – תגובה מ־GPT במקום הכל
+  // חסימה לספאמרים
   if (await shouldBlockUserWithGPT(ctx)) return;
 
-  // 🎂 מצב הזנת יום הולדת
+  // מצב הזנת יום הולדת
   if (WAITING_USERS.has(userId)) {
     const mode = WAITING_USERS.get(userId);
     if (["ביטול", "בטל", "cancel"].includes(text.toLowerCase())) {
@@ -129,10 +114,9 @@ bot.on("message", async (ctx) => {
     return;
   }
 
-  // ❌ התעלמות מתוכן לא רלוונטי
-  if (text.startsWith("/") || isSticker || !text || text.length < 2 || /^[\p{Emoji}]+$/u.test(text)) return;
+  // ❌ התעלמות רק מפקודות, סטיקרים, אמוג'ים או ריקים
+  if (text.startsWith("/") || isSticker || !text || /^[\p{Emoji}]+$/u.test(text)) return;
 
-  // 🔁 זיהוי הודעה חוזרת
   const lastMsg = lastMessagesMap.get(userId) || "";
   if (lastMsg === text) {
     const spamCount = (spamCountMap.get(userId) || 0) + 1;
@@ -146,11 +130,11 @@ bot.on("message", async (ctx) => {
     spamCountMap.set(userId, 0);
   }
 
-  // 🔥 תגובת Roast לפי שמות/כינויים
+  // 🔥 תגובת Roast
   const roast = await analyzeTextForRoast(text);
   if (roast) return await ctx.reply(roast, { parse_mode: "HTML" });
 
-  // 🧠 תגובה חכמה מגובה GPT
+  // 🧠 תשובה חכמה
   const smart = await handleSmartReply(ctx);
   if (smart) return;
 
@@ -180,7 +164,7 @@ bot.on("message", async (ctx) => {
     return;
   }
 
-  // 🧬 XP ורמות
+  // ✅ עדכון XP אמיתי
   const { leveledUp, addedXp } = await updateXP({
     id: ctx.from.id,
     first_name: ctx.from.first_name,
@@ -188,20 +172,19 @@ bot.on("message", async (ctx) => {
     text
   }, ctx);
 
-  // 🧱 fallback אקראי
-  await ctx.reply(
-    fallbackReplies[Math.floor(Math.random() * fallbackReplies.length)]
-  );
+  // 🧱 fallback
+  await ctx.reply(fallbackReplies[Math.floor(Math.random() * fallbackReplies.length)]);
 });
-// 🎂 שליחת ברכות יומיות בשעה 9:00
+
+// 🎂 שליחת ברכות יומיות
 const now = new Date();
 const millisUntilNine = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0, 0) - now;
 setTimeout(() => {
   sendBirthdayMessages();
-  setInterval(sendBirthdayMessages, 24 * 60 * 60 * 1000); // כל יום
+  setInterval(sendBirthdayMessages, 24 * 60 * 60 * 1000);
 }, Math.max(millisUntilNine, 0));
 
-// 🌐 Webhook ל־Railway (production)
+// 🌐 Webhook
 if (process.env.RAILWAY_STATIC_URL) {
   const app = express();
   const path = "/telegram";

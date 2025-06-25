@@ -101,9 +101,9 @@ function createPrompt(text, name) {
 
   return `מישהו כתב: "${text}"\nתן תגובה ישראלית, גברית, לא מתייפייפת, בסגנון חד וקצר.`;
 }
-async function handleSmartReply(ctx, triggerResult = {}) {
+async function handleSmartReply(ctx = {}) {
   const userId = ctx.from?.id;
-  const name = ctx.from?.first_name || "משתמש";
+  const name = ctx.from?.first_name || "חבר בלי שם";
 
   if (!userId || isSticker(ctx) || isPhoto(ctx)) return;
 
@@ -126,18 +126,20 @@ async function handleSmartReply(ctx, triggerResult = {}) {
       max_tokens: 100
     });
 
-    const reply = gptRes.choices?.[0]?.message?.content?.trim();
-    if (!reply) return;
+ const reply = gptRes.choices?.[0]?.message?.content?.trim();
+if (!reply) return;
 
-    await ctx.reply(reply, { parse_mode: "HTML" });
+const clean = reply.replace(/^["“]|["”]$/g, "").trim();
 
-    await logToFirestore({
-      userId,
-      name,
-      text,
-      reply,
-      type: "smartGPT"
-    });
+await ctx.reply(clean, { parse_mode: "HTML" });
+
+await logToFirestore({
+  userId,
+  name,
+  text,
+  reply: clean, // שומר בלוג נקי בלי מרכאות
+  type: "smartGPT"
+});
 
     return true;
   } catch (err) {

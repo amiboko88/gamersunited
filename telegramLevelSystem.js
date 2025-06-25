@@ -27,7 +27,7 @@ async function updateXP({ id, first_name, username, text }, ctx = null) {
     const userId = id.toString();
     const name = first_name || "חבר";
 
-    const userRef = db.collection("telegramUsers").doc(userId);
+    const userRef = db.collection("levels").doc(userId);
     const doc = await userRef.get();
 
     let xp = doc.exists ? doc.data().xp || 0 : 0;
@@ -62,7 +62,7 @@ async function updateXP({ id, first_name, username, text }, ctx = null) {
 // טבלת מובילים (אופציונלי)
 function handleTop(bot) {
   bot.command("topxp", async (ctx) => {
-    const usersSnap = await db.collection("telegramUsers")
+    const usersSnap = await db.collection("levels")
       .orderBy("level", "desc")
       .limit(10)
       .get();
@@ -80,7 +80,7 @@ function handleTop(bot) {
 
 function registerTopButton(bot) {
   bot.callbackQuery("profile_top", async (ctx) => {
-    const usersSnap = await db.collection("telegramUsers")
+    const usersSnap = await db.collection("levels")
       .orderBy("level", "desc")
       .limit(10)
       .get();

@@ -1,6 +1,7 @@
 const { getUpcomingBirthdaysText } = require("./telegramBirthday");
 const { sendXPTextBar } = require("./telegramLevelSystem");
 const db = require("./utils/firebase");
+const lastStartCommand = new Map(); // userId -> timestamp
 
 // פונקציה לירידה חיה מ-GPT
 const generateRoast = async (name) => {
@@ -24,28 +25,53 @@ const generateRoast = async (name) => {
 
 module.exports = function registerTelegramCommands(bot, WAITING_USERS) {
   const nameOf = (ctx) => ctx.from?.first_name || "חבר";
-  const idOf = (ctx) => ctx.from?.id?.toString() || "";
-
   bot.api.setMyCommands([
     { command: "start", description: "🚀 פתיחת תפריט ראשי" }
   ]);
 
   // 🎛️ תפריט ראשי
-  bot.command("start", async (ctx) => {
-    await ctx.reply("🎛️ תפריט ראשי של שמעון:", {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "🎂 ניהול ימי הולדת", callback_data: "menu_birthdays" },
-            { text: "🧑‍💼 פרופיל אישי", callback_data: "menu_profile" }
-          ],
-          [
-            { text: "🧠 שמעון מדגים", callback_data: "menu_demos" }
-          ]
+bot.command("start", async (ctx) => {
+  const userId = ctx.from?.id;
+  const now = Date.now();
+  const lastTime = lastStartCommand.get(userId) || 0;
+
+  // 📛 אם שולח שוב תוך פחות מ־15 שניות – עקיצה במקום תפריט
+  if (now - lastTime < 15000) {
+    const prompt = `משתמש מריץ שוב ושוב את הפקודה /start. תן לו עקיצה קצרה, חכמה, בסגנון שמעון. בלי לקלל.`;
+    try {
+      const gptRes = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.85,
+        max_tokens: 60
+      });
+
+      const reply = gptRes.choices?.[0]?.message?.content?.trim();
+      return ctx.reply(reply || "יאללה מספיק עם ה־/start הזה אחי.");
+    } catch (err) {
+      console.error("❌ GPT עקיצה /start:", err);
+      return ctx.reply("תפריט כבר פתוח, תנשום.");
+    }
+  }
+
+  // ✅ תפריט רגיל
+  lastStartCommand.set(userId, now);
+
+  await ctx.reply("ברוכים הבאים לתפריט של שמעון ", {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "🎂 ניהול ימי הולדת", callback_data: "menu_birthdays" },
+          { text: "🧑‍💼 פרופיל אישי", callback_data: "menu_profile" }
+        ],
+        [
+          { text: "🧠 שמעון מדגים", callback_data: "menu_demos" }
         ]
-      }
-    });
+      ]
+    }
   });
+});
+
 
   // 🎂 תפריט ימי הולדת
   bot.callbackQuery("menu_birthdays", async (ctx) => {
@@ -79,10 +105,10 @@ module.exports = function registerTelegramCommands(bot, WAITING_USERS) {
   // 🧬 פרופיל XP
 bot.callbackQuery("profile_xp", async (ctx) => {
   const userId = ctx.from.id.toString();
-  const userRef = db.collection("telegramUsers").doc(userId);
+  const userRef = db.collection("levels").doc(userId);
   const doc = await userRef.get();
 
-  if (!doc.exists || !doc.data()?.xp) {
+  if (!doc.exists || (!doc.data()?.xp && !doc.data()?.level)) {
     await ctx.reply("😕 אין נתונים עדיין. תכתוב קצת בצ'אט כדי להתקדם.");
   } else {
     const data = doc.data();
@@ -180,14 +206,23 @@ bot.callbackQuery("demo_tags", async (ctx) => {
 
 
   // 🔥 ירידה חיה
-  bot.callbackQuery("demo_roast", async (ctx) => {
-    const name = nameOf(ctx);
+bot.callbackQuery("demo_roast", async (ctx) => {
+  await ctx.answerCallbackQuery(); // עונה מיידית כדי לא ליפול
+
+  const name = ctx.from.first_name || "חבר";
+  await ctx.reply("🔥 ירידה מתבשלת... תכף תקבל צלייה 🔪");
+
+  try {
     const roast = await generateRoast(name);
     await ctx.reply(`🧠 דוגמת ירידה:\n\n<b>${name}</b> – ${roast}`, {
       parse_mode: "HTML"
     });
-    await ctx.answerCallbackQuery();
-  });
+  } catch (err) {
+    console.error("❌ שגיאה ב־generateRoast:", err);
+    await ctx.reply("😵 משהו נדפק עם הירידה. נסה שוב מאוחר יותר.");
+  }
+});
+
 
   // 🎧 קול של שמעון (הדגמה טקסטואלית לעכשיו)
 const { generateRoastVoice } = require("./telegramTTSRoaster");

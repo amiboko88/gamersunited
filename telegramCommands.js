@@ -19,23 +19,30 @@ bot.command("start", async (ctx) => {
   const lastTime = lastStartCommand.get(userId) || 0;
 
   // 📛 אם שולח שוב תוך פחות מ־15 שניות – עקיצה במקום תפריט
-  if (now - lastTime < 15000) {
-    const prompt = `משתמש מריץ שוב ושוב את הפקודה /start. תן לו עקיצה קצרה, חכמה, בסגנון שמעון. בלי לקלל.`;
-    try {
-      const gptRes = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.85,
-        max_tokens: 60
-      });
+if (now - lastTime < 15000) {
+  const prompt = `משתמש מריץ שוב ושוב את הפקודה /start. תן לו עקיצה קצרה, חכמה, בסגנון שמעון. בלי לקלל.`;
+  try {
+    const gptRes = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.85,
+      max_tokens: 60
+    });
 
-      const reply = gptRes.choices?.[0]?.message?.content?.trim();
-      return ctx.reply(reply || "יאללה מספיק עם ה־/start הזה אחי.");
-    } catch (err) {
-      console.error("❌ GPT עקיצה /start:", err);
-      return ctx.reply("תפריט כבר פתוח, תנשום.");
-    }
+    let reply = gptRes.choices?.[0]?.message?.content?.trim();
+
+    // ✅ ניקוי מירכאות, רווחים, יישור לימין
+    reply = (reply || "יאללה מספיק עם ה־/start הזה אחי.")
+      .replace(/^["“”'`׳"״\s]+|["“”'`׳"״\s]+$/g, "").trim();
+    reply = `\u200F${reply}`;
+
+    return ctx.reply(reply, { parse_mode: "HTML" });
+  } catch (err) {
+    console.error("❌ GPT עקיצה /start:", err);
+    return ctx.reply("תפריט כבר פתוח, תנשום.");
   }
+}
+
 
   // ✅ תפריט רגיל
   lastStartCommand.set(userId, now);
@@ -192,10 +199,16 @@ bot.callbackQuery("demo_tags", async (ctx) => {
 bot.callbackQuery("demo_roast", async (ctx) => {
   const name = ctx.from.first_name || "חבר";
   const roast = await generateRoastText(name);
-  await ctx.reply(`🧠 דוגמת ירידה:\n\n<b>${roast}</b>`, {
+
+  const cleanRoast = roast
+    .replace(/^["“”'`׳"״\s]+|["“”'`׳"״\s]+$/g, "").trim();
+  const rtlRoast = `\u200F${cleanRoast}`;
+
+  await ctx.reply(`🧠 דוגמת ירידה:\n\n<b>${rtlRoast}</b>`, {
     parse_mode: "HTML"
   });
 });
+
 
 
 // 🎧 קול של שמעון – עם הגנה מלאה

@@ -1,6 +1,7 @@
 const { OpenAI } = require("openai");
 const db = require("./utils/firebase");
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const { updateXP } = require("./telegramLevelSystem");
 
 const lastReplyPerUser = new Map();
 
@@ -87,6 +88,7 @@ async function handleSmartReply(ctx) {
   const text = ctx.message?.text?.trim();
   if (!userId || !text || text.length < 2 || isSticker(ctx) || isPhoto(ctx)) return false;
   if (isUserSpammedRecently(userId)) return false;
+
   lastReplyPerUser.set(userId, Date.now());
 
   const prompt = createPrompt(text, name);
@@ -103,9 +105,17 @@ async function handleSmartReply(ctx) {
     if (!reply) return false;
 
     reply = reply.replace(/^["“”'`׳"״\s]+|["“”'`׳"״\s]+$/g, "").trim();
-    reply = `\u200F${reply}`; // RTL – עברית תקנית
+    reply = `\u200F${reply}`; // RTL תקני
 
     await ctx.reply(reply, { parse_mode: "HTML" });
+
+    // ✅ עדכון XP אמיתי גם בתגובה חכמה
+    await updateXP({
+      id: ctx.from.id,
+      first_name: ctx.from.first_name,
+      username: ctx.from.username,
+      text
+    });
 
     await db.collection("smartLogs").add({
       userId,

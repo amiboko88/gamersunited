@@ -9,7 +9,7 @@ const { registerBirthdayHandler, validateBirthday, saveBirthday } = require("./t
 const { updateXP, handleTop, registerTopButton } = require("./telegramLevelSystem");
 const handleSmartReply = require("./shimonSmart");
 const { sendBirthdayMessages } = require("./birthdayNotifierTelegram");
-const { registerRoastLogic } = require("./roastTelegram");
+const { registerRoastButtons } = require("./roastTelegram");
 
 const WAITING_USERS = new Map();
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
@@ -19,7 +19,7 @@ registerCommands(bot, WAITING_USERS);
 registerBirthdayHandler(bot, WAITING_USERS);
 handleTop(bot);
 registerTopButton(bot);
-registerRoastLogic(bot);
+registerRoastButtons(bot);
 
 const activeDialog = { users: new Set(), timeout: null };
 const lastMessagesMap = new Map();

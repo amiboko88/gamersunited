@@ -26,15 +26,28 @@ async function updateXP({ id, first_name, username, text }, ctx = null) {
   try {
     const userId = id.toString();
     const name = first_name || "חבר";
-    const cleanText = text.replace(/\s+/g, ""); // מסיר רווחים
 
     const userRef = db.collection("levels").doc(userId);
     const doc = await userRef.get();
 
-    let xp = doc.exists ? doc.data().xp || 0 : 0;
-    let level = doc.exists ? doc.data().level || 1 : 1;
+    let xp = 0;
+    let level = 1;
 
-    const gain = Math.floor(cleanText.length / 3); // שיפור נוסחת XP
+    if (doc.exists) {
+      xp = doc.data().xp || 0;
+      level = doc.data().level || 1;
+    } else {
+      // 👤 משתמש חדש → נשמור כבר עכשיו
+      await userRef.set({
+        xp: 0,
+        level: 1,
+        fullName: name,
+        username: username || null,
+        createdAt: Date.now()
+      });
+    }
+
+    const gain = Math.floor((text || "").trim().length / 3);
     if (gain === 0) return { addedXp: 0 };
 
     xp += gain;
@@ -47,18 +60,7 @@ async function updateXP({ id, first_name, username, text }, ctx = null) {
       leveledUp = level;
     }
 
-    const newUser = !doc.exists;
-
-    await userRef.set({
-      xp,
-      level,
-      username,
-      fullName: name,
-      ...(newUser && { createdAt: Date.now() })
-    }, { merge: true });
-
-    if (newUser) console.log("🆕 משתמש חדש הוסף ל־levels:", userId, name);
-    else console.log("📈 XP עודכן:", userId, `+${gain} XP`);
+    await userRef.set({ xp, level, username, fullName: name }, { merge: true });
 
     if (ctx) {
       await sendXPTextBar(ctx, name, xp, level, level * 25);
@@ -70,6 +72,7 @@ async function updateXP({ id, first_name, username, text }, ctx = null) {
     return { addedXp: 0 };
   }
 }
+
 
 // 🏆 טבלת מובילים
 function handleTop(bot) {

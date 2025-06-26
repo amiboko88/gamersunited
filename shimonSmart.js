@@ -102,16 +102,16 @@ function pickEmoji(text) {
 }
 
 function formatShimonReply(name, text, emoji = "") {
+  const rtl = "\u200F";
   text = text
-    .trim()
+    .replace(/^[\s"׳״'“”`.,\-–…]*ש(מעון|ימי|משון)[\s"׳״'“”`.,\-–:]*?/i, "") // ↩️ מסיר פתיחים מגוונים
     .replace(/^["“”'`׳"״\s\u200E\u200F]+|["“”'`׳"״\s\u200E\u200F]+$/g, "")
     .replace(/[\u200E\u200F]+/g, "")
-    .replace(/^ש(מעון|משון|ימי)[,:\-]?\s*/i, "")
     .trim();
 
-  const rtl = "\u200F";
   return `${rtl}${name}, ${text}${emoji ? " " + emoji : ""}`;
 }
+
 
 async function handleSmartReply(ctx) {
   const userId = ctx.from?.id;

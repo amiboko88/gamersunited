@@ -82,13 +82,43 @@ function createPrompt(text, name) {
 ענה בסגנון ישראלי עוקצני – שורה אחת, לא מתחנפת.`;
 }
 
+function pickEmoji(text) {
+  const categories = {
+    offensive: ["😏", "😈", "🧠"],
+    nice: ["🙏", "😇", "💖"],
+    question: ["🤔", "🧐", "❓"],
+    trigger: ["😎", "🧔", "😏"],
+    link: ["🔗", "🧷", "📎"],
+    default: ["😉", "🙂", "🫠"]
+  };
+
+  const randomFrom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  if (isOffensive(text)) return randomFrom(categories.offensive);
+  if (isNice(text)) return randomFrom(categories.nice);
+  if (isQuestion(text)) return randomFrom(categories.question);
+  if (isTrigger(text)) return randomFrom(categories.trigger);
+  if (isLink(text)) return randomFrom(categories.link);
+  return randomFrom(categories.default);
+}
+
+function formatShimonReply(name, text, emoji = "") {
+  text = text
+    .trim()
+    .replace(/^["“”'`׳"״\s\u200E\u200F]+|["“”'`׳"״\s\u200E\u200F]+$/g, "")
+    .replace(/[\u200E\u200F]+/g, "")
+    .replace(/^ש(מעון|משון|ימי)[,:\-]?\s*/i, "")
+    .trim();
+
+  const rtl = "\u200F";
+  return `${rtl}${name}, ${text}${emoji ? " " + emoji : ""}`;
+}
+
 async function handleSmartReply(ctx) {
   const userId = ctx.from?.id;
   const name = ctx.from?.first_name || "חבר";
   const text = ctx.message?.text?.trim();
   if (!userId || !text || text.length < 2 || isSticker(ctx) || isPhoto(ctx)) return false;
   if (isUserSpammedRecently(userId)) return false;
-
   lastReplyPerUser.set(userId, Date.now());
 
   const prompt = createPrompt(text, name);
@@ -104,12 +134,11 @@ async function handleSmartReply(ctx) {
     let reply = gptRes.choices?.[0]?.message?.content?.trim();
     if (!reply) return false;
 
-    reply = reply.replace(/^["“”'`׳"״\s]+|["“”'`׳"״\s]+$/g, "").trim();
-    reply = `\u200F${reply}`; // RTL תקני
+    const emoji = pickEmoji(text);
+    reply = formatShimonReply(name, reply, emoji);
 
     await ctx.reply(reply, { parse_mode: "HTML" });
 
-    // ✅ עדכון XP אמיתי גם בתגובה חכמה
     await updateXP({
       id: ctx.from.id,
       first_name: ctx.from.first_name,
@@ -132,5 +161,6 @@ async function handleSmartReply(ctx) {
     return false;
   }
 }
+
 
 module.exports = handleSmartReply;

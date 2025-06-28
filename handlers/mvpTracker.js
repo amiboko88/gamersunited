@@ -34,7 +34,8 @@ async function updateVoiceActivity(memberId, durationMinutes, db) {
   log(`📈 עדכון פעילות ל־${memberId}: ${durationMinutes} דקות`);
 }
 async function calculateAndAnnounceMVP(client, db) {
-  const today = new Date().toISOString().split('T')[0];
+  const israelNow = new Date(Date.now() + 3 * 60 * 60 * 1000); // זמן ישראל
+  const today = israelNow.toISOString().split('T')[0];
   const statusRef = db.doc('mvpSystem/status');
   const statusSnap = await statusRef.get();
 
@@ -123,7 +124,7 @@ async function calculateAndAnnounceMVP(client, db) {
     await message.react('🏅').catch(() => {});
     await statusRef.set({
       lastCalculated: Timestamp.now(),
-      lastAnnouncedDate: today,
+      lastAnnouncedDate: israelNow.toISOString().split('T')[0],
       messageId: message.id,
       channelId: channel.id,
       reacted: false
@@ -149,6 +150,10 @@ async function checkMVPStatusAndRun(client, db) {
     lastDate = statusSnap.data().lastAnnouncedDate || lastDate;
   }
 
+  const day = now.getDay(); // ראשון = 0
+  if (day !== 0) return;
+
+  // אם כבר הוכרז היום – הצג לוג פעם אחת בלבד
   if (todayDate === lastDate) {
     if (lastPrintedDate !== todayDate) {
       log(`⏱️ כבר הוכרז היום – מדלג`);
@@ -157,12 +162,15 @@ async function checkMVPStatusAndRun(client, db) {
     return;
   }
 
-  const day = now.getDay(); // ראשון = 0
-  if (day !== 0) return;
+  // הכרזה טרייה – רק פעם ביום
+  if (lastPrintedDate !== todayDate) {
+    log('⏳ יום ראשון – מנסה להכריז MVP...');
+    lastPrintedDate = todayDate;
+  }
 
-  log('⏳ יום ראשון – מנסה להכריז MVP...');
   await calculateAndAnnounceMVP(client, db);
 }
+
 
 function startMvpScheduler(client, db) {
   setInterval(() => {

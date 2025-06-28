@@ -37,7 +37,6 @@ async function fetchTopUsers(limit = 5) {
 async function sendLeaderboardEmbed(client) {
   try {
     const topUsers = await fetchTopUsers();
-
     if (!topUsers.length) {
       console.log('ℹ️ אין משתמשים פעילים ל־Leaderboard.');
       return false;
@@ -59,24 +58,51 @@ async function sendLeaderboardEmbed(client) {
 
     const imagePath = await renderLeaderboardImage(enrichedUsers);
     const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
-
     if (!channel) {
       console.error('❌ לא נמצא ערוץ עם ID:', CHANNEL_ID);
       return false;
     }
 
-    // 🖼️ שליחת תמונת פתיחה קבועה בלבד (בלי טקסט)
     const introImagePath = path.join(__dirname, '../assets/leaderboard_intro.png');
-    const introImage = new AttachmentBuilder(introImagePath);
-    await channel.send({
-      files: [introImage],
-      allowedMentions: { parse: [] }
-    });
-    
+    const recentMessages = await channel.messages.fetch({ limit: 10 });
+
+    const introExists = recentMessages.some(msg =>
+      msg.attachments.some(att => att.name === 'leaderboard_intro.png')
+    );
+    // אם אין תמונה ראשית – מוחקים הכל ושולחים גם ראשית וגם נתונים
+    if (!introExists) {
+      console.log('🧹 לא נמצאה תמונת פתיחה – מוחק הודעות קיימות...');
+// 🧹 מחיקת כל ההודעות הקיימות
+for (const msg of recentMessages.values()) {
+  try {
+    await msg.delete();
+  } catch (err) {
+    console.warn(`⚠️ לא ניתן למחוק הודעה ${msg.id}:`, err.message);
+  }
+}
+
+// 🧪 ווידוא שהערוץ באמת ריק (או לפחות שאין בו תמונות פתיחה ישנות)
+const postDeletionMessages = await channel.messages.fetch({ limit: 5 });
+const stillHasIntro = postDeletionMessages.some(msg =>
+  msg.attachments.some(att => att.name === 'leaderboard_intro.png')
+);
+
+if (stillHasIntro) {
+  console.warn('🚨 תמונת פתיחה עדיין קיימת לאחר ניסיון מחיקה – מבטל שליחה כפולה.');
+  return false;
+}
+
+
+      const introImage = new AttachmentBuilder(introImagePath);
+      await channel.send({ files: [introImage], allowedMentions: { parse: [] } });
+      console.log('🖼️ תמונת הפתיחה נשלחה מחדש.');
+    } else {
+      console.log('⏩ זוהתה תמונת פתיחה קיימת – ממשיך לעדכון נתונים בלבד.');
+    }
+
     await sendLeaderboardToTelegram(imagePath, '🏆 מצטייני השבוע – GAMERS UNITED IL');
     const leaderboardImage = new AttachmentBuilder(imagePath);
 
-    // ✅ בדיקה אם קיימת הודעה קודמת לעריכה
     const docRef = db.collection('systemTasks').doc('weeklyLeaderboard');
     const doc = await docRef.get();
     let message;
@@ -95,7 +121,6 @@ async function sendLeaderboardEmbed(client) {
       }
     }
 
-    // אם לא נמצא הודעה קודמת – שולחים חדשה
     if (!message) {
       message = await channel.send({
         content: '🏆 **מצטייני השבוע – GAMERS UNITED IL**\n(התמונה מוצגת במלואה 👇)',
@@ -106,11 +131,12 @@ async function sendLeaderboardEmbed(client) {
       await docRef.set({ messageId: message.id, lastUpdated: new Date().toISOString() }, { merge: true });
       console.log('✅ לוח הפעילות נשלח כהודעה חדשה.');
     }
-    
-await db.collection("leaderboard").doc("mvp").set({
-  url: message.attachments.first()?.url || "",
-  updatedAt: new Date().toISOString()
-});
+
+    await db.collection("leaderboard").doc("mvp").set({
+      url: message.attachments.first()?.url || "",
+      updatedAt: new Date().toISOString()
+    });
+
     await message.react('🏅');
     return true;
 

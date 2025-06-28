@@ -82,8 +82,15 @@ async function renderMvpImage({ username, avatarURL, minutes, wins }) {
   }
 
   const buffer = canvas.toBuffer('image/png');
-  fs.writeFileSync(OUTPUT_PATH, buffer);
-  return OUTPUT_PATH;
+
+// ווידוא קיום תיקיית temp
+const tempDir = path.join(__dirname, '../temp');
+if (!fs.existsSync(tempDir)) {
+  fs.mkdirSync(tempDir, { recursive: true });
+}
+
+fs.writeFileSync(OUTPUT_PATH, buffer);
+return OUTPUT_PATH;
 }
 
 module.exports = { renderMvpImage };

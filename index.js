@@ -75,6 +75,7 @@ const client = new Client({
 
 });
 client.db = db;
+global.client = client;
 
 // 🧠 טעינת Slash Commands (Map)
 const commandMap = new Map();

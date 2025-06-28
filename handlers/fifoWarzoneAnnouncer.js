@@ -94,12 +94,13 @@ async function sendWarzoneEmbed(client) {
 
   await deletePreviousMessage(channel);
 
-  const message = await channel.send({
-    content: missing.length > 0 ? `🧟 ${missing.map(m => `<@${m.id}>`).join(' ')}` : null,
-    embeds: [embed],
-    files: file ? [file] : [],
-    components: [joinButton]
-  });
+  const tags = missing.map(m => `<@${m.id}>`).join(' ');
+await channel.send({
+  content: tags.length > 0 ? `🧟 ${tags}` : null,
+  embeds: [embed],
+  files: file ? [file] : [],
+  components: [joinButton]
+});
 
   await saveLastMessageId(message.id);
 }

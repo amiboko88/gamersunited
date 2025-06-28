@@ -1,10 +1,14 @@
-const { createCanvas, loadImage } = require('canvas');
+const { createCanvas, loadImage, registerFont } = require('canvas');
 const path = require('path');
 
 const WIDTH = 1000;
 const HEIGHT = 562;
 const AVATAR_SIZE = 100;
 const MAX_PLAYERS = 5;
+
+registerFont(path.join(__dirname, '../assets/NotoSansHebrew-Bold.ttf'), {
+  family: 'NotoHebrew',
+});
 
 /**
  * @param {Collection<string, GuildMember>} players
@@ -20,15 +24,15 @@ async function generateProBanner(players) {
 
   ctx.drawImage(background, 0, 0, WIDTH, HEIGHT);
 
-  // כותרת
-  ctx.font = 'bold 48px Arial';
+  // כותרות בעברית
+  ctx.font = '48px "NotoHebrew"';
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
-  ctx.fillText('תצטרפו למלחמה!', WIDTH / 2, 60);
+  ctx.fillText('חברי הצוות מחוברים כבר!', WIDTH / 2, 60);
 
-  ctx.font = 'bold 52px Arial';
+  ctx.font = 'bold 42px Arial';
   ctx.fillStyle = '#00ffff';
-  ctx.fillText('FIFO ROTATION', WIDTH / 2, 120);
+  ctx.fillText('FIFO SQUAD ROTATION', WIDTH / 2, 110);
 
   // אוואטרים
   const displayed = [...players.values()].slice(0, MAX_PLAYERS);
@@ -41,21 +45,28 @@ async function generateProBanner(players) {
       const avatar = await loadImage(avatarURL);
       const y = 160;
 
-      // עיגול
+      // אוואטר עגול
       ctx.save();
       ctx.beginPath();
-      ctx.arc(x + AVATAR_SIZE / 2, y + AVATAR_SIZE / 2, AVATAR_SIZE / 2, 0, Math.PI * 2, true);
+      ctx.arc(x + AVATAR_SIZE / 2, y + AVATAR_SIZE / 2, AVATAR_SIZE / 2, 0, Math.PI * 2);
       ctx.closePath();
       ctx.clip();
       ctx.drawImage(avatar, x, y, AVATAR_SIZE, AVATAR_SIZE);
       ctx.restore();
 
-      // מסגרת
-      ctx.strokeStyle = 'cyan';
-      ctx.lineWidth = 4;
+      // אפקט זוהר
+      ctx.shadowColor = 'cyan';
+      ctx.shadowBlur = 15;
       ctx.beginPath();
-      ctx.arc(x + AVATAR_SIZE / 2, y + AVATAR_SIZE / 2, AVATAR_SIZE / 2, 0, Math.PI * 2, true);
+      ctx.arc(x + AVATAR_SIZE / 2, y + AVATAR_SIZE / 2, AVATAR_SIZE / 2 + 2, 0, Math.PI * 2);
       ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // שם המשתמש
+      ctx.font = '20px Arial';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.fillText(member.displayName, x + AVATAR_SIZE / 2, y + AVATAR_SIZE + 25);
 
       x += spacing;
     } catch (err) {
@@ -66,12 +77,12 @@ async function generateProBanner(players) {
   // לוגו בפינה
   ctx.drawImage(logo, 30, HEIGHT - 110, 80, 80);
 
-  // כפתור מדומה (ויזואלית בלבד)
+  // כפתור מדומה (ויזואלי בלבד)
   ctx.fillStyle = 'black';
   ctx.fillRect(WIDTH - 280, HEIGHT - 80, 220, 50);
   ctx.font = '28px Arial';
   ctx.fillStyle = '#ffffff';
-  ctx.fillText('לחץ עליי', WIDTH - 170, HEIGHT - 45);
+  ctx.fillText('🎧 לחץ כדי להצטרף', WIDTH - 170, HEIGHT - 45);
 
   const buffer = canvas.toBuffer('image/webp');
   if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {

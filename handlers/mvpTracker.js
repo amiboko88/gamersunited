@@ -64,7 +64,7 @@ async function calculateAndAnnounceMVP(client, db) {
   }
 
   try {
-    const allMembers = await guild.members.fetch({ time: 10000 });
+    const allMembers = await guild.members.fetch();
     allMembers.forEach(m => {
       if (m.roles.cache.has(mvpRole.id)) {
         m.roles.remove(mvpRole).catch(() => {});
@@ -95,6 +95,21 @@ async function calculateAndAnnounceMVP(client, db) {
   const channel = client.channels.cache.get(MVP_ANNOUNCE_CHANNEL_ID);
   if (!channel) return;
 
+// 🧹 מחיקת הודעת MVP קודמת אם קיימת
+const oldStatusSnap = await db.doc('mvpSystem/status').get();
+if (oldStatusSnap.exists) {
+  const oldData = oldStatusSnap.data();
+  if (oldData.messageId && oldData.channelId) {
+    const oldChannel = client.channels.cache.get(oldData.channelId);
+    if (oldChannel) {
+      const oldMessage = await oldChannel.messages.fetch(oldData.messageId).catch(() => null);
+      if (oldMessage) {
+        await oldMessage.delete().catch(() => {});
+        log(`🧹 נמחקה הודעת MVP קודמת (${oldData.messageId})`);
+      }
+    }
+  }
+}
   const message = await channel.send({
     content: '@everyone',
     files: [imagePath]
@@ -121,7 +136,7 @@ async function checkMVPStatusAndRun(client, db) {
   const statusRef = db.doc('mvpSystem/status');
   const statusSnap = await statusRef.get();
 
-  const now = new Date(Date.now() + 3 * 60 * 60 * 1000); // ישראל
+  const now = new Date(Date.now() + 3 * 60 * 60 * 1000); // זמן ישראל
   const todayDate = now.toISOString().split('T')[0];
   let lastDate = '1970-01-01';
 
@@ -129,23 +144,17 @@ async function checkMVPStatusAndRun(client, db) {
     lastDate = statusSnap.data().lastAnnouncedDate || lastDate;
   }
 
-  if (todayDate === lastDate) {
-    if (lastPrintedDate !== todayDate) {
-      log(`⏱️ כבר הוכרז היום (today: ${todayDate}) – לא מכריז שוב`);
-      lastPrintedDate = todayDate;
-    }
-    return;
-  }
+  // הכרזה אחת ביום בלבד
+  if (todayDate === lastDate) return;
 
   const day = now.getDay(); // 0 = ראשון
-  const hour = now.getHours();
-  const minute = now.getMinutes();
+  if (day !== 0) return; // רק ביום ראשון
 
-  if (day === 0 && hour === 20 && minute === 0) {
-    log('⏳ הגיע הזמן להכריז MVP...');
-    await calculateAndAnnounceMVP(client, db);
-  }
+  // ✅ נכריז כל שעה עד שיתבצע בפועל
+  log('⏳ יום ראשון מזוהה, לא הוכרז עדיין – מתחיל הכרזה...');
+  await calculateAndAnnounceMVP(client, db);
 }
+
 
 function startMvpScheduler(client, db) {
   setInterval(() => {

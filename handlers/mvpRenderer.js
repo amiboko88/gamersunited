@@ -1,4 +1,3 @@
-// 📁 handlers/mvpRenderer.js
 const { createCanvas, loadImage } = require('canvas');
 const fs = require('fs');
 const path = require('path');
@@ -11,7 +10,7 @@ async function renderMvpImage({ username, avatarURL, minutes, wins }) {
   const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx = canvas.getContext('2d');
 
-  // 🖼️ רקע מותאם (war_bg)
+  // 🎨 רקע
   const bgPath = path.join(__dirname, '../assets/war_bg.png');
   if (fs.existsSync(bgPath)) {
     const bg = await loadImage(bgPath);
@@ -21,76 +20,83 @@ async function renderMvpImage({ username, avatarURL, minutes, wins }) {
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
   }
 
-  // 🖼️ אווטאר מרכזי גדול עם זוהר וכתר
+  const centerX = WIDTH / 2;
+  const centerY = 350;
+  const radius = 160;
+
+  // 👤 אווטאר + זוהר + מסגרת
   try {
     const avatar = await loadImage(avatarURL);
-    const centerX = WIDTH / 2;
-    const avatarSize = 340;
-    const glowRadius = 180;
 
-    // זוהר
-    const gradient = ctx.createRadialGradient(centerX, 380, 50, centerX, 380, glowRadius);
-    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+    // ✨ זוהר
+    const gradient = ctx.createRadialGradient(centerX, centerY, 40, centerX, centerY, radius + 60);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
     gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
     ctx.fillStyle = gradient;
     ctx.beginPath();
-    ctx.arc(centerX, 380, glowRadius, 0, Math.PI * 2);
+    ctx.arc(centerX, centerY, radius + 60, 0, Math.PI * 2);
     ctx.fill();
 
-    // אווטאר
+    // 🟡 מסגרת זהב
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius + 6, 0, Math.PI * 2);
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth = 8;
+    ctx.stroke();
+    ctx.closePath();
+
+    // 🖼️ תמונה עגולה
     ctx.save();
     ctx.beginPath();
-    ctx.arc(centerX, 380, avatarSize / 2, 0, Math.PI * 2, true);
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
     ctx.closePath();
     ctx.clip();
-    ctx.drawImage(avatar, centerX - avatarSize / 2, 380 - avatarSize / 2, avatarSize, avatarSize);
+    ctx.drawImage(avatar, centerX - radius, centerY - radius, radius * 2, radius * 2);
     ctx.restore();
 
-    // כתר מעל
+    // 👑 כתר
     const crownPath = path.join(__dirname, '../assets/crown.png');
     if (fs.existsSync(crownPath)) {
       const crown = await loadImage(crownPath);
-      ctx.drawImage(crown, centerX - 90, 130, 180, 120);
+      ctx.drawImage(crown, centerX - 90, centerY - radius - 120, 180, 100);
     }
-
   } catch (e) {
     console.warn('⚠️ שגיאה בטעינת אווטאר:', e.message);
   }
 
-  // 📝 שם המשתמש – כותרת מתחת
+  // 📝 שם המשתמש
   ctx.fillStyle = '#facc15';
-  ctx.font = 'bold 80px sans-serif';
+  ctx.font = 'bold 90px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(username, WIDTH / 2, 750);
+  ctx.fillText(username, centerX, centerY + radius + 80);
 
-  // 📝 נתונים מימין לשמאל
+  // 📊 נתונים מימין
   ctx.font = '60px sans-serif';
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'right';
-  ctx.fillText(`⏱️ דקות השבוע: ${minutes}`, WIDTH - 120, 850);
-  ctx.fillText(`🏆 סה״כ זכיות: ${wins}`, WIDTH - 120, 930);
+  ctx.fillText(`דקות השבוע: ${minutes}`, WIDTH - 100, HEIGHT - 130);
+  ctx.fillText(`סה״כ זכיות: ${wins}`, WIDTH - 100, HEIGHT - 70);
 
-  // 🔗 לוגו onlyg בתחתית שמאל
+  // 🔗 לוגו onlyg
   const logoPath = path.join(__dirname, '../assets/onlyg.png');
   if (fs.existsSync(logoPath)) {
     try {
       const logo = await loadImage(logoPath);
-      ctx.drawImage(logo, 50, HEIGHT - 160, 200, 100);
+      ctx.drawImage(logo, 60, HEIGHT - 140, 200, 100);
     } catch (e) {
       console.warn('⚠️ שגיאה בטעינת לוגו:', e.message);
     }
   }
 
+  // 💾 שמירה לתיקיית temp
   const buffer = canvas.toBuffer('image/png');
+  const tempDir = path.join(__dirname, '../temp');
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
 
-// ווידוא קיום תיקיית temp
-const tempDir = path.join(__dirname, '../temp');
-if (!fs.existsSync(tempDir)) {
-  fs.mkdirSync(tempDir, { recursive: true });
-}
-
-fs.writeFileSync(OUTPUT_PATH, buffer);
-return OUTPUT_PATH;
+  fs.writeFileSync(OUTPUT_PATH, buffer);
+  return OUTPUT_PATH;
 }
 
 module.exports = { renderMvpImage };

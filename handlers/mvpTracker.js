@@ -5,7 +5,7 @@ const { log } = require('../utils/logger');
 
 const Timestamp = admin.firestore.Timestamp;
 const MVP_ROLE_ID = process.env.ROLE_MVP_ID;
-const MVP_ANNOUNCE_CHANNEL_ID = '583575179880431616';
+const MVP_ANNOUNCE_CHANNEL_ID = process.env.MVP_ANNOUNCE_CHANNEL_ID || '583575179880431616';
 
 let lastPrintedDate = null;
 
@@ -30,13 +30,23 @@ async function updateVoiceActivity(memberId, durationMinutes, db) {
     await lifeRef.update({ total: (data.total || 0) + durationMinutes });
   }
 
-  // ✅ רישום גם לסטטיסטיקה הכללית
   await trackVoiceMinutes(memberId, durationMinutes);
-
   log(`📈 עדכון פעילות ל־${memberId}: ${durationMinutes} דקות`);
 }
-
 async function calculateAndAnnounceMVP(client, db) {
+  const today = new Date().toISOString().split('T')[0];
+  const statusRef = db.doc('mvpSystem/status');
+  const statusSnap = await statusRef.get();
+
+  // ⛔ מניעת הכרזה כפולה
+  if (statusSnap.exists) {
+    const alreadyToday = statusSnap.data().lastAnnouncedDate;
+    if (alreadyToday === today) {
+      log(`⛔ MVP כבר הוכרז היום (${alreadyToday}) – מתעלם`);
+      return;
+    }
+  }
+
   const voiceRef = await db.collection('voiceTime').get();
   if (voiceRef.empty) return;
 
@@ -71,11 +81,7 @@ async function calculateAndAnnounceMVP(client, db) {
       }
     });
   } catch (err) {
-    if (err.code === 'GuildMembersTimeout') {
-      log(`⚠️ לא ניתן לטעון את כל המשתמשים ל־MVP: ${guild.name}`);
-    } else {
-      log(`❌ שגיאה כללית בטעינת משתמשים ל־MVP: ${err.message}`);
-    }
+    log(`⚠️ שגיאה בטעינת משתמשים: ${err.message}`);
   }
 
   await member.roles.add(mvpRole).catch(() => {});
@@ -95,21 +101,19 @@ async function calculateAndAnnounceMVP(client, db) {
   const channel = client.channels.cache.get(MVP_ANNOUNCE_CHANNEL_ID);
   if (!channel) return;
 
-// 🧹 מחיקת הודעת MVP קודמת אם קיימת
-const oldStatusSnap = await db.doc('mvpSystem/status').get();
-if (oldStatusSnap.exists) {
-  const oldData = oldStatusSnap.data();
-  if (oldData.messageId && oldData.channelId) {
-    const oldChannel = client.channels.cache.get(oldData.channelId);
-    if (oldChannel) {
-      const oldMessage = await oldChannel.messages.fetch(oldData.messageId).catch(() => null);
+  // 🧹 מחיקת הודעת MVP קודמת
+  if (statusSnap.exists) {
+    const old = statusSnap.data();
+    if (old.messageId && old.channelId) {
+      const oldChannel = client.channels.cache.get(old.channelId);
+      const oldMessage = await oldChannel?.messages?.fetch(old.messageId).catch(() => null);
       if (oldMessage) {
         await oldMessage.delete().catch(() => {});
-        log(`🧹 נמחקה הודעת MVP קודמת (${oldData.messageId})`);
+        log(`🧹 נמחקה הודעת MVP קודמת (${old.messageId})`);
       }
     }
   }
-}
+
   const message = await channel.send({
     content: '@everyone',
     files: [imagePath]
@@ -117,11 +121,12 @@ if (oldStatusSnap.exists) {
 
   if (message) {
     await message.react('🏅').catch(() => {});
-    await db.doc('mvpSystem/status').set({
+    await statusRef.set({
       lastCalculated: Timestamp.now(),
-      lastAnnouncedDate: new Date().toISOString().split('T')[0],
+      lastAnnouncedDate: today,
       messageId: message.id,
-      channelId: channel.id
+      channelId: channel.id,
+      reacted: false
     });
   }
 
@@ -144,22 +149,25 @@ async function checkMVPStatusAndRun(client, db) {
     lastDate = statusSnap.data().lastAnnouncedDate || lastDate;
   }
 
-  // הכרזה אחת ביום בלבד
-  if (todayDate === lastDate) return;
+  if (todayDate === lastDate) {
+    if (lastPrintedDate !== todayDate) {
+      log(`⏱️ כבר הוכרז היום – מדלג`);
+      lastPrintedDate = todayDate;
+    }
+    return;
+  }
 
-  const day = now.getDay(); // 0 = ראשון
-  if (day !== 0) return; // רק ביום ראשון
+  const day = now.getDay(); // ראשון = 0
+  if (day !== 0) return;
 
-  // ✅ נכריז כל שעה עד שיתבצע בפועל
-  log('⏳ יום ראשון מזוהה, לא הוכרז עדיין – מתחיל הכרזה...');
+  log('⏳ יום ראשון – מנסה להכריז MVP...');
   await calculateAndAnnounceMVP(client, db);
 }
-
 
 function startMvpScheduler(client, db) {
   setInterval(() => {
     checkMVPStatusAndRun(client, db);
-  }, 60 * 1000);
+  }, 60 * 1000); // בדיקה כל דקה
 }
 
 module.exports = {

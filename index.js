@@ -88,27 +88,41 @@ for (const file of commandFiles) {
 }
 
 client.once('ready', async () => {
-  await hardSyncPresenceOnReady(client);
-  await setupVerificationMessage(client);
-  await registerSlashCommands(client.user.id, client); // רישום Slash מול Discord
-  await startMvpReactionWatcher(client, db);
+  console.log('⚡️ Shimon is READY!');
 
-  startBirthdayCongratulator(client);
-  startFifoWarzoneAnnouncer(client);
-  startStatsUpdater(client);
-  welcomeImage(client);
-  startInactivityReminder(client);
-  startDmTracking(client);
-  startLeaderboardUpdater(client);
-  startPresenceLoop(client);
-  startPresenceRotation(client);
-  startBirthdayTracker(client);
-  startWeeklyBirthdayReminder(client);
-  startCleanupScheduler(client);
-  startMvpScheduler(client, db);
+  try {
+    await hardSyncPresenceOnReady(client);
+    console.log('✅ Presence synced');
 
-  console.log(` הבוט באוויר! ${client.user.tag}`);
+    await setupVerificationMessage(client);
+    console.log('✅ Verification ready');
+
+    await registerSlashCommands(client.user.id, client);
+    console.log('✅ Slash registered');
+
+    await startMvpReactionWatcher(client, db);
+    console.log('✅ MVP watcher started');
+
+    startBirthdayCongratulator(client);
+    startFifoWarzoneAnnouncer(client);
+    startStatsUpdater(client);
+    welcomeImage(client);
+    startInactivityReminder(client);
+    startDmTracking(client);
+    startLeaderboardUpdater(client);
+    startPresenceLoop(client);
+    startPresenceRotation(client);
+    startBirthdayTracker(client);
+    startWeeklyBirthdayReminder(client);
+    startCleanupScheduler(client);
+    startMvpScheduler(client, db);
+
+    console.log(`🎉 הבוט באוויר! ${client.user.tag}`);
+  } catch (err) {
+    console.error('❌ שגיאה ב־client.ready:', err);
+  }
 });
+
 
 client.on('guildMemberAdd', async member => {
   const ref = db.collection('memberTracking').doc(member.id);
@@ -306,8 +320,6 @@ client.on('interactionCreate', async interaction => {
     }
   }
 });
-
-
 // 🚀 הפעלת הבוט
 client.login(process.env.DISCORD_TOKEN);
 require('./shimonTelegram');

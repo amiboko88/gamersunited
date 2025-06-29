@@ -96,12 +96,19 @@ async function execute(interaction, client) {
       fs.mkdirSync(tempDir, { recursive: true });
     }
 
-    const outputPath = path.join(tempDir, 'mvp_alltime_5.png');
+    const filename = `mvp_alltime_${Date.now()}.png`;
+    const outputPath = path.join(tempDir, filename);
     fs.writeFileSync(outputPath, canvas.toBuffer('image/png'));
 
     await interaction.editReply({
       files: [outputPath]
     });
+
+    // מחיקת הקובץ לאחר שליחה
+    setTimeout(() => {
+      fs.unlink(outputPath, () => {});
+    }, 10_000);
+    
   } catch (err) {
     console.error('שגיאה בביצוע /אלופים:', err);
     if (!interaction.replied) {

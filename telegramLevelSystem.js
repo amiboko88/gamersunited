@@ -156,7 +156,6 @@ function registerTopButton(bot) {
   });
 }
 
-
 module.exports = {
   updateXP,
   handleTop,

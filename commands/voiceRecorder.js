@@ -69,7 +69,7 @@ async function convertPcmToMp3(inputPath, outputPath) {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('הקלט')
+    .setName('record')
     .setDescription('מקליט את הערוץ שלך ל־30 שניות (רק למורשים)'),
 
   async execute(interaction) {

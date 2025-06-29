@@ -8,7 +8,7 @@ const ADMIN_ROLE_ID = '1133753472966201555';
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('מחק_הקלטות')
+    .setName('deleterec')
     .setDescription('מוחק את כל ההקלטות של משתמש מסוים (למנהלים בלבד)')
     .addUserOption(option =>
       option.setName('משתמש')

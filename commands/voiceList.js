@@ -7,7 +7,7 @@ const RECORDINGS_DIR = path.join(__dirname, '..', 'recordings');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('רשימת_הקלטות')
+    .setName('voicelist')
     .setDescription('מציג את רשימת כל ההקלטות שלך'),
 
   async execute(interaction) {

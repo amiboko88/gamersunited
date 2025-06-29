@@ -4,7 +4,7 @@ const { log } = require('../utils/logger');
 
 const Timestamp = admin.firestore.Timestamp;
 const MVP_ROLE_ID = process.env.ROLE_MVP_ID;
-const MVP_CHANNEL_ID = process.env.MVP_ANNOUNCE_CHANNEL_ID;
+const MVP_CHANNEL_ID = '583575179880431616'
 
 let lastPrintedDate = null;
 

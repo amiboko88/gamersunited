@@ -13,7 +13,7 @@ const RECORDINGS_DIR = path.join(__dirname, '..', 'recordings');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('השמע_אחרון')
+    .setName('voiceplayback')
     .setDescription('משמיע את ההקלטה האחרונה שלך (MP3)'),
 
   async execute(interaction) {

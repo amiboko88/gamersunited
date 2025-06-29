@@ -34,11 +34,12 @@ async function updateVoiceActivity(memberId, durationMinutes, db) {
   log(`📈 עדכון פעילות ל־${memberId}: ${durationMinutes} דקות`);
 }
 async function calculateAndAnnounceMVP(client, db, force = false) {
-  const israelNow = new Date(Date.now() + 3 * 60 * 60 * 1000);
+  const israelNow = new Date(Date.now() + 3 * 60 * 60 * 1000); // זמן ישראל
   const today = israelNow.toISOString().split('T')[0];
   const statusRef = db.doc('mvpSystem/status');
   const statusSnap = await statusRef.get();
 
+  // ⛔ מניעת הכרזה כפולה
   if (!force && statusSnap.exists) {
     const alreadyToday = statusSnap.data().lastAnnouncedDate;
     if (alreadyToday === today) {
@@ -78,8 +79,8 @@ async function calculateAndAnnounceMVP(client, db, force = false) {
     allMembers.forEach(m => {
       if (m.roles.cache.has(mvpRole.id)) {
         m.roles.remove(mvpRole).catch(err =>
-  log(`⚠️ שגיאה בהסרת תפקיד MVP מ־${m.user?.username}: ${err.message}`)
-);
+          log(`⚠️ שגיאה בהסרת תפקיד MVP מ־${m.user?.username}: ${err.message}`)
+        );
       }
     });
   } catch (err) {
@@ -87,8 +88,8 @@ async function calculateAndAnnounceMVP(client, db, force = false) {
   }
 
   await member.roles.add(mvpRole).catch(err =>
-  log(`⚠️ שגיאה בהוספת תפקיד MVP ל־${member.user?.username}: ${err.message}`)
-);
+    log(`⚠️ שגיאה בהוספת תפקיד MVP ל־${member.user?.username}: ${err.message}`)
+  );
 
   const statsRef = db.doc(`mvpStats/${topUser.id}`);
   const statsSnap = await statsRef.get();
@@ -103,9 +104,12 @@ async function calculateAndAnnounceMVP(client, db, force = false) {
   });
 
   const channel = client.channels.cache.get(MVP_ANNOUNCE_CHANNEL_ID);
-  if (!channel) return;
+  if (!channel) {
+    log(`❌ לא נמצא ערוץ לפי ID: ${MVP_ANNOUNCE_CHANNEL_ID}`);
+    return;
+  }
 
-  // 🧹 מחיקת הודעת MVP קודמת
+  // 🧹 מחיקת הודעה קודמת
   if (statusSnap.exists) {
     const old = statusSnap.data();
     if (old.messageId && old.channelId) {
@@ -113,27 +117,36 @@ async function calculateAndAnnounceMVP(client, db, force = false) {
       const oldMessage = await oldChannel?.messages?.fetch(old.messageId).catch(() => null);
       if (oldMessage) {
         await oldMessage.delete().catch(err =>
-  log(`⚠️ שגיאה במחיקת הודעת MVP ישנה (${old.messageId}): ${err.message}`)
-);
+          log(`⚠️ שגיאה במחיקת הודעת MVP ישנה (${old.messageId}): ${err.message}`)
+        );
       }
     }
   }
 
-  const message = await channel.send({
-    content: '@everyone',
-    files: [imagePath]
-  }).catch(() => null);
-
-  if (message) {
-    await message.react('🏅').catch(() => {});
-    await statusRef.set({
-      lastCalculated: Timestamp.now(),
-      lastAnnouncedDate: israelNow.toISOString().split('T')[0],
-      messageId: message.id,
-      channelId: channel.id,
-      reacted: false
+  let message;
+  try {
+    message = await channel.send({
+      content: '@everyone',
+      files: [imagePath]
     });
+  } catch (err) {
+    log(`❌ שגיאה בשליחת הודעת MVP: ${err.message}`);
+    return;
   }
+
+  try {
+    await message.react('🏅');
+  } catch (err) {
+    log(`⚠️ שגיאה בהוספת תגובת 🏅: ${err.message}`);
+  }
+
+  await statusRef.set({
+    lastCalculated: Timestamp.now(),
+    lastAnnouncedDate: today,
+    messageId: message.id,
+    channelId: channel.id,
+    reacted: false
+  });
 
   for (const docSnap of voiceRef.docs) {
     await db.doc(`voiceTime/${docSnap.id}`).update({ minutes: 0 }).catch(() => {});
@@ -141,6 +154,7 @@ async function calculateAndAnnounceMVP(client, db, force = false) {
 
   log(`✅ MVP הוכרז ונשלח – ${topUser.id}`);
 }
+
 
 async function checkMVPStatusAndRun(client, db) {
   const statusRef = db.doc('mvpSystem/status');

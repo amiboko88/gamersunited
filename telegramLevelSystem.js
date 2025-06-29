@@ -1,6 +1,9 @@
 const db = require("./utils/firebase");
 const { createLeaderboardImage } = require("./generateXPLeaderboardImage");
-// 🧪 בר גרפי של XP
+const fs = require("fs");
+const path = require("path");
+
+// 🧪 בר טקסטואלי
 async function sendXPTextBar(ctx, userName, currentXP, level, nextLevelXP) {
   const percent = Math.min((currentXP / nextLevelXP) * 100, 100);
   const barLength = 10;
@@ -21,7 +24,7 @@ async function sendXPTextBar(ctx, userName, currentXP, level, nextLevelXP) {
   await ctx.reply(message, { parse_mode: "HTML" });
 }
 
-// 🧠 פונקציה ראשית שנקראת מתוך shimonTelegram.js
+// 🧠 עדכון XP
 async function updateXP({ id, first_name, username, text }, ctx = null) {
   try {
     const userId = id.toString();
@@ -37,7 +40,6 @@ async function updateXP({ id, first_name, username, text }, ctx = null) {
       xp = doc.data().xp || 0;
       level = doc.data().level || 1;
     } else {
-      // 👤 משתמש חדש → נשמור כבר עכשיו
       await userRef.set({
         xp: 0,
         level: 1,
@@ -73,12 +75,12 @@ async function updateXP({ id, first_name, username, text }, ctx = null) {
   }
 }
 
-
-// 🏆 טבלת מובילים
+// 🏆 טופ ברמת טקסט
 function handleTop(bot) {
   bot.command("topxp", async (ctx) => {
     const usersSnap = await db.collection("levels")
       .orderBy("level", "desc")
+      .orderBy("xp", "desc")
       .limit(10)
       .get();
 
@@ -93,21 +95,26 @@ function handleTop(bot) {
   });
 }
 
-// 📈 כפתור טופ בפרופיל
+// 📈 כפתור גרפי – שולח תמונה
 function registerTopButton(bot) {
   bot.callbackQuery("profile_top", async (ctx) => {
     const usersSnap = await db.collection("levels")
       .orderBy("level", "desc")
+      .orderBy("xp", "desc")
       .limit(10)
       .get();
 
     if (usersSnap.empty) return ctx.reply("אין עדיין XP.");
 
     const users = usersSnap.docs.map((doc) => doc.data());
-    const buffer = await createLeaderboardImage(users);
+    const buffer = createLeaderboardImage(users);
+
+    if (!buffer || !Buffer.isBuffer(buffer) || buffer.length < 1000) {
+      return ctx.reply("😕 לא הצלחתי ליצור תמונה תקינה של טבלת המצטיינים.");
+    }
 
     await ctx.replyWithPhoto({ source: buffer }, {
-      caption: "📈 <b>טבלת מצטיינים</b>",
+      caption: "📈 <b>טבלת מצטייני XP</b>",
       parse_mode: "HTML"
     });
 

@@ -1,61 +1,95 @@
 // 📁 generateXPLeaderboardImage.js
-const { createCanvas, loadImage } = require("canvas");
-const fs = require("fs");
-const path = require("path");
+const { createCanvas } = require("canvas");
 
-async function createLeaderboardImage(users) {
-  const width = 600;
-  const height = 80 + users.length * 70;
+function getBarColor(percent) {
+  if (percent < 0.4) return "#ff4d4d";
+  if (percent < 0.7) return "#ffaa00";
+  return "#00cc99";
+}
+
+function drawTextWithShadow(ctx, text, x, y, font, align = "right") {
+  ctx.font = font;
+  ctx.textAlign = align;
+  ctx.fillStyle = "#000000aa";
+  ctx.fillText(text, x + 2, y + 2); // shadow
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(text, x, y);
+}
+
+function createLeaderboardImage(users) {
+  const width = 720;
+  const rowHeight = 70;
+  const headerHeight = 100;
+  const height = headerHeight + users.length * rowHeight;
+
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
   // רקע כללי
-  ctx.fillStyle = "#1e1e2f";
+  ctx.fillStyle = "#1c1b29";
   ctx.fillRect(0, 0, width, height);
 
-  // כותרת
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "28px sans-serif";
-  ctx.fillText("📈 טבלת מצטייני XP", 30, 50);
+  // כותרת עם קו
+  drawTextWithShadow(ctx, "📈 טבלת מצטייני XP", width / 2, 55, "bold 34px sans-serif", "center");
+  ctx.strokeStyle = "#ffffff33";
+  ctx.beginPath();
+  ctx.moveTo(60, 70);
+  ctx.lineTo(width - 60, 70);
+  ctx.stroke();
 
-  // לכל שורה
-  for (let i = 0; i < users.length; i++) {
-    const u = users[i];
-    const y = 90 + i * 70;
-
-    // צבע מדליה
-    const colors = ["#FFD700", "#C0C0C0", "#CD7F32"]; // זהב, כסף, ארד
-    const medalColor = colors[i] || "#999";
+  // שורות המשתמשים
+  users.forEach((u, i) => {
+    const yTop = headerHeight + i * rowHeight;
+    const isEven = i % 2 === 0;
+    const level = u.level || 1;
+    const xp = u.xp || 0;
+    const nextXP = level * 25;
+    const percent = Math.min(xp / nextXP, 1);
+    const barColor = getBarColor(percent);
+    const fill = Math.floor(percent * 200);
 
     // רקע שורה
-    ctx.fillStyle = i % 2 === 0 ? "#2a2a40" : "#262636";
-    ctx.fillRect(20, y - 30, width - 40, 60);
+    ctx.fillStyle = isEven ? "#262638" : "#2e2e45";
+    ctx.fillRect(30, yTop, width - 60, rowHeight - 10);
 
-    // מדליה
-    ctx.fillStyle = medalColor;
-    ctx.beginPath();
-    ctx.arc(50, y, 15, 0, 2 * Math.PI);
-    ctx.fill();
+    // מדליה TOP 3
+    const badgeColors = ["#FFD700", "#C0C0C0", "#CD7F32"];
+    if (i < 3) {
+      ctx.fillStyle = badgeColors[i];
+      ctx.beginPath();
+      ctx.arc(width - 50, yTop + 30, 16, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
-    // שם ורמה
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "22px sans-serif";
+    // שם
     const name = `${u.fullName || u.username || "אנונימי"}`;
-    ctx.fillText(`${i + 1}. ${name}`, 80, y - 5);
+    drawTextWithShadow(ctx, `🧠 ${name}`, width - 90, yTop + 30, "bold 22px sans-serif");
 
-    ctx.font = "18px sans-serif";
-    ctx.fillStyle = "#cccccc";
-    ctx.fillText(`רמה ${u.level} – ${u.xp} XP`, 80, y + 20);
+    // רמה ו־XP
+    drawTextWithShadow(
+      ctx,
+      `🏅 רמה ${level} – ${xp} XP`,
+      width - 90,
+      yTop + 55,
+      "18px sans-serif"
+    );
 
     // בר התקדמות
-    const nextXP = u.level * 25;
-    const percent = Math.min((u.xp / nextXP), 1);
-    const barX = 350, barY = y - 15, barW = 200, barH = 20;
+    const barX = 60;
+    const barY = yTop + 45;
+    const barW = 200;
+    const barH = 18;
+
     ctx.fillStyle = "#444";
     ctx.fillRect(barX, barY, barW, barH);
-    ctx.fillStyle = "#00bfff";
-    ctx.fillRect(barX, barY, barW * percent, barH);
-  }
+
+    ctx.fillStyle = barColor;
+    ctx.fillRect(barX, barY, fill, barH);
+
+    ctx.strokeStyle = "#888";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+  });
 
   return canvas.toBuffer("image/png");
 }

@@ -93,7 +93,7 @@ function getCommandsText(index, isAdmin) {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('עזרה')
+    .setName('help')
     .setDescription('מרכז עזרה ברור ונגיש לפי תפקיד'),
 
   async execute(interaction) {

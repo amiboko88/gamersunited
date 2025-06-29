@@ -92,17 +92,9 @@ client.once('ready', async () => {
 
   try {
     await hardSyncPresenceOnReady(client);
-    console.log('✅ Presence synced');
-
     await setupVerificationMessage(client);
-    console.log('✅ Verification ready');
-
     await registerSlashCommands(client.user.id, client);
-    console.log('✅ Slash registered');
-
     await startMvpReactionWatcher(client, db);
-    console.log('✅ MVP watcher started');
-
     startBirthdayCongratulator(client);
     startFifoWarzoneAnnouncer(client);
     startStatsUpdater(client);

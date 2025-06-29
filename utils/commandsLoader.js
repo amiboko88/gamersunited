@@ -34,24 +34,19 @@ async function registerSlashCommands(clientId) {
       { body: [] }
     );
 
-    console.log(`📤 מתחיל רישום אישי של ${slashCommands.length} פקודות:`);
-
-    for (const cmd of slashCommands) {
-      try {
-        console.log(`🔍 מנסה לרשום את הפקודה: ${cmd.name}`);
-        await rest.put(
-          Routes.applicationGuildCommands(clientId, guildId),
-          { body: [cmd] }
-        );
-        console.log(`✅ ${cmd.name} נרשמה בהצלחה.`);
-      } catch (err) {
-        console.error(`❌ שגיאה ברישום ${cmd.name}:`, err.message);
-      }
+    if (!slashCommands.length) {
+      console.warn('⚠️ אין פקודות חוקיות לרישום – פעולה הופסקה.');
+      return;
     }
 
-    console.log('🎯 סיום תהליך הרישום האישי.');
+    const registered = await rest.put(
+      Routes.applicationGuildCommands(clientId, guildId),
+      { body: slashCommands }
+    );
+
+    console.log(`✅ ${registered.length} Slash Commands נרשמו מחדש מהתיקייה.`);
   } catch (err) {
-    console.error('❌ שגיאה כוללת ברישום Slash Commands:', err);
+    console.error('❌ שגיאה ברישום Slash Commands:', err);
   }
 }
 

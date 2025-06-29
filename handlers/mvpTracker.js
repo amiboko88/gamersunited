@@ -35,26 +35,24 @@ async function updateVoiceActivity(memberId, durationMinutes, db) {
 }
 
 async function calculateAndAnnounceMVP(client, db, force = false) {
-  const israelNow = new Date(Date.now() + 3 * 60 * 60 * 1000); // זמן ישראל
+  const israelNow = new Date(Date.now() + 3 * 60 * 60 * 1000);
   const today = israelNow.toISOString().split('T')[0];
   const statusRef = db.doc('mvpSystem/status');
   const statusSnap = await statusRef.get();
+  const statusData = statusSnap.exists ? statusSnap.data() : null;
 
-  // ⛔ מניעת הכרזה כפולה
-  if (!force && statusSnap.exists) {
-    const alreadyToday = statusSnap.data().lastAnnouncedDate;
-    if (alreadyToday === today) {
-      log(`⛔ MVP כבר הוכרז היום (${alreadyToday}) – מתעלם`);
-      return;
-    }
+  if (!force && statusData?.lastAnnouncedDate === today) {
+    log(`⛔ MVP כבר הוכרז היום (${today}) – מתעלם`);
+    return;
   }
 
   const voiceRef = await db.collection('voiceTime').get();
-  if (voiceRef.empty) return;
+  if (voiceRef.empty) {
+    log(`⚠️ אין נתוני פעילות – לא ניתן להכריז MVP`);
+    return;
+  }
 
-  let topUser = null;
-  let maxMinutes = 0;
-
+  let topUser = null, maxMinutes = 0;
   voiceRef.forEach(doc => {
     const data = doc.data();
     if (data.minutes > maxMinutes) {
@@ -62,7 +60,6 @@ async function calculateAndAnnounceMVP(client, db, force = false) {
       topUser = { id: doc.id, minutes: data.minutes };
     }
   });
-
   if (!topUser) return;
 
   const guild = client.guilds.cache.first();
@@ -70,19 +67,17 @@ async function calculateAndAnnounceMVP(client, db, force = false) {
   if (!member) return;
 
   const mvpRole = guild.roles.cache.get(MVP_ROLE_ID);
-  if (!mvpRole) {
-    log(`❌ תפקיד MVP לא נמצא לפי ID: ${MVP_ROLE_ID}`);
-    return;
-  }
+  if (!mvpRole) return log(`❌ תפקיד MVP לא נמצא לפי ID: ${MVP_ROLE_ID}`);
+
   try {
     const allMembers = await guild.members.fetch();
-allMembers.forEach(m => {
-  if (m.roles.cache.has(mvpRole.id)) {
-    m.roles.remove(mvpRole).catch(err =>
-      log(`⚠️ שגיאה בהסרת תפקיד MVP מ־${m.user?.username}: ${err.message}`)
-    );
-  }
-});
+    allMembers.forEach(m => {
+      if (m.roles.cache.has(mvpRole.id)) {
+        m.roles.remove(mvpRole).catch(err =>
+          log(`⚠️ שגיאה בהסרת תפקיד MVP מ־${m.user?.username}: ${err.message}`)
+        );
+      }
+    });
   } catch (err) {
     log(`⚠️ שגיאה בטעינת משתמשים: ${err.message}`);
   }
@@ -105,45 +100,25 @@ allMembers.forEach(m => {
   });
 
   const channel = client.channels.cache.get(MVP_ANNOUNCE_CHANNEL_ID);
-  if (!channel) {
-    log(`❌ לא נמצא ערוץ לפי ID: ${MVP_ANNOUNCE_CHANNEL_ID}`);
-    return;
-  }
+  if (!channel) return log(`❌ ערוץ MVP לא נמצא`);
 
-  // 🧹 מחיקת הודעה קודמת אם קיימת
-  if (statusSnap.exists) {
-    const old = statusSnap.data();
-    if (old.messageId && old.channelId) {
-      const oldChannel = client.channels.cache.get(old.channelId);
-      const oldMessage = await oldChannel?.messages?.fetch(old.messageId).catch(() => null);
-      if (oldMessage) {
-        await oldMessage.delete().catch(err =>
-          log(`⚠️ שגיאה במחיקת הודעת MVP ישנה (${old.messageId}): ${err.message}`)
-        );
-      }
+  if (statusData?.messageId && statusData?.channelId) {
+    const oldChannel = client.channels.cache.get(statusData.channelId);
+    const oldMessage = await oldChannel?.messages?.fetch(statusData.messageId).catch(() => null);
+    if (oldMessage) {
+      await oldMessage.delete().catch(err =>
+        log(`⚠️ שגיאה במחיקת הודעת MVP ישנה: ${err.message}`)
+      );
     }
   }
 
-let message;
-try {
-  message = await channel.send({
-    content: '@everyone',
-    files: [imagePath]
+  const message = await channel.send({ content: '@everyone', files: [imagePath] }).catch(err => {
+    log(`❌ שגיאה בשליחת הודעת MVP: ${err.message}`);
+    return null;
   });
-  log(`📤 נשלחה הודעת MVP חדשה (${message.id})`);
-} catch (err) {
-  log(`❌ שגיאה בשליחת הודעת MVP: ${err.message}`);
-  return; // חשוב! אל תמשיך בלי הודעה
-}
+  if (!message) return;
 
-try {
-  await message.react('🏅');
-} catch (err) {
-  log(`⚠️ שגיאה בהוספת תגובת 🏅: ${err.message}`);
-}
-
-// 👇 בקרה משופרת – עדכון רק אם יש הודעה
-if (message && message.id && message.channel?.id){
+  await message.react('🏅').catch(() => {});
   await statusRef.set({
     lastCalculated: Timestamp.now(),
     lastAnnouncedDate: today,
@@ -151,10 +126,11 @@ if (message && message.id && message.channel?.id){
     channelId: message.channel.id,
     reacted: false
   });
-  log(`📝 עודכן סטטוס Firestore עם הודעת MVP חדשה`);
-} else {
-  log(`❌ לא בוצע עדכון Firestore – message לא תקין`);
-}
+  log(`✅ MVP נשלח ל־${topUser.id} (${topUser.minutes} דקות)`);
+  
+  for (const docSnap of voiceRef.docs) {
+    await db.doc(`voiceTime/${docSnap.id}`).update({ minutes: 0 }).catch(() => {});
+  }
 }
 
 async function checkMVPStatusAndRun(client, db) {
@@ -163,35 +139,32 @@ async function checkMVPStatusAndRun(client, db) {
 
   const now = new Date(Date.now() + 3 * 60 * 60 * 1000);
   const todayDate = now.toISOString().split('T')[0];
-  let lastDate = '1970-01-01';
-
-  if (statusSnap.exists) {
-    const statusData = statusSnap.data();
-    lastDate = statusData.lastAnnouncedDate || lastDate;
-
-    if (todayDate === lastDate) {
-      const { messageId, channelId } = statusData;
-      const channel = client.channels.cache.get(channelId);
-      const message = await channel?.messages?.fetch(messageId).catch(() => null);
-      if (message) {
-        if (lastPrintedDate !== todayDate) {
-          log(`⏱️ כבר הוכרז היום – מדלג`);
-          lastPrintedDate = todayDate;
-        }
-        return;
-      }
-
-      log(`⚠️ ההודעה המקורית נמחקה – מכריז מחדש`);
-      await calculateAndAnnounceMVP(client, db, true);
-      return;
-    }
-  }
-
   const day = now.getDay();
   if (day !== 0) return;
 
+  const statusData = statusSnap.exists ? statusSnap.data() : null;
+  const lastDate = statusData?.lastAnnouncedDate || '1970-01-01';
+
+  if (lastDate === todayDate) {
+    const { messageId, channelId } = statusData || {};
+    const channel = client.channels.cache.get(channelId);
+    const message = await channel?.messages?.fetch(messageId).catch(() => null);
+
+    if (message) {
+      if (lastPrintedDate !== todayDate) {
+        log(`⏱️ כבר הוכרז היום – מדלג`);
+        lastPrintedDate = todayDate;
+      }
+      return;
+    }
+
+    log(`⚠️ ההודעה המקורית נמחקה – מכריז מחדש`);
+    await calculateAndAnnounceMVP(client, db, true);
+    return;
+  }
+
   if (lastPrintedDate !== todayDate) {
-    log('⏳ יום ראשון – מנסה להכריז MVP...');
+    log('📢 ⏳ יום ראשון – מנסה להכריז MVP...');
     lastPrintedDate = todayDate;
   }
 

@@ -6,11 +6,9 @@ const path = require('path');
 const fontPath = path.join(__dirname, '../assets/DejaVuSans.ttf');
 if (!fs.existsSync(fontPath)) {
   console.error('❌ קובץ הפונט לא נמצא:', fontPath);
-  process.exit(1);
+  return;
 }
-registerFont(path.join(__dirname, '../assets/DejaVuSans.ttf'), {
-  family: 'DejaVuSans'
-});
+registerFont(fontPath, { family: 'DejaVuSans' });
 
 const data = new SlashCommandBuilder()
   .setName('אלופים')
@@ -24,7 +22,6 @@ async function execute(interaction, client) {
     const snapshot = await db.collection('voiceLifetime').get();
 
     const totals = [];
-
     snapshot.forEach(doc => {
       const data = doc.data();
       const id = doc.id;
@@ -54,9 +51,11 @@ async function execute(interaction, client) {
     const ctx = canvas.getContext('2d');
     ctx.direction = 'rtl';
 
+    // רקע
     ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
+    // כותרת
     ctx.font = 'bold 72px DejaVuSans';
     ctx.fillStyle = '#facc15';
     ctx.textAlign = 'center';
@@ -96,6 +95,7 @@ async function execute(interaction, client) {
     ctx.textAlign = 'left';
     ctx.fillText(`עודכן: ${now.toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}`, PADDING, HEIGHT - 40);
 
+    // יצירת הקובץ
     const tempDir = path.join(__dirname, '../temp');
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true });
@@ -109,13 +109,13 @@ async function execute(interaction, client) {
       files: [outputPath]
     });
 
-    // מחיקת הקובץ לאחר שליחה
+    // מחיקה אוטומטית של הקובץ
     setTimeout(() => {
       fs.unlink(outputPath, () => {});
-    }, 10_000);
-    
+    }, 10000);
+
   } catch (err) {
-    console.error('שגיאה בביצוע /אלופים:', err);
+    console.error('❌ שגיאה בביצוע /אלופים:', err);
     if (!interaction.replied) {
       await interaction.editReply({ content: 'אירעה שגיאה בהפקת התמונה 😕' });
     }

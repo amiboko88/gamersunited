@@ -1,11 +1,18 @@
-const { EmbedBuilder, ChannelType, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const {
+  EmbedBuilder,
+  ChannelType,
+  AttachmentBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
+} = require('discord.js');
 const db = require('../utils/firebase');
 const schedule = require('node-schedule');
 const { generateProBanner } = require('./mediaGenerator');
 
-const TARGET_CHANNEL_ID = '1372283521447497759'; // עדכן ל-ID של ערוץ הטקסט
-const VOICE_CHANNEL_ID = '1231453923387379783'; // עדכן ל-ID של הערוץ הקולי
-const GUILD_ID = '583574396686434304';         // עדכן ל-ID של השרת שלך
+const TARGET_CHANNEL_ID = '1372283521447497759';
+const VOICE_CHANNEL_ID = '1231453923387379783';
+const GUILD_ID = '583574396686434304';
 
 const KEYWORDS = ['warzone', 'call of duty', 'black ops', 'mw3', 'mw2'];
 
@@ -36,10 +43,9 @@ async function deletePreviousMessage(channel) {
 async function saveLastMessageId(messageId) {
   await db.collection('fifoWarzoneAnnouncer').doc('latestMessage').set({ messageId });
 }
-
 async function sendWarzoneEmbed(client) {
   const now = new Date();
-  if (now.getDay() === 5) return;
+  if (now.getDay() === 5) return; // יום שישי — דילוג
 
   const guild = client.guilds.cache.get(GUILD_ID);
   if (!guild) return;
@@ -60,15 +66,15 @@ async function sendWarzoneEmbed(client) {
     else missing.push(member);
   }
 
-  if (connected.length === 0) {
-    console.log('ℹ️ אין שחקנים פעילים כרגע');
+  if (connected.length < 5) {
+    console.log(`⏸ פחות מ־5 שחקנים מחוברים – לא נשלחת הודעה (${connected.length})`);
     return;
   }
 
   let file = null;
   try {
     const buffer = await generateProBanner(connected);
-    file = new AttachmentBuilder(buffer, { name: 'rotation.webp' });
+    file = new AttachmentBuilder(buffer, { name: 'rotation.png' });
   } catch (err) {
     console.warn(`⚠️ בעיה ביצירת באנר: ${err.message}`);
   }
@@ -80,7 +86,7 @@ async function sendWarzoneEmbed(client) {
     .setFooter({ text: `שחקנים בערוץ: ${connected.length}` })
     .setTimestamp();
 
-  if (file) embed.setImage('attachment://rotation.webp');
+  if (file) embed.setImage('attachment://rotation.png');
 
   const joinButton = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -94,19 +100,26 @@ async function sendWarzoneEmbed(client) {
 
   await deletePreviousMessage(channel);
 
+  const sarcasticMessage = now.getHours() === 1
+    ? '😴 עדיין משחקים בשעה כזו? לכו לישון יא חיות'
+    : null;
+
   const tags = missing.map(m => `<@${m.id}>`).join(' ');
-await channel.send({
-  content: tags.length > 0 ? `🧟 ${tags}` : null,
-  embeds: [embed],
-  files: file ? [file] : [],
-  components: [joinButton]
-});
+
+  const message = await channel.send({
+    content: [sarcasticMessage, tags.length > 0 ? `🧟 ${tags}` : null]
+      .filter(Boolean)
+      .join('\n'),
+    embeds: [embed],
+    files: file ? [file] : [],
+    components: [joinButton]
+  });
 
   await saveLastMessageId(message.id);
 }
 
 function startFifoWarzoneAnnouncer(client) {
-  const hours = [20, 21, 22, 23];
+  const hours = [21, 22, 23, 0, 1];
   for (const hour of hours) {
     schedule.scheduleJob({ hour, minute: 0, tz: 'Asia/Jerusalem' }, () => {
       sendWarzoneEmbed(client);

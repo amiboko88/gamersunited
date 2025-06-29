@@ -19,7 +19,7 @@ async function generateProBanner(players) {
   const ctx = canvas.getContext('2d');
 
   // טען רקע ולוגו
-  const background = await loadImage(path.join(__dirname, '../assets/war_bg.jpg'));
+  const background = await loadImage(path.join(__dirname, '../assets/war_bg.png'));
   const logo = await loadImage(path.join(__dirname, '../assets/onlyg.png'));
 
   ctx.drawImage(background, 0, 0, WIDTH, HEIGHT);
@@ -84,7 +84,7 @@ async function generateProBanner(players) {
   ctx.fillStyle = '#ffffff';
   ctx.fillText('🎧 לחץ כדי להצטרף', WIDTH - 170, HEIGHT - 45);
 
-  const buffer = canvas.toBuffer('image/webp');
+  const buffer = canvas.toBuffer('image/png');
   if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
     throw new Error('❌ יצירת buffer נכשלה');
   }

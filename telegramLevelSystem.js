@@ -1,5 +1,5 @@
 const db = require("./utils/firebase");
-
+const { createLeaderboardImage } = require("./generateXPLeaderboardImage");
 // 🧪 בר גרפי של XP
 async function sendXPTextBar(ctx, userName, currentXP, level, nextLevelXP) {
   const percent = Math.min((currentXP / nextLevelXP) * 100, 100);
@@ -103,12 +103,14 @@ function registerTopButton(bot) {
 
     if (usersSnap.empty) return ctx.reply("אין עדיין XP.");
 
-    const list = usersSnap.docs.map((doc, i) => {
-      const d = doc.data();
-      return `${i + 1}. <b>${d.fullName || d.username || "אנונימי"}</b> – רמה ${d.level} (${d.xp} XP)`;
-    }).join("\n");
+    const users = usersSnap.docs.map((doc) => doc.data());
+    const buffer = await createLeaderboardImage(users);
 
-    await ctx.reply(`📈 <b>טבלת מצטיינים</b>\n\n${list}`, { parse_mode: "HTML" });
+    await ctx.replyWithPhoto({ source: buffer }, {
+      caption: "📈 <b>טבלת מצטיינים</b>",
+      parse_mode: "HTML"
+    });
+
     await ctx.answerCallbackQuery();
   });
 }

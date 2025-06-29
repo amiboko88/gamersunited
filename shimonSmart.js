@@ -68,10 +68,16 @@ function createPrompt(text, name) {
 ענה בשורה אחת בלבד, טון סמכותי וחותך, כאילו אין לך זמן לבולשיט.`;
   }
 
-  if (isTrigger(text)) {
-    return `מישהו פונה אליך ואומר: "${text}"
-ענה כאילו אתה מזהה אותו אישית, עם חצי חיוך, קצת לעג, שורה חכמה אחת.`;
+if (isTrigger(text)) {
+  const simpleNameOnly = text.trim().toLowerCase().replace(/[\s"׳״'“”`.,\-–…]/g, "");
+  if (["שמעון", "שימי", "shim", "שמשון"].includes(simpleNameOnly)) {
+    return `מישהו רק אמר את השם שלך בלי סיבה.
+תן לו עקיצה סרקסטית כאילו הוא לא מצא מה להגיד אז זרק "שמעון" סתם כדי לקבל תשומת לב.`;
   }
+
+  return `מישהו פונה אליך ואומר: "${text}"
+ענה כאילו אתה מזהה אותו אישית, עם חצי חיוך, קצת לעג, שורה חכמה אחת.`;
+}
 
   if (isLink(text)) {
     return `מישהו שלח קישור: "${text}"
@@ -105,6 +111,7 @@ function formatShimonReply(name, text, emoji = "") {
   const rtl = "\u200F";
   text = text
     .replace(/^[\s"׳״'“”`.,\-–…]*ש(מעון|ימי|משון)[\s"׳״'“”`.,\-–:]*?/i, "") // ↩️ מסיר פתיחים מגוונים
+    .replace(/שמעון/gi, "") // ✅ גם באמצע משפט
     .replace(/^["“”'`׳"״\s\u200E\u200F]+|["“”'`׳"״\s\u200E\u200F]+$/g, "")
     .replace(/[\u200E\u200F]+/g, "")
     .trim();

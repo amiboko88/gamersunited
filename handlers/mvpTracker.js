@@ -78,14 +78,18 @@ async function calculateAndAnnounceMVP(client, db) {
     const allMembers = await guild.members.fetch();
     allMembers.forEach(m => {
       if (m.roles.cache.has(mvpRole.id)) {
-        m.roles.remove(mvpRole).catch(() => {});
+        m.roles.remove(mvpRole).catch(err =>
+  log(`⚠️ שגיאה בהסרת תפקיד MVP מ־${m.user?.username}: ${err.message}`)
+);
       }
     });
   } catch (err) {
     log(`⚠️ שגיאה בטעינת משתמשים: ${err.message}`);
   }
 
-  await member.roles.add(mvpRole).catch(() => {});
+  await member.roles.add(mvpRole).catch(err =>
+  log(`⚠️ שגיאה בהוספת תפקיד MVP ל־${member.user?.username}: ${err.message}`)
+);
 
   const statsRef = db.doc(`mvpStats/${topUser.id}`);
   const statsSnap = await statsRef.get();
@@ -109,8 +113,9 @@ async function calculateAndAnnounceMVP(client, db) {
       const oldChannel = client.channels.cache.get(old.channelId);
       const oldMessage = await oldChannel?.messages?.fetch(old.messageId).catch(() => null);
       if (oldMessage) {
-        await oldMessage.delete().catch(() => {});
-        log(`🧹 נמחקה הודעת MVP קודמת (${old.messageId})`);
+        await oldMessage.delete().catch(err =>
+  log(`⚠️ שגיאה במחיקת הודעת MVP ישנה (${old.messageId}): ${err.message}`)
+);
       }
     }
   }
@@ -147,22 +152,29 @@ async function checkMVPStatusAndRun(client, db) {
   let lastDate = '1970-01-01';
 
   if (statusSnap.exists) {
-    lastDate = statusSnap.data().lastAnnouncedDate || lastDate;
+    const statusData = statusSnap.data();
+    lastDate = statusData.lastAnnouncedDate || lastDate;
+
+    if (todayDate === lastDate) {
+      const { messageId, channelId } = statusData;
+      const channel = client.channels.cache.get(channelId);
+      const message = await channel?.messages?.fetch(messageId).catch(() => null);
+
+      if (message) {
+        if (lastPrintedDate !== todayDate) {
+          log(`⏱️ כבר הוכרז היום – מדלג`);
+          lastPrintedDate = todayDate;
+        }
+        return; // הודעה קיימת – לא מכריז שוב
+      }
+
+      log(`⚠️ ההודעה המקורית נמחקה – מכריז מחדש`);
+    }
   }
 
   const day = now.getDay(); // ראשון = 0
   if (day !== 0) return;
 
-  // אם כבר הוכרז היום – הצג לוג פעם אחת בלבד
-  if (todayDate === lastDate) {
-    if (lastPrintedDate !== todayDate) {
-      log(`⏱️ כבר הוכרז היום – מדלג`);
-      lastPrintedDate = todayDate;
-    }
-    return;
-  }
-
-  // הכרזה טרייה – רק פעם ביום
   if (lastPrintedDate !== todayDate) {
     log('⏳ יום ראשון – מנסה להכריז MVP...');
     lastPrintedDate = todayDate;
@@ -170,6 +182,7 @@ async function checkMVPStatusAndRun(client, db) {
 
   await calculateAndAnnounceMVP(client, db);
 }
+
 
 
 function startMvpScheduler(client, db) {

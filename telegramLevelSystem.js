@@ -3,6 +3,8 @@ const { createLeaderboardImage } = require("./generateXPLeaderboardImage");
 const fs = require("fs");
 const path = require("path");
 
+const topCooldown = new Map(); // userId -> timestamp
+
 // 🧪 בר טקסטואלי
 async function sendXPTextBar(ctx, userName, currentXP, level, nextLevelXP) {
   const percent = Math.min((currentXP / nextLevelXP) * 100, 100);
@@ -74,7 +76,6 @@ async function updateXP({ id, first_name, username, text }, ctx = null) {
     return { addedXp: 0 };
   }
 }
-
 // 🏆 טופ ברמת טקסט
 function handleTop(bot) {
   bot.command("topxp", async (ctx) => {
@@ -95,9 +96,22 @@ function handleTop(bot) {
   });
 }
 
-// 📈 כפתור גרפי – שולח תמונה
+// 📈 כפתור גרפי – שולח תמונה עם הגנה מספאם
 function registerTopButton(bot) {
   bot.callbackQuery("profile_top", async (ctx) => {
+    const userId = ctx.from.id;
+    const now = Date.now();
+    const last = topCooldown.get(userId) || 0;
+
+    if (now - last < 15000) {
+      return ctx.answerCallbackQuery({
+        text: "⏳ חכה רגע... מגנון אנטי־ספאם מופעל.",
+        show_alert: true
+      });
+    }
+
+    topCooldown.set(userId, now);
+
     const usersSnap = await db.collection("levels")
       .orderBy("level", "desc")
       .orderBy("xp", "desc")
@@ -113,12 +127,19 @@ function registerTopButton(bot) {
       return ctx.reply("😕 לא הצלחתי ליצור תמונה תקינה של טבלת המצטיינים.");
     }
 
-    await ctx.replyWithPhoto({ source: buffer }, {
+    const filePath = path.join(__dirname, `xp_leaderboard_${userId}.png`);
+    fs.writeFileSync(filePath, buffer);
+
+    await ctx.replyWithPhoto({ source: fs.createReadStream(filePath) }, {
       caption: "📈 <b>טבלת מצטייני XP</b>",
       parse_mode: "HTML"
     });
 
     await ctx.answerCallbackQuery();
+
+    setTimeout(() => {
+      fs.unlink(filePath, () => {});
+    }, 5000);
   });
 }
 

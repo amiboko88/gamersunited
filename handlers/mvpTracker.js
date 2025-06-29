@@ -76,13 +76,13 @@ async function calculateAndAnnounceMVP(client, db, force = false) {
   }
   try {
     const allMembers = await guild.members.fetch();
-    allMembers.forEach(m => {
-      if (m.roles.cache.has(mvpRole.id)) {
-        m.roles.remove(mvpRole).catch(err =>
-          log(`⚠️ שגיאה בהסרת תפקיד MVP מ־${m.user?.username}: ${err.message}`)
-        );
-      }
-    });
+allMembers.forEach(m => {
+  if (m.roles.cache.has(mvpRole.id)) {
+    m.roles.remove(mvpRole).catch(err =>
+      log(`⚠️ שגיאה בהסרת תפקיד MVP מ־${m.user?.username}: ${err.message}`)
+    );
+  }
+});
   } catch (err) {
     log(`⚠️ שגיאה בטעינת משתמשים: ${err.message}`);
   }
@@ -124,36 +124,37 @@ async function calculateAndAnnounceMVP(client, db, force = false) {
     }
   }
 
-  let message;
-  try {
-    message = await channel.send({
-      content: '@everyone',
-      files: [imagePath]
-    });
-  } catch (err) {
-    log(`❌ שגיאה בשליחת הודעת MVP: ${err.message}`);
-    return;
-  }
+let message;
+try {
+  message = await channel.send({
+    content: '@everyone',
+    files: [imagePath]
+  });
+  log(`📤 נשלחה הודעת MVP חדשה (${message.id})`);
+} catch (err) {
+  log(`❌ שגיאה בשליחת הודעת MVP: ${err.message}`);
+  return; // חשוב! אל תמשיך בלי הודעה
+}
 
-  try {
-    await message.react('🏅');
-  } catch (err) {
-    log(`⚠️ שגיאה בהוספת תגובת 🏅: ${err.message}`);
-  }
+try {
+  await message.react('🏅');
+} catch (err) {
+  log(`⚠️ שגיאה בהוספת תגובת 🏅: ${err.message}`);
+}
 
+// 👇 בקרה משופרת – עדכון רק אם יש הודעה
+if (message && message.id && message.channel?.id){
   await statusRef.set({
     lastCalculated: Timestamp.now(),
     lastAnnouncedDate: today,
     messageId: message.id,
-    channelId: channel.id,
+    channelId: message.channel.id,
     reacted: false
   });
-
-  for (const docSnap of voiceRef.docs) {
-    await db.doc(`voiceTime/${docSnap.id}`).update({ minutes: 0 }).catch(() => {});
-  }
-
-  log(`✅ MVP הוכרז ונשלח – ${topUser.id}`);
+  log(`📝 עודכן סטטוס Firestore עם הודעת MVP חדשה`);
+} else {
+  log(`❌ לא בוצע עדכון Firestore – message לא תקין`);
+}
 }
 
 async function checkMVPStatusAndRun(client, db) {

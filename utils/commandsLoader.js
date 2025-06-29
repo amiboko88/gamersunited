@@ -16,7 +16,8 @@ async function registerSlashCommands(clientId) {
       const command = require(fullPath);
 
       if (command?.data && typeof command.data.toJSON === 'function') {
-        slashCommands.push(command.data.toJSON());
+        const json = command.data.toJSON();
+        slashCommands.push(json);
         console.log(`✅ ${file} נרשמה כפקודת Slash`);
       } else {
         console.warn(`⚠️ הפקודה בקובץ ${file} אינה תקינה – מדולגת.`);
@@ -40,6 +41,9 @@ async function registerSlashCommands(clientId) {
       console.warn('⚠️ לא נמצאו פקודות חוקיות לרישום – הפעולה נעצרת.');
       return;
     }
+
+    console.log(`📤 JSON שנשלח לרישום:`);
+    console.dir(slashCommands, { depth: null });
 
     console.log(`🚀 רושם ${slashCommands.length} פקודות חדשות ל־Guild ${guildId}...`);
     const registered = await rest.put(

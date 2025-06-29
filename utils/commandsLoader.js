@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const { REST, Routes } = require('discord.js');
+// לא טוענים בכלל את REST ו־Routes
+// const { REST, Routes } = require('discord.js');
 
 async function registerSlashCommands(clientId) {
   const commandsPath = path.join(__dirname, '../commands');
@@ -27,34 +28,8 @@ async function registerSlashCommands(clientId) {
     }
   }
 
-  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-  const guildId = process.env.GUILD_ID;
-
-  try {
-    console.log('🧼 מוחק את כל Slash Commands מהשרת...');
-    await rest.put(
-      Routes.applicationGuildCommands(clientId, guildId),
-      { body: [] }
-    );
-
-    if (!slashCommands.length) {
-      console.warn('⚠️ לא נמצאו פקודות חוקיות לרישום – הפעולה נעצרת.');
-      return;
-    }
-
-    console.log(`📤 JSON שנשלח לרישום:`);
-    console.dir(slashCommands, { depth: null });
-
-    console.log(`🚀 רושם ${slashCommands.length} פקודות חדשות ל־Guild ${guildId}...`);
-    const registered = await rest.put(
-      Routes.applicationGuildCommands(clientId, guildId),
-      { body: slashCommands }
-    );
-
-    console.log(`✅ ${registered.length} Slash Commands נרשמו בהצלחה.`);
-  } catch (err) {
-    console.error('❌ שגיאה ברישום Slash Commands:', err.message);
-  }
+  // ביטול מוחלט של הרישום בפועל
+  console.warn('🚧 רישום Slash Commands מבוטל זמנית לצורך איתור תקלה. הפקודות לא יירשמו.');
 }
 
 module.exports = {

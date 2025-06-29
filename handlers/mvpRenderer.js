@@ -6,7 +6,12 @@ const WIDTH = 2000;
 const HEIGHT = 1000;
 const OUTPUT_PATH = path.join(__dirname, '../temp/mvp.png');
 
-async function renderMvpImage({ username, avatarURL, minutes, wins }) {
+async function renderMvpImage({ username, avatarURL, minutes, wins, fresh = false }) {
+  // ❗ אם התמונה כבר קיימת ואין בקשה ל־fresh – נחזיר אותה
+  if (!fresh && fs.existsSync(OUTPUT_PATH)) {
+    return OUTPUT_PATH;
+  }
+
   const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx = canvas.getContext('2d');
 
@@ -52,7 +57,7 @@ async function renderMvpImage({ username, avatarURL, minutes, wins }) {
     ctx.drawImage(avatar, centerX - radius, centerY - radius, radius * 2, radius * 2);
     ctx.restore();
 
-    // 👑 כתר – מדויק לגובה
+    // 👑 כתר
     const crownPath = path.join(__dirname, '../assets/crown.png');
     if (fs.existsSync(crownPath)) {
       const crown = await loadImage(crownPath);
@@ -91,7 +96,7 @@ async function renderMvpImage({ username, avatarURL, minutes, wins }) {
   ctx.fillText(`דקות השבוע: ${minutes}`, statsX, HEIGHT - 130);
   ctx.fillText(`סה״כ זכיות: ${wins}`, statsX, HEIGHT - 70);
 
-  // 🔗 לוגו onlyg (מתוקן)
+  // 🔗 לוגו onlyg
   const logoPath = path.join(__dirname, '../assets/onlyg.png');
   if (fs.existsSync(logoPath)) {
     try {
@@ -104,13 +109,14 @@ async function renderMvpImage({ username, avatarURL, minutes, wins }) {
     }
   }
 
-  // 💾 שמירה
+  // 💾 שמירה לקובץ
   const buffer = canvas.toBuffer('image/png');
-  const tempDir = path.join(__dirname, '../temp');
+  const tempDir = path.dirname(OUTPUT_PATH);
   if (!fs.existsSync(tempDir)) {
     fs.mkdirSync(tempDir, { recursive: true });
   }
   fs.writeFileSync(OUTPUT_PATH, buffer);
+
   return OUTPUT_PATH;
 }
 

@@ -8,16 +8,21 @@ async function registerSlashCommands(clientId) {
 
   const slashCommands = [];
 
+  console.log(`📁 התחלת טעינה של ${commandFiles.length} פקודות:`);
+
   for (const file of commandFiles) {
     try {
-      const command = require(path.join(commandsPath, file));
+      const fullPath = path.join(commandsPath, file);
+      const command = require(fullPath);
+
       if (command?.data && typeof command.data.toJSON === 'function') {
         slashCommands.push(command.data.toJSON());
+        console.log(`✅ ${file} נרשמה כפקודת Slash`);
       } else {
         console.warn(`⚠️ הפקודה בקובץ ${file} אינה תקינה – מדולגת.`);
       }
     } catch (err) {
-      console.error(`❌ שגיאה בטעינת הקובץ ${file}:`, err.message);
+      console.error(`❌ שגיאה בטעינת הפקודה ${file}:`, err.message);
     }
   }
 
@@ -36,12 +41,13 @@ async function registerSlashCommands(clientId) {
       return;
     }
 
+    console.log(`🚀 רושם ${slashCommands.length} פקודות חדשות ל־Guild ${guildId}...`);
     const registered = await rest.put(
       Routes.applicationGuildCommands(clientId, guildId),
       { body: slashCommands }
     );
 
-    console.log(`✅ ${registered.length} Slash Commands נרשמו מחדש.`);
+    console.log(`✅ ${registered.length} Slash Commands נרשמו בהצלחה.`);
   } catch (err) {
     console.error('❌ שגיאה ברישום Slash Commands:', err.message);
   }

@@ -49,7 +49,7 @@ const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayRemind
 
 // 🧠 עזרה / כפתורים
 const { handleButton: helpHandleButton } = require('./commands/help');
-const { handleMemberButtons } = require('./commands/memberButtons');
+const { handleMemberButtons } = require('./handlers/memberButtons');
 
 // 🔊 מוזיקה וסאונד
 const { autocomplete: songAutocomplete } = require('./commands/song');

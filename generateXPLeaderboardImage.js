@@ -1,7 +1,7 @@
-const { createCanvas, loadImage, registerFont } = require("canvas");
+const { createCanvas, registerFont, loadImage } = require("canvas");
 const path = require("path");
+const fs = require("fs");
 
-// טען גופן עברי
 registerFont(path.join(__dirname, "assets", "NotoSansHebrew-Bold.ttf"), {
   family: "Noto"
 });
@@ -24,11 +24,10 @@ async function createLeaderboardImage(users) {
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
-  // רקע כללי
+  // רקע
   ctx.fillStyle = "#1c1b29";
   ctx.fillRect(0, 0, width, height);
 
-  // כותרת
   drawTextWithShadow(ctx, "📈 טבלת מצטייני XP", width / 2, 55, "bold 34px 'Noto'", "center");
 
   ctx.strokeStyle = "#ffffff33";
@@ -37,14 +36,16 @@ async function createLeaderboardImage(users) {
   ctx.lineTo(width - 60, 70);
   ctx.stroke();
 
-  // טען תמונות מדליה פעם אחת
-  const medalImgs = [
-    await loadImage(path.join(__dirname, "assets", "gold_medal.png")),
-    await loadImage(path.join(__dirname, "assets", "silver_medal.png")),
-    await loadImage(path.join(__dirname, "assets", "bronze_medal.png"))
-  ];
+  // נסה לטעון מדליות
+  let medalImgs = [null, null, null];
+  const medals = ["gold", "silver", "bronze"];
+  for (let i = 0; i < 3; i++) {
+    const file = path.join(__dirname, "assets", `${medals[i]}_medal.png`);
+    if (fs.existsSync(file)) {
+      medalImgs[i] = await loadImage(file);
+    }
+  }
 
-  // שורות
   for (let i = 0; i < users.length; i++) {
     const u = users[i];
     const yTop = headerHeight + i * rowHeight;
@@ -58,9 +59,14 @@ async function createLeaderboardImage(users) {
     ctx.fillStyle = i % 2 === 0 ? "#262638" : "#2e2e45";
     ctx.fillRect(30, yTop, width - 60, rowHeight - 10);
 
-    // מדליה
+    // מדליה / Emoji
     if (i < 3) {
-      ctx.drawImage(medalImgs[i], width - 50, yTop + 20, 28, 28);
+      if (medalImgs[i]) {
+        ctx.drawImage(medalImgs[i], width - 50, yTop + 20, 28, 28);
+      } else {
+        const emoji = ["🥇", "🥈", "🥉"][i];
+        drawTextWithShadow(ctx, emoji, width - 45, yTop + 42, "26px 'Noto'");
+      }
     }
 
     // שם

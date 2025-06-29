@@ -12,95 +12,102 @@ const data = new SlashCommandBuilder()
   .setDescription('האלופים של כל הזמנים לפי דקות שיחה');
 
 async function execute(interaction, client) {
-  await interaction.deferReply({ ephemeral: false });
+  try {
+    await interaction.deferReply({ ephemeral: false });
 
-  const db = client.db;
-  const snapshot = await db.collection('voiceLifetime').get();
+    const db = client.db;
+    const snapshot = await db.collection('voiceLifetime').get();
 
-  const totals = [];
+    const totals = [];
 
-  snapshot.forEach(doc => {
-    const data = doc.data();
-    const id = doc.id;
-    const minutes = data.total || 0;
-    if (minutes > 0) {
-      totals.push({ id, minutes });
-    }
-  });
-
-  const active = totals
-    .sort((a, b) => b.minutes - a.minutes)
-    .slice(0, 5); // מקסימום 5 מובילים
-
-  if (active.length === 0) {
-    return interaction.editReply({
-      content: 'אין עדיין מצטיינים בשיחות קול.'
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const id = doc.id;
+      const minutes = data.total || 0;
+      if (minutes > 0) {
+        totals.push({ id, minutes });
+      }
     });
-  }
 
-  const WIDTH = 1920;
-  const HEIGHT = 1080;
-  const PADDING = 80;
-  const ROW_HEIGHT = 160;
-  const AVATAR_SIZE = 100;
+    const active = totals
+      .sort((a, b) => b.minutes - a.minutes)
+      .slice(0, 5);
 
-  const canvas = createCanvas(WIDTH, HEIGHT);
-  const ctx = canvas.getContext('2d');
-  ctx.direction = 'rtl';
+    if (active.length === 0) {
+      return interaction.editReply({
+        content: 'אין עדיין מצטיינים בשיחות קול.'
+      });
+    }
 
-  ctx.fillStyle = '#0f172a';
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    const WIDTH = 1920;
+    const HEIGHT = 1080;
+    const PADDING = 80;
+    const ROW_HEIGHT = 160;
+    const AVATAR_SIZE = 100;
 
-  // כותרת
-  ctx.font = 'bold 72px DejaVuSans';
-  ctx.fillStyle = '#facc15';
-  ctx.textAlign = 'center';
-  ctx.fillText('אלופי כל הזמנים בשיחות קול 🎙️', WIDTH / 2, PADDING);
+    const canvas = createCanvas(WIDTH, HEIGHT);
+    const ctx = canvas.getContext('2d');
+    ctx.direction = 'rtl';
 
-  for (let i = 0; i < active.length; i++) {
-    const { id, minutes } = active[i];
-    const user = await client.users.fetch(id).catch(() => null);
-    const username = user?.username || `משתמש (${id.slice(-4)})`;
-    const y = PADDING + 80 + i * ROW_HEIGHT;
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-    // אוואטר
-    try {
-      const avatar = await loadImage(user.displayAvatarURL({ extension: 'png', size: 128 }));
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(PADDING + AVATAR_SIZE / 2, y + AVATAR_SIZE / 2, AVATAR_SIZE / 2, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.drawImage(avatar, PADDING, y, AVATAR_SIZE, AVATAR_SIZE);
-      ctx.restore();
-    } catch {}
+    ctx.font = 'bold 72px DejaVuSans';
+    ctx.fillStyle = '#facc15';
+    ctx.textAlign = 'center';
+    ctx.fillText('אלופי כל הזמנים בשיחות קול 🎙️', WIDTH / 2, PADDING);
 
-    const textX = PADDING + AVATAR_SIZE + 40;
+    for (let i = 0; i < active.length; i++) {
+      const { id, minutes } = active[i];
+      const user = await client.users.fetch(id).catch(() => null);
+      const username = user?.username || `משתמש (${id.slice(-4)})`;
+      const y = PADDING + 80 + i * ROW_HEIGHT;
 
-    // שם
-    ctx.font = '36px DejaVuSans';
-    ctx.fillStyle = '#ffffff';
+      try {
+        const avatar = await loadImage(user.displayAvatarURL({ extension: 'png', size: 128 }));
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(PADDING + AVATAR_SIZE / 2, y + AVATAR_SIZE / 2, AVATAR_SIZE / 2, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(avatar, PADDING, y, AVATAR_SIZE, AVATAR_SIZE);
+        ctx.restore();
+      } catch {}
+
+      const textX = PADDING + AVATAR_SIZE + 40;
+
+      ctx.font = '36px DejaVuSans';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'left';
+      ctx.fillText(username, textX, y + 42);
+
+      ctx.font = '28px DejaVuSans';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(`${minutes.toLocaleString()} דקות מצטברות`, textX, y + 80);
+    }
+
+    const now = new Date();
+    ctx.font = '22px DejaVuSans';
+    ctx.fillStyle = '#64748b';
     ctx.textAlign = 'left';
-    ctx.fillText(username, textX, y + 42);
+    ctx.fillText(`עודכן: ${now.toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}`, PADDING, HEIGHT - 40);
 
-    // דקות
-    ctx.font = '28px DejaVuSans';
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText(`${minutes.toLocaleString()} דקות מצטברות`, textX, y + 80);
+    const tempDir = path.join(__dirname, '../temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const outputPath = path.join(tempDir, 'mvp_alltime_5.png');
+    fs.writeFileSync(outputPath, canvas.toBuffer('image/png'));
+
+    await interaction.editReply({
+      files: [outputPath]
+    });
+  } catch (err) {
+    console.error('שגיאה בביצוע /אלופים:', err);
+    if (!interaction.replied) {
+      await interaction.editReply({ content: 'אירעה שגיאה בהפקת התמונה 😕' });
+    }
   }
-
-  // תאריך
-  const now = new Date();
-  ctx.font = '22px DejaVuSans';
-  ctx.fillStyle = '#64748b';
-  ctx.textAlign = 'left';
-  ctx.fillText(`עודכן: ${now.toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}`, PADDING, HEIGHT - 40);
-
-  const outputPath = path.join(__dirname, '../temp/mvp_alltime_5.png');
-  fs.writeFileSync(outputPath, canvas.toBuffer('image/png'));
-
-  await interaction.editReply({
-    files: [outputPath]
-  });
 }
 
 module.exports = {

@@ -26,14 +26,25 @@ async function fetchTopUsers(limit = 5) {
   snapshot.forEach(doc => {
     const data = doc.data();
     const score = calculateScore(data);
+
     if (score > 0) {
-      users.push({ userId: doc.id, score, ...data });
+      users.push({
+        userId: doc.id,
+        score,
+        voiceMinutes: data.voiceMinutes || 0,
+        messagesSent: data.messagesSent || 0,
+        slashUsed: data.slashUsed || 0,
+        soundsUsed: data.soundsUsed || 0,
+        smartReplies: data.smartReplies || 0,
+        rsvpCount: data.rsvpCount || 0,
+        mvpWins: data.mvpWins || 0,
+        joinStreak: data.joinStreak || 0
+      });
     }
   });
 
   return users.sort((a, b) => b.score - a.score).slice(0, limit);
 }
-
 async function sendLeaderboardEmbed(client) {
   try {
     const topUsers = await fetchTopUsers();
@@ -69,29 +80,26 @@ async function sendLeaderboardEmbed(client) {
     const introExists = recentMessages.some(msg =>
       msg.attachments.some(att => att.name === 'leaderboard_intro.png')
     );
-    // אם אין תמונה ראשית – מוחקים הכל ושולחים גם ראשית וגם נתונים
+
     if (!introExists) {
       console.log('🧹 לא נמצאה תמונת פתיחה – מוחק הודעות קיימות...');
-// 🧹 מחיקת כל ההודעות הקיימות
-for (const msg of recentMessages.values()) {
-  try {
-    await msg.delete();
-  } catch (err) {
-    console.warn(`⚠️ לא ניתן למחוק הודעה ${msg.id}:`, err.message);
-  }
-}
+      for (const msg of recentMessages.values()) {
+        try {
+          await msg.delete();
+        } catch (err) {
+          console.warn(`⚠️ לא ניתן למחוק הודעה ${msg.id}:`, err.message);
+        }
+      }
 
-// 🧪 ווידוא שהערוץ באמת ריק (או לפחות שאין בו תמונות פתיחה ישנות)
-const postDeletionMessages = await channel.messages.fetch({ limit: 5 });
-const stillHasIntro = postDeletionMessages.some(msg =>
-  msg.attachments.some(att => att.name === 'leaderboard_intro.png')
-);
+      const postDeletionMessages = await channel.messages.fetch({ limit: 5 });
+      const stillHasIntro = postDeletionMessages.some(msg =>
+        msg.attachments.some(att => att.name === 'leaderboard_intro.png')
+      );
 
-if (stillHasIntro) {
-  console.warn('🚨 תמונת פתיחה עדיין קיימת לאחר ניסיון מחיקה – מבטל שליחה כפולה.');
-  return false;
-}
-
+      if (stillHasIntro) {
+        console.warn('🚨 תמונת פתיחה עדיין קיימת לאחר ניסיון מחיקה – מבטל שליחה כפולה.');
+        return false;
+      }
 
       const introImage = new AttachmentBuilder(introImagePath);
       await channel.send({ files: [introImage], allowedMentions: { parse: [] } });

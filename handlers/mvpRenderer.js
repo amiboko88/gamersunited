@@ -24,7 +24,6 @@ async function renderMvpImage({ username, avatarURL, minutes, wins }) {
   const centerY = 350;
   const radius = 160;
 
-  // 👤 אווטאר + זוהר + מסגרת
   try {
     const avatar = await loadImage(avatarURL);
 
@@ -45,56 +44,72 @@ async function renderMvpImage({ username, avatarURL, minutes, wins }) {
     ctx.stroke();
     ctx.closePath();
 
-    // 🖼️ תמונה עגולה
+    // 🖼️ אווטאר עגול
     ctx.save();
     ctx.beginPath();
     ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-    ctx.closePath();
     ctx.clip();
     ctx.drawImage(avatar, centerX - radius, centerY - radius, radius * 2, radius * 2);
     ctx.restore();
 
-    // 👑 כתר
+    // 👑 כתר – מדויק לגובה
     const crownPath = path.join(__dirname, '../assets/crown.png');
     if (fs.existsSync(crownPath)) {
       const crown = await loadImage(crownPath);
-      ctx.drawImage(crown, centerX - 90, centerY - radius - 120, 180, 100);
+      const crownWidth = 160;
+      const crownHeight = 90;
+      ctx.drawImage(
+        crown,
+        centerX - crownWidth / 2,
+        centerY - radius - crownHeight + 10,
+        crownWidth,
+        crownHeight
+      );
     }
   } catch (e) {
     console.warn('⚠️ שגיאה בטעינת אווטאר:', e.message);
   }
 
-  // 📝 שם המשתמש
-  ctx.fillStyle = '#facc15';
+  // 📝 שם המשתמש עם צל
   ctx.font = 'bold 90px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(username, centerX, centerY + radius + 80);
+  const usernameY = centerY + radius + 80;
+  ctx.fillStyle = 'black';
+  ctx.fillText(username, centerX + 2, usernameY + 2);
+  ctx.fillStyle = '#FFD700';
+  ctx.fillText(username, centerX, usernameY);
 
-  // 📊 נתונים מימין
+  // 📊 נתונים עם צל
   ctx.font = '60px sans-serif';
-  ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'right';
-  ctx.fillText(`דקות השבוע: ${minutes}`, WIDTH - 100, HEIGHT - 130);
-  ctx.fillText(`סה״כ זכיות: ${wins}`, WIDTH - 100, HEIGHT - 70);
+  const statsX = WIDTH - 100;
+  ctx.fillStyle = 'black';
+  ctx.fillText(`דקות השבוע: ${minutes}`, statsX + 2, HEIGHT - 130 + 2);
+  ctx.fillText(`סה״כ זכיות: ${wins}`, statsX + 2, HEIGHT - 70 + 2);
 
-  // 🔗 לוגו onlyg
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(`דקות השבוע: ${minutes}`, statsX, HEIGHT - 130);
+  ctx.fillText(`סה״כ זכיות: ${wins}`, statsX, HEIGHT - 70);
+
+  // 🔗 לוגו onlyg (מתוקן)
   const logoPath = path.join(__dirname, '../assets/onlyg.png');
   if (fs.existsSync(logoPath)) {
     try {
       const logo = await loadImage(logoPath);
-      ctx.drawImage(logo, 60, HEIGHT - 140, 200, 100);
+      const logoWidth = 200;
+      const logoHeight = 100;
+      ctx.drawImage(logo, 60, HEIGHT - logoHeight - 40, logoWidth, logoHeight);
     } catch (e) {
       console.warn('⚠️ שגיאה בטעינת לוגו:', e.message);
     }
   }
 
-  // 💾 שמירה לתיקיית temp
+  // 💾 שמירה
   const buffer = canvas.toBuffer('image/png');
   const tempDir = path.join(__dirname, '../temp');
   if (!fs.existsSync(tempDir)) {
     fs.mkdirSync(tempDir, { recursive: true });
   }
-
   fs.writeFileSync(OUTPUT_PATH, buffer);
   return OUTPUT_PATH;
 }

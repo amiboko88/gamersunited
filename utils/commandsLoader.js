@@ -26,12 +26,12 @@ async function registerSlashCommands(clientId) {
       { body: [] }
     );
 
-    // 🧼 מחיקת כל הפקודות הגלובליות
-    console.log('🧼 מוחק את כל Slash Commands הגלובליים...');
-    await rest.put(
-      Routes.applicationCommands(clientId),
-      { body: [] }
-    );
+    // // 🧼 מחיקת כל הפקודות הגלובליות
+    // console.log('🧼 מוחק את כל Slash Commands הגלובליים...');
+    // await rest.put(
+    //   Routes.applicationCommands(clientId),
+    //   { body: [] }
+    // );
 
     // 📥 רישום מחדש לפי תיקיית commands בלבד
     const registered = await rest.put(

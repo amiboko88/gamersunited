@@ -1,86 +1,95 @@
+// 📁 generateXPLeaderboardImage.js
 const { createCanvas, registerFont } = require("canvas");
 const path = require("path");
-const fs = require("fs");
 
-// הגנה בטוחה על טעינת פונט
-const fontPath = path.join(__dirname, "assets", "DejaVuSans-Bold.ttf");
-if (fs.existsSync(fontPath)) {
-  try {
-    registerFont(fontPath, { family: "DejaVu" });
-  } catch (e) {
-    console.warn("⚠️ שגיאה בטעינת פונט:", e.message);
-  }
-} else {
-  console.warn("⚠️ קובץ פונט חסר:", fontPath);
+// הרשמה לפונטים בעברית אם זמינים
+try {
+  registerFont(path.join(__dirname, "assets/NotoSansHebrew-Bold.ttf"), { family: "HebrewBold" });
+  registerFont(path.join(__dirname, "assets/DejaVuSans-Bold.ttf"), { family: "LatinBold" });
+  registerFont(path.join(__dirname, "assets/DejaVuSans.ttf"), { family: "Latin" });
+} catch (err) {
+  console.warn("⚠️ לא נטענו כל הפונטים, משתמשים בברירת מחדל.");
 }
 
-// ציור טקסט עם צל
-function drawTextWithShadow(ctx, text, x, y, font, align = "right") {
-  ctx.font = font;
-  ctx.textAlign = align;
-  ctx.fillStyle = "#00000080";
-  ctx.fillText(text, x + 2, y + 2);
-  ctx.fillStyle = "#ffffff";
+function getBarColor(percent) {
+  if (percent < 0.4) return "#ff4d4d";     // אדום
+  if (percent < 0.7) return "#ffaa00";     // כתום
+  return "#00ccff";                        // תכלת
+}
+
+function drawText(ctx, text, x, y, options = {}) {
+  ctx.font = options.font || "24px HebrewBold";
+  ctx.fillStyle = options.color || "white";
+  ctx.textAlign = options.align || "right";
   ctx.fillText(text, x, y);
 }
 
-// ציור תמונת טבלת XP
 function createLeaderboardImage(users) {
-  if (!users || users.length === 0) return null;
-
   const width = 800;
-  const rowHeight = 90;
+  const padding = 30;
+  const rowHeight = 100;
   const headerHeight = 100;
+  const barWidth = 500;
+  const barHeight = 20;
+
   const height = headerHeight + users.length * rowHeight;
 
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
-  ctx.direction = "rtl";
 
-  // רקע כללי
+  // רקע
   ctx.fillStyle = "#1c1b29";
   ctx.fillRect(0, 0, width, height);
 
   // כותרת
-  drawTextWithShadow(ctx, "טבלת מצטייני XP", width / 2, 55, "bold 34px DejaVu", "center");
+  ctx.font = "bold 36px HebrewBold";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "white";
+  ctx.fillText("טבלת מצטייני XP", width / 2, 55);
 
-  // קו הפרדה
+  // קו תחתון לכותרת
   ctx.strokeStyle = "#ffffff33";
   ctx.beginPath();
-  ctx.moveTo(60, 70);
-  ctx.lineTo(width - 60, 70);
+  ctx.moveTo(padding, 80);
+  ctx.lineTo(width - padding, 80);
   ctx.stroke();
 
-  // כל משתמש
-  for (let i = 0; i < users.length; i++) {
-    const u = users[i];
+  // שורות משתמשים
+  users.forEach((u, i) => {
     const yTop = headerHeight + i * rowHeight;
     const level = u.level || 1;
     const xp = u.xp || 0;
     const nextXP = level * 25;
     const percent = Math.min(xp / nextXP, 1);
-    const fill = Math.floor(percent * 220);
+    const barColor = getBarColor(percent);
+    const fill = Math.floor(barWidth * percent);
 
-    ctx.fillStyle = i % 2 === 0 ? "#262638" : "#2e2e45";
-    ctx.fillRect(30, yTop, width - 60, rowHeight - 10);
+    // רקע שורה
+    ctx.fillStyle = i % 2 === 0 ? "#2a2a3d" : "#262636";
+    ctx.fillRect(padding, yTop, width - padding * 2, rowHeight - 10);
 
-    const name = u.fullName || u.username || "אנונימי";
+    // שם + רמה
+    const name = `${u.fullName || u.username || "אנונימי"}`;
+    drawText(ctx, `רמה ${level} – ${name}`, width - padding - 20, yTop + 35, {
+      font: "bold 26px HebrewBold",
+    });
 
-    // שם ורמה
-    drawTextWithShadow(ctx, `${name} – רמה ${level}`, width - 90, yTop + 34, "bold 22px DejaVu");
+    // XP
+    drawText(ctx, `${xp} מתוך ${nextXP} XP`, width - padding - 20, yTop + 65, {
+      font: "22px HebrewBold",
+      color: "#cccccc",
+    });
 
-    // XP מתוך...
-    drawTextWithShadow(ctx, `${xp} XP מתוך ${nextXP}`, width - 90, yTop + 60, "18px DejaVu");
-
-    // בר התקדמות
-    const barX = 60, barY = yTop + 50, barW = 220, barH = 20;
+    // מד התקדמות
+    const barX = padding + 20;
+    const barY = yTop + 60;
     ctx.fillStyle = "#444";
-    ctx.fillRect(barX, barY, barW, barH);
-    ctx.fillStyle = "#00bfff";
-    ctx.fillRect(barX, barY, fill, barH);
+    ctx.fillRect(barX, barY, barWidth, barHeight);
+    ctx.fillStyle = barColor;
+    ctx.fillRect(barX, barY, fill, barHeight);
     ctx.strokeStyle = "#888";
-    ctx.strokeRect(barX, barY, barW, barH);
-  }
+    ctx.strokeRect(barX, barY, barWidth, barHeight);
+  });
 
   return canvas.toBuffer("image/png");
 }

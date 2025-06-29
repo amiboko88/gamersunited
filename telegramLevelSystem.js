@@ -2,6 +2,8 @@ const db = require("./utils/firebase");
 const { createLeaderboardImage } = require("./generateXPLeaderboardImage");
 const fs = require("fs");
 const path = require("path");
+const axios = require("axios");
+const FormData = require("form-data");
 
 const topCooldown = new Map(); // userId -> timestamp
 
@@ -132,11 +134,14 @@ function registerTopButton(bot) {
 if (!fs.existsSync(filePath)) {
   return ctx.reply("⚠️ שגיאה בשמירת הקובץ.");
 }
+const form = new FormData();
+form.append("chat_id", ctx.chat.id);
+form.append("caption", "📈 <b>טבלת מצטייני XP</b>");
+form.append("photo", fs.createReadStream(filePath));
+form.append("parse_mode", "HTML");
 
-    await ctx.replyWithPhoto({ source: fs.createReadStream(filePath) }, {
-      caption: "📈 <b>טבלת מצטייני XP</b>",
-      parse_mode: "HTML"
-    });
+const telegramUrl = `https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendPhoto`;
+await axios.post(telegramUrl, form, { headers: form.getHeaders() });
 
     await ctx.answerCallbackQuery();
 

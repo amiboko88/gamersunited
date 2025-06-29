@@ -17,6 +17,13 @@ async function registerSlashCommands(clientId) {
 
       if (command?.data && typeof command.data.toJSON === 'function') {
         const json = command.data.toJSON();
+
+        // בדיקה האם השם חוקי
+        if (!/^[\w-]{1,32}$/.test(json.name)) {
+          console.warn(`⚠️ שם לא חוקי בפקודה ${file}: "${json.name}" – מדולגת.`);
+          continue;
+        }
+
         slashCommands.push(json);
         console.log(`✅ ${file} נטענה כפקודת Slash`);
       } else {
@@ -42,7 +49,8 @@ async function registerSlashCommands(clientId) {
       return;
     }
 
-    console.log(`🚀 רושם ${slashCommands.length} פקודות חדשות ל־Guild ${guildId}...`);
+    console.log('📤 JSON שנשלח לרישום:', JSON.stringify(slashCommands, null, 2));
+
     const registered = await rest.put(
       Routes.applicationGuildCommands(clientId, guildId),
       { body: slashCommands }

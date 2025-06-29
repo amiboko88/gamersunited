@@ -5,21 +5,19 @@ const path = require("path");
 const axios = require("axios");
 const FormData = require("form-data");
 
-const topCooldown = new Map(); // userId -> timestamp
+const topCooldown = new Map(); // userId -> last request time
 
-// 🧪 בר טקסטואלי
+// 🧪 טקסט XP בר
 async function sendXPTextBar(ctx, userName, currentXP, level, nextLevelXP) {
   const percent = Math.min((currentXP / nextLevelXP) * 100, 100);
   const barLength = 10;
 
   const filledCount = Math.round((percent / 100) * barLength);
   const emptyCount = barLength - filledCount;
-
   const progressBar = "🟦".repeat(filledCount) + "⬜".repeat(emptyCount);
   const xpLeft = Math.max(nextLevelXP - currentXP, 0);
 
-  const message =
-`✨ <b>${userName} התקדם ב־XP!</b>
+  const message = `✨ <b>${userName} התקדם ב־XP!</b>
 
 🧬 <b>רמה:</b> ${level}
 📊 <b>התקדמות:</b> ${progressBar} (${Math.floor(percent)}%)
@@ -28,7 +26,7 @@ async function sendXPTextBar(ctx, userName, currentXP, level, nextLevelXP) {
   await ctx.reply(message, { parse_mode: "HTML" });
 }
 
-// 🧠 עדכון XP
+// 🧠 עדכון XP חכם
 async function updateXP({ id, first_name, username, text }, ctx = null) {
   try {
     const userId = id.toString();
@@ -37,20 +35,12 @@ async function updateXP({ id, first_name, username, text }, ctx = null) {
     const userRef = db.collection("levels").doc(userId);
     const doc = await userRef.get();
 
-    let xp = 0;
-    let level = 1;
-
+    let xp = 0, level = 1;
     if (doc.exists) {
       xp = doc.data().xp || 0;
       level = doc.data().level || 1;
     } else {
-      await userRef.set({
-        xp: 0,
-        level: 1,
-        fullName: name,
-        username: username || null,
-        createdAt: Date.now()
-      });
+      await userRef.set({ xp: 0, level: 1, fullName: name, username: username || null, createdAt: Date.now() });
     }
 
     const gain = Math.floor((text || "").trim().length / 3);
@@ -68,17 +58,15 @@ async function updateXP({ id, first_name, username, text }, ctx = null) {
 
     await userRef.set({ xp, level, username, fullName: name }, { merge: true });
 
-    if (ctx) {
-      await sendXPTextBar(ctx, name, xp, level, level * 25);
-    }
-
+    if (ctx) await sendXPTextBar(ctx, name, xp, level, level * 25);
     return { addedXp: gain, leveledUp };
+
   } catch (err) {
     console.error("❌ שגיאה בעדכון XP:", err);
     return { addedXp: 0 };
   }
 }
-// 🏆 טופ ברמת טקסט
+// 🏆 פקודת טקסט רגילה של טבלת XP
 function handleTop(bot) {
   bot.command("topxp", async (ctx) => {
     const usersSnap = await db.collection("levels")
@@ -98,17 +86,17 @@ function handleTop(bot) {
   });
 }
 
-// 📈 כפתור גרפי – שולח תמונה עם הגנה מספאם
+// 📈 טבלת XP גרפית דרך כפתור Telegram + אנטי ספאם
 function registerTopButton(bot) {
   bot.callbackQuery("profile_top", async (ctx) => {
     const userId = ctx.from.id;
     const now = Date.now();
-    const last = topCooldown.get(userId) || 0;
+    const lastUsed = topCooldown.get(userId) || 0;
 
-    if (now - last < 15000) {
+    if (now - lastUsed < 15000) {
       return ctx.answerCallbackQuery({
-        text: "⏳ חכה רגע... מגנון אנטי־ספאם מופעל.",
-        show_alert: true
+        text: "⏳ חכה רגע לפני שתנסה שוב (הגנת ספאם).",
+        show_alert: true,
       });
     }
 
@@ -122,7 +110,7 @@ function registerTopButton(bot) {
         .get();
 
       if (usersSnap.empty) {
-        await ctx.reply("אין עדיין XP.");
+        await ctx.reply("אין נתונים להציג כרגע.");
         return ctx.answerCallbackQuery();
       }
 
@@ -149,8 +137,8 @@ function registerTopButton(bot) {
       await ctx.answerCallbackQuery();
 
     } catch (err) {
-      console.error("❌ שגיאה בהצגת טבלת XP:", err);
-      await ctx.reply("🚨 שגיאה פנימית. נסה שוב מאוחר יותר.");
+      console.error("🚨 שגיאה בהצגת טבלת XP:", err);
+      await ctx.reply("⚠️ שגיאה זמנית. נסה שוב מאוחר יותר.");
       await ctx.answerCallbackQuery();
     }
   });
@@ -160,5 +148,5 @@ module.exports = {
   updateXP,
   handleTop,
   registerTopButton,
-  sendXPTextBar
+  sendXPTextBar,
 };

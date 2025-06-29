@@ -142,6 +142,19 @@ async function checkMVPStatusAndRun(client, db) {
   await calculateAndAnnounceMVP(client, db);
 }
 
+// 🧠 עדכון פעילות קולית מצטברת
+async function updateVoiceActivity(userId, minutes, db) {
+  const ref = db.collection('voiceLifetime').doc(userId);
+  const doc = await ref.get();
+  const current = doc.exists ? doc.data().total || 0 : 0;
+  await ref.set({
+    total: current + minutes,
+    lastUpdated: Date.now()
+  }, { merge: true });
+}
+
+module.exports.updateVoiceActivity = updateVoiceActivity;
+
 function startMvpScheduler(client, db) {
   setInterval(() => {
     checkMVPStatusAndRun(client, db);
@@ -151,5 +164,6 @@ function startMvpScheduler(client, db) {
 module.exports = {
   calculateAndAnnounceMVP,
   checkMVPStatusAndRun,
+  updateVoiceActivity,
   startMvpScheduler
 };

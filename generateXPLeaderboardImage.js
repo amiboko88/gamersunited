@@ -1,15 +1,20 @@
 const { createCanvas, registerFont } = require("canvas");
 const path = require("path");
+const fs = require("fs");
 
-// טען פונט רק אם קיים
-try {
-  registerFont(path.join(__dirname, "assets", "NotoSansHebrew-Bold.ttf"), {
-    family: "Noto"
-  });
-} catch (e) {
-  console.warn("⚠️ פונט לא נטען, משתמשים בברירת מחדל.");
+// הגנה בטוחה על טעינת פונט
+const fontPath = path.join(__dirname, "assets", "DejaVuSans-Bold.ttf");
+if (fs.existsSync(fontPath)) {
+  try {
+    registerFont(fontPath, { family: "DejaVu" });
+  } catch (e) {
+    console.warn("⚠️ שגיאה בטעינת פונט:", e.message);
+  }
+} else {
+  console.warn("⚠️ קובץ פונט חסר:", fontPath);
 }
 
+// ציור טקסט עם צל
 function drawTextWithShadow(ctx, text, x, y, font, align = "right") {
   ctx.font = font;
   ctx.textAlign = align;
@@ -19,6 +24,7 @@ function drawTextWithShadow(ctx, text, x, y, font, align = "right") {
   ctx.fillText(text, x, y);
 }
 
+// ציור תמונת טבלת XP
 function createLeaderboardImage(users) {
   if (!users || users.length === 0) return null;
 
@@ -29,18 +35,23 @@ function createLeaderboardImage(users) {
 
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
+  ctx.direction = "rtl";
 
+  // רקע כללי
   ctx.fillStyle = "#1c1b29";
   ctx.fillRect(0, 0, width, height);
 
-  drawTextWithShadow(ctx, "📈 טבלת מצטייני XP", width / 2, 55, "bold 34px 'Noto'", "center");
+  // כותרת
+  drawTextWithShadow(ctx, "טבלת מצטייני XP", width / 2, 55, "bold 34px DejaVu", "center");
 
+  // קו הפרדה
   ctx.strokeStyle = "#ffffff33";
   ctx.beginPath();
   ctx.moveTo(60, 70);
   ctx.lineTo(width - 60, 70);
   ctx.stroke();
 
+  // כל משתמש
   for (let i = 0; i < users.length; i++) {
     const u = users[i];
     const yTop = headerHeight + i * rowHeight;
@@ -53,20 +64,20 @@ function createLeaderboardImage(users) {
     ctx.fillStyle = i % 2 === 0 ? "#262638" : "#2e2e45";
     ctx.fillRect(30, yTop, width - 60, rowHeight - 10);
 
-    // מדליית emoji
-    const medalEmoji = ["🥇", "🥈", "🥉"][i] || "";
-    drawTextWithShadow(ctx, `${medalEmoji} 🧠 ${u.fullName || u.username || "אנונימי"}`, width - 90, yTop + 35, "bold 22px 'Noto'");
+    const name = u.fullName || u.username || "אנונימי";
 
-    drawTextWithShadow(ctx, `🏅 רמה ${level} – ${xp} XP`, width - 90, yTop + 60, "18px 'Noto'");
+    // שם ורמה
+    drawTextWithShadow(ctx, `${name} – רמה ${level}`, width - 90, yTop + 34, "bold 22px DejaVu");
 
+    // XP מתוך...
+    drawTextWithShadow(ctx, `${xp} XP מתוך ${nextXP}`, width - 90, yTop + 60, "18px DejaVu");
+
+    // בר התקדמות
     const barX = 60, barY = yTop + 50, barW = 220, barH = 20;
-
     ctx.fillStyle = "#444";
     ctx.fillRect(barX, barY, barW, barH);
-
     ctx.fillStyle = "#00bfff";
     ctx.fillRect(barX, barY, fill, barH);
-
     ctx.strokeStyle = "#888";
     ctx.strokeRect(barX, barY, barW, barH);
   }

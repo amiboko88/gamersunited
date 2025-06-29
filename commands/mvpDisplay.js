@@ -3,6 +3,11 @@ const { createCanvas, loadImage, registerFont } = require('canvas');
 const fs = require('fs');
 const path = require('path');
 
+const fontPath = path.join(__dirname, '../assets/DejaVuSans.ttf');
+if (!fs.existsSync(fontPath)) {
+  console.error('❌ קובץ הפונט לא נמצא:', fontPath);
+  process.exit(1);
+}
 registerFont(path.join(__dirname, '../assets/DejaVuSans.ttf'), {
   family: 'DejaVuSans'
 });

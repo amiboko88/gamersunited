@@ -33,14 +33,13 @@ async function updateVoiceActivity(memberId, durationMinutes, db) {
   await trackVoiceMinutes(memberId, durationMinutes);
   log(`📈 עדכון פעילות ל־${memberId}: ${durationMinutes} דקות`);
 }
-async function calculateAndAnnounceMVP(client, db) {
-  const israelNow = new Date(Date.now() + 3 * 60 * 60 * 1000); // זמן ישראל
+async function calculateAndAnnounceMVP(client, db, force = false) {
+  const israelNow = new Date(Date.now() + 3 * 60 * 60 * 1000);
   const today = israelNow.toISOString().split('T')[0];
   const statusRef = db.doc('mvpSystem/status');
   const statusSnap = await statusRef.get();
 
-  // ⛔ מניעת הכרזה כפולה
-  if (statusSnap.exists) {
+  if (!force && statusSnap.exists) {
     const alreadyToday = statusSnap.data().lastAnnouncedDate;
     if (alreadyToday === today) {
       log(`⛔ MVP כבר הוכרז היום (${alreadyToday}) – מתעלם`);
@@ -159,16 +158,17 @@ async function checkMVPStatusAndRun(client, db) {
       const { messageId, channelId } = statusData;
       const channel = client.channels.cache.get(channelId);
       const message = await channel?.messages?.fetch(messageId).catch(() => null);
+if (message) {
+  if (lastPrintedDate !== todayDate) {
+    log(`⏱️ כבר הוכרז היום – מדלג`);
+    lastPrintedDate = todayDate;
+  }
+  return;
+}
 
-      if (message) {
-        if (lastPrintedDate !== todayDate) {
-          log(`⏱️ כבר הוכרז היום – מדלג`);
-          lastPrintedDate = todayDate;
-        }
-        return; // הודעה קיימת – לא מכריז שוב
-      }
-
-      log(`⚠️ ההודעה המקורית נמחקה – מכריז מחדש`);
+log(`⚠️ ההודעה המקורית נמחקה – מכריז מחדש`);
+await calculateAndAnnounceMVP(client, db, true); // ← כאן נעביר force=true
+return;
     }
   }
 

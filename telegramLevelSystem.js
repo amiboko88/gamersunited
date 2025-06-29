@@ -114,42 +114,48 @@ function registerTopButton(bot) {
 
     topCooldown.set(userId, now);
 
-    const usersSnap = await db.collection("levels")
-      .orderBy("level", "desc")
-      .orderBy("xp", "desc")
-      .limit(10)
-      .get();
+    try {
+      const usersSnap = await db.collection("levels")
+        .orderBy("level", "desc")
+        .orderBy("xp", "desc")
+        .limit(10)
+        .get();
 
-    if (usersSnap.empty) return ctx.reply("אין עדיין XP.");
+      if (usersSnap.empty) {
+        await ctx.reply("אין עדיין XP.");
+        return ctx.answerCallbackQuery();
+      }
 
-    const users = usersSnap.docs.map((doc) => doc.data());
-    const buffer = createLeaderboardImage(users);
+      const users = usersSnap.docs.map(doc => doc.data());
+      const buffer = createLeaderboardImage(users);
 
-    if (!buffer || !Buffer.isBuffer(buffer) || buffer.length < 1000) {
-      return ctx.reply("😕 לא הצלחתי ליצור תמונה תקינה של טבלת המצטיינים.");
-    }
+      if (!buffer || !Buffer.isBuffer(buffer) || buffer.length < 1000) {
+        return ctx.reply("😕 לא הצלחתי ליצור תמונה תקינה של טבלת המצטיינים.");
+      }
 
-    const filePath = path.join("/tmp", `xp_leaderboard_${userId}.png`);
-    fs.writeFileSync(filePath, buffer);
-if (!fs.existsSync(filePath)) {
-  return ctx.reply("⚠️ שגיאה בשמירת הקובץ.");
-}
-const form = new FormData();
-form.append("chat_id", ctx.chat.id);
-form.append("caption", "📈 <b>טבלת מצטייני XP</b>");
-form.append("photo", fs.createReadStream(filePath));
-form.append("parse_mode", "HTML");
+      const filePath = path.join("/tmp", `xp_leaderboard_${userId}.png`);
+      fs.writeFileSync(filePath, buffer);
 
-const telegramUrl = `https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendPhoto`;
-await axios.post(telegramUrl, form, { headers: form.getHeaders() });
+      const form = new FormData();
+      form.append("chat_id", ctx.chat.id);
+      form.append("caption", "📈 <b>טבלת מצטייני XP</b>");
+      form.append("photo", fs.createReadStream(filePath));
+      form.append("parse_mode", "HTML");
 
-    await ctx.answerCallbackQuery();
+      const telegramUrl = `https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendPhoto`;
+      await axios.post(telegramUrl, form, { headers: form.getHeaders() });
 
-    setTimeout(() => {
       fs.unlink(filePath, () => {});
-    }, 5000);
+      await ctx.answerCallbackQuery();
+
+    } catch (err) {
+      console.error("❌ שגיאה בהצגת טבלת XP:", err);
+      await ctx.reply("🚨 שגיאה פנימית. נסה שוב מאוחר יותר.");
+      await ctx.answerCallbackQuery();
+    }
   });
 }
+
 
 module.exports = {
   updateXP,

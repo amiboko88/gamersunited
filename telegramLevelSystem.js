@@ -127,8 +127,11 @@ function registerTopButton(bot) {
       return ctx.reply("😕 לא הצלחתי ליצור תמונה תקינה של טבלת המצטיינים.");
     }
 
-    const filePath = path.join(__dirname, `xp_leaderboard_${userId}.png`);
+    const filePath = path.join("/tmp", `xp_leaderboard_${userId}.png`);
     fs.writeFileSync(filePath, buffer);
+if (!fs.existsSync(filePath)) {
+  return ctx.reply("⚠️ שגיאה בשמירת הקובץ.");
+}
 
     await ctx.replyWithPhoto({ source: fs.createReadStream(filePath) }, {
       caption: "📈 <b>טבלת מצטייני XP</b>",

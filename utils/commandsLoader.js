@@ -12,19 +12,9 @@ async function registerSlashCommands(clientId) {
 
   for (const file of commandFiles) {
     try {
-      const fullPath = path.join(commandsPath, file);
-      const command = require(fullPath);
-
+      const command = require(path.join(commandsPath, file));
       if (command?.data && typeof command.data.toJSON === 'function') {
-        const json = command.data.toJSON();
-
-        // בדיקה האם השם חוקי
-        if (!/^[\w-]{1,32}$/.test(json.name)) {
-          console.warn(`⚠️ שם לא חוקי בפקודה ${file}: "${json.name}" – מדולגת.`);
-          continue;
-        }
-
-        slashCommands.push(json);
+        slashCommands.push(command.data.toJSON());
         console.log(`✅ ${file} נטענה כפקודת Slash`);
       } else {
         console.warn(`⚠️ הפקודה בקובץ ${file} אינה תקינה – מדולגת.`);
@@ -44,21 +34,24 @@ async function registerSlashCommands(clientId) {
       { body: [] }
     );
 
-    if (!slashCommands.length) {
-      console.warn('⚠️ לא נמצאו פקודות חוקיות לרישום – הפעולה הופסקה.');
-      return;
+    console.log(`📤 מתחיל רישום אישי של ${slashCommands.length} פקודות:`);
+
+    for (const cmd of slashCommands) {
+      try {
+        console.log(`🔍 מנסה לרשום את הפקודה: ${cmd.name}`);
+        await rest.put(
+          Routes.applicationGuildCommands(clientId, guildId),
+          { body: [cmd] }
+        );
+        console.log(`✅ ${cmd.name} נרשמה בהצלחה.`);
+      } catch (err) {
+        console.error(`❌ שגיאה ברישום ${cmd.name}:`, err.message);
+      }
     }
 
-    console.log('📤 JSON שנשלח לרישום:', JSON.stringify(slashCommands, null, 2));
-
-    const registered = await rest.put(
-      Routes.applicationGuildCommands(clientId, guildId),
-      { body: slashCommands }
-    );
-
-    console.log(`✅ ${registered.length} Slash Commands נרשמו בהצלחה.`);
+    console.log('🎯 סיום תהליך הרישום האישי.');
   } catch (err) {
-    console.error('❌ שגיאה ברישום Slash Commands:', err);
+    console.error('❌ שגיאה כוללת ברישום Slash Commands:', err);
   }
 }
 

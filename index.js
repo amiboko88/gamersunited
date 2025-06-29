@@ -6,7 +6,6 @@ const path = require('path');
 const { Client, GatewayIntentBits } = require('discord.js');
 
 // 🔗 בסיס נתונים ועזרי מערכת
-const { registerSlashCommands } = require('./utils/commandsLoader');
 const db = require('./utils/firebase');
 
 // 🧠 ניתוח / סטטיסטיקות / XP
@@ -93,7 +92,6 @@ client.once('ready', async () => {
   try {
     await hardSyncPresenceOnReady(client);
     await setupVerificationMessage(client);
-    await registerSlashCommands(client.user.id, client);
     await startMvpReactionWatcher(client, db);
     startBirthdayCongratulator(client);
     startFifoWarzoneAnnouncer(client);
@@ -311,10 +309,10 @@ client.on('interactionCreate', async interaction => {
       await interaction.reply({ content: '❌ שגיאה בביצוע הפקודה.', ephemeral: true });
     }
   }
+
 });
 // 🚀 הפעלת הבוט
 client.login(process.env.DISCORD_TOKEN);
-require('./shimonTelegram');
 setInterval(() => {
   const now = new Date();
   const israelTime = new Date(now.getTime() + (3 * 60 + now.getTimezoneOffset()) * 60000);

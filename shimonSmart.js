@@ -3,12 +3,6 @@ const db = require("./utils/firebase");
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const { updateXP } = require("./telegramLevelSystem");
 
-const lastReplyPerUser = new Map();
-const recentMessagesPerChat = new Map(); // chatId -> [userIds]
-const repliedInChat = new Map(); // chatId -> timestamp
-const pendingReplies = new Map(); // chatId -> {userId, text, name, timeoutId}
-const MAX_RECENT = 5;
-
 const offensiveWords = [
   "זין", "חרא", "בן זונה", "כוס", "זונה", "מניאק", "קקי", "שיט", "בהמה",
   "מפגר", "נכה", "טיפש", "מטומטם", "שמן", "מכוער", "עקום", "עיוור", "אידיוט",
@@ -29,11 +23,6 @@ const questionWords = [
 ];
 
 const triggerWords = ["שמעון", "שימי", "shim", "שמשון", "בוט"];
-
-function isUserSpammedRecently(userId) {
-  const last = lastReplyPerUser.get(userId) || 0;
-  return (Date.now() - last) < 10000;
-}
 
 function isOffensive(text) {
   return offensiveWords.some(w => text.toLowerCase().includes(w));
@@ -56,24 +45,18 @@ function isSticker(ctx) {
 function isPhoto(ctx) {
   return !!ctx.message?.photo;
 }
-function updateRecent(chatId, userId) {
-  const recent = recentMessagesPerChat.get(chatId) || [];
-  recent.push(userId);
-  if (recent.length > MAX_RECENT) recent.shift();
-  recentMessagesPerChat.set(chatId, recent);
-}
 
-function isPrivateChat(chatId) {
-  const recent = recentMessagesPerChat.get(chatId) || [];
-  const unique = [...new Set(recent)];
-  return unique.length === 2;
+function isNightMode() {
+  const hour = new Date().getHours();
+  return hour >= 22 && hour < 24;
 }
-
-function alreadyRepliedRecently(chatId) {
-  const last = repliedInChat.get(chatId) || 0;
-  return (Date.now() - last) < 60000;
+function shouldRespond(text) {
+  if (isNightMode()) {
+    return isOffensive(text) || isNice(text) || isQuestion(text) || isTrigger(text);
+  } else {
+    return isTrigger(text);
+  }
 }
-
 function createPrompt(text, name) {
   if (isOffensive(text)) {
     return `משתמש בשם ${name} שלח הודעה בוטה: "${text}"
@@ -133,13 +116,21 @@ function formatShimonReply(name, text, emoji = "") {
   return `${rtl}${name}, ${text}${emoji ? " " + emoji : ""}`;
 }
 
-async function smartReply(chatId, userId, name, text, ctx) {
+async function handleSmartReply(ctx) {
+  const userId = ctx.from?.id;
+  const chatId = ctx.chat?.id;
+  const name = ctx.from?.first_name || "חבר";
+  const text = ctx.message?.text?.trim();
+  if (!userId || !text || text.length < 2 || isSticker(ctx) || isPhoto(ctx)) return false;
+
+  if (!shouldRespond(text)) return false;
+
   const prompt = createPrompt(text, name);
   try {
     const gptRes = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.85,
+      temperature: isNightMode() ? 0.95 : 0.8,
       max_tokens: 100
     });
 
@@ -157,49 +148,15 @@ async function smartReply(chatId, userId, name, text, ctx) {
       name,
       text,
       reply,
-      type: "smartGPT",
+      type: isNightMode() ? "nightGPT" : "dayGPT",
       timestamp: Date.now()
     });
 
-    repliedInChat.set(chatId, Date.now());
     return true;
   } catch (err) {
     console.error("❌ GPT שגיאה:", err);
     return false;
   }
-}
-
-async function handleSmartReply(ctx) {
-  const userId = ctx.from?.id;
-  const chatId = ctx.chat?.id;
-  const name = ctx.from?.first_name || "חבר";
-  const text = ctx.message?.text?.trim();
-  if (!userId || !text || text.length < 2 || isSticker(ctx) || isPhoto(ctx)) return false;
-  updateRecent(chatId, userId);
-
-  if (isPrivateChat(chatId)) return false;
-  if (alreadyRepliedRecently(chatId)) return false;
-  if (!isTrigger(text) && !isQuestion(text)) return false;
-  if (pendingReplies.has(chatId)) return false;
-  if (isUserSpammedRecently(userId)) return false;
-  lastReplyPerUser.set(userId, Date.now());
-
-  // 🕒 השהיה של 60 שניות לפני תגובה
-  pendingReplies.set(chatId, {
-    userId,
-    text,
-    name,
-    timeoutId: setTimeout(async () => {
-      const recent = recentMessagesPerChat.get(chatId) || [];
-      const others = recent.filter(uid => uid !== userId);
-      if (others.length === 0) {
-        await smartReply(chatId, userId, name, text, ctx);
-      }
-      pendingReplies.delete(chatId);
-    }, 60000)
-  });
-
-  return false;
 }
 
 module.exports = handleSmartReply;

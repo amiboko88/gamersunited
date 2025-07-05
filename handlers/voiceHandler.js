@@ -1,5 +1,3 @@
-// 📁 voiceHandler.js – גרסה משודרגת עם תגובת יציאה וקטגוריה נוספת
-const { processUserSmart, processUserExit } = require('./voiceQueue');
 const { updateVoiceActivity } = require('./mvpTracker');
 const {
   trackVoiceMinutes,
@@ -7,15 +5,19 @@ const {
   trackJoinDuration,
   trackActiveHour
 } = require('./statTracker');
+const { getPodcastAudioEleven } = require('../tts/ttsEngine.elevenlabs');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
+
 const db = require('../utils/firebase');
 
 const CHANNEL_ID = process.env.TTS_TEST_CHANNEL_ID;
 const FIFO_ROLE_NAME = 'FIFO';
-const EXTRA_CATEGORY_ID = '1138785781322887233'; // קטגוריית ערוצים נוספת
-
+const EXTRA_CATEGORY_ID = '1138785781322887233';
 const joinTimestamps = new Map();
 
-// 🧠 האם הערוץ נמצא ברשימת המעקב (FIFO או הקטגוריה)?
+const triggerLevels = [2, 4, 6, 8, 10];
+const lastTriggeredByChannel = new Map(); // channelId → { level, userIds }
+
 function channelIdIsMonitored(channelId, guild) {
   const chan = guild.channels.cache.get(channelId);
   return (
@@ -24,6 +26,12 @@ function channelIdIsMonitored(channelId, guild) {
   );
 }
 
+function arraysAreEqual(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  const aSorted = [...a].sort();
+  const bSorted = [...b].sort();
+  return aSorted.every((val, i) => val === bSorted[i]);
+}
 async function handleVoiceStateUpdate(oldState, newState) {
   const member = newState.member;
   if (!member || member.user.bot) return;
@@ -33,27 +41,22 @@ async function handleVoiceStateUpdate(oldState, newState) {
   const newChannelId = newState.channelId;
   const guild = member.guild;
 
-  // התעלמות מ־AFK
   if (newChannelId === guild.afkChannelId || oldChannelId === guild.afkChannelId) return;
 
-  console.log(`🎧 voiceStateUpdate – ${member.user.tag} עבר מ־${oldChannelId} ל־${newChannelId}`);
-
-  // ניהול תפקיד FIFO
   const fifoRole = guild.roles.cache.find(r => r.name === FIFO_ROLE_NAME);
   if (fifoRole) {
     try {
       if (newChannelId === CHANNEL_ID && !member.roles.cache.has(fifoRole.id)) {
         await member.roles.add(fifoRole);
-        console.log(`🎖️ ${member.user.tag} קיבל תפקיד FIFO`);
       }
       if (oldChannelId === CHANNEL_ID && newChannelId !== CHANNEL_ID && member.roles.cache.has(fifoRole.id)) {
         await member.roles.remove(fifoRole);
-        console.log(`🚫 ${member.user.tag} איבד את תפקיד FIFO`);
       }
     } catch (err) {
-      console.error('⚠️ שגיאה בטיפול בתפקיד FIFO:', err.message);
+      console.error('⚠️ FIFO role error:', err.message);
     }
   }
+
   const joined = !oldChannelId && newChannelId;
   const left = oldChannelId && !newChannelId;
 
@@ -86,24 +89,51 @@ async function handleVoiceStateUpdate(oldState, newState) {
         lastActivity: new Date().toISOString(),
         activityWeight: 2
       }, { merge: true });
-
-      console.log(`📈 ${member.user.tag} עודכן – ${durationMinutes} דקות`);
     }
 
     joinTimestamps.delete(userId);
     await db.collection('voiceEntries').doc(userId).delete().catch(() => {});
-
-    // 🗣️ תגובה ליציאה מערוץ קול אם זה ערוץ במעקב
-    if (channelIdIsMonitored(oldChannelId, guild)) {
-      await processUserExit(member, oldState.channel);
-    }
   }
 
-  // 🎙️ תגובה לכניסה לערוץ קול בפיקוח (FIFO או הקטגוריה)
   if (newChannelId && channelIdIsMonitored(newChannelId, guild)) {
     const channel = newState.channel;
-    if (channel) {
-      await processUserSmart(member, channel);
+    if (!channel) return;
+
+    const members = [...channel.members.values()].filter(m => !m.user.bot);
+    const count = members.length;
+    const userIds = members.map(m => m.id);
+    const displayNames = members.map(m => m.displayName);
+    const timestamps = Object.fromEntries(userIds.map(id => [id, Date.now()]));
+
+    const nextLevel = triggerLevels.find(lvl => lvl <= count);
+    if (!nextLevel) return;
+
+    const prev = lastTriggeredByChannel.get(channel.id);
+    if (prev && prev.level === nextLevel && arraysAreEqual(prev.userIds, userIds)) {
+      return; // אותם אנשים באותה רמה – לא להשמיע שוב
+    }
+
+    lastTriggeredByChannel.set(channel.id, { level: nextLevel, userIds });
+
+    try {
+      const buffer = await getPodcastAudioEleven(displayNames, userIds, timestamps);
+      const connection = joinVoiceChannel({
+        channelId: channel.id,
+        guildId: guild.id,
+        adapterCreator: guild.voiceAdapterCreator
+      });
+
+      const player = createAudioPlayer();
+      const resource = createAudioResource(buffer);
+      player.play(resource);
+      connection.subscribe(player);
+
+      player.on(AudioPlayerStatus.Idle, () => {
+        connection.destroy();
+      });
+
+    } catch (err) {
+      console.error('🎙️ פודקאסט שמעון נכשל:', err.message);
     }
   }
 }

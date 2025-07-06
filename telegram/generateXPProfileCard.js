@@ -17,7 +17,7 @@ async function generateXPProfileCard({ fullName, level, xp, avatarURL }) {
   const ctx = canvas.getContext("2d");
 
   // 🖼️ רקע
-  const bgPath = path.join(__dirname, "assets", "leaderboard_intro.png");
+  const bgPath = path.join(__dirname, "../assets", "war_bg.png");
   const background = await loadImage(bgPath);
   ctx.drawImage(background, 0, 0, width, height);
 

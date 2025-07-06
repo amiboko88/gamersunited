@@ -1,6 +1,6 @@
 const { OpenAI } = require("openai");
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const { analyzeTextForRoast } = require("./roastTelegram");
+const { analyzeTextForRoast, findMatchInText } = require("./roastTelegram");
 const {
   triggerWords,
   offensiveWords,
@@ -136,6 +136,13 @@ async function shimonSmart(ctx) {
   if (!userId || !chatId || text.length < 2) return false;
   if (ctx.message?.sticker || ctx.message?.photo) return false;
 
+  // 🛑 בדיקת פרופיל Roast
+  const match = findMatchInText(text);
+  if (match) {
+    await analyzeTextForRoast(text, ctx);
+    return true;
+  }
+
   const nowNight = isNightMode();
   const trigger = isTrigger(text);
   const indirect = talksAboutShimon(text);
@@ -144,8 +151,7 @@ async function shimonSmart(ctx) {
   if (!nowNight && !trigger && !attention) return false;
   if (!nowNight && indirect) return true;
 
-  const roasted = await analyzeTextForRoast(text, ctx);
-  if (roasted) return true;
+  // אין צורך לקרוא ל-analyzeTextForRoast שוב, כבר עשינו את זה אם match היה קיים
 
   if (isShallow(text)) {
     const emoji = pickEmoji(text);
@@ -185,5 +191,6 @@ async function shimonSmart(ctx) {
     return false;
   }
 }
+
 
 module.exports = shimonSmart;

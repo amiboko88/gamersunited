@@ -145,37 +145,48 @@ module.exports = {
 
       audioStream.pipe(output);
 
-      setTimeout(async () => {
-        try {
-          connection.destroy();
-          output.end();
+setTimeout(async () => {
+  try {
+    connection.destroy();
+    output.end();
 
-          const stats = statSync(rawPath);
-          if (stats.size < 1024) {
-            unlinkSync(rawPath);
-            return interaction.followUp({
-              content: '❌ לא הוקלט קול. ודא שאתה מדבר או שיש רעש בסביבה.',
-              ephemeral: true
-            });
-          }
+    if (!fs.existsSync(rawPath)) {
+      return interaction.followUp({
+        content: '❌ לא נוצר קובץ הקלטה. ודא שאתה מדבר או שהמיקרופון תקין.',
+        ephemeral: true
+      });
+    }
 
-          await convertPcmToMp3(rawPath, mp3Path);
-          unlinkSync(rawPath);
+    const stats = statSync(rawPath);
+    if (stats.size < 1024) {
+      unlinkSync(rawPath);
+      return interaction.followUp({
+        content: '❌ הוקלט קובץ ריק. ודא שאתה מדבר או שיש רעש בסביבה.',
+        ephemeral: true
+      });
+    }
 
-          incrementUserCount(member.id);
+    await convertPcmToMp3(rawPath, mp3Path);
+    unlinkSync(rawPath);
 
-          await interaction.followUp({
-            content: `✅ ההקלטה נשמרה כ־MP3: \`${baseName}.mp3\``,
-            ephemeral: true
-          });
-        } catch (err) {
-          console.error('שגיאה בהמרה או סיום הקלטה:', err);
-          await interaction.followUp({
-            content: '❌ שגיאה במהלך ההקלטה או ההמרה.',
-            ephemeral: true
-          });
-        }
-      }, 30_000);
+    incrementUserCount(member.id);
+
+    await interaction.followUp({
+      content: `✅ ההקלטה נשמרה כ־MP3: \`${baseName}.mp3\``,
+      ephemeral: true
+    });
+
+    console.log(`[RECORDING] Saved: ${mp3Path}`);
+
+  } catch (err) {
+    console.error('שגיאה בהמרה או סיום הקלטה:', err);
+    await interaction.followUp({
+      content: '❌ שגיאה במהלך ההקלטה או ההמרה.',
+      ephemeral: true
+    });
+  }
+}, 30_000);
+
     });
 
     collector.on('end', collected => {

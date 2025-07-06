@@ -59,7 +59,7 @@ const usedRoastCallbacks = new Set();
 
 async function analyzeTextForRoast(text, ctx = null) {
   const match = findMatchInText(text);
-  if (!match || !ctx) return null;
+  if (!match || !ctx) return false;
 
   const roast = await generateRoastViaGPT(match.name, match.traits, match.description);
   const formatted = formatRoastReply(match.name, roast, randomEmoji());
@@ -71,9 +71,11 @@ async function analyzeTextForRoast(text, ctx = null) {
     }
   });
 
-  // שמור ID להמשך
   usedRoastCallbacks.add(`roast_again_${ctx.from.id}_${msg.message_id}`);
+
+  return true; // ✅ החלק החשוב
 }
+
 
 function registerRoastButtons(bot) {
   bot.callbackQuery(/^roast_again_(\d+)/, async (ctx) => {
@@ -110,5 +112,7 @@ function registerRoastButtons(bot) {
 
 module.exports = {
   analyzeTextForRoast,
-  registerRoastButtons
+  registerRoastButtons,
+  findMatchInText
 };
+

@@ -85,6 +85,10 @@ module.exports = {
 
       const filePath = path.join(userDir, fileName);
 
+      if (!fs.existsSync(filePath)) {
+        return interaction.reply({ content: '📭 לא נמצא קובץ ההקלטה שנבחר.', ephemeral: true });
+      }
+
       if (interaction.customId === 'play_voice_selected') {
         const voiceChannel = interaction.member.voice.channel;
         if (!voiceChannel) {
@@ -116,6 +120,7 @@ module.exports = {
           connection.destroy();
         });
 
+        console.log(`[PLAYBACK] ${interaction.user.tag} השמיע את הקובץ ${fileName}`);
         return interaction.reply({ content: `🎧 מנגן כעת: \`${fileName}\``, ephemeral: true });
       }
 

@@ -8,6 +8,11 @@ registerFont(path.join(__dirname, "../assets", "NotoSansHebrew-Bold.ttf"), {
   family: "NotoHebrew"
 });
 
+// 🔤 פונט אימוג'י / אנגלית
+registerFont(path.join(__dirname, "../assets", "DejaVuSans.ttf"), {
+  family: "EmojiFont"
+});
+
 async function generateXPProfileCard({ fullName, level, xp, avatarURL }) {
   const nextXP = level * 25;
   const percent = Math.min((xp / nextXP) * 100, 100);
@@ -21,7 +26,7 @@ async function generateXPProfileCard({ fullName, level, xp, avatarURL }) {
   const background = await loadImage(bgPath);
   ctx.drawImage(background, 0, 0, width, height);
 
-  // 🧑‍🎤 תמונת פרופיל
+  // 🧑‍🎤 תמונת פרופיל עגולה
   try {
     const response = await axios.get(avatarURL, { responseType: "arraybuffer" });
     const avatarImg = await loadImage(response.data);
@@ -36,9 +41,10 @@ async function generateXPProfileCard({ fullName, level, xp, avatarURL }) {
     console.warn("⚠️ לא נטענה תמונת פרופיל:", err.message);
   }
 
-  // 🟦 בר התקדמות
+  // 🟩 בר התקדמות
   const barX = 200, barY = 170, barWidth = 460, barHeight = 25;
   const fillWidth = Math.round((percent / 100) * barWidth);
+
   ctx.fillStyle = "#444";
   ctx.fillRect(barX, barY, barWidth, barHeight);
 
@@ -46,18 +52,22 @@ async function generateXPProfileCard({ fullName, level, xp, avatarURL }) {
   ctx.fillRect(barX, barY, fillWidth, barHeight);
 
   // ✍️ טקסטים
-  ctx.font = "24px NotoHebrew";
-  ctx.fillStyle = "#ffffff";
   ctx.textAlign = "right";
+  ctx.fillStyle = "#ffffff";
+
+  // 🧑 שם משתמש
+  ctx.font = "24px EmojiFont";
   ctx.fillText(`‏${fullName}`, width - 40, 70);
 
+  // 📊 XP
   ctx.font = "20px NotoHebrew";
-  ctx.fillText(`‏רמה ${level} | ${xp} מתוך ${nextXP} XP`, width - 40, 120);
+  ctx.fillText(`‏רמה ${level} · ${xp} מתוך ${nextXP} XP`, width - 40, 120);
 
+  // אחוז התקדמות
   ctx.font = "18px NotoHebrew";
   ctx.fillText(`‏התקדמות: ${Math.floor(percent)}%`, width - 40, 205);
 
-  // ✨ שמור לקובץ זמני
+  // 💾 שמירה לקובץ זמני
   const buffer = canvas.toBuffer("image/png");
   const filename = path.join(__dirname, "../temp", `xp_${Date.now()}.png`);
   fs.writeFileSync(filename, buffer);

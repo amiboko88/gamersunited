@@ -1,9 +1,12 @@
 const { createCanvas, registerFont } = require("canvas");
 const path = require("path");
 
-// 🆔 טעינת פונט עברי
+// 🔤 טעינת גופנים: עברי + אימוג'י
 registerFont(path.join(__dirname, "../assets/NotoSansHebrew-Bold.ttf"), {
   family: "HebrewBold"
+});
+registerFont(path.join(__dirname, "../assets/DejaVuSans.ttf"), {
+  family: "EmojiFont"
 });
 
 function getBarColor(percent) {
@@ -31,11 +34,11 @@ function createLeaderboardImage(users) {
   ctx.fillStyle = "#101014";
   ctx.fillRect(0, 0, width, height);
 
-  // 🏆 כותרת מיושרת בעברית מלאה עם RTL תקין
-  ctx.font = "bold 42px HebrewBold";
+  // 🏆 כותרת עם אימוג'י + יישור תקין
+  ctx.font = "bold 42px EmojiFont";
   ctx.fillStyle = "#ffffff";
   ctx.textAlign = "right";
-  ctx.fillText("‏🏆 טבלת מצטיינים 🏆", width - 60, 70);
+  ctx.fillText("‏🏆 טבלת מצטיינים", width - 60, 70);
 
   users.forEach((u, i) => {
     const y = headerHeight + i * rowHeight;
@@ -47,7 +50,7 @@ function createLeaderboardImage(users) {
     const barColor = getBarColor(percent);
 
     const name = `${u.fullName || u.username || "אנונימי"}`;
-    const xpDisplay = `‏רמה ${level} · ${xp} מתוך ${nextXP} XP`; // ✅ XP בסוף משפט RTL
+    const xpDisplay = `‏רמה ${level} · ${xp} מתוך ${nextXP} XP`;
 
     // רקע שורה
     ctx.fillStyle = i % 2 === 0 ? "#1a1a27" : "#1e1e2e";

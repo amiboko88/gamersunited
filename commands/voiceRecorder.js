@@ -7,6 +7,7 @@ const path = require('path');
 const dayjs = require('dayjs');
 const { spawn } = require('child_process');
 const ffmpeg = require('ffmpeg-static');
+const sodium = require('libsodium-wrappers'); // ⬅️ חשוב!
 const {
   ActionRowBuilder,
   ButtonBuilder,
@@ -18,9 +19,9 @@ const RECORDINGS_DIR = path.join(__dirname, '..', 'recordings');
 if (!existsSync(RECORDINGS_DIR)) mkdirSync(RECORDINGS_DIR);
 
 const ALLOWED_ROLE_IDS = [
-  '1372701819167440957',
-  '853024162603597886',
-  '1133753472966201555'
+  '1372701819167440957', // MVP
+  '853024162603597886',  // BOOSTER
+  '1133753472966201555'  // ADMIN
 ];
 
 const dailyLimits = new Map();
@@ -30,8 +31,7 @@ function canRecord(member) {
 }
 
 function getUserDailyKey(userId) {
-  const today = dayjs().format('YYYY-MM-DD');
-  return `${userId}_${today}`;
+  return `${userId}_${dayjs().format('YYYY-MM-DD')}`;
 }
 
 function getUserDailyCount(userId) {
@@ -50,8 +50,6 @@ async function convertPcmToMp3(inputPath, outputPath) {
       '-ar', '48000',
       '-ac', '2',
       '-i', inputPath,
-      '-c:a', 'libmp3lame',
-      '-b:a', '192k',
       '-y',
       outputPath
     ]);
@@ -68,9 +66,11 @@ async function convertPcmToMp3(inputPath, outputPath) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('record')
-    .setDescription('מקליט את הערוץ שלך ל־30 שניות (למורשים בלבד)'),
+    .setDescription('מקליט את הערוץ שלך ל־30 שניות (רק למורשים)'),
 
   async execute(interaction) {
+    await sodium.ready; // ✅ חובה להצפנה
+
     const member = interaction.member;
 
     if (!canRecord(member)) {
@@ -107,7 +107,9 @@ module.exports = {
       ephemeral: true
     });
 
-    const filter = i => i.customId === 'confirm_recording' && i.user.id === interaction.user.id;
+    const filter = i =>
+      i.customId === 'confirm_recording' &&
+      i.user.id === interaction.user.id;
 
     const collector = interaction.channel.createMessageComponentCollector({
       filter,
@@ -128,7 +130,6 @@ module.exports = {
       });
 
       const receiver = connection.receiver;
-
       const timestamp = dayjs().format('YYYY-MM-DD_HH-mm-ss');
       const safeName = interaction.user.username.replace(/[^a-zA-Z0-9]/g, '');
       const baseName = `${timestamp}_${safeName}`;
@@ -149,8 +150,6 @@ module.exports = {
         const writeStream = createWriteStream(rawPath, { flags: 'a' });
         audioStream.pipe(writeStream);
         streams.set(userId, writeStream);
-
-        console.log(`[RECORDING] קולט את המשתמש ${userId}`);
 
         audioStream.on('end', () => {
           writeStream.end();
@@ -173,14 +172,13 @@ module.exports = {
           if (stats.size < 1024) {
             unlinkSync(rawPath);
             return interaction.followUp({
-              content: '❌ הקובץ היה ריק. ודא שהיה קול.',
+              content: '❌ הקובץ היה ריק. ודא שהיה קול בערוץ.',
               ephemeral: true
             });
           }
 
           await convertPcmToMp3(rawPath, mp3Path);
           unlinkSync(rawPath);
-
           incrementUserCount(member.id);
 
           await interaction.followUp({
@@ -189,9 +187,8 @@ module.exports = {
           });
 
           console.log(`[RECORDING] Saved: ${mp3Path}`);
-
         } catch (err) {
-          console.error('❌ שגיאה במהלך ההקלטה:', err);
+          console.error('שגיאה בהמרה או סיום הקלטה:', err);
           await interaction.followUp({
             content: '❌ שגיאה במהלך ההקלטה או ההמרה.',
             ephemeral: true

@@ -9,6 +9,8 @@ const { updateXP, handleTop, registerTopButton } = require("./telegramLevelSyste
 const handleSmartReply = require("./shimonSmart");
 const { sendBirthdayMessages } = require("./birthdayNotifierTelegram");
 const { isSpam } = require("./antiSpam");
+const { triggerWords } = require("./smartKeywords");
+
 
 const WAITING_USERS = new Map();
 const bot = new Bot(process.env.TELEGRAM_TOKEN);

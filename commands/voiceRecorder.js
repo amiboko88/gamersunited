@@ -137,56 +137,68 @@ module.exports = {
 
       const rawPath = path.join(userDir, `${baseName}.pcm`);
       const mp3Path = path.join(userDir, `${baseName}.mp3`);
-      const output = createWriteStream(rawPath);
 
-      const audioStream = receiver.subscribe(interaction.user.id, {
-        end: { behavior: EndBehaviorType.AfterSilence, duration: 100 }
+      const streams = new Map();
+
+      receiver.speaking.on('start', userId => {
+        if (streams.has(userId)) return;
+
+        const audioStream = receiver.subscribe(userId, {
+          end: { behavior: EndBehaviorType.AfterSilence, duration: 100 }
+        });
+
+        const writeStream = createWriteStream(rawPath, { flags: 'a' }); // append mode
+        audioStream.pipe(writeStream);
+        streams.set(userId, writeStream);
+
+        console.log(`[RECORDING] קולט את המשתמש ${userId}`);
+
+        audioStream.on('end', () => {
+          writeStream.end();
+          streams.delete(userId);
+        });
       });
 
-      audioStream.pipe(output);
+      setTimeout(async () => {
+        try {
+          connection.destroy();
 
-setTimeout(async () => {
-  try {
-    connection.destroy();
-    output.end();
+          if (!existsSync(rawPath)) {
+            return interaction.followUp({
+              content: '❌ לא נוצר קובץ הקלטה. ודא שמישהו מדבר בערוץ.',
+              ephemeral: true
+            });
+          }
 
-    if (!existsSync(rawPath)) {
-      return interaction.followUp({
-        content: '❌ לא נוצר קובץ הקלטה. ודא שאתה מדבר או שהמיקרופון תקין.',
-        ephemeral: true
-      });
-    }
+          const stats = statSync(rawPath);
+          if (stats.size < 1024) {
+            unlinkSync(rawPath);
+            return interaction.followUp({
+              content: '❌ ההקלטה הייתה ריקה. ודא שהיה קול בערוץ.',
+              ephemeral: true
+            });
+          }
 
-    const stats = statSync(rawPath);
-    if (stats.size < 1024) {
-      unlinkSync(rawPath);
-      return interaction.followUp({
-        content: '❌ הוקלט קובץ ריק. ודא שאתה מדבר או שיש רעש בסביבה.',
-        ephemeral: true
-      });
-    }
+          await convertPcmToMp3(rawPath, mp3Path);
+          unlinkSync(rawPath);
 
-    await convertPcmToMp3(rawPath, mp3Path);
-    unlinkSync(rawPath);
+          incrementUserCount(member.id);
 
-    incrementUserCount(member.id);
+          await interaction.followUp({
+            content: `✅ ההקלטה נשמרה כ־MP3: \`${baseName}.mp3\``,
+            ephemeral: true
+          });
 
-    await interaction.followUp({
-      content: `✅ ההקלטה נשמרה כ־MP3: \`${baseName}.mp3\``,
-      ephemeral: true
-    });
+          console.log(`[RECORDING] Saved: ${mp3Path}`);
 
-    console.log(`[RECORDING] Saved: ${mp3Path}`);
-
-  } catch (err) {
-    console.error('שגיאה בהמרה או סיום הקלטה:', err);
-    await interaction.followUp({
-      content: '❌ שגיאה במהלך ההקלטה או ההמרה.',
-      ephemeral: true
-    });
-  }
-}, 30_000);
-
+        } catch (err) {
+          console.error('שגיאה בהמרה או סיום הקלטה:', err);
+          await interaction.followUp({
+            content: '❌ שגיאה במהלך ההקלטה או ההמרה.',
+            ephemeral: true
+          });
+        }
+      }, 30_000);
     });
 
     collector.on('end', collected => {

@@ -62,15 +62,25 @@ bot.on("message", async (ctx) => {;
   const roast = await analyzeTextForRoast(text);
   if (roast) return await ctx.reply(roast, { parse_mode: "HTML" });
 
-  const smart = await handleSmartReply(ctx);
-  if (!smart) {
+const smart = await handleSmartReply(ctx);
+
+// אם לא הופעלה תגובה חכמה – נבדוק האם ההודעה ראויה ל־XP
+if (!smart) {
+  const cleaned = text.trim();
+  const onlyEmoji = /^[\p{Emoji}\s]+$/u.test(cleaned);
+  const isShort = cleaned.length < 3;
+  const isTrigger = triggerWords.some(w => cleaned.toLowerCase().includes(w));
+
+  if (!onlyEmoji && !isShort && !isTrigger) {
     await updateXP({
       id: ctx.from.id,
       first_name: ctx.from.first_name,
       username: ctx.from.username,
-      text
+      text: cleaned
     }, ctx);
   }
+}
+
 });
 
 const now = new Date();

@@ -8,7 +8,7 @@ registerFont(path.join(__dirname, "../assets", "NotoSansHebrew-Bold.ttf"), {
   family: "NotoHebrew"
 });
 
-async function createXPProfileImage({ fullName, level, xp, avatarURL }) {
+async function generateXPProfileCard({ fullName, level, xp, avatarURL }) {
   const nextXP = level * 25;
   const percent = Math.min((xp / nextXP) * 100, 100);
   const width = 700, height = 280;
@@ -60,4 +60,4 @@ async function createXPProfileImage({ fullName, level, xp, avatarURL }) {
   return canvas.toBuffer("image/png");
 }
 
-module.exports = { createXPProfileImage };
+module.exports = { generateXPProfileCard };

@@ -1,7 +1,6 @@
 // 📁 birthdayNotifierTelegram.js – מודול עצמאי עם נעילת Firestore ל־Yom Huledet
 
 const db = require("../utils/firebase");
-
 const { Bot } = require("grammy");
 
 const bot = new Bot(process.env.TELEGRAM_TOKEN);

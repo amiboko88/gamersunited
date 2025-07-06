@@ -2,8 +2,7 @@ const {
   joinVoiceChannel,
   EndBehaviorType
 } = require('@discordjs/voice');
-const { createWriteStream, existsSync, mkdirSync, unlinkSync } = require('fs');
-const fs = require('fs');
+const { createWriteStream, existsSync, mkdirSync, unlinkSync, statSync } = require('fs');
 const path = require('path');
 const dayjs = require('dayjs');
 const { spawn } = require('child_process');
@@ -24,7 +23,7 @@ const ALLOWED_ROLE_IDS = [
   '1133753472966201555'  // ADMIN
 ];
 
-const dailyLimits = new Map(); // userId + date
+const dailyLimits = new Map();
 
 function canRecord(member) {
   return member.roles.cache.some(r => ALLOWED_ROLE_IDS.includes(r.id));
@@ -56,11 +55,8 @@ async function convertPcmToMp3(inputPath, outputPath) {
     ]);
 
     ffmpegProcess.on('exit', code => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`FFmpeg exited with code ${code}`));
-      }
+      if (code === 0) resolve();
+      else reject(new Error(`FFmpeg exited with code ${code}`));
     });
 
     ffmpegProcess.on('error', reject);
@@ -143,17 +139,25 @@ module.exports = {
       const mp3Path = path.join(userDir, `${baseName}.mp3`);
       const output = createWriteStream(rawPath);
 
-      receiver.speaking.on('start', userId => {
-        const audioStream = receiver.subscribe(userId, {
-          end: { behavior: EndBehaviorType.AfterSilence, duration: 100 }
-        });
-        audioStream.pipe(output, { end: false });
+      const audioStream = receiver.subscribe(interaction.user.id, {
+        end: { behavior: EndBehaviorType.AfterSilence, duration: 100 }
       });
+
+      audioStream.pipe(output);
 
       setTimeout(async () => {
         try {
           connection.destroy();
           output.end();
+
+          const stats = statSync(rawPath);
+          if (stats.size < 1024) {
+            unlinkSync(rawPath);
+            return interaction.followUp({
+              content: '❌ לא הוקלט קול. ודא שאתה מדבר או שיש רעש בסביבה.',
+              ephemeral: true
+            });
+          }
 
           await convertPcmToMp3(rawPath, mp3Path);
           unlinkSync(rawPath);

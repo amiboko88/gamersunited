@@ -262,7 +262,18 @@ client.on('messageCreate', async message => {
 });
 
 client.on('interactionCreate', async interaction => {
+  // 🔍 Autocomplete
   if (interaction.isAutocomplete()) return songAutocomplete(interaction);
+
+  // 🧠 ניהול fallback ל־DM
+  if (interaction.isButton() && interaction.customId === 'dm_fallback_reply') {
+    const { showDmFallbackModal } = require('./handlers/dmFallbackModal');
+    return showDmFallbackModal(interaction);
+  }
+  if (interaction.isModalSubmit() && interaction.customId === 'dm_fallback_modal') {
+    const { handleDmFallbackModalSubmit } = require('./handlers/dmFallbackModal');
+    return handleDmFallbackModalSubmit(interaction, client);
+  }
 
   // 🆘 כפתורי עזרה
   if (
@@ -272,25 +283,20 @@ client.on('interactionCreate', async interaction => {
     if (await helpHandleButton(interaction)) return;
   }
 
-  // 🔘 כפתורי fallback ל־DM
-  if (interaction.isButton() && interaction.customId === 'dm_fallback_reply') {
-    const { showDmFallbackModal } = require('./handlers/dmFallbackModal');
-    return showDmFallbackModal(interaction);
+  // 🎧 פאנל הקלטות חכם
+  if (
+    interaction.isStringSelectMenu() && interaction.customId === 'select_voice' ||
+    interaction.isButton() && ['play_voice_selected', 'delete_voice_selected'].includes(interaction.customId)
+  ) {
+    const recordingsPanel = require('./commands/recordingsPanel');
+    return recordingsPanel.handleInteraction(interaction, client);
   }
 
-  // 📝 שליחת תגובה ב־modal
-  if (interaction.isModalSubmit() && interaction.customId === 'dm_fallback_modal') {
-    const { handleDmFallbackModalSubmit } = require('./handlers/dmFallbackModal');
-    return handleDmFallbackModalSubmit(interaction, client);
-  }
-
-  // 🔘 כפתורים אחרים
+  // 🧑‍🤝‍🧑 כפתורי FIFO (פיפו)
   if (interaction.isButton()) {
     const id = interaction.customId;
 
-    // 🎮 כפתורי FIFO (פיפו)
     if (id.startsWith('replay_') || id.startsWith('reset_all_') || id === 'repartition_now') {
-      
       return handleFifoButtons(interaction, client);
     }
 
@@ -324,6 +330,7 @@ client.on('interactionCreate', async interaction => {
       return handleRSVP(interaction, client);
     }
 
+    // כל שאר הכפתורים מועברים לאימות
     return handleVerifyInteraction(interaction);
   }
 
@@ -332,8 +339,9 @@ client.on('interactionCreate', async interaction => {
     return handleBirthdayPanel(interaction);
   }
 
-  // 🧠 פקודות סלאש
+  // 🧠 פקודות סלאש רגילות
   if (!interaction.isCommand()) return;
+
   await statTracker.trackSlash(interaction);
 
   const command = commandMap.get(interaction.commandName);
@@ -347,8 +355,9 @@ client.on('interactionCreate', async interaction => {
       await interaction.reply({ content: '❌ שגיאה בביצוע הפקודה.', ephemeral: true });
     }
   }
-
 });
+
+
 // 🚀 הפעלת הבוט
 client.login(process.env.DISCORD_TOKEN);
 setInterval(() => {

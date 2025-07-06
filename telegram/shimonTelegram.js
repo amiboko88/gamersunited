@@ -2,7 +2,7 @@ require("dotenv").config();
 const { Bot, webhookCallback } = require("grammy");
 const express = require("express");
 const { analyzeTextForRoast, registerRoastButtons } = require("./roastTelegram");
-const db = require("./utils/firebase");
+const db = require("../utils/firebase");
 const registerCommands = require("./telegramCommands");
 const { registerBirthdayHandler, validateBirthday, saveBirthday } = require("./telegramBirthday");
 const { updateXP, handleTop, registerTopButton } = require("./telegramLevelSystem");

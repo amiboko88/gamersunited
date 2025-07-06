@@ -1,8 +1,9 @@
-const { createCanvas, registerFont, loadImage } = require("canvas");
+const { createCanvas, registerFont } = require("canvas");
 const path = require("path");
 
 // הרשמת פונט עברי
-registerFont(path.join(__dirname, "assets/NotoSansHebrew-Bold.ttf"), { family: "HebrewBold" });
+registerFont(path.join(__dirname, "../assets/NotoSansHebrew-Bold.ttf"), { family: "HebrewBold" });
+
 
 function getBarColor(percent) {
   if (percent < 0.4) return "#e74c3c";     // אדום

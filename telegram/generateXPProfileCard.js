@@ -4,7 +4,7 @@ const fs = require("fs");
 const axios = require("axios");
 
 // 🔤 פונט עברי מוגדר
-registerFont(path.join(__dirname, "assets", "NotoSansHebrew-Bold.ttf"), {
+registerFont(path.join(__dirname, "../assets", "NotoSansHebrew-Bold.ttf"), {
   family: "NotoHebrew"
 });
 

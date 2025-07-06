@@ -1,7 +1,8 @@
 // 📁 telegramBirthday.js – ניהול ימי הולדת ללא קונפליקט עם on("message")
 
 const { InlineKeyboard } = require("grammy");
-const db = require("./utils/firebase");
+const db = require("../utils/firebase");
+
 
 // 🧠 אימות תאריך
 function validateBirthday(input) {

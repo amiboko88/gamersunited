@@ -1,4 +1,4 @@
-const db = require("./utils/firebase");
+const db = require("../utils/firebase");
 const { createLeaderboardImage } = require("./generateXPLeaderboardImage");
 const fs = require("fs");
 const path = require("path");

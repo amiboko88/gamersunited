@@ -1,6 +1,6 @@
 const { getUpcomingBirthdaysText } = require("./telegramBirthday");
 const { generateXPProfileCard } = require("./generateXPProfileCard"); 
-const db = require("./utils/firebase");
+const db = require("../utils/firebase");
 const lastStartCommand = new Map(); // userId -> timestamp
 const { generateRoastText } = require("./generateRoastText");
 const { OpenAI } = require("openai");

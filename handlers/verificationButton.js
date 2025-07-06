@@ -17,6 +17,11 @@ const TRACKING_COLLECTION = 'dmTracking';
 const MESSAGE_COLLECTION = 'verificationMessages';
 const embedImageUrl = 'attachment://verify.png';
 
+const ALLOWED_EXTRA_ROLES = [
+  '1372319014398726225', // 🎮 Warzone
+  '1372319255025946775'  // 🎮 Other Games
+];
+
 async function setupVerificationMessage(client) {
   const guild = client.guilds.cache.first();
   const channel = guild.channels.cache.get(VERIFICATION_CHANNEL_ID);
@@ -61,10 +66,15 @@ async function handleInteraction(interaction) {
   const roles = member.roles.cache;
   const staffChannel = interaction.guild.channels.cache.get(STAFF_CHANNEL_ID);
 
-  const allowed = roles.size === 1 && roles.has(interaction.guild.roles.everyone.id);
+  const filteredRoles = roles.filter(
+    r => r.id !== interaction.guild.roles.everyone.id && !ALLOWED_EXTRA_ROLES.includes(r.id)
+  );
+
+  const allowed = filteredRoles.size === 0;
+
   if (!allowed) {
     return interaction.reply({
-      content: 'רק משתמשים חדשים יכולים לאמת את עצמם כאן.',
+      content: '🛑 נראה שכבר יש לך תפקידים בשרת. אם אתה קונסוליסט — תכתוב כאן "אמת אותי" או שלח לשמעון הודעה בפרטי.',
       ephemeral: true
     });
   }
@@ -101,7 +111,6 @@ async function handleInteraction(interaction) {
     if (staffChannel?.isTextBased()) {
       staffChannel.send(`🟢 <@${member.id}> אומת בהצלחה.`);
     }
-
     const { sendFallbackButton } = require('./dmFallbackModal');
     try {
       await user.send(
@@ -126,6 +135,7 @@ async function handleInteraction(interaction) {
     });
   }
 }
+
 async function scanForConsoleAndVerify(member) {
   const hasVerified = member.roles.cache.has(VERIFIED_ROLE_ID);
   if (hasVerified) {
@@ -313,7 +323,7 @@ async function startDmTracking(client) {
         }
       }
     }
-  }, 1000 * 60 * 10); // כל 10 דקות
+  }, 1000 * 60 * 10);
 }
 
 module.exports = {

@@ -2,7 +2,6 @@ const { createCanvas, loadImage, registerFont } = require("canvas");
 const path = require("path");
 const axios = require("axios");
 
-// 🔤 גופנים
 registerFont(path.join(__dirname, "../assets/NotoSansHebrew-Bold.ttf"), {
   family: "NotoHebrew"
 });
@@ -11,47 +10,47 @@ registerFont(path.join(__dirname, "../assets/Symbola.ttf"), {
 });
 
 async function generateXPProfileCard({ fullName, level, xp, avatarURL }) {
-  const nextXP = level * 25;
-  const percent = Math.min((xp / nextXP) * 100, 100);
   const width = 700;
   const height = 280;
-
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
-  // 🖼️ רקע
-  const bgPath = path.join(__dirname, "../assets", "war_bg.png");
-  const background = await loadImage(bgPath);
-  ctx.drawImage(background, 0, 0, width, height);
+  const nextXP = level * 25;
+  const percent = Math.min((xp / nextXP) * 100, 100);
 
-  // 🧑‍🎤 תמונת פרופיל עגולה
+  // 🖼️ רקע
+  const bg = await loadImage(path.join(__dirname, "../assets/war_bg.png"));
+  ctx.drawImage(bg, 0, 0, width, height);
+
+  // 🧑‍🎤 תמונת פרופיל
   try {
+    if (!avatarURL?.startsWith("http")) throw new Error("avatarURL לא תקף");
     const response = await axios.get(avatarURL, { responseType: "arraybuffer" });
     const avatarImg = await loadImage(response.data);
     ctx.save();
     ctx.beginPath();
-    ctx.arc(110, 140, 60, 0, Math.PI * 2, true);
+    ctx.arc(110, 140, 60, 0, Math.PI * 2);
     ctx.closePath();
     ctx.clip();
     ctx.drawImage(avatarImg, 50, 80, 120, 120);
     ctx.restore();
-  } catch (err) {
-    console.warn("⚠️ לא נטענה תמונת פרופיל:", err.message);
+  } catch (e) {
+    console.warn("⚠️ לא נטענה תמונת פרופיל:", e.message);
   }
 
   // 🟩 בר התקדמות
-  const barX = 200, barY = 170, barWidth = 460, barHeight = 25;
-  const fillWidth = Math.round((percent / 100) * barWidth);
+  const barX = 200, barY = 170, barW = 460, barH = 25;
+  const fillW = Math.round((percent / 100) * barW);
 
   ctx.fillStyle = "#444";
-  ctx.fillRect(barX, barY, barWidth, barHeight);
+  ctx.fillRect(barX, barY, barW, barH);
 
   ctx.fillStyle = percent >= 90 ? "#00e676" : percent >= 50 ? "#f9a825" : "#e53935";
-  ctx.fillRect(barX, barY, fillWidth, barHeight);
+  ctx.fillRect(barX, barY, fillW, barH);
 
-  // ✍️ טקסטים
+  // 📝 טקסטים
+  ctx.fillStyle = "#fff";
   ctx.textAlign = "right";
-  ctx.fillStyle = "#ffffff";
 
   ctx.font = "24px EmojiFont";
   ctx.fillText(`‏${fullName}`, width - 40, 70);
@@ -62,7 +61,6 @@ async function generateXPProfileCard({ fullName, level, xp, avatarURL }) {
   ctx.font = "18px NotoHebrew";
   ctx.fillText(`‏התקדמות: ${Math.floor(percent)}%`, width - 40, 205);
 
-  // 🟢 החזרה בדיוק כמו בטבלת TOP — buffer בלבד
   return canvas.toBuffer("image/png");
 }
 

@@ -9,9 +9,11 @@ async function handleMemberButtons(interaction, client) {
   const allTracked = await db.collection('memberTracking').get();
   const guild = await client.guilds.fetch(process.env.GUILD_ID);
   const members = await guild.members.fetch();
+  const value = interaction.values?.[0];
+  const action = interaction.customId === 'inactivity_action_select' ? value : interaction.customId;
 
   // 🔵 שליחת DM רגיל
-  if (interaction.customId === 'send_dm_batch_list') {
+  if (action === 'send_dm_batch_list') {
     await interaction.deferReply({ ephemeral: true });
 
     let count = 0;
@@ -110,8 +112,49 @@ try {
     await interaction.editReply({ content: msg });
     return true;
   }
+    // 📊 סטטוס נוכחי
+  if (action === 'show_status_summary') {
+    const snapshot = await db.collection('memberTracking').get();
+    const count = snapshot.size;
+    const summary = {};
+
+    for (const doc of snapshot.docs) {
+      const s = doc.data().statusStage || 'unknown';
+      summary[s] = (summary[s] || 0) + 1;
+    }
+
+    const fields = Object.entries(summary).map(([k, v]) => ({
+      name: translateStatus(k),
+      value: `**${v}** משתמשים`,
+      inline: true
+    }));
+
+    const embed = new EmbedBuilder()
+      .setTitle('📊 סטטוס נוכחי של משתמשים')
+      .addFields(fields)
+      .setColor(0x2ecc71)
+      .setFooter({ text: 'Shimon BOT – ניתוח לפי statusStage' })
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  function translateStatus(key) {
+    return {
+      joined: '🆕 הצטרף',
+      waiting_activity: '⌛ מחכה לפעולה',
+      active: '✅ פעיל',
+      dm_sent: '📩 תזכורת נשלחה',
+      final_warning: '🔴 תזכורת סופית',
+      responded: '💬 ענה',
+      kicked: '🚫 נבעט',
+      failed_dm: '❌ נכשל DM',
+      unknown: '❓ לא ידוע'
+    }[key] || key;
+  }
+
   // 🔴 שליחת תזכורת סופית
-  if (interaction.customId === 'send_dm_batch_final_check') {
+  if (action === 'send_dm_batch_final_check') {
     await interaction.deferReply({ ephemeral: true });
 
     let count = 0;
@@ -208,7 +251,7 @@ try {
   }
 
   // ❌ הצגת משתמשים שנכשל DM אליהם
-  if (interaction.customId === 'show_failed_list') {
+  if (action === 'show_failed_list') {
     const failedUsers = allTracked.docs.filter(doc => doc.data().dmFailed);
     if (!failedUsers.length) {
       return interaction.reply({ content: 'אין משתמשים שנכשל DM אליהם.', ephemeral: true });
@@ -223,7 +266,7 @@ try {
   }
 
   // 💬 הצגת מי שענה ל־DM
-  if (interaction.customId === 'show_replied_list') {
+  if (action === 'show_replied_list') {
     const replied = allTracked.docs.filter(doc => doc.data().replied);
     if (!replied.length) {
       return interaction.reply({ content: 'אף אחד לא ענה ל־DM עדיין.', ephemeral: true });
@@ -238,7 +281,7 @@ try {
   }
 
   // 🛑 בעיטת משתמשים שנכשלו
-  if (interaction.customId === 'kick_failed_users') {
+  if (action === 'kick_failed_users') {
     await interaction.deferReply({ ephemeral: true });
 
     const now = Date.now();

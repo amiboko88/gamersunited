@@ -3,7 +3,7 @@ const path = require('path');
 
 const WIDTH = 1000;
 const HEIGHT = 562;
-const AVATAR_SIZE = 100;
+const AVATAR_SIZE = 120;
 const MAX_PLAYERS = 5;
 
 registerFont(path.join(__dirname, '../assets/NotoSansHebrew-Bold.ttf'), {
@@ -18,21 +18,22 @@ async function generateProBanner(players) {
   const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx = canvas.getContext('2d');
 
-  // טען רקע ולוגו
   const background = await loadImage(path.join(__dirname, '../assets/war_bg.png'));
   const logo = await loadImage(path.join(__dirname, '../assets/onlyg.png'));
 
   ctx.drawImage(background, 0, 0, WIDTH, HEIGHT);
 
-  // כותרות בעברית
+  // כותרת ראשית - ימין לשמאל עם סימן קריאה
   ctx.font = '48px "NotoHebrew"';
   ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'center';
-  ctx.fillText('חברי הצוות מחוברים כבר!', WIDTH / 2, 60);
+  ctx.textAlign = 'right';
+  ctx.fillText('\u200F!חברי הצוות מחוברים כבר', WIDTH - 30, 60);
 
+  // כותרת משנה - צבע צהוב מודגש יותר
   ctx.font = 'bold 42px Arial';
-  ctx.fillStyle = '#00ffff';
-  ctx.fillText('FIFO SQUAD ROTATION', WIDTH / 2, 110);
+  ctx.fillStyle = '#FFD700';
+  ctx.textAlign = 'right';
+  ctx.fillText('\u200FFIFO SQUAD ROTATION', WIDTH - 30, 110);
 
   // אוואטרים
   const displayed = [...players.values()].slice(0, MAX_PLAYERS);
@@ -45,7 +46,6 @@ async function generateProBanner(players) {
       const avatar = await loadImage(avatarURL);
       const y = 160;
 
-      // אוואטר עגול
       ctx.save();
       ctx.beginPath();
       ctx.arc(x + AVATAR_SIZE / 2, y + AVATAR_SIZE / 2, AVATAR_SIZE / 2, 0, Math.PI * 2);
@@ -56,17 +56,22 @@ async function generateProBanner(players) {
 
       // אפקט זוהר
       ctx.shadowColor = 'cyan';
-      ctx.shadowBlur = 15;
+      ctx.shadowBlur = 20;
       ctx.beginPath();
-      ctx.arc(x + AVATAR_SIZE / 2, y + AVATAR_SIZE / 2, AVATAR_SIZE / 2 + 2, 0, Math.PI * 2);
+      ctx.arc(x + AVATAR_SIZE / 2, y + AVATAR_SIZE / 2, AVATAR_SIZE / 2 + 3, 0, Math.PI * 2);
       ctx.stroke();
       ctx.shadowBlur = 0;
 
-      // שם המשתמש
-      ctx.font = '20px Arial';
-      ctx.fillStyle = '#ffffff';
+      // שם מודגש עם קו שחור
+      const nameX = x + AVATAR_SIZE / 2;
+      const nameY = y + AVATAR_SIZE + 30;
+      ctx.font = '24px Arial';
       ctx.textAlign = 'center';
-      ctx.fillText(member.displayName, x + AVATAR_SIZE / 2, y + AVATAR_SIZE + 25);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'black';
+      ctx.strokeText(member.displayName, nameX, nameY);
+      ctx.fillStyle = 'white';
+      ctx.fillText(member.displayName, nameX, nameY);
 
       x += spacing;
     } catch (err) {
@@ -76,13 +81,6 @@ async function generateProBanner(players) {
 
   // לוגו בפינה
   ctx.drawImage(logo, 30, HEIGHT - 110, 80, 80);
-
-  // כפתור מדומה (ויזואלי בלבד)
-  ctx.fillStyle = 'black';
-  ctx.fillRect(WIDTH - 280, HEIGHT - 80, 220, 50);
-  ctx.font = '28px Arial';
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText('🎧 לחץ כדי להצטרף', WIDTH - 170, HEIGHT - 45);
 
   const buffer = canvas.toBuffer('image/png');
   if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {

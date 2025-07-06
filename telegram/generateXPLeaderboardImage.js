@@ -1,12 +1,9 @@
-const { createCanvas, registerFont } = require("canvas");
+const { createCanvas, loadImage, registerFont } = require("canvas");
 const path = require("path");
 
-// 🟢 טעינת פונט עברי + פונט אימוג'י אמיתי
+// 🟢 טעינת פונט עברי
 registerFont(path.join(__dirname, "../assets/NotoSansHebrew-Bold.ttf"), {
   family: "HebrewBold"
-});
-registerFont(path.join(__dirname, "../assets/Symbola.ttf"), {
-  family: "EmojiFont"
 });
 
 function getBarColor(percent) {
@@ -22,7 +19,7 @@ function drawText(ctx, text, x, y, font, align = "right") {
   ctx.fillText(text, x, y);
 }
 
-function createLeaderboardImage(users) {
+async function createLeaderboardImage(users) {
   const width = 900;
   const rowHeight = 100;
   const headerHeight = 110;
@@ -34,15 +31,16 @@ function createLeaderboardImage(users) {
   ctx.fillStyle = "#101014";
   ctx.fillRect(0, 0, width, height);
 
-  // 🏆 כותרת מפוצלת – אימוג'י ואז טקסט, כדי למנוע קוביות
-  ctx.font = "42px EmojiFont";
-  ctx.textAlign = "right";
-  ctx.fillStyle = "#ffffff";
-  ctx.fillText("🏆", width - 60, 70);
+  // 🥇 כותרת עם תמונת מדליה
+  const medalImg = await loadImage(path.join(__dirname, "../assets/gold_medal.png"));
+  ctx.drawImage(medalImg, width - 110, 22, 40, 40); // ציור מדליה
 
   ctx.font = "bold 42px HebrewBold";
-  ctx.fillText("‏טבלת מצטיינים", width - 110, 70); // יישור ימינה יותר
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "right";
+  ctx.fillText("‏טבלת מצטיינים", width - 160, 55);
 
+  // 👥 רשימת משתמשים
   users.forEach((u, i) => {
     const y = headerHeight + i * rowHeight;
     const level = u.level || 1;

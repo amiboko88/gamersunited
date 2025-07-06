@@ -7,7 +7,7 @@ const VERIFIED_ROLE_ID = '1120787309432938607';
 const TRACKING_COLLECTION = 'dmTracking';
 
 const data = new SlashCommandBuilder()
-  .setName('verify')
+  .setName('אימות')
   .setDescription('מאמת אותך ומעניק גישה לשרת (רק אם אין לך תפקידים)');
 
 async function execute(interaction) {

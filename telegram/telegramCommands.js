@@ -102,11 +102,28 @@ bot.callbackQuery("profile_xp", async (ctx) => {
     await ctx.reply("😕 אין נתונים עדיין. תכתוב קצת בצ'אט כדי להתקדם.");
   } else {
     try {
+      // 🖼️ שליפת תמונת פרופיל מהטלגרם
+      let avatarURL = "https://i.imgur.com/1QgrNNw.png"; // ברירת מחדל
+      try {
+        const photos = await ctx.getUserProfilePhotos();
+        if (photos.total_count > 0) {
+          const fileId = photos.photos[0][0].file_id;
+          const link = await ctx.telegram.getFileLink(fileId);
+          avatarURL = link.href;
+        }
+      } catch (err) {
+        console.warn("⚠️ לא ניתן לשלוף תמונת פרופיל:", err.message);
+      }
+
       const data = doc.data();
-      const buffer = await generateXPProfileCard({ ...data, fullName: name });
+      const buffer = await generateXPProfileCard({
+        ...data,
+        fullName: name,
+        avatarURL
+      });
 
       await ctx.replyWithPhoto(
-        { source: buffer, filename: "xp_profile.png" },
+        { source: buffer },
         {
           caption: "🧬 <b>הפרופיל שלך:</b>",
           parse_mode: "HTML"
@@ -120,6 +137,7 @@ bot.callbackQuery("profile_xp", async (ctx) => {
 
   await ctx.answerCallbackQuery();
 });
+
 
   // MVP מדיסקורד
   bot.callbackQuery("profile_mvp", async (ctx) => {

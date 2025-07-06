@@ -285,8 +285,8 @@ client.on('interactionCreate', async interaction => {
 
   // 🎧 פאנל הקלטות חכם
   if (
-    interaction.isStringSelectMenu() && interaction.customId === 'select_voice' ||
-    interaction.isButton() && ['play_voice_selected', 'delete_voice_selected'].includes(interaction.customId)
+    (interaction.isStringSelectMenu() && interaction.customId === 'select_voice') ||
+    (interaction.isButton() && ['play_voice_selected', 'delete_voice_selected'].includes(interaction.customId))
   ) {
     const recordingsPanel = require('./commands/recordingsPanel');
     return recordingsPanel.handleInteraction(interaction, client);
@@ -330,6 +330,14 @@ client.on('interactionCreate', async interaction => {
       return handleRSVP(interaction, client);
     }
 
+    // 🛠 כפתור סנכרון ידני (מאומתים ללא מסד)
+    if (id.startsWith('manualSync::')) {
+      const manualSync = require('./commands/manualSyncCommand');
+      if (manualSync.handleButtonInteraction) {
+        return manualSync.handleButtonInteraction(interaction);
+      }
+    }
+
     // כל שאר הכפתורים מועברים לאימות
     return handleVerifyInteraction(interaction);
   }
@@ -356,7 +364,6 @@ client.on('interactionCreate', async interaction => {
     }
   }
 });
-
 
 // 🚀 הפעלת הבוט
 client.login(process.env.DISCORD_TOKEN);

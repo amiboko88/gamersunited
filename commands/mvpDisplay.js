@@ -11,7 +11,7 @@ if (!fs.existsSync(fontPath)) {
 registerFont(fontPath, { family: 'DejaVuSans' });
 
 const data = new SlashCommandBuilder()
-  .setName('alltimevoice')
+  .setName('האלופים')
   .setDescription('האלופים של כל הזמנים לפי דקות שיחה');
 
 async function execute(interaction, client) {

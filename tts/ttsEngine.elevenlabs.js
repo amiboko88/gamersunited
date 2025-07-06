@@ -85,19 +85,41 @@ async function getPodcastAudioEleven(displayNames = [], ids = [], joinTimestamps
     : [getRandomFallbackScript()];
 
   for (const script of scriptsToUse) {
-    if (script.shimon) buffers.push(await synthesizeElevenTTS(script.shimon, 'shimon'));
-    if (script.shirley) buffers.push(await synthesizeElevenTTS(script.shirley, 'shirley'));
+    if (script.shimon?.trim()) {
+      try {
+        buffers.push(await synthesizeElevenTTS(script.shimon, 'shimon'));
+      } catch (err) {
+        console.warn('⚠️ כשל בהשמעת שמעון:', err.message);
+      }
+    }
+    if (script.shirley?.trim()) {
+      try {
+        buffers.push(await synthesizeElevenTTS(script.shirley, 'shirley'));
+      } catch (err) {
+        console.warn('⚠️ כשל בהשמעת שירלי:', err.message);
+      }
+    }
   }
 
+  // 🧠 תמיד מוסיפים punch רק אם היה script אישי כלשהו
   if (participants.some(p => p.script)) {
     const punchScript = getRandomFallbackScript().punch;
-    if (punchScript) {
-      buffers.push(await synthesizeElevenTTS(punchScript, 'shimon'));
+    if (punchScript?.trim()) {
+      try {
+        buffers.push(await synthesizeElevenTTS(punchScript, 'shimon'));
+      } catch (err) {
+        console.warn('⚠️ כשל בהשמעת punch:', err.message);
+      }
     }
+  }
+
+  if (buffers.length === 0) {
+    throw new Error('🔇 אין משפטים קוליים חוקיים להשמעה');
   }
 
   return Buffer.concat(buffers);
 }
+
 
 function getRandomFallbackScript() {
   return fallbackScripts[Math.floor(Math.random() * fallbackScripts.length)];

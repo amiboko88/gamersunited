@@ -17,7 +17,7 @@ const {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('tts')
+    .setName('שמעון')
     .setDescription('השמע טקסט עם שמעון בערוץ הקולי')
     .addStringOption(option =>
       option.setName('טקסט')

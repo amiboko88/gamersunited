@@ -20,7 +20,7 @@ const PUBLIC_CHANNEL_ID = '1372283521447497759';
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('fifo')
+    .setName('פיפו')
     .setDescription('מחלק את המשתמשים בקול לקבוצות לפי כמות מבוקשת')
     .addIntegerOption(opt =>
       opt.setName('כמות').setDescription('כמה שחקנים בקבוצה (2, 3 או 4)').setRequired(true)

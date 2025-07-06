@@ -1,4 +1,3 @@
-// 📁 commands/inactivity.js
 const {
   SlashCommandBuilder,
   ButtonBuilder,
@@ -6,10 +5,11 @@ const {
   ActionRowBuilder,
   EmbedBuilder,
   PermissionFlagsBits,
+  StringSelectMenuBuilder
 } = require('discord.js');
 
 const data = new SlashCommandBuilder()
-  .setName('inactivity')
+  .setName('ניהול_שבורים')
   .setDescription('ניהול משתמשים לא פעילים')
   .addSubcommand(sub =>
     sub.setName('panel').setDescription('📋 פתח לוח ניהול משתמשים')
@@ -29,43 +29,54 @@ async function runPanel(interaction) {
   }
 
   const embed = new EmbedBuilder()
-    .setTitle('📋 לוח ניהול משתמשים לא פעילים')
-    .setDescription('בחר פעולה לניהול משתמשים שלא היו פעילים לאחרונה.')
+    .setTitle('📋 לוח ניהול המשתמשים הלא פעילים')
+    .setDescription('בחר פעולה לניהול משתמשים שלא היו פעילים לאחרונה:')
     .setColor(0x007acc)
     .setFooter({ text: 'Shimon BOT — Inactivity Manager' });
 
-  const row1 = new ActionRowBuilder().addComponents(
+  const dmRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('send_dm_batch_list')
-      .setLabel('שלח DM לכולם 🔵')
+      .setLabel('🔵 שלח תזכורת רגילה')
       .setStyle(ButtonStyle.Primary),
 
     new ButtonBuilder()
       .setCustomId('send_dm_batch_final_check')
-      .setLabel('שלח תזכורת סופית 🔴')
-      .setStyle(ButtonStyle.Danger),
-
-    new ButtonBuilder()
-      .setCustomId('show_failed_list')
-      .setLabel('רשימת נכשלים ❌')
-      .setStyle(ButtonStyle.Secondary)
+      .setLabel('🔴 שלח תזכורת סופית')
+      .setStyle(ButtonStyle.Danger)
   );
 
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('show_replied_list')
-      .setLabel('הגיבו ל־DM 💬')
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId('kick_failed_users')
-      .setLabel('העף חסומים 🛑')
-      .setStyle(ButtonStyle.Danger)
+  const selectRow = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('inactivity_action_select')
+      .setPlaceholder('בחר פעולה מתקדמת')
+      .addOptions(
+        {
+          label: '📊 סטטוס נוכחי',
+          description: 'צפייה בחלוקה לפי סטטוס stage',
+          value: 'show_status_summary'
+        },
+        {
+          label: '❌ משתמשים שנכשל DM אליהם',
+          description: 'מי לא הצלחנו לשלוח לו הודעה',
+          value: 'show_failed_list'
+        },
+        {
+          label: '💬 משתמשים שהגיבו ל־DM',
+          description: 'מי ענה לנו בהצלחה',
+          value: 'show_replied_list'
+        },
+        {
+          label: '🛑 בעיטת משתמשים לא פעילים וחסומים',
+          description: 'Kick למשתמשים שעברו הכל ולא ענו',
+          value: 'kick_failed_users'
+        }
+      )
   );
 
   await interaction.reply({
     embeds: [embed],
-    components: [row1, row2],
+    components: [dmRow, selectRow],
     ephemeral: true,
   });
 }

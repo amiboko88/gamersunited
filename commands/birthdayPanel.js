@@ -10,7 +10,7 @@ const {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('birthdaypanel')
+    .setName('ניהול_ימיהולדת')
     .setDescription('🎉 מרכז ניהול ימי הולדת'),
 
   async execute(interaction) {

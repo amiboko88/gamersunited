@@ -150,7 +150,7 @@ setTimeout(async () => {
     connection.destroy();
     output.end();
 
-    if (!fs.existsSync(rawPath)) {
+    if (!existsSync(rawPath)) {
       return interaction.followUp({
         content: '❌ לא נוצר קובץ הקלטה. ודא שאתה מדבר או שהמיקרופון תקין.',
         ephemeral: true

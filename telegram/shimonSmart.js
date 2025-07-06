@@ -139,9 +139,12 @@ async function shimonSmart(ctx) {
   // 🛑 בדיקת פרופיל Roast
   const match = findMatchInText(text);
   if (match) {
-    await analyzeTextForRoast(text, ctx);
-    return true;
-  }
+  const roasted = await analyzeTextForRoast(text, ctx);
+  if (roasted) return true;
+  // אם לא הצליח לבצע Roast – לא נמשיך לתגובה רגילה
+  return false;
+}
+
 
   const nowNight = isNightMode();
   const trigger = isTrigger(text);

@@ -21,7 +21,7 @@ function drawText(ctx, text, x, y, font, align = "right") {
 function createLeaderboardImage(users) {
   const width = 900;
   const rowHeight = 100;
-  const headerHeight = 120;
+  const headerHeight = 110;
   const height = headerHeight + users.length * rowHeight;
 
   const canvas = createCanvas(width, height);
@@ -34,7 +34,7 @@ function createLeaderboardImage(users) {
   ctx.font = "bold 42px HebrewBold";
   ctx.fillStyle = "#ffffff";
   ctx.textAlign = "right";
-  ctx.fillText("‏🏆 טבלת XP מצטיינים", width - 60, 70);
+  ctx.fillText("‏טבלת מצטייני XP", width - 60, 70);
 
   users.forEach((u, i) => {
     const y = headerHeight + i * rowHeight;
@@ -46,16 +46,17 @@ function createLeaderboardImage(users) {
     const barColor = getBarColor(percent);
 
     const name = `${u.fullName || u.username || "אנונימי"}`;
-    const xpDisplay = `‏XP ${xp} מתוך ${nextXP} · רמה ${level}`;
+    const xpDisplay = `‏רמה ${level} · ${xp} מתוך ${nextXP} XP`;
 
+    // רקע שורה
     ctx.fillStyle = i % 2 === 0 ? "#1a1a27" : "#1e1e2e";
     ctx.fillRect(40, y, width - 80, rowHeight - 12);
 
     // בר
     const barX = 70;
-    const barY = y + 25;
+    const barY = y + 30;
     const barW = 300;
-    const barH = 28;
+    const barH = 35;
     const fillW = Math.floor(barW * percent);
 
     ctx.fillStyle = "#444";
@@ -64,11 +65,13 @@ function createLeaderboardImage(users) {
     ctx.fillStyle = barColor;
     ctx.fillRect(barX, barY, fillW, barH);
 
+    // טקסט בתוך הבר
     ctx.font = "bold 15px sans-serif";
     ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "right";
-    ctx.fillText(percentText, barX + barW + 40, barY + 22);
+    ctx.textAlign = "center";
+    ctx.fillText(percentText, barX + barW / 2, barY + 24);
 
+    // שם + XP
     drawText(ctx, name, width - 90, y + 35, "bold 24px HebrewBold");
     drawText(ctx, xpDisplay, width - 90, y + 70, "18px HebrewBold");
   });

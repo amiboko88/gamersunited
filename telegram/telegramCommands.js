@@ -103,7 +103,8 @@ bot.callbackQuery("profile_xp", async (ctx) => {
   } else {
     try {
       const data = doc.data();
-      const file = await generateXPProfileCard({ ...data, name }, ctx);
+      const file = await generateXPProfileCard({ ...data, fullName: name });
+
       await ctx.replyWithPhoto({ source: file }, {
         caption: "🧬 <b>הפרופיל שלך:</b>",
         parse_mode: "HTML"

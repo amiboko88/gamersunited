@@ -24,7 +24,10 @@ async function generateXPProfileCard({ fullName, level, xp, avatarURL }) {
   // 📸 תמונת פרופיל
   try {
     const res = await axios.get(avatarURL, { responseType: "arraybuffer" });
-    const avatarImg = await loadImage(res.data);
+    const base64 = Buffer.from(res.data, "binary").toString("base64");
+    const dataUrl = `data:image/jpeg;base64,${base64}`;
+    const avatarImg = await loadImage(dataUrl);
+
     ctx.save();
     ctx.beginPath();
     ctx.arc(110, 140, 60, 0, Math.PI * 2, true);
@@ -32,8 +35,8 @@ async function generateXPProfileCard({ fullName, level, xp, avatarURL }) {
     ctx.clip();
     ctx.drawImage(avatarImg, 50, 80, 120, 120);
     ctx.restore();
-  } catch {
-    console.warn("⚠️ לא נטענה תמונת פרופיל.");
+  } catch (e) {
+    console.warn("⚠️ לא נטענה תמונת פרופיל.", e.message);
   }
 
   // 🟦 בר התקדמות

@@ -9,9 +9,17 @@ const {
   ButtonStyle
 } = require('discord.js');
 
+const {
+  joinVoiceChannel,
+  createAudioPlayer,
+  createAudioResource,
+  AudioPlayerStatus,
+  StreamType
+} = require('@discordjs/voice');
+
 const RECORDINGS_DIR = path.join(__dirname, '..', 'recordings');
 const ADMIN_ROLE_ID = '1133753472966201555';
-const playbackCache = new Map(); // userId => fileName
+const playbackCache = new Map(); // userId → fileName
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -84,7 +92,6 @@ module.exports = {
       }
 
       const filePath = path.join(userDir, fileName);
-
       if (!fs.existsSync(filePath)) {
         return interaction.reply({ content: '📭 לא נמצא קובץ ההקלטה שנבחר.', ephemeral: true });
       }
@@ -95,13 +102,6 @@ module.exports = {
           return interaction.reply({ content: '🔇 אתה חייב להיות בערוץ קול.', ephemeral: true });
         }
 
-        const {
-          joinVoiceChannel,
-          createAudioPlayer,
-          createAudioResource,
-          AudioPlayerStatus
-        } = require('@discordjs/voice');
-
         const connection = joinVoiceChannel({
           channelId: voiceChannel.id,
           guildId: voiceChannel.guild.id,
@@ -109,8 +109,10 @@ module.exports = {
         });
 
         const player = createAudioPlayer();
-        const resource = createAudioResource(filePath, { inlineVolume: true });
-        resource.volume.setVolume(1);
+        const resource = createAudioResource(fs.createReadStream(filePath), {
+          inputType: StreamType.Arbitrary
+        });
+
         connection.subscribe(player);
         player.play(resource);
 

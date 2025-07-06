@@ -18,9 +18,9 @@ const RECORDINGS_DIR = path.join(__dirname, '..', 'recordings');
 if (!existsSync(RECORDINGS_DIR)) mkdirSync(RECORDINGS_DIR);
 
 const ALLOWED_ROLE_IDS = [
-  '1372701819167440957', // MVP
-  '853024162603597886',  // BOOSTER
-  '1133753472966201555'  // ADMIN
+  '1372701819167440957',
+  '853024162603597886',
+  '1133753472966201555'
 ];
 
 const dailyLimits = new Map();
@@ -50,6 +50,8 @@ async function convertPcmToMp3(inputPath, outputPath) {
       '-ar', '48000',
       '-ac', '2',
       '-i', inputPath,
+      '-c:a', 'libmp3lame',
+      '-b:a', '192k',
       '-y',
       outputPath
     ]);
@@ -66,7 +68,7 @@ async function convertPcmToMp3(inputPath, outputPath) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('record')
-    .setDescription('מקליט את הערוץ שלך ל־30 שניות (רק למורשים)'),
+    .setDescription('מקליט את הערוץ שלך ל־30 שניות (למורשים בלבד)'),
 
   async execute(interaction) {
     const member = interaction.member;
@@ -105,9 +107,7 @@ module.exports = {
       ephemeral: true
     });
 
-    const filter = i =>
-      i.customId === 'confirm_recording' &&
-      i.user.id === interaction.user.id;
+    const filter = i => i.customId === 'confirm_recording' && i.user.id === interaction.user.id;
 
     const collector = interaction.channel.createMessageComponentCollector({
       filter,
@@ -137,7 +137,6 @@ module.exports = {
 
       const rawPath = path.join(userDir, `${baseName}.pcm`);
       const mp3Path = path.join(userDir, `${baseName}.mp3`);
-
       const streams = new Map();
 
       receiver.speaking.on('start', userId => {
@@ -147,7 +146,7 @@ module.exports = {
           end: { behavior: EndBehaviorType.AfterSilence, duration: 100 }
         });
 
-        const writeStream = createWriteStream(rawPath, { flags: 'a' }); // append mode
+        const writeStream = createWriteStream(rawPath, { flags: 'a' });
         audioStream.pipe(writeStream);
         streams.set(userId, writeStream);
 
@@ -165,7 +164,7 @@ module.exports = {
 
           if (!existsSync(rawPath)) {
             return interaction.followUp({
-              content: '❌ לא נוצר קובץ הקלטה. ודא שמישהו מדבר בערוץ.',
+              content: '❌ לא נוצר קובץ הקלטה. ודא שמישהו דיבר בערוץ.',
               ephemeral: true
             });
           }
@@ -174,7 +173,7 @@ module.exports = {
           if (stats.size < 1024) {
             unlinkSync(rawPath);
             return interaction.followUp({
-              content: '❌ ההקלטה הייתה ריקה. ודא שהיה קול בערוץ.',
+              content: '❌ הקובץ היה ריק. ודא שהיה קול.',
               ephemeral: true
             });
           }
@@ -192,7 +191,7 @@ module.exports = {
           console.log(`[RECORDING] Saved: ${mp3Path}`);
 
         } catch (err) {
-          console.error('שגיאה בהמרה או סיום הקלטה:', err);
+          console.error('❌ שגיאה במהלך ההקלטה:', err);
           await interaction.followUp({
             content: '❌ שגיאה במהלך ההקלטה או ההמרה.',
             ephemeral: true

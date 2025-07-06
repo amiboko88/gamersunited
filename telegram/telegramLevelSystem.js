@@ -26,6 +26,26 @@ async function sendXPTextBar(ctx, userName, currentXP, level, nextLevelXP) {
   await ctx.reply(message, { parse_mode: "HTML" });
 }
 
+
+function calculateXP(text) {
+  const len = text.length;
+  const isLink = /(http|www\.)/i.test(text);
+  const isStickerLike = /^[\p{Emoji}\s]+$/u.test(text);
+  const isAllCaps = text === text.toUpperCase() && /[A-Zא-ת]/.test(text);
+
+  if (isStickerLike) return 0;
+  if (isLink) return 1;
+  if (isAllCaps && len < 10) return 1;
+
+  if (len > 200) return 15;
+  if (len > 100) return 10;
+  if (len > 50) return 6;
+  if (len > 20) return 4;
+  if (len > 5) return 2;
+  return 0;
+}
+
+
 // 🧠 עדכון XP חכם
 async function updateXP({ id, first_name, username, text }, ctx = null) {
   try {
@@ -43,7 +63,7 @@ async function updateXP({ id, first_name, username, text }, ctx = null) {
       await userRef.set({ xp: 0, level: 1, fullName: name, username: username || null, createdAt: Date.now() });
     }
 
-    const gain = Math.floor((text || "").trim().length / 3);
+    const gain = calculateXP((text || "").trim());
     if (gain === 0) return { addedXp: 0 };
 
     xp += gain;

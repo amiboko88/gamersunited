@@ -49,10 +49,10 @@ module.exports = {
     });
 
     const player = createAudioPlayer();
-    const resource = createAudioResource(lastFile, { inputType: StreamType.Arbitrary });
-
-    connection.subscribe(player);
-    player.play(resource);
+const resource = createAudioResource(lastFile, { inlineVolume: true });
+resource.volume.setVolume(1); // עוצמה מלאה
+connection.subscribe(player);
+player.play(resource);
 
     await interaction.reply({
       content: `🎧 משמיע כעת את ההקלטה האחרונה שלך: \`${files[0]}\``,

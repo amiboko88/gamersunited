@@ -56,7 +56,7 @@ const handleMusicControls = require('./handlers/musicControls');
 const { startInactivityReminder } = require('./handlers/inactivityReminder');
 
 // 📡 טלגרם
-require('./shimonTelegram');
+require("./telegram/shimonTelegram");
 
 const client = new Client({
   intents: [

@@ -1,5 +1,5 @@
 const { getUpcomingBirthdaysText } = require("./telegramBirthday");
-const { sendXPTextBar } = require("./telegramLevelSystem");
+const { generateXPProfileCard } = require("./generateXPProfileCard"); 
 const db = require("./utils/firebase");
 const lastStartCommand = new Map(); // userId -> timestamp
 const { generateRoastText } = require("./generateRoastText");
@@ -92,26 +92,31 @@ if (now - lastTime < 15000) {
     await ctx.answerCallbackQuery();
   });
 
-  // 🧬 פרופיל XP
 bot.callbackQuery("profile_xp", async (ctx) => {
   const userId = ctx.from.id.toString();
+  const name = ctx.from.first_name || "חבר";
   const userRef = db.collection("levels").doc(userId);
   const doc = await userRef.get();
 
   if (!doc.exists || (!doc.data()?.xp && !doc.data()?.level)) {
     await ctx.reply("😕 אין נתונים עדיין. תכתוב קצת בצ'אט כדי להתקדם.");
   } else {
-    const data = doc.data();
-    const xp = data.xp || 0;
-    const level = data.level || 1;
-    const name = ctx.from.first_name || "חבר";
-
-    const nextXP = level * 25;
-    await sendXPTextBar(ctx, name, xp, level, nextXP); // ✨ הבר הגרפי המוכר
+    try {
+      const data = doc.data();
+      const file = await generateXPProfileCard({ ...data, name }, ctx);
+      await ctx.replyWithPhoto({ source: file }, {
+        caption: "🧬 <b>הפרופיל שלך:</b>",
+        parse_mode: "HTML"
+      });
+    } catch (err) {
+      console.error("❌ שגיאה בפרופיל גרפי:", err);
+      await ctx.reply("😵 שגיאה זמנית. נסה שוב.");
+    }
   }
 
   await ctx.answerCallbackQuery();
 });
+
 
 
   // MVP מדיסקורד

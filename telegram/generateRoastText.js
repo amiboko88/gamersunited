@@ -1,4 +1,7 @@
-const fetch = require("node-fetch");
+// 📁 telegram/generateRoastText.js – יצירת ירידה חד פעמית לפי שם
+
+const { OpenAI } = require("openai");
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const fallbackRoasts = [
   name => `${name} זה כמו return null בצ'אט – פשוט מיותר.`,
@@ -18,31 +21,21 @@ async function generateRoastText(name) {
 `.trim();
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "gpt-4",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.95,
-        presence_penalty: 0.8,
-        max_tokens: 60
-      })
+    const gptRes = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.95,
+      presence_penalty: 0.8,
+      max_tokens: 60
     });
 
-    const data = await response.json();
-    let text = data?.choices?.[0]?.message?.content?.trim();
+    let text = gptRes.choices?.[0]?.message?.content?.trim();
 
     if (!text || text.length < 5 || text.length > 200) {
       return fallbackRoasts[Math.floor(Math.random() * fallbackRoasts.length)](name);
     }
 
-    text = text.replace(/^["'“”]+/, "").replace(/["'“”]+$/, "");
-
-    return text;
+    return text.replace(/^["'“”]+/, "").replace(/["'“”]+$/, "");
   } catch (err) {
     console.error("❌ generateRoastText error:", err);
     return fallbackRoasts[Math.floor(Math.random() * fallbackRoasts.length)](name);

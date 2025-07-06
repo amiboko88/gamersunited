@@ -16,7 +16,7 @@ const EXTRA_CATEGORY_ID = '1138785781322887233';
 const joinTimestamps = new Map();
 
 const triggerLevels = [2, 4, 6, 8, 10];
-const lastTriggeredByChannel = new Map(); // channelId → { level, userIds }
+const lastTriggeredByChannel = new Map();
 
 function channelIdIsMonitored(channelId, guild) {
   const chan = guild.channels.cache.get(channelId);
@@ -32,6 +32,7 @@ function arraysAreEqual(a, b) {
   const bSorted = [...b].sort();
   return aSorted.every((val, i) => val === bSorted[i]);
 }
+
 async function handleVoiceStateUpdate(oldState, newState) {
   const member = newState.member;
   if (!member || member.user.bot) return;
@@ -105,18 +106,25 @@ async function handleVoiceStateUpdate(oldState, newState) {
     const displayNames = members.map(m => m.displayName);
     const timestamps = Object.fromEntries(userIds.map(id => [id, Date.now()]));
 
-    const nextLevel = triggerLevels.find(lvl => lvl <= count);
+    // שליפה חכמה של הרמה הגבוהה ביותר שאליה הגענו
+    const nextLevel = [...triggerLevels].reverse().find(lvl => count >= lvl);
     if (!nextLevel) return;
 
     const prev = lastTriggeredByChannel.get(channel.id);
     if (prev && prev.level === nextLevel && arraysAreEqual(prev.userIds, userIds)) {
-      return; // אותם אנשים באותה רמה – לא להשמיע שוב
+      return; // אותה רמה ואותם משתמשים – אל תשמיע שוב
     }
 
     lastTriggeredByChannel.set(channel.id, { level: nextLevel, userIds });
 
     try {
       const buffer = await getPodcastAudioEleven(displayNames, userIds, timestamps);
+
+      if (!Buffer.isBuffer(buffer) || buffer.length < 1200) {
+        console.warn('⚠️ שמעון קיבל Buffer לא תקין – לא משמיעים');
+        return;
+      }
+
       const connection = joinVoiceChannel({
         channelId: channel.id,
         guildId: guild.id,
@@ -130,6 +138,10 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
       player.on(AudioPlayerStatus.Idle, () => {
         connection.destroy();
+      });
+
+      player.on('error', err => {
+        console.error('🎧 שגיאת שמעון בזמן ניגון:', err.message);
       });
 
     } catch (err) {

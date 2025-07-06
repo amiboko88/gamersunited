@@ -20,38 +20,46 @@ function getVoiceId(speaker = 'shimon') {
 async function synthesizeElevenTTS(text, speaker = 'shimon') {
   const voice = getVoiceId(speaker);
   const cleanText = text
-  .trim()
-  .replace(/\s+/g, ' ')
-  .replace(/\.{3,}/g, '...')
-  .replace(/[^\u0590-\u05FF\s\.\,\!\?]/g, '');
-
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\.{3,}/g, '...')
+    .replace(/[^\u0590-\u05FF\s\.\,\!\?]/g, '');
 
   log(`🎙️ OpenAI TTS (${speaker}) – ${cleanText.length} תווים`);
 
-  const response = await axios.post(
-    OPENAI_TTS_URL,
-    {
-      model: 'tts-1-hd',
-      voice,
-      input: cleanText
-    },
-    {
-      responseType: 'arraybuffer',
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
+  let response;
+  try {
+    response = await axios.post(
+      OPENAI_TTS_URL,
+      {
+        model: 'tts-1-hd',
+        voice,
+        input: cleanText
+      },
+      {
+        responseType: 'arraybuffer',
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
       }
-    }
-  );
-
-  if (!response.data || response.data.length < 1200) {
-    throw new Error('🔇 OpenAI לא החזיר קול תקין');
+    );
+  } catch (err) {
+    console.error('🛑 שגיאה בבקשת TTS מ־OpenAI:', err.message);
+    throw new Error('שגיאת רשת מול OpenAI');
   }
+
+  if (!response.data || !(response.data instanceof ArrayBuffer) || response.data.byteLength < 1200) {
+    throw new Error('🔇 OpenAI החזיר נתון שגוי או קצר מדי');
+  }
+
+  const audioBuffer = Buffer.from(response.data);
 
   await registerTTSUsage(cleanText.length, 1);
 
-  return Buffer.from(response.data);
+  return audioBuffer;
 }
+
 
 async function getShortTTSByProfile(member) {
   const userId = member.id;

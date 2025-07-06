@@ -1,13 +1,13 @@
 const {
   joinVoiceChannel,
-  EndBehaviorType
+  EndBehaviorType,
 } = require('@discordjs/voice');
 const { createWriteStream, existsSync, mkdirSync, unlinkSync, statSync } = require('fs');
 const path = require('path');
 const dayjs = require('dayjs');
 const { spawn } = require('child_process');
 const ffmpeg = require('ffmpeg-static');
-const sodium = require('libsodium-wrappers'); // ⬅️ חשוב!
+const sodium = require('libsodium-wrappers');
 const {
   ActionRowBuilder,
   ButtonBuilder,
@@ -69,10 +69,9 @@ module.exports = {
     .setDescription('מקליט את הערוץ שלך ל־30 שניות (רק למורשים)'),
 
   async execute(interaction) {
-    await sodium.ready; // ✅ חובה להצפנה
+    await sodium.ready;
 
     const member = interaction.member;
-
     if (!canRecord(member)) {
       return interaction.reply({
         content: '❌ אין לך הרשאה להקליט. נדרש תפקיד MVP / Booster / Admin.',
@@ -107,12 +106,8 @@ module.exports = {
       ephemeral: true
     });
 
-    const filter = i =>
-      i.customId === 'confirm_recording' &&
-      i.user.id === interaction.user.id;
-
     const collector = interaction.channel.createMessageComponentCollector({
-      filter,
+      filter: i => i.customId === 'confirm_recording' && i.user.id === interaction.user.id,
       time: 15000,
       max: 1
     });
@@ -126,7 +121,9 @@ module.exports = {
       const connection = joinVoiceChannel({
         channelId: member.voice.channel.id,
         guildId: member.guild.id,
-        adapterCreator: member.guild.voiceAdapterCreator
+        adapterCreator: member.guild.voiceAdapterCreator,
+        selfDeaf: false, // 🧠 חובה! הבוט לא יהיה מנותק!
+        selfMute: false
       });
 
       const receiver = connection.receiver;
@@ -151,6 +148,7 @@ module.exports = {
         audioStream.pipe(writeStream);
         streams.set(userId, writeStream);
 
+        console.log(`[RECORDING] קולט את המשתמש ${userId}`);
         audioStream.on('end', () => {
           writeStream.end();
           streams.delete(userId);

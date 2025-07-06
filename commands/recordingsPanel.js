@@ -14,6 +14,8 @@ const {
   createAudioPlayer,
   createAudioResource,
   AudioPlayerStatus,
+  entersState,
+  VoiceConnectionStatus,
   StreamType
 } = require('@discordjs/voice');
 
@@ -108,9 +110,16 @@ module.exports = {
           adapterCreator: voiceChannel.guild.voiceAdapterCreator
         });
 
+        try {
+          await entersState(connection, VoiceConnectionStatus.Ready, 5_000);
+        } catch (err) {
+          console.error('❌ שגיאה בהתחברות קולית:', err);
+          return interaction.reply({ content: '❌ שגיאה בהתחברות לערוץ.', ephemeral: true });
+        }
+
         const player = createAudioPlayer();
         const resource = createAudioResource(fs.createReadStream(filePath), {
-          inputType: StreamType.Arbitrary
+          inputType: StreamType.Unknown // עדיף לזיהוי אוטומטי
         });
 
         connection.subscribe(player);

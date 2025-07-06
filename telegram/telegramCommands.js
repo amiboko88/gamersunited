@@ -103,12 +103,15 @@ bot.callbackQuery("profile_xp", async (ctx) => {
   } else {
     try {
       const data = doc.data();
-      const file = await generateXPProfileCard({ ...data, fullName: name });
+      const buffer = await generateXPProfileCard({ ...data, fullName: name });
 
-      await ctx.replyWithPhoto({ source: file }, {
-        caption: "🧬 <b>הפרופיל שלך:</b>",
-        parse_mode: "HTML"
-      });
+      await ctx.replyWithPhoto(
+        { source: buffer, filename: "xp_profile.png" },
+        {
+          caption: "🧬 <b>הפרופיל שלך:</b>",
+          parse_mode: "HTML"
+        }
+      );
     } catch (err) {
       console.error("❌ שגיאה בפרופיל גרפי:", err);
       await ctx.reply("😵 שגיאה זמנית. נסה שוב.");
@@ -117,8 +120,6 @@ bot.callbackQuery("profile_xp", async (ctx) => {
 
   await ctx.answerCallbackQuery();
 });
-
-
 
   // MVP מדיסקורד
   bot.callbackQuery("profile_mvp", async (ctx) => {

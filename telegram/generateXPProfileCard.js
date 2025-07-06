@@ -1,22 +1,20 @@
 const { createCanvas, loadImage, registerFont } = require("canvas");
 const path = require("path");
-const fs = require("fs");
 const axios = require("axios");
 
-// 🔤 פונט עברי
-registerFont(path.join(__dirname, "../assets", "NotoSansHebrew-Bold.ttf"), {
+// 🔤 גופנים
+registerFont(path.join(__dirname, "../assets/NotoSansHebrew-Bold.ttf"), {
   family: "NotoHebrew"
 });
-
-// 🔤 פונט אימוג'י / אנגלית
-registerFont(path.join(__dirname, "../assets", "DejaVuSans.ttf"), {
+registerFont(path.join(__dirname, "../assets/Symbola.ttf"), {
   family: "EmojiFont"
 });
 
 async function generateXPProfileCard({ fullName, level, xp, avatarURL }) {
   const nextXP = level * 25;
   const percent = Math.min((xp / nextXP) * 100, 100);
-  const width = 700, height = 280;
+  const width = 700;
+  const height = 280;
 
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
@@ -55,24 +53,17 @@ async function generateXPProfileCard({ fullName, level, xp, avatarURL }) {
   ctx.textAlign = "right";
   ctx.fillStyle = "#ffffff";
 
-  // 🧑 שם משתמש
   ctx.font = "24px EmojiFont";
   ctx.fillText(`‏${fullName}`, width - 40, 70);
 
-  // 📊 XP
   ctx.font = "20px NotoHebrew";
-  ctx.fillText(`‏רמה ${level} · ${xp} מתוך ${nextXP} XP`, width - 40, 120);
+  ctx.fillText(`‏XP: ${xp}/${nextXP} · רמה ${level}`, width - 40, 120);
 
-  // אחוז התקדמות
   ctx.font = "18px NotoHebrew";
   ctx.fillText(`‏התקדמות: ${Math.floor(percent)}%`, width - 40, 205);
 
-  // 💾 שמירה לקובץ זמני
-  const buffer = canvas.toBuffer("image/png");
-  const filename = path.join(__dirname, "../temp", `xp_${Date.now()}.png`);
-  fs.writeFileSync(filename, buffer);
-
-  return fs.createReadStream(filename);
+  // 🟢 החזרה בדיוק כמו בטבלת TOP — buffer בלבד
+  return canvas.toBuffer("image/png");
 }
 
 module.exports = { generateXPProfileCard };

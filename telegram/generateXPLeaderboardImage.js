@@ -1,11 +1,11 @@
 const { createCanvas, registerFont } = require("canvas");
 const path = require("path");
 
-// 🔤 טעינת גופנים: עברי + אימוג'י
+// 🟢 טעינת פונט עברי + פונט אימוג'י אמיתי
 registerFont(path.join(__dirname, "../assets/NotoSansHebrew-Bold.ttf"), {
   family: "HebrewBold"
 });
-registerFont(path.join(__dirname, "../assets/DejaVuSans.ttf"), {
+registerFont(path.join(__dirname, "../assets/Symbola.ttf"), {
   family: "EmojiFont"
 });
 
@@ -34,11 +34,14 @@ function createLeaderboardImage(users) {
   ctx.fillStyle = "#101014";
   ctx.fillRect(0, 0, width, height);
 
-  // 🏆 כותרת עם אימוג'י + יישור תקין
-  ctx.font = "bold 42px EmojiFont";
-  ctx.fillStyle = "#ffffff";
+  // 🏆 כותרת מפוצלת – אימוג'י ואז טקסט, כדי למנוע קוביות
+  ctx.font = "42px EmojiFont";
   ctx.textAlign = "right";
-  ctx.fillText("‏🏆 טבלת מצטיינים", width - 60, 70);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText("🏆", width - 60, 70);
+
+  ctx.font = "bold 42px HebrewBold";
+  ctx.fillText("‏טבלת מצטיינים", width - 110, 70); // יישור ימינה יותר
 
   users.forEach((u, i) => {
     const y = headerHeight + i * rowHeight;
@@ -50,7 +53,7 @@ function createLeaderboardImage(users) {
     const barColor = getBarColor(percent);
 
     const name = `${u.fullName || u.username || "אנונימי"}`;
-    const xpDisplay = `‏רמה ${level} · ${xp} מתוך ${nextXP} XP`;
+    const xpDisplay = `‏XP: ${xp}/${nextXP} · רמה ${level}`;
 
     // רקע שורה
     ctx.fillStyle = i % 2 === 0 ? "#1a1a27" : "#1e1e2e";
@@ -78,8 +81,8 @@ function createLeaderboardImage(users) {
     // שם משתמש
     drawText(ctx, `‏${name}`, width - 90, y + 35, "bold 24px HebrewBold");
 
-    // XP מתחת
-    drawText(ctx, xpDisplay, width - 90, y + 70, "18px HebrewBold");
+    // XP מפושט, יושב נכון
+    drawText(ctx, xpDisplay, width - 90, y + 66, "16px HebrewBold");
   });
 
   return canvas.toBuffer("image/png");

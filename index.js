@@ -1,5 +1,3 @@
-// 📁 index.js
-
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
@@ -85,6 +83,46 @@ for (const file of commandFiles) {
     commandMap.set(command.data.name, command);
   }
 }
+
+// ✅ רישום Slash Commands אוטומטי מול דיסקורד:
+(async () => {
+  const { REST, Routes } = require('discord.js');
+  const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+  const CLIENT_ID = process.env.CLIENT_ID;
+  const GUILD_ID = process.env.GUILD_ID;
+  const MODE = 'guild'; // או 'global'
+
+  const slashCommands = [];
+
+  for (const file of commandFiles) {
+    try {
+      const command = require(`./commands/${file}`);
+      if (command?.data?.toJSON && typeof command.execute === 'function') {
+        slashCommands.push(command.data.toJSON());
+      }
+    } catch (err) {
+      console.warn(`⚠️ שגיאה בטעינת פקודת ${file}: ${err.message}`);
+    }
+  }
+
+  try {
+    const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+    if (MODE === 'guild') {
+      await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), {
+        body: slashCommands
+      });
+      console.log(`📦 נרשמו ${slashCommands.length} Slash Commands לשרת`);
+    } else {
+      await rest.put(Routes.applicationCommands(CLIENT_ID), {
+        body: slashCommands
+      });
+      console.log(`🌍 נרשמו ${slashCommands.length} Slash Commands גלובלית`);
+    }
+  } catch (err) {
+    console.error('❌ שגיאה ברישום Slash Commands:', err.message);
+  }
+})();
+
 
 client.once('ready', async () => {
   console.log('⚡️ Shimon is READY!');

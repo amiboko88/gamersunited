@@ -1,10 +1,10 @@
 const { SlashCommandBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, EmbedBuilder, PermissionFlagsBits, StringSelectMenuBuilder, MessageFlags } = require('discord.js');
 
 const data = new SlashCommandBuilder()
-  .setName('משתמשים')
+  .setName('ניהול')
   .setDescription('ניהול משתמשים לא פעילים')
   .addSubcommand(sub =>
-    sub.setName('ניהול').setDescription('📋 פתח לוח ניהול משתמשים')
+    sub.setName('משתמשים').setDescription('📋 פתח לוח ניהול משתמשים')
   );
 
 const execute = async (interaction) => {

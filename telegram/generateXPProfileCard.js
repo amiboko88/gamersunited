@@ -2,7 +2,7 @@ const puppeteer = require("puppeteer");
 
 function clean(text) {
   return (text || "")
-    .replace(/[^\p{L}\p{N} _.\-@!?:א-ת]/gu, "")
+    .replace(/[^\p{L}\p{N} _.\-@!?:א-ת\u200F\u200E\u202B\u202E]/gu, "")
     .trim();
 }
 
@@ -10,8 +10,9 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
   const name = clean(fullName);
   const nextXP = level * 25;
   const percent = Math.min((xp / nextXP) * 100, 100);
-  const percentRounded = Math.round(percent);
-  const barWidth = Math.round(580 * (percent / 100));
+  const barWidth = Math.round(500 * (percent / 100));
+  const percentText = `${Math.round(percent)}%`;
+
   const barColor =
     percent < 40 ? "#e74c3c" : percent < 70 ? "#f9a825" : "#00e676";
 
@@ -32,47 +33,59 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
 
       body {
         margin: 0;
-        width: 900px;
-        height: 280px;
-        background: radial-gradient(circle, #101014, #0a0a0f);
-        font-family: "Varela Round", sans-serif;
-        color: #ffffff;
+        width: 500px;
+        height: 700px;
+        background: radial-gradient(circle, #111118, #0a0a0f);
+        font-family: "Segoe UI Emoji", "Noto Color Emoji", "Varela Round", sans-serif;
         display: flex;
         align-items: center;
         justify-content: center;
+        direction: rtl;
       }
 
       .card {
-        width: 860px;
-        padding: 30px 40px;
+        width: 460px;
+        padding: 40px 20px;
         background: #1e1e2e;
-        border-radius: 26px;
-        box-shadow: 0 0 26px #00000055;
+        border-radius: 28px;
+        box-shadow: 0 0 30px #00000055;
         text-align: center;
       }
 
+      .avatar {
+        width: 130px;
+        height: 130px;
+        border-radius: 50%;
+        border: 4px solid #FFD700;
+        margin: 0 auto 20px;
+        background-image: url("${avatarDataURL}");
+        background-size: cover;
+        background-position: center;
+      }
+
       .name {
-        font-size: 32px;
+        font-size: 30px;
         font-weight: bold;
         margin-bottom: 6px;
+        color: #ffffff;
       }
 
       .stats {
-        font-size: 20px;
+        font-size: 18px;
         color: #cccccc;
-        margin-bottom: 8px;
+        margin-bottom: 10px;
       }
 
       .rank {
-        font-size: 18px;
+        font-size: 20px;
         color: #FFD700;
-        margin-bottom: 24px;
+        margin-bottom: 30px;
       }
 
       .bar {
         position: relative;
-        width: 580px;
-        height: 32px;
+        width: 500px;
+        height: 34px;
         background: #3a3a3a;
         border-radius: 20px;
         margin: auto;
@@ -80,10 +93,10 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
 
       .fill {
         width: ${barWidth}px;
-        height: 32px;
+        height: 34px;
         border-radius: 20px;
         background: ${barColor};
-        box-shadow: 0 0 6px ${barColor}88;
+        box-shadow: 0 0 8px ${barColor}88;
       }
 
       .percent {
@@ -91,19 +104,21 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
         left: 50%;
         top: 4px;
         transform: translateX(-50%);
-        font-size: 14px;
+        font-size: 16px;
         font-weight: bold;
+        color: #ffffff;
       }
     </style>
   </head>
   <body>
     <div class="card">
-      <div class="name">${name}</div>
+      <div class="avatar"></div>
+      <div class="name">‏${name}</div>
       <div class="stats">XP: ${xp}/${nextXP} · רמה ${level}</div>
-      <div class="rank">${stage}</div>
+      <div class="rank">‏${stage}</div>
       <div class="bar">
         <div class="fill"></div>
-        <div class="percent">${percentRounded}%</div>
+        <div class="percent">${percentText}</div>
       </div>
     </div>
   </body>
@@ -115,9 +130,8 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
   });
 
   const page = await browser.newPage();
-  await page.setViewport({ width: 900, height: 280 });
+  await page.setViewport({ width: 500, height: 700, deviceScaleFactor: 2 });
   await page.setContent(html, { waitUntil: "networkidle0" });
-
   const buffer = await page.screenshot({ type: "png" });
   await browser.close();
 

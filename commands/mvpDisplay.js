@@ -9,93 +9,101 @@ const data = new SlashCommandBuilder()
   .setDescription('האלופים של כל הזמנים לפי דקות שיחה');
 
 async function generateTopImage(users) {
-  const rowsHTML = await Promise.all(users.map(async ({ username, minutes, avatarURL }, i) => {
-    const safeName = (username || '').replace(/[<>"&]/g, '');
-    return `
-      <div class="row">
-        <div class="avatar">
-          <img src="${avatarURL}" />
-        </div>
-        <div class="info">
-          <div class="name">${safeName}</div>
-          <div class="minutes">${minutes.toLocaleString()} דקות מצטברות</div>
-        </div>
-      </div>`;
-  }));
+  const ranks = ["🥇", "🥈", "🥉", "💬", "💬"];
 
-  const html = `
-  <!DOCTYPE html>
-  <html lang="he" dir="rtl">
-  <head>
-    <meta charset="UTF-8" />
-    <style>
-      body {
-        margin: 0;
-        padding: 0;
-        background: #0f172a;
-        font-family: "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
-        width: 1920px;
-        height: 1080px;
-        color: #ffffff;
-        direction: rtl;
-      }
-      .container {
-        width: 1700px;
-        margin: 0 auto;
-        padding-top: 80px;
-      }
-      .title {
-        font-size: 64px;
-        color: #facc15;
-        text-align: center;
-        font-weight: bold;
-        margin-bottom: 50px;
-        text-shadow: 0 0 6px #facc1577;
-      }
-      .row {
-        display: flex;
-        align-items: center;
-        margin-bottom: 40px;
-      }
-      .avatar img {
-        width: 120px;
-        height: 120px;
-        border-radius: 50%;
-        box-shadow: 0 0 10px #00000088;
-        margin-left: 30px;
-      }
-      .info {
-        flex-grow: 1;
-      }
-      .name {
-        font-size: 40px;
-        font-weight: bold;
-        margin-bottom: 8px;
-      }
-      .minutes {
-        font-size: 28px;
-        color: #cbd5e1;
-      }
-      .footer {
-        position: absolute;
-        bottom: 30px;
-        right: 60px;
-        font-size: 22px;
-        color: #64748b;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <div class="title">👑 אלופי כל הזמנים בשיחות קול</div>
-      ${rowsHTML.join('\n')}
-      <div class="footer">עודכן: ${new Date().toLocaleString('he-IL', {
-        dateStyle: 'short',
-        timeStyle: 'short'
-      })}</div>
-    </div>
-  </body>
-  </html>`;
+  function userHTML(u, rank) {
+    return `
+      <div class="user">
+        <div class="rank">${rank}</div>
+        <img src="${u.avatarURL}" class="avatar" />
+        <div class="name">${u.username}</div>
+        <div class="minutes">${u.minutes.toLocaleString()} דקות</div>
+      </div>`;
+  }
+
+  const top3 = users.slice(0, 3).map((u, i) => userHTML(u, ranks[i])).join('\n');
+  const bottom2 = users.slice(3, 5).map((u, i) => userHTML(u, ranks[i + 3])).join('\n');
+  const now = new Date().toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' });
+
+const html = `
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Hebrew:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: radial-gradient(circle, #0f172a, #0a0f1f);
+      font-family: 'Noto Sans Hebrew', sans-serif;
+      color: #fff;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+    }
+    .title {
+      text-align: center;
+      font-size: 64px;
+      color: #facc15;
+      font-weight: bold;
+      padding-top: 40px;
+      text-shadow: 0 0 8px #facc15aa;
+    }
+    .top-row, .bottom-row {
+      display: flex;
+      justify-content: center;
+      gap: 120px;
+      margin-top: 60px;
+    }
+    .user {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+    .avatar {
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      box-shadow: 0 0 12px #00000088;
+      margin-bottom: 20px;
+      object-fit: cover;
+    }
+    .rank {
+      font-size: 44px;
+      margin-bottom: 8px;
+    }
+    .name {
+      font-size: 30px;
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+    .minutes {
+      font-size: 24px;
+      color: #cbd5e1;
+    }
+    .footer {
+      position: absolute;
+      bottom: 30px;
+      right: 60px;
+      font-size: 20px;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <div class="title">👑 אלופי כל הזמנים בשיחות קול</div>
+  <div class="top-row">
+    ${top3}
+  </div>
+  <div class="bottom-row">
+    ${bottom2}
+  </div>
+  <div class="footer">עודכן: ${now}</div>
+</body>
+</html>`;
+
 
   const browser = await puppeteer.launch({
     headless: "new",
@@ -110,6 +118,7 @@ async function generateTopImage(users) {
   await browser.close();
   return buffer;
 }
+
 
 async function execute(interaction, client) {
   try {

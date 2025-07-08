@@ -5,10 +5,12 @@ function sanitizeName(text) {
   const controlChars = /[\u200B-\u200D\uFEFF\u202A-\u202E\u2060-\u206F]/g;
   const cleanChars = /[^\p{L}\p{N} _.\-@!?א-ת]/gu;
 
-  return (text || "")
+  const cleaned = (text || "")
     .replace(controlChars, "")
     .replace(cleanChars, (char) => allowedEmojis.test(char) ? char : "")
     .trim();
+
+  return cleaned.length > 0 ? cleaned : "אנונימי";
 }
 
 function getBarColor(percent) {
@@ -57,6 +59,14 @@ async function createLeaderboardImage(users) {
         color: #ffffff;
         width: 1000px;
       }
+      .title {
+        text-align: center;
+        font-size: 38px;
+        font-weight: bold;
+        margin-top: 30px;
+        margin-bottom: 20px;
+        color: #FFD700;
+      }
       .container {
         width: 920px;
         margin: 20px auto 40px;
@@ -92,6 +102,7 @@ async function createLeaderboardImage(users) {
         font-size: 24px;
         font-weight: bold;
         margin-bottom: 6px;
+        word-break: break-word;
       }
       .xp {
         font-size: 16px;
@@ -121,6 +132,7 @@ async function createLeaderboardImage(users) {
     </style>
   </head>
   <body>
+    <div class="title">‏🏆 טבלת מצטיינים</div>
     <div class="container">
       ${rowsHTML}
     </div>
@@ -133,9 +145,12 @@ async function createLeaderboardImage(users) {
   });
 
   const page = await browser.newPage();
+  const rowHeight = 140;
+  const totalHeight = 100 + users.length * rowHeight;
+
   await page.setViewport({
     width: 1000,
-    height: 100 + users.length * 140,
+    height: totalHeight,
     deviceScaleFactor: 2
   });
 

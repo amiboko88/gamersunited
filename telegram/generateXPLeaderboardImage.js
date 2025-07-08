@@ -1,8 +1,13 @@
 const puppeteer = require("puppeteer");
 
-function clean(text) {
+function sanitizeName(text) {
+  const allowedEmojis = /[\p{Emoji_Presentation}\p{Emoji}\uFE0F]/gu;
+  const controlChars = /[\u200B-\u200D\uFEFF\u202A-\u202E\u2060-\u206F]/g;
+  const cleanChars = /[^\p{L}\p{N} _.\-@!?א-ת]/gu;
+
   return (text || "")
-    .replace(/[^\p{L}\p{N} _.\-@!?:א-ת]/gu, "")
+    .replace(controlChars, "")
+    .replace(cleanChars, (char) => allowedEmojis.test(char) ? char : "")
     .trim();
 }
 
@@ -16,7 +21,7 @@ async function createLeaderboardImage(users) {
   const rowsHTML = users.map((u, i) => {
     const level = u.level || 1;
     const xp = u.xp || 0;
-    const name = clean(u.fullName || u.username || "אנונימי");
+    const name = sanitizeName(u.fullName || u.username || "אנונימי");
     const nextXP = level * 25;
     const percent = Math.min(xp / nextXP, 1);
     const percentText = `${Math.round(percent * 100)}%`;
@@ -40,97 +45,86 @@ async function createLeaderboardImage(users) {
   const html = `
   <!DOCTYPE html>
   <html lang="he" dir="rtl">
-    <head>
-      <meta charset="UTF-8" />
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=Varela+Round&display=swap');
-
-        body {
-          margin: 0;
-          background: radial-gradient(circle at top, #151621, #0b0c10);
-          font-family: "Segoe UI Emoji", "Noto Color Emoji", "Varela Round", sans-serif;
-          direction: rtl;
-          color: #ffffff;
-          width: 1000px;
-        }
-
-        .container {
-          width: 920px;
-          margin: 20px auto 40px;
-          background: #1f1f2e;
-          border-radius: 26px;
-          box-shadow: 0 0 28px #00000066;
-          padding: 30px 40px;
-        }
-
-        .row {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: #2a2a3a;
-          margin: 14px 0;
-          padding: 20px;
-          border-radius: 20px;
-        }
-
-        .row:nth-child(even) {
-          background: #303046;
-        }
-
-        .rank {
-          font-size: 26px;
-          width: 60px;
-          text-align: center;
-          color: #FFD700;
-          font-weight: bold;
-        }
-
-        .info {
-          flex-grow: 1;
-          text-align: center;
-        }
-
-        .name {
-          font-size: 24px;
-          font-weight: bold;
-          margin-bottom: 6px;
-        }
-
-        .xp {
-          font-size: 16px;
-          color: #cccccc;
-          margin-bottom: 10px;
-        }
-
-        .bar {
-          position: relative;
-          background: #3a3a3a;
-          border-radius: 16px;
-          height: 30px;
-          width: 420px;
-          margin: auto;
-        }
-
-        .fill {
-          height: 30px;
-          border-radius: 16px;
-        }
-
-        .percent {
-          position: absolute;
-          left: 50%;
-          top: 4px;
-          transform: translateX(-50%);
-          font-size: 15px;
-          font-weight: bold;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        ${rowsHTML}
-      </div>
-    </body>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Varela+Round&display=swap');
+      body {
+        margin: 0;
+        background: radial-gradient(circle at top, #151621, #0b0c10);
+        font-family: "Segoe UI Emoji", "Noto Color Emoji", "Varela Round", sans-serif;
+        direction: rtl;
+        color: #ffffff;
+        width: 1000px;
+      }
+      .container {
+        width: 920px;
+        margin: 20px auto 40px;
+        background: #1f1f2e;
+        border-radius: 26px;
+        box-shadow: 0 0 28px #00000066;
+        padding: 30px 40px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #2a2a3a;
+        margin: 14px 0;
+        padding: 20px;
+        border-radius: 20px;
+      }
+      .row:nth-child(even) {
+        background: #303046;
+      }
+      .rank {
+        font-size: 26px;
+        width: 60px;
+        text-align: center;
+        color: #FFD700;
+        font-weight: bold;
+      }
+      .info {
+        flex-grow: 1;
+        text-align: center;
+      }
+      .name {
+        font-size: 24px;
+        font-weight: bold;
+        margin-bottom: 6px;
+      }
+      .xp {
+        font-size: 16px;
+        color: #cccccc;
+        margin-bottom: 10px;
+      }
+      .bar {
+        position: relative;
+        background: #3a3a3a;
+        border-radius: 16px;
+        height: 30px;
+        width: 420px;
+        margin: auto;
+      }
+      .fill {
+        height: 30px;
+        border-radius: 16px;
+      }
+      .percent {
+        position: absolute;
+        left: 50%;
+        top: 4px;
+        transform: translateX(-50%);
+        font-size: 15px;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      ${rowsHTML}
+    </div>
+  </body>
   </html>`;
 
   const browser = await puppeteer.launch({

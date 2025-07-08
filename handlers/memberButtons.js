@@ -191,7 +191,6 @@ async function handleMemberButtons(interaction, client) {
       flags: MessageFlags.Ephemeral
     });
   }
-
   // 🔴 שליחת DM סופית
   if (action === 'send_dm_batch_final_check') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -268,7 +267,6 @@ async function handleMemberButtons(interaction, client) {
 
     return interaction.editReply({ content: '✅ הפעולה בוצעה. סיכום נשלח לצוות.', flags: MessageFlags.Ephemeral });
   }
-
   // 💬 הצגת מי שענה ל־DM
   if (action === 'show_replied_list') {
     const replied = allTracked.docs.filter(doc => doc.data().replied);
@@ -277,13 +275,12 @@ async function handleMemberButtons(interaction, client) {
     }
 
     const embed = new EmbedBuilder()
-      .setTitle('💬 משתמשים שהגיבו ל־DM')
+      .setTitle('משתמשים שהגיבו להודעה פרטית 💬')
       .setDescription(replied.map(doc => `<@${doc.id}>`).join(', '))
       .setColor(0x00cc99);
 
     return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   }
-
   // ❌ הצגת משתמשים שנכשל DM אליהם
   if (action === 'show_failed_list') {
     const failedUsers = allTracked.docs.filter(doc => doc.data().dmFailed);
@@ -298,31 +295,76 @@ async function handleMemberButtons(interaction, client) {
 
     return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   }
+   // 📊 סטטוס נוכחי של משתמשים
+  if (action === 'show_status_summary') {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  // 📊 משתמשים לא פעילים X ימים
-  if (action.startsWith('inactive_')) {
-    const days = parseInt(action.split('_')[1]);
-    const now = Date.now();
-
-    const matches = allTracked.docs.filter(doc => {
-      const d = doc.data();
-      const last = new Date(d.lastActivity || d.joinedAt || 0).getTime();
-      const inactiveDays = (now - last) / 86400000;
-      return inactiveDays >= days && !['left', 'kicked'].includes(d.statusStage);
-    });
-
-    if (!matches.length) {
-      return interaction.reply({ content: `אין משתמשים עם חוסר פעילות של ${days}+ ימים.`, flags: MessageFlags.Ephemeral });
+    const summary = {};
+    for (const doc of allTracked.docs) {
+      const status = doc.data().statusStage || 'unknown';
+      summary[status] = (summary[status] || 0) + 1;
     }
 
-    const embed = new EmbedBuilder()
-      .setTitle(`${days}+ ימים ללא פעילות`)
-      .setDescription(matches.map(doc => `• <@${doc.id}>`).join('\n').slice(0, 4000))
-      .setColor(0xe67e22)
-      .setFooter({ text: `Shimon BOT – ניטור פעילות • ${matches.length} משתמשים` });
+    const fields = Object.entries(summary).map(([key, val]) => ({
+      name: {
+        joined: '🆕 הצטרף',
+        waiting_activity: '⌛ מחכה לפעולה',
+        active: '✅ פעיל',
+        dm_sent: '📩 תזכורת נשלחה',
+        final_warning: '🔴 תזכורת סופית',
+        responded: '💬 ענה',
+        kicked: '🚫 נבעט',
+        failed_dm: '❌ נכשל DM',
+        left: '🚪 עזב',
+        unknown: '❓ לא ידוע'
+      }[key] || key,
+      value: `**${val}** משתמשים`,
+      inline: true
+    }));
 
-    return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    const embed = new EmbedBuilder()
+      .setTitle('📊 סטטוס נוכחי של משתמשים')
+      .addFields(fields)
+      .setColor(0x3498db)
+      .setFooter({ text: 'Shimon BOT – לפי statusStage' })
+      .setTimestamp();
+
+    return interaction.editReply({ embeds: [embed] });
   }
+  // 📊 משתמשים לא פעילים X ימים
+  if (action.startsWith('inactive_')) {
+  const days = parseInt(action.split('_')[1]);
+  const now = Date.now();
+
+  const matches = [];
+
+  for (const doc of allTracked.docs) {
+    const d = doc.data();
+    const userId = doc.id;
+    const last = new Date(d.lastActivity || d.joinedAt || 0).getTime();
+    const inactiveDays = (now - last) / 86400000;
+
+    const member = members.get(userId);
+    const isBot = member?.user?.bot || userId === client.user.id;
+
+    if (inactiveDays >= days && !['left', 'kicked'].includes(d.statusStage) && !isBot) {
+      matches.push(doc);
+    }
+  }
+
+  if (!matches.length) {
+    return interaction.reply({ content: `אין משתמשים עם חוסר פעילות של ${days}+ ימים.`, flags: MessageFlags.Ephemeral });
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(`${days}+ ימים ללא פעילות`)
+    .setDescription(matches.map(doc => `• <@${doc.id}>`).join('\n').slice(0, 4000))
+    .setColor(0xe67e22)
+    .setFooter({ text: `Shimon BOT – ניטור פעילות • ${matches.length} משתמשים` });
+
+  return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+}
+
 
   return false;
 }

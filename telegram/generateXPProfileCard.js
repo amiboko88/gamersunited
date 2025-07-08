@@ -1,11 +1,19 @@
 const puppeteer = require("puppeteer");
 
+function clean(text) {
+  return (text || "")
+    .replace(/[^\p{L}\p{N} _.\-@!?:א-ת]/gu, "")
+    .trim();
+}
+
 async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
+  const name = clean(fullName);
   const nextXP = level * 25;
   const percent = Math.min((xp / nextXP) * 100, 100);
   const percentRounded = Math.round(percent);
-  const barWidth = Math.round(500 * (percent / 100));
-  const barColor = percent < 40 ? "#e74c3c" : percent < 70 ? "#f9a825" : "#00e676";
+  const barWidth = Math.round(580 * (percent / 100));
+  const barColor =
+    percent < 40 ? "#e74c3c" : percent < 70 ? "#f9a825" : "#00e676";
 
   const stage =
     percent >= 100 ? "💎 אגדי" :
@@ -17,95 +25,108 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
   const html = `
   <!DOCTYPE html>
   <html lang="he" dir="rtl">
-  <head>
-    <meta charset="UTF-8" />
-    <link href="https://fonts.googleapis.com/css2?family=Varela+Round&display=swap" rel="stylesheet">
-    <style>
-      body {
-        margin: 0;
-        width: 900px;
-        height: 500px;
-        background: radial-gradient(circle, #101014, #0b0b10);
-        font-family: 'Varela Round', sans-serif;
-        color: #fff;
-      }
-      .card {
-        margin: 40px auto;
-        padding: 30px;
-        width: 800px;
-        background: #1e1e2e;
-        border-radius: 24px;
-        box-shadow: 0 0 30px #00000088;
-        text-align: center;
-      }
-      .title {
-        font-size: 42px;
-        color: #FFD700;
-        margin-bottom: 20px;
-        text-shadow: 0 0 5px #ffd70088;
-      }
-      .avatar {
-        width: 160px;
-        height: 160px;
-        border-radius: 50%;
-        margin-bottom: 20px;
-        box-shadow: 0 0 15px #00ffff99;
-      }
-      .name {
-        font-size: 28px;
-        font-weight: bold;
-        margin-bottom: 6px;
-      }
-      .stats {
-        font-size: 20px;
-        color: #ccc;
-        margin-bottom: 10px;
-      }
-      .rank {
-        font-size: 18px;
-        margin-bottom: 20px;
-        color: #ffda66;
-      }
-      .bar {
-        width: 500px;
-        height: 30px;
-        background: #3a3a3a;
-        border-radius: 15px;
-        position: relative;
-        margin: auto;
-      }
-      .fill {
-        width: ${barWidth}px;
-        height: 30px;
-        background: ${barColor};
-        border-radius: 15px;
-        box-shadow: 0 0 6px ${barColor}88;
-      }
-      .percent {
-        position: absolute;
-        left: 50%;
-        top: 3px;
-        transform: translateX(-50%);
-        font-size: 16px;
-        font-weight: bold;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <div class="title">💫 הפרופיל שלך</div>
-      ${avatarDataURL ? `<img src="${avatarDataURL}" class="avatar" />` : ""}
-      <div class="name">${fullName}</div>
-      <div class="stats">XP: ${xp}/${nextXP} · רמה ${level}</div>
-      <div class="rank">${stage}</div>
-      <div class="bar">
-        <div class="fill"></div>
-        <div class="percent">${percentRounded}%</div>
+    <head>
+      <meta charset="UTF-8" />
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Varela+Round&display=swap');
+
+        body {
+          margin: 0;
+          width: 900px;
+          height: 420px;
+          background: radial-gradient(circle, #101014, #0a0a0f);
+          font-family: "Segoe UI Emoji", "Noto Color Emoji", "Varela Round", sans-serif;
+          color: #ffffff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .card {
+          width: 850px;
+          padding: 40px 30px;
+          background: #1d1d2d;
+          border-radius: 28px;
+          box-shadow: 0 0 24px #00000066;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 40px;
+        }
+
+        .avatar {
+          width: 150px;
+          height: 150px;
+          border-radius: 50%;
+          box-shadow: 0 0 14px #00ffff99;
+          flex-shrink: 0;
+        }
+
+        .info {
+          flex-grow: 1;
+          text-align: center;
+        }
+
+        .name {
+          font-size: 30px;
+          font-weight: bold;
+          margin-bottom: 6px;
+        }
+
+        .stats {
+          font-size: 20px;
+          color: #cccccc;
+          margin-bottom: 10px;
+        }
+
+        .rank {
+          font-size: 18px;
+          color: #FFD700;
+          margin-bottom: 24px;
+        }
+
+        .bar {
+          position: relative;
+          width: 580px;
+          height: 34px;
+          background: #3a3a3a;
+          border-radius: 20px;
+          margin: auto;
+        }
+
+        .fill {
+          width: ${barWidth}px;
+          height: 34px;
+          border-radius: 20px;
+          background: ${barColor};
+          box-shadow: 0 0 8px ${barColor}88;
+        }
+
+        .percent {
+          position: absolute;
+          left: 50%;
+          top: 5px;
+          transform: translateX(-50%);
+          font-size: 15px;
+          font-weight: bold;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        ${avatarDataURL ? `<img src="${avatarDataURL}" class="avatar" />` : ""}
+        <div class="info">
+          <div class="name">${name}</div>
+          <div class="stats">XP: ${xp}/${nextXP} · רמה ${level}</div>
+          <div class="rank">${stage}</div>
+          <div class="bar">
+            <div class="fill"></div>
+            <div class="percent">${percentRounded}%</div>
+          </div>
+        </div>
       </div>
-    </div>
-  </body>
-  </html>
-  `;
+    </body>
+  </html>`;
 
   const browser = await puppeteer.launch({
     headless: "new",
@@ -113,7 +134,7 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
   });
 
   const page = await browser.newPage();
-  await page.setViewport({ width: 900, height: 500 });
+  await page.setViewport({ width: 900, height: 420 });
   await page.setContent(html, { waitUntil: "networkidle0" });
 
   const buffer = await page.screenshot({ type: "png" });

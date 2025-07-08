@@ -125,10 +125,17 @@ async function sendReminderDM(client, guild, members, userId, isFinal = false) {
   } catch (err) {
     console.warn(`❌ נכשל DM ל־${user.username}:`, err.message);
     try {
-      const { sendFallbackButton } = require('./dmFallbackModal');
-      const row = new ActionRowBuilder().addComponents(sendFallbackButton(userId));
+      const fallbackButton = new ButtonBuilder()
+        .setCustomId('dm_fallback_reply')
+        .setLabel('💬 שלח תגובה לשמעון')
+        .setStyle(ButtonStyle.Primary);
+
+      const row = new ActionRowBuilder().addComponents(fallbackButton);
       const dmChan = await user.createDM();
-      await dmChan.send({ content: '🔔 לא הצלחנו לשלוח הודעה רשמית. לחץ כאן להשלמה:', components: [row] });
+      await dmChan.send({
+        content: '📬 לא הצלחנו לשלוח הודעה רשמית. תוכל להשיב כאן:',
+        components: [row]
+      });
     } catch (fallbackErr) {
       console.warn(`⚠️ נכשל גם fallback ל־${user.username}:`, fallbackErr.message);
     }
@@ -152,6 +159,7 @@ async function sendReminderDM(client, guild, members, userId, isFinal = false) {
   await docRef.set(updates, { merge: true });
   return true;
 }
+
 async function handleMemberButtons(interaction, client) {
   const guild = await client.guilds.fetch(process.env.GUILD_ID);
   const members = await guild.members.fetch();

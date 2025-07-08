@@ -144,7 +144,6 @@ function registerTopButton(bot) {
       // ✉️ שליחה בטוחה ל־Telegram עם axios
       const form = new FormData();
       form.append("chat_id", ctx.chat.id);
-      form.append("caption", "📈 <b>טבלת מצטייני XP</b>");
       form.append("photo", fs.createReadStream(filePath));
       form.append("parse_mode", "HTML");
 

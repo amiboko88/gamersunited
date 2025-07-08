@@ -138,7 +138,6 @@ bot.callbackQuery("profile_xp", async (ctx) => {
 
     const form = new FormData();
     form.append("chat_id", ctx.chat.id);
-    form.append("caption", "🧬 <b>הפרופיל שלך:</b>");
     form.append("photo", fs.createReadStream(filePath));
     form.append("parse_mode", "HTML");
 

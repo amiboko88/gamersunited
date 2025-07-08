@@ -1,7 +1,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, MessageFlags } = require('discord.js');
 
 // 🔗 בסיס נתונים ועזרי מערכת
 const db = require('./utils/firebase');
@@ -292,8 +292,11 @@ client.on('interactionCreate', async interaction => {
     return recordingsPanel.handleInteraction(interaction, client);
   }
 
-  // 🧑‍🤝‍🧑 כפתורי FIFO (פיפו)
-  if (interaction.isButton()) {
+  // 🧑‍🤝‍🧑 כפתורי FIFO (כולל inactivity_action_select)
+  if (
+    interaction.isButton() ||
+    (interaction.isStringSelectMenu() && interaction.customId === 'inactivity_action_select')
+  ) {
     const id = interaction.customId;
 
     if (id.startsWith('replay_') || id.startsWith('reset_all_') || id === 'repartition_now') {
@@ -305,7 +308,8 @@ client.on('interactionCreate', async interaction => {
       'send_dm_batch_final_check',
       'show_failed_list',
       'show_replied_list',
-      'kick_failed_users'
+      'kick_failed_users',
+      'inactivity_action_select'
     ].includes(id) || id.startsWith('send_dm_again_') || id.startsWith('send_final_dm_');
 
     if (isMemberButton) return handleMemberButtons(interaction, client);
@@ -330,7 +334,6 @@ client.on('interactionCreate', async interaction => {
       return handleRSVP(interaction, client);
     }
 
-    // 🛠 כפתור סנכרון ידני (מאומתים ללא מסד)
     if (id.startsWith('manualSync::')) {
       const manualSync = require('./commands/manualSyncCommand');
       if (manualSync.handleButtonInteraction) {
@@ -338,7 +341,6 @@ client.on('interactionCreate', async interaction => {
       }
     }
 
-    // כל שאר הכפתורים מועברים לאימות
     return handleVerifyInteraction(interaction);
   }
 
@@ -360,10 +362,11 @@ client.on('interactionCreate', async interaction => {
   } catch (err) {
     console.error(`❌ שגיאה בביצוע Slash "${interaction.commandName}":`, err);
     if (!interaction.replied) {
-      await interaction.reply({ content: '❌ שגיאה בביצוע הפקודה.', ephemeral: true });
+      await interaction.reply({ content: '❌ שגיאה בביצוע הפקודה.', flags: MessageFlags.Ephemeral });
     }
   }
 });
+
 
 // 🚀 הפעלת הבוט
 client.login(process.env.DISCORD_TOKEN);

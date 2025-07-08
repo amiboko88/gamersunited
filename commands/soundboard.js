@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState, VoiceConnectionStatus, AudioPlayerStatus, StreamType } = require('@discordjs/voice');
 const fs = require('fs');
 const path = require('path');
@@ -47,20 +47,20 @@ module.exports = {
       const secondsLeft = Math.ceil((COOLDOWN_SECONDS * 1000 - (now - lastUsed)) / 1000);
       return interaction.reply({
         content: `🕒 אנא המתן ${secondsLeft} שניות בין הפעלות.`,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     const soundName = interaction.options.getString('שם');
     const filePath = path.join(soundsDir, `${soundName}.mp3`);
     if (!fs.existsSync(filePath)) {
-      return interaction.reply({ content: '❌ הקובץ לא נמצא.', ephemeral: true });
+      return interaction.reply({ content: '❌ הקובץ לא נמצא.', flags: MessageFlags.Ephemeral });
     }
 
     const member = interaction.member;
     const channel = member.voice?.channel;
     if (!channel) {
-      return interaction.reply({ content: '🔇 עליך להיות בערוץ קול כדי לשמוע את הסאונד.', ephemeral: true });
+      return interaction.reply({ content: '🔇 עליך להיות בערוץ קול כדי לשמוע את הסאונד.', flags: MessageFlags.Ephemeral });
     }
 
     lastUsedTimestamps.set(userId, now);

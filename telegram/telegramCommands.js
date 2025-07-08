@@ -99,43 +99,45 @@ bot.callbackQuery("profile_xp", async (ctx) => {
   const doc = await userRef.get();
 
   if (!doc.exists || (!doc.data()?.xp && !doc.data()?.level)) {
-    await ctx.reply("😕 אין נתונים עדיין. תכתוב קצת בצ'אט כדי להתקדם.");
-  } else {
+    return ctx.reply("😕 אין נתונים עדיין. תכתוב קצת בצ'אט כדי להתקדם.");
+  }
+
+  try {
+    const data = doc.data();
+
+    let avatarDataURL = null;
     try {
-      // ✅ שליפת אוואטר
-      let avatarBuffer = null;
-      try {
-        const photos = await ctx.getUserProfilePhotos();
-        if (photos.total_count > 0) {
-          const fileId = photos.photos[0][0].file_id;
-          const link = await ctx.telegram.getFileLink(fileId);
-          const axios = require("axios");
-          const res = await axios.get(link.href, { responseType: "arraybuffer" });
-          avatarBuffer = Buffer.from(res.data);
-        }
-      } catch (err) {
-        console.warn("⚠️ לא נטענה תמונת פרופיל:", err.message);
+      const photos = await ctx.getUserProfilePhotos();
+      if (photos.total_count > 0) {
+        const fileId = photos.photos[0][0].file_id;
+        const link = await ctx.telegram.getFileLink(fileId);
+        const axios = require("axios");
+        const res = await axios.get(link.href, { responseType: "arraybuffer" });
+        const base64 = Buffer.from(res.data).toString("base64");
+        avatarDataURL = `data:image/jpeg;base64,${base64}`;
       }
-
-      const data = doc.data();
-      const buffer = await generateXPProfileCard({
-        fullName: name,
-        level: data.level,
-        xp: data.xp,
-        avatarBuffer
-      });
-
-      await ctx.replyWithPhoto(
-        { source: buffer },
-        {
-          caption: "🧬 <b>הפרופיל שלך:</b>",
-          parse_mode: "HTML"
-        }
-      );
     } catch (err) {
-      console.error("❌ שגיאה בפרופיל גרפי:", err);
-      await ctx.reply("😵 שגיאה זמנית. נסה שוב.");
+      console.warn("⚠️ שליפת אוואטר נכשלה:", err.message);
     }
+
+    const buffer = await generateXPProfileCard({
+      fullName: name,
+      level: data.level,
+      xp: data.xp,
+      avatarDataURL
+    });
+
+    await ctx.replyWithPhoto(
+      { source: buffer, filename: "profile.png" },
+      {
+        caption: "🧬 <b>הפרופיל שלך:</b>",
+        parse_mode: "HTML"
+      }
+    );
+
+  } catch (err) {
+    console.error("❌ שגיאה בפרופיל גרפי:", err);
+    await ctx.reply("😵 שגיאה זמנית. נסה שוב.");
   }
 
   await ctx.answerCallbackQuery();
@@ -221,7 +223,6 @@ bot.callbackQuery("demo_tags", async (ctx) => {
   await ctx.answerCallbackQuery();
 });
 
-
   // 🔥 ירידה חיה
 bot.callbackQuery("demo_roast", async (ctx) => {
   const name = ctx.from.first_name || "חבר";
@@ -235,8 +236,6 @@ bot.callbackQuery("demo_roast", async (ctx) => {
     parse_mode: "HTML"
   });
 });
-
-
 
 // 🎧 קול של שמעון – עם הגנה מלאה
 const { generateRoastVoice } = require("./telegramTTSRoaster");

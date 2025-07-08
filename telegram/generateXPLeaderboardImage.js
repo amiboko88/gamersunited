@@ -1,91 +1,127 @@
-const { createCanvas, registerFont } = require("canvas");
-const path = require("path");
-
-// 🟢 טעינת פונט עברי + אימוג'ים
-registerFont(path.join(__dirname, "../assets/NotoSansHebrew-Bold.ttf"), {
-  family: "HebrewBold"
-});
-registerFont(path.join(__dirname, "../assets/Symbola.ttf"), {
-  family: "EmojiFont"
-});
+const puppeteer = require("puppeteer");
 
 function getBarColor(percent) {
-  if (percent < 0.4) return "#e74c3c";
-  if (percent < 0.7) return "#f9a825";
+  if (percent < 40) return "#e74c3c";
+  if (percent < 70) return "#f9a825";
   return "#00e676";
 }
 
-function drawText(ctx, text, x, y, font, align = "right") {
-  ctx.font = font;
-  ctx.textAlign = align;
-  ctx.fillStyle = "#ffffff";
-  ctx.fillText(text, x, y);
-}
-
-function createLeaderboardImage(users) {
-  const width = 900;
-  const rowHeight = 100;
-  const headerHeight = 120;
-  const height = headerHeight + users.length * rowHeight;
-
-  const canvas = createCanvas(width, height);
-  const ctx = canvas.getContext("2d");
-
-  // 🔳 רקע כללי
-  ctx.fillStyle = "#101014";
-  ctx.fillRect(0, 0, width, height);
-
-  // 🏆 כותרת מפוצלת – אימוג׳י ואז טקסט, בפונטים נפרדים
-  ctx.font = "48px EmojiFont";
-  ctx.textAlign = "right";
-  ctx.fillStyle = "#ffffff";
-  ctx.fillText("🏆", width - 60, 65); // אימוג'י בראש
-
-  ctx.font = "bold 42px HebrewBold";
-  ctx.fillText("\u200Fטבלת מצטיינים", width - 110, 70); // כותרת בעברית מיושרת נכון
-
-  // 👥 רשימת משתמשים
-  users.forEach((u, i) => {
-    const y = headerHeight + i * rowHeight;
+async function createLeaderboardImage(users) {
+  const rowsHTML = users.map((u, i) => {
     const level = u.level || 1;
     const xp = u.xp || 0;
+    const name = u.fullName || u.username || "אנונימי";
     const nextXP = level * 25;
     const percent = Math.min(xp / nextXP, 1);
     const percentText = `${Math.round(percent * 100)}%`;
     const barColor = getBarColor(percent);
+    const barWidth = Math.floor(300 * percent);
 
-    const name = `${u.fullName || u.username || "אנונימי"}`;
-    const xpDisplay = `‏XP: ${xp}/${nextXP} · רמה ${level}`;
+    return `
+    <div class="row">
+      <div class="rank">#${i + 1}</div>
+      <div class="info">
+        <div class="name">${name}</div>
+        <div class="xp">XP: ${xp}/${nextXP} · רמה ${level}</div>
+        <div class="bar">
+          <div class="fill" style="width: ${barWidth}px; background: ${barColor};"></div>
+          <div class="percent">${percentText}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join("\n");
 
-    // 🔳 רקע שורה לסירוגין
-    ctx.fillStyle = i % 2 === 0 ? "#1a1a27" : "#1e1e2e";
-    ctx.fillRect(40, y, width - 80, rowHeight - 12);
+  const html = `
+  <!DOCTYPE html>
+  <html lang="he" dir="rtl">
+    <head>
+      <meta charset="UTF-8" />
+      <link href="https://fonts.googleapis.com/css2?family=Varela+Round&display=swap" rel="stylesheet">
+      <style>
+        body {
+          margin: 0;
+          background: #101014;
+          color: #fff;
+          font-family: 'Varela Round', sans-serif;
+          width: 900px;
+        }
+        .header {
+          font-size: 42px;
+          color: #FFD700;
+          text-align: right;
+          padding: 30px 40px 10px;
+        }
+        .row {
+          display: flex;
+          flex-direction: row;
+          padding: 10px 40px;
+          background: #1a1a27;
+          margin: 6px 0;
+          align-items: center;
+        }
+        .row:nth-child(even) {
+          background: #1e1e2e;
+        }
+        .rank {
+          font-size: 28px;
+          width: 60px;
+          text-align: center;
+        }
+        .info {
+          flex-grow: 1;
+        }
+        .name {
+          font-size: 20px;
+        }
+        .xp {
+          font-size: 15px;
+          color: #ccc;
+          margin-bottom: 6px;
+        }
+        .bar {
+          position: relative;
+          background: #444;
+          border-radius: 8px;
+          height: 25px;
+          width: 300px;
+        }
+        .fill {
+          height: 25px;
+          border-radius: 8px;
+        }
+        .percent {
+          position: absolute;
+          left: 50%;
+          top: 3px;
+          transform: translateX(-50%);
+          font-size: 13px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">🏆 טבלת מצטייני XP</div>
+      ${rowsHTML}
+    </body>
+  </html>
+  `;
 
-    // 🟩 בר התקדמות
-    const barX = 70;
-    const barY = y + 30;
-    const barW = 300;
-    const barH = 36;
-    const fillW = Math.floor(barW * percent);
-
-    ctx.fillStyle = "#444";
-    ctx.fillRect(barX, barY, barW, barH);
-
-    ctx.fillStyle = barColor;
-    ctx.fillRect(barX, barY, fillW, barH);
-
-    // אחוז בתוך הבר
-    ctx.font = "bold 15px HebrewBold";
-    ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "center";
-    ctx.fillText(percentText, barX + barW / 2, barY + 24);
-
-    // 📝 שם משתמש ו־XP
-    drawText(ctx, `‏${name}`, width - 90, y + 35, "bold 24px HebrewBold");
-    drawText(ctx, xpDisplay, width - 90, y + 66, "16px HebrewBold");
+  const browser = await puppeteer.launch({
+    headless: "new",
+    args: ["--no-sandbox", "--disable-setuid-sandbox"]
   });
 
-  return canvas.toBuffer("image/png");
+  const page = await browser.newPage();
+  await page.setViewport({
+    width: 900,
+    height: 120 + users.length * 100,
+    deviceScaleFactor: 2
+  });
+
+  await page.setContent(html, { waitUntil: "networkidle0" });
+  const buffer = await page.screenshot({ type: "png" });
+  await browser.close();
+
+  return buffer;
 }
 
 module.exports = { createLeaderboardImage };

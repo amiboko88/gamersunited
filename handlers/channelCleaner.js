@@ -1,5 +1,5 @@
 // 📁 handlers/channelCleaner.js
-const { ChannelType } = require('discord.js');
+const { ChannelType, MessageFlags } = require('discord.js');
 
 const CATEGORY_ID = '689124379019313214'; // קטגוריית פיפו הראשית
 let lastCleanupDate = null;

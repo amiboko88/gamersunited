@@ -1,5 +1,5 @@
 // 📁 handlers/dmFallbackModal.js
-const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, Collection } = require('discord.js');
+const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, Collection, MessageFlags } = require('discord.js');
 const { smartRespond } = require('./smartChat');
 const db = require('../utils/firebase');
 
@@ -31,7 +31,7 @@ function sendFallbackButton(targetUserId) {
         }
       )
     ],
-    ephemeral: true
+    flags: MessageFlags.Ephemeral
   };
 }
 
@@ -72,13 +72,13 @@ async function handleDmFallbackModalSubmit(interaction, client) {
 
     await interaction.reply({
       content: '✅ שמעון קיבל את ההודעה שלך והגיב בהתאם.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   } catch (err) {
     console.error('❌ שגיאה בטיפול ב־fallback DM:', err);
     await interaction.reply({
       content: '❌ שגיאה פנימית. נסה שוב מאוחר יותר.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 }

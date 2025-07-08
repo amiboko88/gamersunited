@@ -1,5 +1,5 @@
 // 📁 handlers/musicControls.js
-const { ButtonInteraction } = require('discord.js');
+const { ButtonInteraction, MessageFlags } = require('discord.js');
 const songCommand = require('../commands/song');
 
 const pauseRoasts = [

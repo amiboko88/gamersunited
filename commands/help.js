@@ -1,10 +1,4 @@
-const {
-  SlashCommandBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  AttachmentBuilder
-} = require('discord.js');
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder, MessageFlags } = require('discord.js');
 
 const fs = require('fs');
 const path = require('path');
@@ -114,7 +108,7 @@ module.exports = {
       content: `${roleText}\n\n${commandsText}`,
       files: [attachment],
       components: [buttons],
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   },
 
@@ -124,7 +118,7 @@ module.exports = {
     if (interaction.customId === 'help_ai_modal') {
       await interaction.reply({
         content: '🧠 כתוב את השאלה שלך כאן, שמעון יגיב בהתאם 😉',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
       return true;
     }
@@ -148,7 +142,7 @@ module.exports = {
       content: commandsText,
       files: [attachment],
       components: [buttons],
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
 
     return true;

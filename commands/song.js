@@ -1,11 +1,5 @@
 // 📁 commands/שיר.js
-const {
-  SlashCommandBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder
-} = require('discord.js');
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags } = require('discord.js');
 const {
   joinVoiceChannel,
   createAudioPlayer,
@@ -66,13 +60,13 @@ module.exports = {
     const filePath = path.join(musicDir, `${songName}.mp3`);
 
     if (!fs.existsSync(filePath)) {
-      return interaction.reply({ content: '❌ הקובץ לא נמצא.', ephemeral: true });
+      return interaction.reply({ content: '❌ הקובץ לא נמצא.', flags: MessageFlags.Ephemeral });
     }
 
     const member = interaction.member;
     const channel = member.voice?.channel;
     if (!channel) {
-      return interaction.reply({ content: '🔇 אתה לא בערוץ קולי.', ephemeral: true });
+      return interaction.reply({ content: '🔇 אתה לא בערוץ קולי.', flags: MessageFlags.Ephemeral });
     }
 
     await interaction.deferReply();

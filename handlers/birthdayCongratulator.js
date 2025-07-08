@@ -1,4 +1,4 @@
-const { EmbedBuilder, TextChannel } = require('discord.js');
+const { EmbedBuilder, TextChannel, MessageFlags } = require('discord.js');
 const path = require('path');
 const db = require('../utils/firebase');
 const { log } = require('../utils/logger');

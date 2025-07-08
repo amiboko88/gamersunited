@@ -1,11 +1,4 @@
-const {
-  EmbedBuilder,
-  ChannelType,
-  AttachmentBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle
-} = require('discord.js');
+const { EmbedBuilder, ChannelType, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const db = require('../utils/firebase');
 const schedule = require('node-schedule');
 const { generateProBanner } = require('./mediaGenerator');

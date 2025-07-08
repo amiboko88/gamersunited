@@ -1,4 +1,4 @@
-const { WebhookClient, EmbedBuilder } = require('discord.js');
+const { WebhookClient, EmbedBuilder, MessageFlags } = require('discord.js');
 
 const webhookUrl = process.env.LOG_WEBHOOK_URL;
 const webhook = webhookUrl ? new WebhookClient({ url: webhookUrl }) : null;

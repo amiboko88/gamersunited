@@ -1,6 +1,6 @@
 // 📁 handlers/presenceRotator.js
 
-const { ActivityType } = require('discord.js');
+const { ActivityType, MessageFlags } = require('discord.js');
 
 const statuses = [
   { type: ActivityType.Playing, text: 'פיפו עם קרציות 👀' },

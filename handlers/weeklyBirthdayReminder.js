@@ -1,5 +1,5 @@
 // 📁 handlers/weeklyBirthdayReminder.js
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, TextChannel } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, TextChannel, MessageFlags } = require('discord.js');
 const path = require('path');
 const { log } = require('../utils/logger');
 const db = require('../utils/firebase');

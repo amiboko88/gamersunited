@@ -8,12 +8,7 @@ const dayjs = require('dayjs');
 const { spawn } = require('child_process');
 const ffmpeg = require('ffmpeg-static');
 const sodium = require('libsodium-wrappers');
-const {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  SlashCommandBuilder
-} = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, MessageFlags } = require('discord.js');
 
 const RECORDINGS_DIR = path.join(__dirname, '..', 'recordings');
 if (!existsSync(RECORDINGS_DIR)) mkdirSync(RECORDINGS_DIR);
@@ -75,21 +70,21 @@ module.exports = {
     if (!canRecord(member)) {
       return interaction.reply({
         content: '❌ אין לך הרשאה להקליט. נדרש תפקיד MVP / Booster / Admin.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     if (!member.voice.channel) {
       return interaction.reply({
         content: '🔇 אתה חייב להיות בערוץ קול.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     if (getUserDailyCount(member.id) >= 5) {
       return interaction.reply({
         content: '🛑 הגעת למכסת ההקלטות היומית שלך (5).',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -103,7 +98,7 @@ module.exports = {
     await interaction.reply({
       content: '🎙️ אתה עומד להקליט את הערוץ שלך ל־30 שניות.\nלחץ כדי לאשר.',
       components: [confirmRow],
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
 
     const collector = interaction.channel.createMessageComponentCollector({
@@ -162,7 +157,7 @@ module.exports = {
           if (!existsSync(rawPath)) {
             return interaction.followUp({
               content: '❌ לא נוצר קובץ הקלטה. ודא שמישהו דיבר בערוץ.',
-              ephemeral: true
+              flags: MessageFlags.Ephemeral
             });
           }
 
@@ -171,7 +166,7 @@ module.exports = {
             unlinkSync(rawPath);
             return interaction.followUp({
               content: '❌ הקובץ היה ריק. ודא שהיה קול בערוץ.',
-              ephemeral: true
+              flags: MessageFlags.Ephemeral
             });
           }
 
@@ -181,7 +176,7 @@ module.exports = {
 
           await interaction.followUp({
             content: `✅ ההקלטה נשמרה כ־MP3: \`${baseName}.mp3\``,
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
 
           console.log(`[RECORDING] Saved: ${mp3Path}`);
@@ -189,7 +184,7 @@ module.exports = {
           console.error('שגיאה בהמרה או סיום הקלטה:', err);
           await interaction.followUp({
             content: '❌ שגיאה במהלך ההקלטה או ההמרה.',
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
       }, 30_000);

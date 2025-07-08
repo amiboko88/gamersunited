@@ -1,5 +1,5 @@
 // 📁 commands/ttsCommand.js – גרסה משולבת עם דו"ח מגבלה
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs');
 const {
   createAudioPlayer,
@@ -31,12 +31,12 @@ module.exports = {
     const channel = member.voice?.channel;
 
     if (!channel) {
-      return interaction.reply({ content: '🔇 אתה לא נמצא בערוץ קולי.', ephemeral: true });
+      return interaction.reply({ content: '🔇 אתה לא נמצא בערוץ קולי.', flags: MessageFlags.Ephemeral });
     }
 
     const blocked = await shouldUseFallback();
     if (blocked) {
-      return interaction.reply({ content: '🚫 הגעת למגבלת שימוש יומית. נסה מאוחר יותר.', ephemeral: true });
+      return interaction.reply({ content: '🚫 הגעת למגבלת שימוש יומית. נסה מאוחר יותר.', flags: MessageFlags.Ephemeral });
     }
 
     try {
@@ -73,11 +73,11 @@ module.exports = {
 
       await interaction.reply({
         content: `✅ ההודעה הושמעה בהצלחה.\n\n${quotaSummary}`,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     } catch (err) {
       console.error('❌ שגיאה ב־TTS:', err);
-      await interaction.reply({ content: '⚠️ שגיאה בהשמעה.', ephemeral: true });
+      await interaction.reply({ content: '⚠️ שגיאה בהשמעה.', flags: MessageFlags.Ephemeral });
     }
   }
 };

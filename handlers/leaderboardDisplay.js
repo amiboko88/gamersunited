@@ -1,4 +1,4 @@
-const { AttachmentBuilder } = require('discord.js');
+const { AttachmentBuilder, MessageFlags } = require('discord.js');
 const db = require('../utils/firebase');
 const { renderLeaderboardImage } = require('./leaderboardRenderer');
 const { sendLeaderboardToTelegram } = require('./sendLeaderboardToTelegram');

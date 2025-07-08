@@ -1,12 +1,4 @@
-const {
-  SlashCommandBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ActionRowBuilder,
-  EmbedBuilder,
-  PermissionFlagsBits,
-  StringSelectMenuBuilder
-} = require('discord.js');
+const { SlashCommandBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, EmbedBuilder, PermissionFlagsBits, StringSelectMenuBuilder, MessageFlags } = require('discord.js');
 
 const data = new SlashCommandBuilder()
   .setName('ניהול_שבורים')
@@ -24,7 +16,7 @@ async function runPanel(interaction) {
   if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return await interaction.reply({
       content: '⛔ הפקודה הזו זמינה רק לאדמינים עם הרשאת ADMINISTRATOR.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -77,7 +69,7 @@ async function runPanel(interaction) {
   await interaction.reply({
     embeds: [embed],
     components: [dmRow, selectRow],
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }
 

@@ -1,6 +1,6 @@
 // 📁 handlers/engagementManager.js - מערכת XP ורמות מתקדמת בעברית
 const db = require('../utils/firebase');
-const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
+const { SlashCommandBuilder, AttachmentBuilder, MessageFlags } = require('discord.js');
 const Canvas = require('canvas');
 const path = require('path');
 
@@ -51,7 +51,7 @@ const rankCommand = {
 
   execute: async interaction => {
     // שליחת defer מיידי כדי למנוע פקיעת תוקף
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const userId = interaction.user.id;
     const ref = db.collection('userLevels').doc(userId);

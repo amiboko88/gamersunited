@@ -1,4 +1,4 @@
-const { EmbedBuilder, ChannelType } = require('discord.js');
+const { EmbedBuilder, ChannelType, MessageFlags } = require('discord.js');
 const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs');
 const db = require('../utils/firebase');
 const { Readable } = require('stream');

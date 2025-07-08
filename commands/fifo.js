@@ -1,11 +1,4 @@
-const {
-  SlashCommandBuilder,
-  PermissionFlagsBits,
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle
-} = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 
 const { createGroupsAndChannels } = require('../utils/squadBuilder');
 const { log } = require('../utils/logger');
@@ -36,25 +29,25 @@ module.exports = {
       const groupSize = interaction.options.getInteger('כמות');
       const validSizes = [2, 3, 4];
       if (!validSizes.includes(groupSize)) {
-        return await interaction.reply({ content: '🤨 רק 2, 3 או 4 מותרים.', ephemeral: true });
+        return await interaction.reply({ content: '🤨 רק 2, 3 או 4 מותרים.', flags: MessageFlags.Ephemeral });
       }
 
       const voiceChannel = interaction.member.voice.channel;
       if (!voiceChannel || voiceChannel.parentId !== process.env.FIFO_CATEGORY_ID) {
-        return await interaction.reply({ content: '⛔ אתה חייב להיות בחדר בתוך קטגוריית וורזון פיפו.', ephemeral: true });
+        return await interaction.reply({ content: '⛔ אתה חייב להיות בחדר בתוך קטגוריית וורזון פיפו.', flags: MessageFlags.Ephemeral });
       }
 
       const role = interaction.guild.roles.cache.find(r => r.name === 'FIFO');
       if (!interaction.member.roles.cache.has(role?.id)) {
-        return await interaction.reply({ content: '🚫 אתה צריך תפקיד FIFO כדי להריץ את הפקודה.', ephemeral: true });
+        return await interaction.reply({ content: '🚫 אתה צריך תפקיד FIFO כדי להריץ את הפקודה.', flags: MessageFlags.Ephemeral });
       }
 
       const members = voiceChannel.members.filter(m => !m.user.bot);
       if (members.size < 2) {
-        return await interaction.reply({ content: '🤏 צריך לפחות שני שחקנים.', ephemeral: true });
+        return await interaction.reply({ content: '🤏 צריך לפחות שני שחקנים.', flags: MessageFlags.Ephemeral });
       }
 
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       const { groups, waiting, channels } = await createGroupsAndChannels({
         interaction,
@@ -163,7 +156,7 @@ module.exports = {
       log(`❌ שגיאה ב־/פיפו ע״י ${interaction.user.tag}:\n\`\`\`${err.message || err}\`\`\``);
 
       if (!interaction.deferred && !interaction.replied) {
-        await interaction.reply({ content: '❌ תקלה כללית. נסה שוב.', ephemeral: true });
+        await interaction.reply({ content: '❌ תקלה כללית. נסה שוב.', flags: MessageFlags.Ephemeral });
       } else {
         await interaction.editReply({ content: '❌ משהו השתבש. נסה שוב.' });
       }

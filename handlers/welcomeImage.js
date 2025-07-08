@@ -1,5 +1,5 @@
 const { createCanvas, loadImage, registerFont } = require('canvas');
-const { AttachmentBuilder } = require('discord.js');
+const { AttachmentBuilder, MessageFlags } = require('discord.js');
 const path = require('path');
 
 const WELCOME_CHANNEL_ID = '689067371843158026';

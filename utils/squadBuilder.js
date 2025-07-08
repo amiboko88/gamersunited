@@ -1,6 +1,6 @@
 // 📁 utils/squadBuilder.js – יצירת קבוצות FIFO עם שמות בכותרת וללא נעילה
 
-const { ChannelType } = require('discord.js');
+const { ChannelType, MessageFlags } = require('discord.js');
 
 function buildSquads(members, squadSize) {
   const players = [...members];

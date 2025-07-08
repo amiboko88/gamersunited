@@ -1,5 +1,5 @@
 // 📁 handlers/fifoButtonHandler.js
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, MessageFlags } = require('discord.js');
 const { executeReplayReset } = require('../utils/repartitionUtils');
 const {
   registerReplayVote,
@@ -27,12 +27,12 @@ async function handleFifoButtons(interaction, client) {
     const voteResult = registerReplayVote(teamName, interaction.user.id);
 
     if (!voteResult) {
-      return interaction.reply({ content: '⚠️ שגיאה פנימית בריפליי.', ephemeral: true });
+      return interaction.reply({ content: '⚠️ שגיאה פנימית בריפליי.', flags: MessageFlags.Ephemeral });
     }
 
     await interaction.reply({
       content: `💬 ההצבעה שלך נרשמה. (${voteResult.voted}/${voteResult.total})`,
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
 
     if (voteResult.allVoted) {
@@ -67,12 +67,12 @@ async function handleFifoButtons(interaction, client) {
     if (interaction.user.id !== initiatorId) {
       return interaction.reply({
         content: '🚫 רק מי שיצר את הפיפו יכול לאפס את כל הקבוצות.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     log(`🚨 ${interaction.user.tag} לחץ על איפוס כללי`);
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await executeReplayReset(interaction.guild, interaction.channel, 'TEAM A');
     await interaction.editReply({ content: '✅ כל הקבוצות אופסו בהצלחה!' });
     return;
@@ -84,15 +84,15 @@ async function handleFifoButtons(interaction, client) {
 
     const voiceChannel = interaction.guild.channels.cache.get(FIFO_CHANNEL_ID);
     if (!voiceChannel?.isVoiceBased()) {
-      return await interaction.reply({ content: '⛔ ערוץ הפיפו אינו זמין כרגע.', ephemeral: true });
+      return await interaction.reply({ content: '⛔ ערוץ הפיפו אינו זמין כרגע.', flags: MessageFlags.Ephemeral });
     }
 
     const members = voiceChannel.members.filter(m => !m.user.bot);
     if (members.size < 2) {
-      return await interaction.reply({ content: '⛔ אין מספיק שחקנים בפיפו.', ephemeral: true });
+      return await interaction.reply({ content: '⛔ אין מספיק שחקנים בפיפו.', flags: MessageFlags.Ephemeral });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const { groups, waiting, channels } = await createGroupsAndChannels({
       interaction,

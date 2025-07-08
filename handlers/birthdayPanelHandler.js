@@ -1,13 +1,4 @@
-const {
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
-  PermissionFlagsBits
-} = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, PermissionFlagsBits, MessageFlags } = require('discord.js');
 
 const db = require('../utils/firebase');
 const BIRTHDAY_COLLECTION = 'birthdays';
@@ -20,7 +11,7 @@ module.exports = async function handleBirthdayPanel(interaction) {
   if (customId === 'bday_list') {
     const snapshot = await db.collection(BIRTHDAY_COLLECTION).get();
     if (snapshot.empty) {
-      return interaction.reply({ content: '🙈 אין ימי הולדת רשומים עדיין.', ephemeral: true });
+      return interaction.reply({ content: '🙈 אין ימי הולדת רשומים עדיין.', flags: MessageFlags.Ephemeral });
     }
 
     const months = Array.from({ length: 12 }, () => []);
@@ -107,7 +98,7 @@ module.exports = async function handleBirthdayPanel(interaction) {
   if (customId === 'bday_missing') {
     const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
     if (!isAdmin) {
-      return interaction.reply({ content: '⛔ הפקודה זמינה רק לאדמינים.', ephemeral: true });
+      return interaction.reply({ content: '⛔ הפקודה זמינה רק לאדמינים.', flags: MessageFlags.Ephemeral });
     }
 
     await guild.members.fetch();
@@ -139,7 +130,7 @@ module.exports = async function handleBirthdayPanel(interaction) {
             .setStyle(ButtonStyle.Primary)
         )
       ] : [],
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -147,10 +138,10 @@ module.exports = async function handleBirthdayPanel(interaction) {
 if (customId === 'bday_remind_missing') {
   const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
   if (!isAdmin) {
-    return interaction.reply({ content: '⛔ אין הרשאה.', ephemeral: true });
+    return interaction.reply({ content: '⛔ אין הרשאה.', flags: MessageFlags.Ephemeral });
   }
 
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   await guild.members.fetch();
   const allMembers = guild.members.cache.filter(
@@ -213,14 +204,14 @@ if (customId === 'bday_remind_missing') {
     if (doc.exists) {
       return interaction.reply({
         content: '🔁 כבר הזנת תאריך יום הולדת בעבר. אין צורך להזין שוב.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     if (!parsed) {
       return interaction.reply({
         content: '❌ תאריך לא תקין. נסה פורמט כמו 31/12/1990 או 1.1.88',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -281,7 +272,7 @@ if (matchedDoc) {
       .setFooter({ text: 'שמעון תמיד זוכר 🎉' })
       .setTimestamp();
 
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   }
 };
 

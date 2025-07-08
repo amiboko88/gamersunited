@@ -1,13 +1,6 @@
 // 📁 commands/manualSyncCommand.js
 
-const {
-  SlashCommandBuilder,
-  PermissionFlagsBits,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder
-} = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags } = require('discord.js');
 const db = require('../utils/firebase');
 const { scanForConsoleAndVerify } = require('../handlers/verificationButton');
 
@@ -21,7 +14,7 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const guild = interaction.guild;
     const verifiedRole = guild.roles.cache.get(VERIFIED_ROLE_ID);
@@ -73,17 +66,17 @@ module.exports = {
     if (interaction.user.id !== userId) {
       return interaction.reply({
         content: '⛔ רק מי שהפעיל את הפקודה יכול ללחוץ על הכפתור הזה.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     const guild = interaction.guild;
     const verifiedRole = guild.roles.cache.get(VERIFIED_ROLE_ID);
     if (!verifiedRole) {
-      return interaction.reply({ content: '❌ תפקיד המאומת לא נמצא בשרת.', ephemeral: true });
+      return interaction.reply({ content: '❌ תפקיד המאומת לא נמצא בשרת.', flags: MessageFlags.Ephemeral });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const snapshot = await db.collection(TRACKING_COLLECTION).get();
     const alreadyTracked = new Set(snapshot.docs.map(doc => doc.id));

@@ -1,11 +1,6 @@
 // 📁 handlers/verificationButton.js
 
-const {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder
-} = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags } = require('discord.js');
 const db = require('../utils/firebase');
 const { logToWebhook } = require('../utils/logger');
 const path = require('path');
@@ -75,7 +70,7 @@ async function handleInteraction(interaction) {
   if (!allowed) {
     return interaction.reply({
       content: '🛑 נראה שכבר יש לך תפקידים בשרת. אם אתה קונסוליסט — תכתוב כאן "אמת אותי" או שלח לשמעון הודעה בפרטי.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -101,7 +96,7 @@ async function handleInteraction(interaction) {
       guildId: interaction.guild.id
     });
 
-    await interaction.reply({ content: '✅ אומתת בהצלחה! ברוך הבא 🎉', ephemeral: true });
+    await interaction.reply({ content: '✅ אומתת בהצלחה! ברוך הבא 🎉', flags: MessageFlags.Ephemeral });
 
     logToWebhook({
       title: '🟢 אימות באמצעות כפתור',
@@ -131,7 +126,7 @@ async function handleInteraction(interaction) {
     console.error('❌ שגיאה באימות:', err);
     await interaction.reply({
       content: '❌ משהו השתבש, נסה שוב או פנה למנהל.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 }

@@ -1,13 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const dayjs = require('dayjs');
-const {
-  SlashCommandBuilder,
-  ActionRowBuilder,
-  StringSelectMenuBuilder,
-  ButtonBuilder,
-  ButtonStyle
-} = require('discord.js');
+const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 
 const {
   joinVoiceChannel,
@@ -33,7 +27,7 @@ module.exports = {
     const userDir = path.join(RECORDINGS_DIR, userId);
 
     if (!fs.existsSync(userDir)) {
-      return interaction.reply({ content: '📭 אין הקלטות שמורות עבורך.', ephemeral: true });
+      return interaction.reply({ content: '📭 אין הקלטות שמורות עבורך.', flags: MessageFlags.Ephemeral });
     }
 
     const files = fs.readdirSync(userDir)
@@ -42,7 +36,7 @@ module.exports = {
       .slice(0, 20);
 
     if (files.length === 0) {
-      return interaction.reply({ content: '📭 אין קבצי MP3 זמינים.', ephemeral: true });
+      return interaction.reply({ content: '📭 אין קבצי MP3 זמינים.', flags: MessageFlags.Ephemeral });
     }
 
     const options = files.map((f, i) => {
@@ -71,7 +65,7 @@ module.exports = {
     return interaction.reply({
       content: '🎙️ ניהול הקלטות אישיות:',
       components: [row1, row2],
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   },
 
@@ -83,25 +77,25 @@ module.exports = {
       playbackCache.set(userId, interaction.values[0]);
       return interaction.reply({
         content: `📁 נבחרה ההקלטה: \`${interaction.values[0]}\``,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     if (interaction.isButton()) {
       const fileName = playbackCache.get(userId);
       if (!fileName) {
-        return interaction.reply({ content: '⚠️ לא נבחרה הקלטה.', ephemeral: true });
+        return interaction.reply({ content: '⚠️ לא נבחרה הקלטה.', flags: MessageFlags.Ephemeral });
       }
 
       const filePath = path.join(userDir, fileName);
       if (!fs.existsSync(filePath)) {
-        return interaction.reply({ content: '📭 לא נמצא קובץ ההקלטה שנבחר.', ephemeral: true });
+        return interaction.reply({ content: '📭 לא נמצא קובץ ההקלטה שנבחר.', flags: MessageFlags.Ephemeral });
       }
 
       if (interaction.customId === 'play_voice_selected') {
         const voiceChannel = interaction.member.voice.channel;
         if (!voiceChannel) {
-          return interaction.reply({ content: '🔇 אתה חייב להיות בערוץ קול.', ephemeral: true });
+          return interaction.reply({ content: '🔇 אתה חייב להיות בערוץ קול.', flags: MessageFlags.Ephemeral });
         }
 
         const connection = joinVoiceChannel({
@@ -114,7 +108,7 @@ module.exports = {
           await entersState(connection, VoiceConnectionStatus.Ready, 5_000);
         } catch (err) {
           console.error('❌ שגיאה בהתחברות קולית:', err);
-          return interaction.reply({ content: '❌ שגיאה בהתחברות לערוץ.', ephemeral: true });
+          return interaction.reply({ content: '❌ שגיאה בהתחברות לערוץ.', flags: MessageFlags.Ephemeral });
         }
 
         const player = createAudioPlayer();
@@ -132,7 +126,7 @@ module.exports = {
         });
 
         console.log(`[PLAYBACK] ${interaction.user.tag} השמיע את הקובץ ${fileName}`);
-        return interaction.reply({ content: `🎧 מנגן כעת: \`${fileName}\``, ephemeral: true });
+        return interaction.reply({ content: `🎧 מנגן כעת: \`${fileName}\``, flags: MessageFlags.Ephemeral });
       }
 
       if (interaction.customId === 'delete_voice_selected') {
@@ -140,7 +134,7 @@ module.exports = {
         if (!isAdmin && interaction.user.id !== interaction.member.id) {
           return interaction.reply({
             content: '🚫 רק מנהלים יכולים למחוק הקלטות.',
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
 
@@ -149,13 +143,13 @@ module.exports = {
           playbackCache.delete(userId);
           return interaction.reply({
             content: `🗑️ ההקלטה \`${fileName}\` נמחקה בהצלחה.`,
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         } catch (err) {
           console.error('🗑️ שגיאה במחיקת ההקלטה:', err);
           return interaction.reply({
             content: '❌ לא ניתן למחוק את ההקלטה.',
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
       }

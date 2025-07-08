@@ -1,5 +1,5 @@
 // 📁 commands/verify.js
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const db = require('../utils/firebase');
 const { logToWebhook } = require('../utils/logger');
 
@@ -13,7 +13,7 @@ const data = new SlashCommandBuilder()
 async function execute(interaction) {
   const member = interaction.member;
   if (!member || member.roles.cache.size > 1) {
-    return interaction.reply({ content: '❌ אינך רשאי להשתמש בפקודה זו. רק משתמשים חדשים ללא תפקידים יכולים לאמת את עצמם.', ephemeral: true });
+    return interaction.reply({ content: '❌ אינך רשאי להשתמש בפקודה זו. רק משתמשים חדשים ללא תפקידים יכולים לאמת את עצמם.', flags: MessageFlags.Ephemeral });
   }
 
   try {
@@ -25,14 +25,14 @@ async function execute(interaction) {
       guildId: interaction.guild.id
     });
 
-    await interaction.reply({ content: '✅ אומתת בהצלחה! ברוך הבא 🎉', ephemeral: true });
+    await interaction.reply({ content: '✅ אומתת בהצלחה! ברוך הבא 🎉', flags: MessageFlags.Ephemeral });
     logToWebhook({
       title: '🟢 אימות באמצעות Slash',
       description: `<@${member.id}> אומת באמצעות הפקודה /אמת`
     });
   } catch (err) {
     console.error('❌ שגיאה באימות Slash:', err);
-    interaction.reply({ content: '⚠️ שגיאה באימות. פנה להנהלה.', ephemeral: true });
+    interaction.reply({ content: '⚠️ שגיאה באימות. פנה להנהלה.', flags: MessageFlags.Ephemeral });
   }
 }
 

@@ -41,7 +41,7 @@ function startGroupTracking(channel, userIds, teamName) {
 }
 
 function handleRulesInteraction(interaction) {
-  return interaction.reply({ content: '📜 קראת ואישרת את החוקים!', ephemeral: true });
+  return interaction.reply({ content: '📜 קראת ואישרת את החוקים!', flags: MessageFlags.Ephemeral });
 }
 
 async function executeReplayReset(guild, channel, teamName) {

@@ -1,5 +1,5 @@
 // 📁 handlers/antispam.js
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, MessageFlags } = require('discord.js');
 const db = require('../utils/firebase');
 const { smartRespond } = require('./smartChat');
 

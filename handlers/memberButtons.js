@@ -1,5 +1,5 @@
 const db = require('../utils/firebase');
-const { EmbedBuilder, Collection } = require('discord.js');
+const { EmbedBuilder, Collection, MessageFlags } = require('discord.js');
 const smartChat = require('./smartChat');
 
 const STAFF_CHANNEL_ID = '881445829100060723';
@@ -14,7 +14,7 @@ async function handleMemberButtons(interaction, client) {
 
   // 🔵 שליחת DM רגיל
   if (action === 'send_dm_batch_list') {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     let count = 0;
     let failed = [];
@@ -43,67 +43,63 @@ async function handleMemberButtons(interaction, client) {
         }, { merge: true });
         continue;
       }
+      try {
+        const memberReal = await guild.members.fetch(user.id).catch(() => null);
+        const fakeMessage = {
+          content: 'אתה נעלמת, לא אמרת שלום אפילו...',
+          author: {
+            id: user.id,
+            username: user.username,
+            avatar: user.avatar,
+            bot: user.bot
+          },
+          member: memberReal || {
+            displayName: user.username,
+            permissions: { has: () => false },
+            roles: { cache: new Collection() }
+          },
+          channel: { id: '000' },
+          client,
+          _simulateOnly: true
+        };
 
-try {
-  const memberReal = await guild.members.fetch(user.id).catch(() => null);
-  const fakeMessage = {
-    content: 'אתה נעלמת, לא אמרת שלום אפילו...',
-    author: {
-      id: user.id,
-      username: user.username,
-      avatar: user.avatar,
-      bot: user.bot
-    },
-    member: memberReal || {
-      displayName: user.username,
-      permissions: { has: () => false },
-      roles: { cache: new Collection() }
-    },
-    channel: { id: '000' },
-    client,
-    _simulateOnly: true
-  };
+        const isFinal = false;
 
-  const isFinal = false;
+        const prompt = `${user.username} לא היה פעיל כבר ${Math.floor(daysInactive)} ימים.\n` +
+          `${isFinal ? 'זוהי תזכורת סופית' : 'זו תזכורת רגילה'}.\n` +
+          `כתוב לו הודעה ${isFinal ? 'ישירה וקשוחה' : 'חברית ומעודדת'}, שתעודד אותו להשתתף בשרת.\n` +
+          `הסבר לו שהוא עבר אימות אך עדיין לא לקח חלק.`;
 
-  const prompt = `${user.username} לא היה פעיל כבר ${Math.floor(daysInactive)} ימים.\n` +
-  `${isFinal ? 'זוהי תזכורת סופית' : 'זו תזכורת רגילה'}.\n` +
-  `כתוב לו הודעה ${isFinal ? 'ישירה וקשוחה' : 'חברית ומעודדת'}, שתעודד אותו להשתתף בשרת.\n` +
-  `הסבר לו שהוא עבר אימות אך עדיין לא לקח חלק.`;
+        fakeMessage.content = prompt;
+        const dm = await smartChat.smartRespond(fakeMessage, isFinal ? 'קשוח' : 'רגיש');
 
-  fakeMessage.content = prompt;
-  const dm = await smartChat.smartRespond(fakeMessage, isFinal ? 'קשוח' : 'רגיש');
+        console.log(`📤 תזכורת רגילה ל־${userId}:`, dm);
 
+        if (!dm || typeof dm !== 'string' || dm.length < 2) throw new Error('הודעת DM ריקה או שגויה');
+        try {
+          await user.send(dm);
+        } catch (err) {
+          console.warn(`❌ נכשל DM ל־${userId}, נשלח fallback`);
+          const { sendFallbackButton } = require('./dmFallbackModal');
+          const memberChannel = memberReal?.dmChannel || await user.createDM();
+          await memberChannel.send(sendFallbackButton(userId));
+        }
 
-  console.log(`📤 תזכורת רגילה ל־${userId}:`, dm);
+        await db.collection('memberTracking').doc(userId).set({
+          dmSent: true,
+          dmSentAt: new Date().toISOString(),
+          reminderCount: 1
+        }, { merge: true });
 
-  if (!dm || typeof dm !== 'string' || dm.length < 2) throw new Error('הודעת DM ריקה או שגויה');
-  try {
-  await user.send(dm);
-} catch (err) {
-  console.warn(`❌ נכשל DM ל־${userId}, נשלח fallback`);
-  const { sendFallbackButton } = require('./dmFallbackModal');
-  const memberChannel = memberReal?.dmChannel || await user.createDM();
-  await memberChannel.send(sendFallbackButton(userId));
-}
-
-
-  await db.collection('memberTracking').doc(userId).set({
-    dmSent: true,
-    dmSentAt: new Date().toISOString(),
-    reminderCount: 1
-  }, { merge: true });
-
-  count++;
-} catch (err) {
-  console.error(`❌ נכשל DM ל־${userId}:`, err.message);
-  failed.push(`<@${userId}>`);
-  await db.collection('memberTracking').doc(userId).set({
-    dmFailed: true,
-    dmFailedAt: new Date().toISOString()
-  }, { merge: true });
-}
-
+        count++;
+      } catch (err) {
+        console.error(`❌ נכשל DM ל־${userId}:`, err.message);
+        failed.push(`<@${userId}>`);
+        await db.collection('memberTracking').doc(userId).set({
+          dmFailed: true,
+          dmFailedAt: new Date().toISOString()
+        }, { merge: true });
+      }
     }
 
     let msg = `✅ נשלחו תזכורות ל־${count} משתמשים.`;
@@ -112,7 +108,7 @@ try {
     await interaction.editReply({ content: msg });
     return true;
   }
-    // 📊 סטטוס נוכחי
+  // 📊 סטטוס נוכחי
   if (action === 'show_status_summary') {
     const snapshot = await db.collection('memberTracking').get();
     const count = snapshot.size;
@@ -136,7 +132,7 @@ try {
       .setFooter({ text: 'Shimon BOT – ניתוח לפי statusStage' })
       .setTimestamp();
 
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   }
 
   function translateStatus(key) {
@@ -155,7 +151,7 @@ try {
 
   // 🔴 שליחת תזכורת סופית
   if (action === 'send_dm_batch_final_check') {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     let count = 0;
     let failed = [];
@@ -173,7 +169,6 @@ try {
         notInGuild.push(`<@${userId}>`);
         continue;
       }
-
       const user = await client.users.fetch(userId).catch(() => null);
       if (!user || typeof user.send !== 'function' || !user.id) {
         console.error(`❌ לא ניתן לשלוף או לשלוח ל־${userId}`);
@@ -207,25 +202,23 @@ try {
 
         const isFinal = true;
         const prompt = `${user.username} לא היה פעיל כבר ${Math.floor(daysInactive)} ימים.\n` +
-        `${isFinal ? 'זוהי תזכורת סופית' : 'זו תזכורת רגילה'}.\n` +
-        `כתוב לו הודעה ${isFinal ? 'ישירה וקשוחה' : 'חברית ומעודדת'}, שתעודד אותו להשתתף בשרת.\n` +
-        `הסבר לו שהוא עבר אימות אך עדיין לא לקח חלק.`;
+          `זוהי תזכורת סופית.\nכתוב לו הודעה ישירה וקשוחה שתעודד אותו להשתתף בשרת.\n` +
+          `הסבר לו שהוא עבר אימות אך עדיין לא לקח חלק.`;
 
-       fakeMessage.content = prompt;
-       const dm = await smartChat.smartRespond(fakeMessage, isFinal ? 'קשוח' : 'רגיש');
+        fakeMessage.content = prompt;
+        const dm = await smartChat.smartRespond(fakeMessage, 'קשוח');
 
         console.log(`📤 תזכורת סופית ל־${userId}:`, dm);
 
         if (!dm || typeof dm !== 'string' || dm.length < 2) throw new Error('הודעת תזכורת סופית ריקה או שגויה');
         try {
-  await user.send(dm);
-} catch (err) {
-  console.warn(`❌ נכשל DM ל־${userId}, נשלח fallback`);
-  const { sendFallbackButton } = require('./dmFallbackModal');
-  const memberChannel = memberReal?.dmChannel || await user.createDM();
-  await memberChannel.send(sendFallbackButton(userId));
-}
-
+          await user.send(dm);
+        } catch (err) {
+          console.warn(`❌ נכשל DM ל־${userId}, נשלח fallback`);
+          const { sendFallbackButton } = require('./dmFallbackModal');
+          const memberChannel = memberReal?.dmChannel || await user.createDM();
+          await memberChannel.send(sendFallbackButton(userId));
+        }
 
         await db.collection('memberTracking').doc(userId).set({
           reminderCount: 3,
@@ -254,7 +247,7 @@ try {
   if (action === 'show_failed_list') {
     const failedUsers = allTracked.docs.filter(doc => doc.data().dmFailed);
     if (!failedUsers.length) {
-      return interaction.reply({ content: 'אין משתמשים שנכשל DM אליהם.', ephemeral: true });
+      return interaction.reply({ content: 'אין משתמשים שנכשל DM אליהם.', flags: MessageFlags.Ephemeral });
     }
 
     const embed = new EmbedBuilder()
@@ -262,14 +255,14 @@ try {
       .setDescription(failedUsers.map(doc => `<@${doc.id}>`).join(', '))
       .setColor(0xff0000);
 
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   }
 
   // 💬 הצגת מי שענה ל־DM
   if (action === 'show_replied_list') {
     const replied = allTracked.docs.filter(doc => doc.data().replied);
     if (!replied.length) {
-      return interaction.reply({ content: 'אף אחד לא ענה ל־DM עדיין.', ephemeral: true });
+      return interaction.reply({ content: 'אף אחד לא ענה ל־DM עדיין.', flags: MessageFlags.Ephemeral });
     }
 
     const embed = new EmbedBuilder()
@@ -277,12 +270,12 @@ try {
       .setDescription(replied.map(doc => `<@${doc.id}>`).join(', '))
       .setColor(0x00cc99);
 
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   }
 
   // 🛑 בעיטת משתמשים שנכשלו
   if (action === 'kick_failed_users') {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const now = Date.now();
     let count = 0;
@@ -332,7 +325,7 @@ try {
       await staff.send({ embeds: [embed] });
     }
 
-    return interaction.editReply({ content: '✅ הפעולה בוצעה. סיכום נשלח לצוות.', ephemeral: true });
+    return interaction.editReply({ content: '✅ הפעולה בוצעה. סיכום נשלח לצוות.', flags: MessageFlags.Ephemeral });
   }
 
   return false;

@@ -1,65 +1,89 @@
-const { createCanvas, loadImage, registerFont } = require("canvas");
+const { createCanvas, registerFont, loadImage } = require("canvas");
 const path = require("path");
-const axios = require("axios");
 
+// 🟢 פונטים
 registerFont(path.join(__dirname, "../assets/NotoSansHebrew-Bold.ttf"), {
-  family: "NotoHebrew"
+  family: "HebrewBold"
 });
 registerFont(path.join(__dirname, "../assets/Symbola.ttf"), {
   family: "EmojiFont"
 });
 
-async function generateXPProfileCard({ fullName, level, xp, avatarURL }) {
-  const width = 700;
-  const height = 280;
+function getBarColor(percent) {
+  if (percent < 0.4) return "#e74c3c";
+  if (percent < 0.7) return "#f9a825";
+  return "#00e676";
+}
+
+async function generateXPProfileCard({ fullName, level, xp, avatarBuffer }) {
+  const width = 900;
+  const height = 300;
+
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
-  const nextXP = level * 25;
-  const percent = Math.min((xp / nextXP) * 100, 100);
+  // 🔳 רקע
+  ctx.fillStyle = "#151621";
+  ctx.fillRect(0, 0, width, height);
 
-  // 🖼️ רקע
-  const bg = await loadImage(path.join(__dirname, "../assets/war_bg.png"));
-  ctx.drawImage(bg, 0, 0, width, height);
+  // 🧬 כותרת
+  ctx.font = "42px EmojiFont";
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText("🧬", width - 60, 70);
 
-  // 🧑‍🎤 תמונת פרופיל
-  try {
-    if (!avatarURL?.startsWith("http")) throw new Error("avatarURL לא תקף");
-    const response = await axios.get(avatarURL, { responseType: "arraybuffer" });
-    const avatarImg = await loadImage(response.data);
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(110, 140, 60, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.clip();
-    ctx.drawImage(avatarImg, 50, 80, 120, 120);
-    ctx.restore();
-  } catch (e) {
-    console.warn("⚠️ לא נטענה תמונת פרופיל:", e.message);
+  ctx.font = "bold 36px HebrewBold";
+  ctx.fillText("\u200Fהפרופיל שלך", width - 110, 70);
+
+  // 🧑‍🎤 אוואטר אם סופק
+  if (avatarBuffer && Buffer.isBuffer(avatarBuffer)) {
+    try {
+      const avatarImg = await loadImage(avatarBuffer);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(130, 130, 60, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(avatarImg, 70, 70, 120, 120);
+      ctx.restore();
+    } catch (err) {
+      console.warn("⚠️ שגיאה בטעינת אוואטר:", err.message);
+    }
   }
 
+  const nextXP = level * 25;
+  const percent = Math.min(xp / nextXP, 1);
+  const percentText = `${Math.round(percent * 100)}%`;
+  const barColor = getBarColor(percent);
+
   // 🟩 בר התקדמות
-  const barX = 200, barY = 170, barW = 460, barH = 25;
-  const fillW = Math.round((percent / 100) * barW);
+  const barX = 240;
+  const barY = 140;
+  const barW = 400;
+  const barH = 40;
+  const fillW = Math.floor(barW * percent);
 
   ctx.fillStyle = "#444";
   ctx.fillRect(barX, barY, barW, barH);
 
-  ctx.fillStyle = percent >= 90 ? "#00e676" : percent >= 50 ? "#f9a825" : "#e53935";
+  ctx.fillStyle = barColor;
   ctx.fillRect(barX, barY, fillW, barH);
 
+  ctx.font = "bold 16px HebrewBold";
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "center";
+  ctx.fillText(percentText, barX + barW / 2, barY + 26);
+
   // 📝 טקסטים
-  ctx.fillStyle = "#fff";
   ctx.textAlign = "right";
+  ctx.font = "bold 24px HebrewBold";
+  ctx.fillText(`‏${fullName}`, width - 60, 110);
 
-  ctx.font = "24px EmojiFont";
-  ctx.fillText(`‏${fullName}`, width - 40, 70);
+  ctx.font = "20px HebrewBold";
+  ctx.fillText(`‏XP: ${xp}/${nextXP} · רמה ${level}`, width - 60, 180);
 
-  ctx.font = "20px NotoHebrew";
-  ctx.fillText(`‏XP: ${xp}/${nextXP} · רמה ${level}`, width - 40, 120);
-
-  ctx.font = "18px NotoHebrew";
-  ctx.fillText(`‏התקדמות: ${Math.floor(percent)}%`, width - 40, 205);
+  ctx.font = "18px HebrewBold";
+  ctx.fillText(`‏התקדמות כוללת: ${Math.round(percent * 100)}%`, width - 60, 220);
 
   return canvas.toBuffer("image/png");
 }

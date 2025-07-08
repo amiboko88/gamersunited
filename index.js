@@ -7,7 +7,6 @@ const { Client, GatewayIntentBits, MessageFlags } = require('discord.js');
 const db = require('./utils/firebase');
 
 // 🧠 ניתוח / סטטיסטיקות / XP
-const { startLiveMonitor } = require('./handlers/userActivityMonitor');
 const statTracker = require('./handlers/statTracker');
 const { handleXPMessage } = require('./handlers/engagementManager');
 const { startStatsUpdater } = require('./handlers/statsUpdater');
@@ -131,7 +130,6 @@ client.once('ready', async () => {
     await hardSyncPresenceOnReady(client);
     await setupVerificationMessage(client);
     await startMvpReactionWatcher(client, db);
-    await startLiveMonitor(client);
     startBirthdayCongratulator(client);
     startFifoWarzoneAnnouncer(client);
     startStatsUpdater(client);

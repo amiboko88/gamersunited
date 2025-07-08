@@ -15,20 +15,20 @@ async function createLeaderboardImage(users) {
     const percent = Math.min(xp / nextXP, 1);
     const percentText = `${Math.round(percent * 100)}%`;
     const barColor = getBarColor(percent);
-    const barWidth = Math.floor(360 * percent);
+    const barWidth = Math.floor(420 * percent);
 
     return `
-      <div class="row">
-        <div class="rank">#${i + 1}</div>
-        <div class="info">
-          <div class="name">${name}</div>
-          <div class="xp">XP: ${xp}/${nextXP} · רמה ${level}</div>
-          <div class="bar">
-            <div class="fill" style="width: ${barWidth}px; background: ${barColor}; box-shadow: 0 0 6px ${barColor}88;"></div>
-            <div class="percent">${percentText}</div>
-          </div>
+    <div class="row">
+      <div class="rank">#${i + 1}</div>
+      <div class="info">
+        <div class="name">${name}</div>
+        <div class="xp">XP: ${xp}/${nextXP} · רמה ${level}</div>
+        <div class="bar">
+          <div class="fill" style="width: ${barWidth}px; background: ${barColor}; box-shadow: 0 0 8px ${barColor}88;"></div>
+          <div class="percent">${percentText}</div>
         </div>
-      </div>`;
+      </div>
+    </div>`;
   }).join("\n");
 
   const html = `
@@ -40,54 +40,54 @@ async function createLeaderboardImage(users) {
       <style>
         body {
           margin: 0;
-          background: linear-gradient(120deg, #151621, #0d0d13);
+          background: radial-gradient(circle at top, #151621, #0b0c10);
           font-family: 'Varela Round', sans-serif;
           direction: rtl;
           color: #ffffff;
           width: 1000px;
         }
         .header {
-          font-size: 50px;
+          font-size: 48px;
           color: #FFD700;
           text-align: center;
           padding: 40px 0 30px;
-          text-shadow: 0 0 6px #ffd70055;
+          text-shadow: 0 0 10px #ffd70088;
         }
         .container {
-          margin: auto;
           width: 900px;
-          padding: 20px 30px;
-          background: #1b1b2b;
-          border-radius: 20px;
-          box-shadow: 0 0 30px #00000066;
+          margin: 0 auto 60px;
+          background: #1f1f2e;
+          border-radius: 22px;
+          box-shadow: 0 0 30px #00000055;
+          padding: 30px 40px;
         }
         .row {
           display: flex;
-          flex-direction: row;
           align-items: center;
-          background: #232335;
-          margin: 10px 0;
+          justify-content: center;
+          background: #252537;
+          margin: 12px 0;
           padding: 18px 24px;
           border-radius: 16px;
         }
         .row:nth-child(even) {
-          background: #27273c;
+          background: #2c2c41;
         }
         .rank {
-          font-size: 30px;
-          font-weight: bold;
+          font-size: 28px;
           width: 60px;
           text-align: center;
           color: #FFD700;
+          font-weight: bold;
         }
         .info {
           flex-grow: 1;
+          text-align: center;
         }
         .name {
           font-size: 24px;
           font-weight: bold;
           margin-bottom: 6px;
-          color: #ffffff;
         }
         .xp {
           font-size: 16px;
@@ -97,23 +97,22 @@ async function createLeaderboardImage(users) {
         .bar {
           position: relative;
           background: #3a3a3a;
-          border-radius: 10px;
-          height: 28px;
-          width: 360px;
-          overflow: hidden;
+          border-radius: 14px;
+          height: 30px;
+          width: 420px;
+          margin: auto;
         }
         .fill {
-          height: 28px;
-          border-radius: 10px;
+          height: 30px;
+          border-radius: 14px;
         }
         .percent {
           position: absolute;
           left: 50%;
           top: 3px;
           transform: translateX(-50%);
-          font-size: 14px;
+          font-size: 15px;
           font-weight: bold;
-          color: #ffffff;
         }
       </style>
     </head>
@@ -133,7 +132,7 @@ async function createLeaderboardImage(users) {
   const page = await browser.newPage();
   await page.setViewport({
     width: 1000,
-    height: 200 + users.length * 120,
+    height: 250 + users.length * 120,
     deviceScaleFactor: 2
   });
 

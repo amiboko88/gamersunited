@@ -92,6 +92,11 @@ if (now - lastTime < 15000) {
     await ctx.answerCallbackQuery();
   });
 
+const fs = require("fs");
+const path = require("path");
+const axios = require("axios");
+const FormData = require("form-data");
+
 bot.callbackQuery("profile_xp", async (ctx) => {
   const userId = ctx.from.id.toString();
   const name = ctx.from.first_name || "חבר";
@@ -105,13 +110,13 @@ bot.callbackQuery("profile_xp", async (ctx) => {
   try {
     const data = doc.data();
 
+    // 🖼️ אוואטר (כ־data:image)
     let avatarDataURL = null;
     try {
       const photos = await ctx.getUserProfilePhotos();
       if (photos.total_count > 0) {
         const fileId = photos.photos[0][0].file_id;
         const link = await ctx.telegram.getFileLink(fileId);
-        const axios = require("axios");
         const res = await axios.get(link.href, { responseType: "arraybuffer" });
         const base64 = Buffer.from(res.data).toString("base64");
         avatarDataURL = `data:image/jpeg;base64,${base64}`;
@@ -127,20 +132,27 @@ bot.callbackQuery("profile_xp", async (ctx) => {
       avatarDataURL
     });
 
-    await ctx.replyWithPhoto(
-      { source: buffer, filename: "profile.png" },
-      {
-        caption: "🧬 <b>הפרופיל שלך:</b>",
-        parse_mode: "HTML"
-      }
-    );
+    // ✉️ שליחה בטוחה עם axios כמו ב־TOP
+    const filePath = path.join("/tmp", `xp_profile_${userId}.png`);
+    fs.writeFileSync(filePath, buffer);
+
+    const form = new FormData();
+    form.append("chat_id", ctx.chat.id);
+    form.append("caption", "🧬 <b>הפרופיל שלך:</b>");
+    form.append("photo", fs.createReadStream(filePath));
+    form.append("parse_mode", "HTML");
+
+    const telegramUrl = `https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendPhoto`;
+    await axios.post(telegramUrl, form, { headers: form.getHeaders() });
+
+    fs.unlink(filePath, () => {});
+    await ctx.answerCallbackQuery();
 
   } catch (err) {
     console.error("❌ שגיאה בפרופיל גרפי:", err);
     await ctx.reply("😵 שגיאה זמנית. נסה שוב.");
+    await ctx.answerCallbackQuery();
   }
-
-  await ctx.answerCallbackQuery();
 });
 
   // MVP מדיסקורד

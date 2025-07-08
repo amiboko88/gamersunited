@@ -26,7 +26,6 @@ async function sendXPTextBar(ctx, userName, currentXP, level, nextLevelXP) {
   await ctx.reply(message, { parse_mode: "HTML" });
 }
 
-
 function calculateXP(text) {
   const len = text.length;
   const isLink = /(http|www\.)/i.test(text);
@@ -44,8 +43,6 @@ function calculateXP(text) {
   if (len > 5) return 2;
   return 0;
 }
-
-
 // 🧠 עדכון XP חכם
 async function updateXP({ id, first_name, username, text }, ctx = null) {
   try {
@@ -105,7 +102,6 @@ function handleTop(bot) {
     await ctx.reply(`🏆 <b>טבלת מצטייני XP</b>\n\n${list}`, { parse_mode: "HTML" });
   });
 }
-
 // 📈 טבלת XP גרפית דרך כפתור Telegram + אנטי ספאם
 function registerTopButton(bot) {
   bot.callbackQuery("profile_top", async (ctx) => {
@@ -135,15 +131,17 @@ function registerTopButton(bot) {
       }
 
       const users = usersSnap.docs.map(doc => doc.data());
-      const buffer = createLeaderboardImage(users);
+      const buffer = await createLeaderboardImage(users);
 
       if (!buffer || !Buffer.isBuffer(buffer) || buffer.length < 1000) {
         return ctx.reply("😕 לא הצלחתי ליצור תמונה תקינה של טבלת המצטיינים.");
       }
 
+      // 📥 שמירת תמונה זמנית
       const filePath = path.join("/tmp", `xp_leaderboard_${userId}.png`);
       fs.writeFileSync(filePath, buffer);
 
+      // ✉️ שליחה בטוחה ל־Telegram עם axios
       const form = new FormData();
       form.append("chat_id", ctx.chat.id);
       form.append("caption", "📈 <b>טבלת מצטייני XP</b>");
@@ -153,7 +151,7 @@ function registerTopButton(bot) {
       const telegramUrl = `https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendPhoto`;
       await axios.post(telegramUrl, form, { headers: form.getHeaders() });
 
-      fs.unlink(filePath, () => {});
+      fs.unlink(filePath, () => {}); // 🧹 ניקוי קובץ זמני
       await ctx.answerCallbackQuery();
 
     } catch (err) {

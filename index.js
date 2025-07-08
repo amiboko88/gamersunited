@@ -7,7 +7,7 @@ const { Client, GatewayIntentBits, MessageFlags } = require('discord.js');
 const db = require('./utils/firebase');
 
 // 🧠 ניתוח / סטטיסטיקות / XP
-const { generateWeeklyReport } = require('./utils/weeklyInactivityReport');
+const { startLiveMonitor } = require('./handlers/userActivityMonitor');
 const statTracker = require('./handlers/statTracker');
 const { handleXPMessage } = require('./handlers/engagementManager');
 const { startStatsUpdater } = require('./handlers/statsUpdater');
@@ -131,6 +131,7 @@ client.once('ready', async () => {
     await hardSyncPresenceOnReady(client);
     await setupVerificationMessage(client);
     await startMvpReactionWatcher(client, db);
+    await startLiveMonitor(client);
     startBirthdayCongratulator(client);
     startFifoWarzoneAnnouncer(client);
     startStatsUpdater(client);
@@ -367,17 +368,5 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-
 // 🚀 הפעלת הבוט
 client.login(process.env.DISCORD_TOKEN);
-setInterval(() => {
-  const now = new Date();
-  const israelTime = new Date(now.getTime() + (3 * 60 + now.getTimezoneOffset()) * 60000);
-  const hour = israelTime.getHours();
-  const day = israelTime.getDay(); // 0 = ראשון, 4 = חמישי
-
-  if (day === 4 && hour === 18) {
-    generateWeeklyReport(client);
-  }
-}, 60 * 60 * 1000); // בדיקה כל שעה
-

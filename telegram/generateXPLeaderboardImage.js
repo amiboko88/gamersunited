@@ -15,20 +15,20 @@ async function createLeaderboardImage(users) {
     const percent = Math.min(xp / nextXP, 1);
     const percentText = `${Math.round(percent * 100)}%`;
     const barColor = getBarColor(percent);
-    const barWidth = Math.floor(300 * percent);
+    const barWidth = Math.floor(360 * percent);
 
     return `
-    <div class="row">
-      <div class="rank">#${i + 1}</div>
-      <div class="info">
-        <div class="name">${name}</div>
-        <div class="xp">XP: ${xp}/${nextXP} · רמה ${level}</div>
-        <div class="bar">
-          <div class="fill" style="width: ${barWidth}px; background: ${barColor};"></div>
-          <div class="percent">${percentText}</div>
+      <div class="row">
+        <div class="rank">#${i + 1}</div>
+        <div class="info">
+          <div class="name">${name}</div>
+          <div class="xp">XP: ${xp}/${nextXP} · רמה ${level}</div>
+          <div class="bar">
+            <div class="fill" style="width: ${barWidth}px; background: ${barColor}; box-shadow: 0 0 6px ${barColor}88;"></div>
+            <div class="percent">${percentText}</div>
+          </div>
         </div>
-      </div>
-    </div>`;
+      </div>`;
   }).join("\n");
 
   const html = `
@@ -40,70 +40,90 @@ async function createLeaderboardImage(users) {
       <style>
         body {
           margin: 0;
-          background: #101014;
-          color: #fff;
+          background: linear-gradient(120deg, #151621, #0d0d13);
           font-family: 'Varela Round', sans-serif;
-          width: 900px;
+          direction: rtl;
+          color: #ffffff;
+          width: 1000px;
         }
         .header {
-          font-size: 42px;
+          font-size: 50px;
           color: #FFD700;
-          text-align: right;
-          padding: 30px 40px 10px;
+          text-align: center;
+          padding: 40px 0 30px;
+          text-shadow: 0 0 6px #ffd70055;
+        }
+        .container {
+          margin: auto;
+          width: 900px;
+          padding: 20px 30px;
+          background: #1b1b2b;
+          border-radius: 20px;
+          box-shadow: 0 0 30px #00000066;
         }
         .row {
           display: flex;
           flex-direction: row;
-          padding: 10px 40px;
-          background: #1a1a27;
-          margin: 6px 0;
           align-items: center;
+          background: #232335;
+          margin: 10px 0;
+          padding: 18px 24px;
+          border-radius: 16px;
         }
         .row:nth-child(even) {
-          background: #1e1e2e;
+          background: #27273c;
         }
         .rank {
-          font-size: 28px;
+          font-size: 30px;
+          font-weight: bold;
           width: 60px;
           text-align: center;
+          color: #FFD700;
         }
         .info {
           flex-grow: 1;
         }
         .name {
-          font-size: 20px;
+          font-size: 24px;
+          font-weight: bold;
+          margin-bottom: 6px;
+          color: #ffffff;
         }
         .xp {
-          font-size: 15px;
-          color: #ccc;
-          margin-bottom: 6px;
+          font-size: 16px;
+          color: #cccccc;
+          margin-bottom: 10px;
         }
         .bar {
           position: relative;
-          background: #444;
-          border-radius: 8px;
-          height: 25px;
-          width: 300px;
+          background: #3a3a3a;
+          border-radius: 10px;
+          height: 28px;
+          width: 360px;
+          overflow: hidden;
         }
         .fill {
-          height: 25px;
-          border-radius: 8px;
+          height: 28px;
+          border-radius: 10px;
         }
         .percent {
           position: absolute;
           left: 50%;
           top: 3px;
           transform: translateX(-50%);
-          font-size: 13px;
+          font-size: 14px;
+          font-weight: bold;
+          color: #ffffff;
         }
       </style>
     </head>
     <body>
-      <div class="header">🏆 טבלת מצטייני XP</div>
-      ${rowsHTML}
+      <div class="header">🏆 מצטייני XP השבוע</div>
+      <div class="container">
+        ${rowsHTML}
+      </div>
     </body>
-  </html>
-  `;
+  </html>`;
 
   const browser = await puppeteer.launch({
     headless: "new",
@@ -112,8 +132,8 @@ async function createLeaderboardImage(users) {
 
   const page = await browser.newPage();
   await page.setViewport({
-    width: 900,
-    height: 120 + users.length * 100,
+    width: 1000,
+    height: 200 + users.length * 120,
     deviceScaleFactor: 2
   });
 

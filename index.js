@@ -43,25 +43,31 @@ for (const file of commandFiles) {
   }
 }
 
-// Load Interaction Handlers (Buttons, Modals, etc.)
+// ✅ Improved Interaction Loader - Recursive and Safe
 const interactionsPath = path.join(__dirname, 'interactions');
 if (fs.existsSync(interactionsPath)) {
-    const interactionFolders = fs.readdirSync(interactionsPath);
-    for (const folder of interactionFolders) {
-        const handlerFiles = fs.readdirSync(path.join(interactionsPath, folder)).filter(file => file.endsWith('.js'));
-        for (const file of handlerFiles) {
-            try {
-                const handler = require(path.join(interactionsPath, folder, file));
-                if (typeof handler.customId === 'string') {
-                    client.interactions.set(handler.customId, handler);
-                } else if (typeof handler.customId === 'function') {
-                    client.dynamicInteractionHandlers.push(handler);
+    const loadHandlers = (dir) => {
+        const filesAndFolders = fs.readdirSync(dir, { withFileTypes: true });
+        for (const item of filesAndFolders) {
+            const itemPath = path.join(dir, item.name);
+            if (item.isDirectory()) {
+                loadHandlers(itemPath); // Recursive call for sub-folders
+            } else if (item.isFile() && item.name.endsWith('.js')) {
+                try {
+                    const handler = require(itemPath);
+                    if (typeof handler.customId === 'string') {
+                        client.interactions.set(handler.customId, handler);
+                    } else if (typeof handler.customId === 'function') {
+                        client.dynamicInteractionHandlers.push(handler);
+                    }
+                } catch(err) {
+                     console.warn(`⚠️ שגיאה בטעינת אינטראקציה ${item.name}: ${err.message}`);
                 }
-            } catch(err) {
-                 console.warn(`⚠️ שגיאה בטעינת אינטראקציה ${file}: ${err.message}`);
             }
         }
-    }
+    };
+    loadHandlers(interactionsPath);
+    console.log(`💡 נטענו ${client.interactions.size} אינטראקציות סטטיות ו-${client.dynamicInteractionHandlers.length} דינאמיות.`);
 }
 
 
@@ -124,10 +130,11 @@ client.on('interactionCreate', async interaction => {
 
         // 2. If not found, check dynamic handlers
         if (!handler) {
-            handler = client.dynamicInteractionHandlers.find(h => h.customId(interaction.customId || interaction));
+            handler = client.dynamicInteractionHandlers.find(h => h.customId(interaction));
         }
 
         if (handler) {
+            // Optional: Check interaction type if specified in the handler
             if (handler.type && !interaction[handler.type]()) return;
             await handler.execute(interaction, client);
         }
@@ -155,7 +162,10 @@ const smartChat = require('./handlers/smartChat');
 client.on('guildMemberAdd', async member => {
     try {
         await db.collection('memberTracking').doc(member.id).set({ guildId: member.guild.id, joinedAt: new Date().toISOString(), status: 'active' }, { merge: true });
-        await member.send(`במידה והסתבכת — פשוט לחץ על הלינק הבא:\n\nhttps://discord.com/channels/${member.guild.id}/${process.env.VERIFICATION_CHANNEL_ID}\n\nזה יוביל אותך ישירות לאימות וכניסה מלאה לשרת 👋`).catch(err => console.warn(`⚠️ לא ניתן לשלוח DM ל־${member.user.tag}: ${err.message}`));
+        const verificationChannelId = process.env.VERIFICATION_CHANNEL_ID;
+        if(verificationChannelId) {
+            await member.send(`במידה והסתבכת — פשוט לחץ על הלינק הבא:\n\nhttps://discord.com/channels/${member.guild.id}/${verificationChannelId}\n\nזה יוביל אותך ישירות לאימות וכניסה מלאה לשרת 👋`).catch(err => console.warn(`⚠️ לא ניתן לשלוח DM ל־${member.user.tag}: ${err.message}`));
+        }
         setTimeout(() => scanForConsoleAndVerify(member), 30000);
     } catch (error) {
         console.error(`Error in guildMemberAdd event for ${member.user.tag}:`, error);

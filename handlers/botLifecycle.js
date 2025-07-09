@@ -8,7 +8,7 @@ const { sendBirthdayMessage } = require('./birthdayCongratulator');
 const { checkBirthdays } = require('./birthdayTracker');
 const { cleanupEmptyChannels } = require('./channelCleaner');
 const { checkActiveGroups } = require('./groupTracker');
-const { checkAndRemindInactive } = require('./inactivityReminder'); // <-- הוספנו את הייבוא הנכון
+const { checkAndRemindInactive } = require('./inactivityReminder');
 const { checkMvpReactions } = require('./mvpReactions');
 const { checkMVPStatusAndRun } = require('./mvpTracker');
 const { rotatePresence } = require('./presenceRotator');
@@ -41,35 +41,24 @@ function initializeCronJobs(client) {
     console.log('[CRON] מאתחל את כל משימות התזמון המרכזיות...');
 
     const tasks = [
-        // --- משימות כלליות ומנהלתיות ---
         { name: 'החלפת נוכחות הבוט', schedule: '*/5 * * * *', func: rotatePresence },
         { name: 'ניקוי חיבורים קוליים ישנים', schedule: '* * * * *', func: cleanupIdleConnections },
         { name: 'ניקוי כפתורי FIFO ישנים', schedule: '*/10 * * * *', func: cleanupOldFifoMessages },
         { name: 'ניקוי ערוצי Team ריקים', schedule: '0 4 * * *', func: cleanupEmptyChannels },
-
-        // --- מערכת חברים ופעילות ---
         { name: 'סריקת נוכחות תקופתית', schedule: '*/5 * * * *', func: periodicPresenceCheck },
         { name: 'עדכון ערוץ "In Voice"', schedule: '* * * * *', func: updateDisplayChannel },
         { name: 'בדיקת קבוצות פעילות', schedule: '* * * * *', func: checkActiveGroups },
         { name: 'עדכון סטטוס אי-פעילות אוטומטי', schedule: '*/30 * * * *', func: startAutoTracking },
-        { name: 'תזכורת אוטומטית לאי-פעילים', schedule: '0 */6 * * *', func: checkAndRemindInactive }, // <-- השורה המתוקנת
+        { name: 'תזכורת אוטומטית לאי-פעילים', schedule: '0 */6 * * *', func: checkAndRemindInactive },
         { name: 'בדיקת DM אימות ממתינים', schedule: '*/10 * * * *', func: checkPendingDms },
         { name: 'הרחקת משתמשים לא פעילים', schedule: '0 5 * * *', func: kickFailedUsers },
-
-        // --- מערכת ימי הולדת ---
         { name: 'מעקב אחר ימי הולדת של היום', schedule: '*/30 * * * *', func: checkBirthdays },
         { name: 'שליחת ברכות יום הולדת בדיסקורד', schedule: '0 9 * * *', func: sendBirthdayMessage, timezone: 'Asia/Jerusalem' },
         { name: 'תזכורת יום הולדת שבועית', schedule: '0 20 * * 6', func: sendWeeklyReminder, timezone: 'Asia/Jerusalem' },
-        
-        // --- מערכת MVP ו-Leaderboard ---
         { name: 'בדיקה והכרזת MVP', schedule: '* * * * *', func: checkMVPStatusAndRun },
         { name: 'בדיקת ריאקשנים ל-MVP', schedule: '* * * * *', func: checkMvpReactions },
         { name: 'עדכון Leaderboard שבועי', schedule: '0 21 * * 6', func: updateWeeklyLeaderboard, timezone: 'Asia/Jerusalem' },
-        
-        // --- מערכת טלגרם ---
         { name: 'שליחת ברכות יום הולדת לטלגרם', schedule: '5 9 * * *', func: sendTelegramBirthdays, timezone: 'Asia/Jerusalem' },
-        
-        // --- הכרזות Warzone (בשעות ספציפיות, לא בשישי) ---
         { name: 'הכרזת Warzone', schedule: '0 21-23,0,1 * * 0-4,6', func: sendWarzoneEmbed, timezone: 'Asia/Jerusalem' }
     ];
 
@@ -79,7 +68,10 @@ function initializeCronJobs(client) {
             return;
         }
         cron.schedule(task.schedule, async () => {
-            console.log(`[CRON] ▶️  מריץ משימה: ${task.name}`);
+            // 💡 התיקון: הדפס את הלוג רק אם המשימה אינה רצה כל דקה
+            if (task.schedule !== '* * * * *') {
+                console.log(`[CRON] ▶️  מריץ משימה: ${task.name}`);
+            }
             try {
                 await task.func(client);
             } catch (error) {

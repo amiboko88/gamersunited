@@ -130,7 +130,8 @@ client.on('interactionCreate', async interaction => {
 
         // 2. If not found, check dynamic handlers
         if (!handler) {
-            handler = client.dynamicInteractionHandlers.find(h => h.customId(interaction));
+            // השורה המתוקנת
+handler = client.dynamicInteractionHandlers.find(h => h.customId(interaction));
         }
 
         if (handler) {

@@ -504,5 +504,7 @@ async function handleMemberButtons(interaction, client) {
 
 module.exports = {
   handleMemberButtons,
-  startAutoTracking // ייצוא הפונקציה startAutoTracking כדי ש-botLifecycle יוכל לייבא אותה
+  startAutoTracking, // 💡 הוסף את השורה הזו
+  sendInactiveReminders, // 💡 וגם את זו, נצטרך אותה ידנית
+  kickFailedUsers // 💡 וגם את זו
 };

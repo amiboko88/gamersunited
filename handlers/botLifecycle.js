@@ -17,7 +17,6 @@ const { updateDisplayChannel } = require('./statsUpdater');
 const { checkPendingDms } = require('./verificationButton');
 const { cleanupIdleConnections } = require('./voiceQueue');
 const { sendBirthdayMessages: sendTelegramBirthdays } = require('../telegram/birthdayNotifierTelegram');
-const { checkDailySilence } = require('../telegram/telegramTriggers');
 const { cleanupOldFifoMessages } = require('../utils/fifoMemory');
 const { startAutoTracking, kickFailedUsers } = require('./memberButtons');
 const { updateWeeklyLeaderboard } = require('./leaderboardUpdater');
@@ -69,7 +68,6 @@ function initializeCronJobs(client) {
         
         // --- מערכת טלגרם ---
         { name: 'שליחת ברכות יום הולדת לטלגרם', schedule: '5 9 * * *', func: sendTelegramBirthdays, timezone: 'Asia/Jerusalem' },
-        { name: 'בדיקת שקט בקבוצת טלגרם', schedule: '0 * * * *', func: checkDailySilence },
         
         // --- הכרזות Warzone (בשעות ספציפיות, לא בשישי) ---
         { name: 'הכרזת Warzone', schedule: '0 21-23,0,1 * * 0-4,6', func: sendWarzoneEmbed, timezone: 'Asia/Jerusalem' }

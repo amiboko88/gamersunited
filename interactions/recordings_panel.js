@@ -1,5 +1,5 @@
 // 📁 interactions/recordings_panel.js
-const recordingsPanel = require('../../commands/recordingsPanel');
+const recordingsPanel = require('../commands/recordingsPanel');
 
 module.exports = {
   // הפונקציה בודקת אם האינטראקציה שייכת לפאנל ההקלטות

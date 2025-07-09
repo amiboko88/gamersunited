@@ -1,5 +1,5 @@
 // 📁 interactions/member_buttons.js
-const { handleMemberButtons } = require('../../handlers/memberButtons');
+const { handleMemberButtons } = require('../handlers/memberButtons');
 
 // רשימת ה-IDs הקבועים של הכפתורים והתפריטים במערכת
 const memberInteractionIds = [

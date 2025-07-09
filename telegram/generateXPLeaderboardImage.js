@@ -1,34 +1,54 @@
 const puppeteer = require("puppeteer");
 
+/**
+ * מנקה שם טקסט ומבטיח תמיכה באימוג'ים ותווים חוקיים בלבד.
+ * אם השם ריק לאחר הניקוי, יוחזר "אנונימי".
+ * @param {string} text הטקסט לניקוי.
+ * @returns {string} הטקסט המנוקה או "אנונימי".
+ */
 function sanitizeName(text) {
-  const allowedEmojis = /[\p{Emoji_Presentation}\p{Emoji}\uFE0F]/gu;
-  const controlChars = /[\u200B-\u200D\uFEFF\u202A-\u202E\u2060-\u206F]/g;
-  const cleanChars = /[^\p{L}\p{N} _.\-@!?א-ת]/gu;
+  // רשימת אימוג'ים נפוצים שאנו רוצים לשמר (עלולים להיות חסרים ב-RegExp כללי)
+  // כולל טווח רחב יותר של אימוג'ים כולל אימוג'י ZWJ sequences
+  const allowedEmojis =
+    /[\u2600-\u26FF\u2700-\u27BF\u1F600-\u1F64F\u1F300-\u1F5FF\u1F900-\u1F9FF\u1FA00-\u1FA6F\u2B50\u2B05\u2705\u274C\u2795-\u2797\u27B0\u27BF\u23F3\u231B\u23F0\u23F8-\u23FA\u25AA\u25AB\u25FE\u25FD\u2B1B\u2B1C\u25C6\u25C8\u25FC\u25FB\u2B55\u0023-\u0039\uFE0F\u20E3\u200D]/gu;
+  const controlChars = /[\u200B-\u200D\uFEFF\u202A-\u202E\u2060-\u206F]/g; // תווים בלתי נראים
+  const cleanChars = /[^\p{L}\p{N} _.\-@!?א-ת]/gu; // כל מה שאינו אות, מספר, רווח, נקודה, מקף, @, !?, א-ת
 
   const cleaned = (text || "")
-    .replace(controlChars, "")
-    .replace(cleanChars, (char) => allowedEmojis.test(char) ? char : "")
-    .trim();
+    .replace(controlChars, "") // הסר תווי בקרה
+    .replace(cleanChars, (char) => allowedEmojis.test(char) ? char : "") // הסר תווים לא חוקיים למעט אימוג'ים מורשים
+    .trim(); // הסר רווחים בתחילת ובסוף המחרוזת
 
   return cleaned.length > 0 ? cleaned : "אנונימי";
 }
 
+/**
+ * מחזירה את צבע פס ההתקדמות בהתאם לאחוז.
+ * @param {number} percent אחוז ההתקדמות.
+ * @returns {string} קוד צבע הקסדצימלי.
+ */
 function getBarColor(percent) {
-  if (percent < 40) return "#e74c3c";
-  if (percent < 70) return "#f9a825";
-  return "#00e676";
+  if (percent < 0.4) return "#e74c3c"; // אדום
+  if (percent < 0.7) return "#f9a825"; // כתום/צהוב
+  return "#00e676"; // ירוק
 }
 
+/**
+ * יוצר תמונה של טבלת דירוג ממשתמשי XP.
+ * @param {Array<Object>} users רשימת אובייקטי משתמשים.
+ * @returns {Promise<Buffer>} Buffer של תמונת PNG.
+ */
 async function createLeaderboardImage(users) {
+  // יצירת שורות ה-HTML עבור כל משתמש
   const rowsHTML = users.map((u, i) => {
     const level = u.level || 1;
     const xp = u.xp || 0;
     const name = sanitizeName(u.fullName || u.username || "אנונימי");
-    const nextXP = level * 25;
-    const percent = Math.min(xp / nextXP, 1);
+    const nextXP = level * 25; // XP הנדרש לרמה הבאה
+    const percent = Math.min(xp / nextXP, 1); // חישוב אחוז ההתקדמות (מקסימום 100%)
     const percentText = `${Math.round(percent * 100)}%`;
     const barColor = getBarColor(percent);
-    const barWidth = Math.floor(420 * percent);
+    const barWidth = Math.floor(420 * percent); // רוחב הפס בפיקסלים
 
     return `
     <div class="row">
@@ -44,6 +64,7 @@ async function createLeaderboardImage(users) {
     </div>`;
   }).join("\n");
 
+  // כל קוד ה-HTML וה-CSS הדרוש לתמונה
   const html = `
   <!DOCTYPE html>
   <html lang="he" dir="rtl">
@@ -54,10 +75,13 @@ async function createLeaderboardImage(users) {
       body {
         margin: 0;
         background: radial-gradient(circle at top, #151621, #0b0c10);
-        font-family: "Segoe UI Emoji", "Noto Color Emoji", "Varela Round", sans-serif;
+        /* סדר הפונטים חשוב: קודם פונטי אימוג'י נפוצים, אחר כך פונט העיצוב */
+        font-family: "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", "Twemoji Mozilla", "Segoe UI Symbol", "Android Emoji", "Varela Round", sans-serif;
         direction: rtl;
         color: #ffffff;
         width: 1000px;
+        -webkit-font-smoothing: antialiased; /* שיפור מראה הפונטים */
+        -moz-osx-font-smoothing: grayscale;
       }
       .title {
         text-align: center;
@@ -65,61 +89,62 @@ async function createLeaderboardImage(users) {
         font-weight: bold;
         margin-top: 30px;
         margin-bottom: 20px;
-        color: #FFD700;
+        color: #FFD700; /* זהב */
       }
       .container {
         width: 920px;
         margin: 20px auto 40px;
-        background: #1f1f2e;
+        background: #1f1f2e; /* רקע כהה לקונטיינר */
         border-radius: 26px;
-        box-shadow: 0 0 28px #00000066;
+        box-shadow: 0 0 28px #00000066; /* צל עדין */
         padding: 30px 40px;
       }
       .row {
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #2a2a3a;
+        background: #2a2a3a; /* רקע שורה */
         margin: 14px 0;
         padding: 20px;
         border-radius: 20px;
       }
       .row:nth-child(even) {
-        background: #303046;
+        background: #303046; /* רקע שורה זוגית */
       }
       .rank {
         font-size: 26px;
         width: 60px;
         text-align: center;
-        color: #FFD700;
+        color: #FFD700; /* זהב לדירוג */
         font-weight: bold;
       }
       .info {
         flex-grow: 1;
-        text-align: center;
+        text-align: center; /* מרכז את התוכן בתוך ה-info */
       }
       .name {
         font-size: 24px;
         font-weight: bold;
         margin-bottom: 6px;
-        word-break: break-word;
+        word-break: break-word; /* שבירת מילים ארוכות */
       }
       .xp {
         font-size: 16px;
-        color: #cccccc;
+        color: #cccccc; /* צבע אפור בהיר לטקסט XP */
         margin-bottom: 10px;
       }
       .bar {
         position: relative;
-        background: #3a3a3a;
+        background: #3a3a3a; /* רקע פס ההתקדמות הריק */
         border-radius: 16px;
         height: 30px;
         width: 420px;
-        margin: auto;
+        margin: auto; /* ממורכז */
       }
       .fill {
         height: 30px;
         border-radius: 16px;
+        transition: width 0.5s ease-in-out; /* אנימציה חלקה למקרה של שינוי רוחב */
       }
       .percent {
         position: absolute;
@@ -128,6 +153,8 @@ async function createLeaderboardImage(users) {
         transform: translateX(-50%);
         font-size: 15px;
         font-weight: bold;
+        color: #ffffff; /* צבע אחוז ההתקדמות */
+        text-shadow: 0 0 3px rgba(0,0,0,0.5); /* צל קטן לטקסט האחוז */
       }
     </style>
   </head>
@@ -139,23 +166,43 @@ async function createLeaderboardImage(users) {
   </body>
   </html>`;
 
+  // הפעלת Puppeteer
   const browser = await puppeteer.launch({
-    headless: "new",
-    args: ["--no-sandbox", "--disable-setuid-sandbox"]
+    headless: "new", // מצב Headless חדש
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      // ארגומנטים נוספים לשיפור תמיכת פונטים ורנדור
+      "--disable-gpu", // שימושי בסביבות ללא GPU
+      "--font-render-hinting=none", // יכול לשפר את הרנדור של פונטים מסוימים
+      "--enable-font-antialiasing", // להפעלת Anti-aliasing לפונטים
+      "--disable-software-rasterizer", // שימוש ב-GPU (אם זמין)
+      "--disable-dev-shm-usage" // פותר בעיות ב-Docker
+    ]
   });
 
   const page = await browser.newPage();
-  const rowHeight = 140;
-  const totalHeight = 100 + users.length * rowHeight;
+
+  // חישוב גובה דינמי של התמונה
+  const headerHeight = 100; // גובה כותרת וקונטיינר עליון
+  const rowHeight = 140; // גובה ממוצע של שורה בטבלה
+  const containerPadding = 70; // סכום ה padding למעלה ולמטה של הקונטיינר (30+40)
+  const totalHeight = headerHeight + (users.length * rowHeight) + containerPadding;
+
 
   await page.setViewport({
     width: 1000,
     height: totalHeight,
-    deviceScaleFactor: 2
+    deviceScaleFactor: 2 // מכפיל רזולוציה לפיקסלים לשיפור האיכות
   });
 
+  // העלאת ה-HTML לדף וחיכוי לטעינה מלאה
   await page.setContent(html, { waitUntil: "networkidle0" });
+
+  // לכידת צילום מסך
   const buffer = await page.screenshot({ type: "png" });
+
+  // סגירת הדפדפן
   await browser.close();
 
   return buffer;

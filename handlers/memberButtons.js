@@ -1,7 +1,7 @@
 const db = require('../utils/firebase');
 const { EmbedBuilder, Collection, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const smartChat = require('./smartChat');
-const { sendStaffLog } = require('./botLifecycle'); // ייבוא פונקציית הלוג החדשה
+const { sendStaffLog } = require('../utils/staffLogger');
 
 // STAFF_CHANNEL_ID ינוהל עכשיו דרך botLifecycle או קובץ קונפיגורציה מרכזי.
 // INACTIVITY_DAYS כנ"ל.

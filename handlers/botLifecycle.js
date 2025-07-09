@@ -1,14 +1,12 @@
-// 📁 handlers/botLifecycle.js
+// 📁 handlers/botLifecycle.js (הגרסה המלאה והמתוקנת)
 const cron = require('node-cron');
-const { EmbedBuilder } = require('discord.js');
+const { sendStaffLog } = require('../utils/staffLogger');
 
-// --- ייבוא כל הפונקציות מהמודולים השונים ---
 const { sendWeeklyReminder } = require('./weeklyBirthdayReminder');
 const { sendBirthdayMessage } = require('./birthdayCongratulator');
 const { checkBirthdays } = require('./birthdayTracker');
 const { cleanupEmptyChannels } = require('./channelCleaner');
 const { checkActiveGroups } = require('./groupTracker');
-const { checkAndRemindInactive } = require('./inactivityReminder');
 const { checkMvpReactions } = require('./mvpReactions');
 const { checkMVPStatusAndRun } = require('./mvpTracker');
 const { rotatePresence } = require('./presenceRotator');
@@ -18,7 +16,8 @@ const { checkPendingDms } = require('./verificationButton');
 const { cleanupIdleConnections } = require('./voiceQueue');
 const { sendBirthdayMessages: sendTelegramBirthdays } = require('../telegram/birthdayNotifierTelegram');
 const { cleanupOldFifoMessages } = require('../utils/fifoMemory');
-const { startAutoTracking, kickFailedUsers } = require('./memberButtons');
+// 💡 ייבוא הפונקציות הנכונות מהקובץ המתוקן של memberButtons
+const { startAutoTracking, sendScheduledReminders, kickFailedUsers } = require('./memberButtons'); 
 const { updateWeeklyLeaderboard } = require('./leaderboardUpdater');
 const { sendWarzoneEmbed } = require('./fifoWarzoneAnnouncer');
 
@@ -26,24 +25,30 @@ function initializeCronJobs(client) {
     console.log('[CRON] מאתחל את כל משימות התזמון המרכזיות...');
 
     const tasks = [
-        { name: 'החלפת נוכחות הבוט', schedule: '*/5 * * * *', func: rotatePresence },
-        { name: 'ניקוי חיבורים קוליים ישנים', schedule: '* * * * *', func: cleanupIdleConnections },
+        { name: 'החלפת נוכחות הבוט', schedule: '*/5 * * * *', func: rotatePresence, quiet: true },
+        { name: 'ניקוי חיבורים קוליים ישנים', schedule: '* * * * *', func: cleanupIdleConnections, quiet: true },
         { name: 'ניקוי כפתורי FIFO ישנים', schedule: '*/10 * * * *', func: cleanupOldFifoMessages },
         { name: 'ניקוי ערוצי Team ריקים', schedule: '0 4 * * *', func: cleanupEmptyChannels },
-        { name: 'סריקת נוכחות תקופתית', schedule: '*/5 * * * *', func: periodicPresenceCheck },
-        { name: 'עדכון ערוץ "In Voice"', schedule: '* * * * *', func: updateDisplayChannel },
-        { name: 'בדיקת קבוצות פעילות', schedule: '* * * * *', func: checkActiveGroups },
-        { name: 'עדכון סטטוס אי-פעילות אוטומטי', schedule: '*/30 * * * *', func: startAutoTracking },
-        { name: 'תזכורת אוטומטית לאי-פעילים', schedule: '0 */6 * * *', func: checkAndRemindInactive },
+        { name: 'סריקת נוכחות תקופתית', schedule: '*/5 * * * *', func: periodicPresenceCheck, quiet: true },
+        { name: 'עדכון ערוץ "In Voice"', schedule: '* * * * *', func: updateDisplayChannel, quiet: true },
+        { name: 'בדיקת קבוצות פעילות', schedule: '* * * * *', func: checkActiveGroups, quiet: true },
         { name: 'בדיקת DM אימות ממתינים', schedule: '*/10 * * * *', func: checkPendingDms },
-        { name: 'הרחקת משתמשים לא פעילים', schedule: '0 5 * * *', func: kickFailedUsers },
+        
+        // ✅ משימות ניהול משתמשים - תוקנו
+        { name: 'עדכון סטטוס אי-פעילות אוטומטי', schedule: '*/30 * * * *', func: startAutoTracking },
+        { name: 'שליחת תזכורות אי-פעילות אוטומטית', schedule: '0 8 * * *', func: sendScheduledReminders, timezone: 'Asia/Jerusalem' },
+        { name: 'הרחקת משתמשים לא פעילים אוטומטית', schedule: '0 5 * * *', func: kickFailedUsers, timezone: 'Asia/Jerusalem' },
+
+        // משימות ימי הולדת
         { name: 'מעקב אחר ימי הולדת של היום', schedule: '*/30 * * * *', func: checkBirthdays },
         { name: 'שליחת ברכות יום הולדת בדיסקורד', schedule: '0 9 * * *', func: sendBirthdayMessage, timezone: 'Asia/Jerusalem' },
         { name: 'תזכורת יום הולדת שבועית', schedule: '0 20 * * 6', func: sendWeeklyReminder, timezone: 'Asia/Jerusalem' },
-        { name: 'בדיקה והכרזת MVP', schedule: '* * * * *', func: checkMVPStatusAndRun },
-        { name: 'בדיקת ריאקשנים ל-MVP', schedule: '* * * * *', func: checkMvpReactions },
-        { name: 'עדכון Leaderboard שבועי', schedule: '0 21 * * 6', func: updateWeeklyLeaderboard, timezone: 'Asia/Jerusalem' },
         { name: 'שליחת ברכות יום הולדת לטלגרם', schedule: '5 9 * * *', func: sendTelegramBirthdays, timezone: 'Asia/Jerusalem' },
+
+        // משימות MVP וקהילה
+        { name: 'בדיקה והכרזת MVP', schedule: '* * * * *', func: checkMVPStatusAndRun, quiet: true },
+        { name: 'בדיקת ריאקשנים ל-MVP', schedule: '* * * * *', func: checkMvpReactions, quiet: true },
+        { name: 'עדכון Leaderboard שבועי', schedule: '0 21 * * 6', func: updateWeeklyLeaderboard, timezone: 'Asia/Jerusalem' },
         { name: 'הכרזת Warzone', schedule: '0 21-23,0,1 * * 0-4,6', func: sendWarzoneEmbed, timezone: 'Asia/Jerusalem' }
     ];
 
@@ -53,13 +58,8 @@ function initializeCronJobs(client) {
             return;
         }
         cron.schedule(task.schedule, async () => {
-            // 💡 התיקון: הדפס את הלוג רק אם המשימה אינה רצה כל דקה
-            if (task.schedule !== '* * * * *') {
-                console.log(`[CRON] ▶️  מריץ משימה: ${task.name}`);
-            }
-            try {
-                await task.func(client);
-            } catch (error) {
+            if (!task.quiet) { console.log(`[CRON] ▶️  מריץ משימה: ${task.name}`); }
+            try { await task.func(client); } catch (error) {
                 console.error(`[CRON] ❌ שגיאה במשימה "${task.name}":`, error);
                 await sendStaffLog(client, `❌ Cron Job: כשל במשימה "${task.name}"`, `אירעה שגיאה: \`\`\`${error.message}\`\`\``, 0xFF0000);
             }

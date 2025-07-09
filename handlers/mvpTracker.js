@@ -1,10 +1,11 @@
+// 📁 handlers/mvpTracker.js
 const admin = require('firebase-admin');
 const { renderMvpImage } = require('./mvpRenderer');
 const { log } = require('../utils/logger');
 
 const Timestamp = admin.firestore.Timestamp;
 const MVP_ROLE_ID = process.env.ROLE_MVP_ID;
-const MVP_CHANNEL_ID = '583575179880431616'
+const MVP_CHANNEL_ID = '583575179880431616';
 
 let lastPrintedDate = null;
 
@@ -79,7 +80,7 @@ async function calculateAndAnnounceMVP(client, db, force = false) {
   });
 
   const channel = client.channels.cache.get(MVP_CHANNEL_ID);
-  if (!channel) return log(`❌ ערוץ MVP לא נמצא`);
+  if (!channel || !channel.isTextBased()) return log(`❌ ערוץ MVP לא נמצא`);
 
   if (statusData?.messageId && statusData?.channelId) {
     const oldChannel = client.channels.cache.get(statusData.channelId);
@@ -110,35 +111,26 @@ async function calculateAndAnnounceMVP(client, db, force = false) {
 }
 
 async function checkMVPStatusAndRun(client, db) {
-  const now = new Date(Date.now() + 3 * 60 * 60 * 1000);
+  const now = new Date(Date.now() + 3 * 60 * 60 * 1000); // Israel time
   const today = now.toISOString().split('T')[0];
-  const day = now.getDay(); // 0 = ראשון
+  const day = now.getDay(); // 0 = Sunday
 
-  if (day !== 0) return;
+  if (day !== 0) return; // Run only on Sundays
 
   const statusSnap = await db.doc('mvpSystem/status').get();
   const lastDate = statusSnap.exists ? statusSnap.data()?.lastAnnouncedDate : null;
 
   if (lastDate === today) {
-    const { messageId, channelId } = statusSnap.data();
-    const message = await client.channels.cache.get(channelId)?.messages?.fetch(messageId).catch(() => null);
-    if (message) {
       if (lastPrintedDate !== today) {
         lastPrintedDate = today;
         log(`⏱️ MVP כבר פורסם היום`);
       }
       return;
-    }
-    log(`⚠️ ההודעה נמחקה – פרסום מחדש`);
-    await calculateAndAnnounceMVP(client, db, true);
-    return;
   }
-
-  if (lastPrintedDate !== today) {
-    log(`📢 יום ראשון – מחשב MVP...`);
-    lastPrintedDate = today;
-  }
-
+  
+  log(`📢 יום ראשון – מחשב MVP...`);
+  lastPrintedDate = today;
+  
   await calculateAndAnnounceMVP(client, db);
 }
 
@@ -153,17 +145,9 @@ async function updateVoiceActivity(userId, minutes, db) {
   }, { merge: true });
 }
 
-module.exports.updateVoiceActivity = updateVoiceActivity;
-
-function startMvpScheduler(client, db) {
-  setInterval(() => {
-    checkMVPStatusAndRun(client, db);
-  }, 60 * 1000);
-}
-
+// ייצוא כל הפונקציות הנדרשות באובייקט אחד
 module.exports = {
   calculateAndAnnounceMVP,
   checkMVPStatusAndRun,
   updateVoiceActivity,
-  startMvpScheduler
 };

@@ -1,6 +1,7 @@
+// 📁 handlers/statsUpdater.js
 const dayjs = require('dayjs');
 const db = require('../utils/firebase');
-const admin = require('firebase-admin'); // 💡 זה הפתרון
+const admin = require('firebase-admin');
 
 const CATEGORY_ID = '689124379019313214'; // קטגוריית FIFO
 const DISPLAY_CHANNEL_NAME_PREFIX = '🔊 In Voice:';
@@ -29,12 +30,17 @@ async function clearLastActiveInDB() {
   }).catch(() => {});
 }
 
+/**
+ * מעדכן את ערוץ התצוגה של כמות המשתמשים בערוצים קוליים.
+ * פונקציה זו נקראת על ידי מתזמן מרכזי (cron).
+ * @param {import('discord.js').Client} client - אובייקט הקליינט של דיסקורד.
+ */
 async function updateDisplayChannel(client) {
   const guild = client.guilds.cache.first();
   if (!guild) return;
 
   const voiceChannels = guild.channels.cache.filter(c =>
-    c.parentId === CATEGORY_ID && c.type === 2
+    c.parentId === CATEGORY_ID && c.type === 2 // סוג 2 הוא GuildVoice
   );
 
   const count = [...voiceChannels.values()]
@@ -105,12 +111,6 @@ async function updateDisplayChannel(client) {
   }
 }
 
-function startStatsUpdater(client) {
-  setInterval(() => {
-    updateDisplayChannel(client).catch(console.error);
-  }, 30 * 1000);
-}
-
 module.exports = {
-  startStatsUpdater
+  updateDisplayChannel
 };

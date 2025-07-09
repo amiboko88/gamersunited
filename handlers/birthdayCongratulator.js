@@ -1,14 +1,10 @@
-const { EmbedBuilder, TextChannel, MessageFlags } = require('discord.js');
+// 📁 handlers/birthdayCongratulator.js
+const { EmbedBuilder, TextChannel } = require('discord.js');
 const path = require('path');
 const db = require('../utils/firebase');
 const { log } = require('../utils/logger');
 
 const TARGET_CHANNEL_ID = '583575179880431616'; // הערוץ הקבוע
-
-function isNineAM() {
-  const now = new Date();
-  return now.getHours() === 9 && now.getMinutes() <= 5;
-}
 
 function getTodaysBirthdays(snapshot) {
   const today = new Date();
@@ -70,12 +66,5 @@ async function sendBirthdayMessage(client) {
   }
 }
 
-function startBirthdayCongratulator(client) {
-  setInterval(() => {
-    if (isNineAM()) {
-      sendBirthdayMessage(client).catch(console.error);
-    }
-  }, 1000 * 60 * 5); // בדיקה כל 5 דקות
-}
-
-module.exports = { startBirthdayCongratulator };
+// ייצוא הפונקציה המרכזית בלבד, ללא תזמון
+module.exports = { sendBirthdayMessage };

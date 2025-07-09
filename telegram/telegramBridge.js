@@ -1,35 +1,31 @@
-// 📁 telegramBridge.js – גשר בין הבוט לפעולות טריגרים, קללות ופקודות
-
-const { handleTrigger, checkDailySilence } = require('./telegramTriggers');
+// 📁 handlers/telegramBridge.js
+const { handleTrigger } = require('./telegramTriggers');
 const handleCurses = require('./telegramCurses');
 const registerTelegramCommands = require('./telegramCommands');
 
-// תזמון יומי לבדוק אם יש שקט מוגזם בקבוצה
-function startDailyCheck(bot, chatId) {
-  setInterval(() => {
-    checkDailySilence(bot, chatId);
-  }, 1000 * 60 * 60); // כל שעה
-}
-
-// רישום כל האינטראקציות
-function setupTelegramBridge(bot, chatId) {
-  // שליחת פקודות / קומנדס
+/**
+ * מגדיר את כל מאזיני האירועים בזמן אמת עבור הבוט בטלגרם.
+ * @param {import('grammy').Bot} bot - אובייקט הבוט של grammy.
+ */
+function setupTelegramBridge(bot) {
+  // רישום פקודות (לדוגמה /start)
   registerTelegramCommands(bot);
 
-  // תגובות לטקסט, לינקים, סטיקרים, מילות מפתח וכו'
+  // האזנה להודעות נכנסות בזמן אמת
   bot.on('message', async (ctx) => {
     try {
-      const triggered = handleTrigger(ctx);
+      // בדיקת טריגרים (קישורים, מילות מפתח וכו')
+      const triggered = await handleTrigger(ctx);
+      // אם לא הופעל טריגר – בדוק אם יש קללות
       if (!triggered) {
-        await handleCurses(ctx); // אם לא הופעל טריגר – בדוק קללות
+        await handleCurses(ctx);
       }
     } catch (err) {
       console.error('שגיאה בטיפול בהודעת טלגרם:', err);
     }
   });
 
-  // בדיקה יומית אם הקבוצה מתה
-  startDailyCheck(bot, chatId);
+  // 💡 המשימה לבדיקת שקט בקבוצה הועברה למתזמן המרכזי (botLifecycle.js)
 }
 
 module.exports = {

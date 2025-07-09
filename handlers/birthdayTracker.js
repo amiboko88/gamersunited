@@ -1,4 +1,5 @@
-const { EmbedBuilder, ChannelType, MessageFlags } = require('discord.js');
+// 📁 handlers/birthdayTracker.js
+const { EmbedBuilder, ChannelType } = require('discord.js');
 const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs');
 const db = require('../utils/firebase');
 const { Readable } = require('stream');
@@ -63,6 +64,7 @@ function getMsUntil22() {
 
 async function checkBirthdays(client) {
   const guild = client.guilds.cache.first();
+  if (!guild) return;
   const channel = guild.channels.cache.get(CHANNEL_ID);
   if (!channel || channel.type !== ChannelType.GuildText) return;
 
@@ -151,8 +153,5 @@ async function checkBirthdays(client) {
   }
 }
 
-function startBirthdayTracker(client) {
-  setInterval(() => checkBirthdays(client), 1000 * 60 * 30);
-}
-
-module.exports = { startBirthdayTracker };
+// ייצוא הפונקציה המרכזית בלבד, ללא תזמון
+module.exports = { checkBirthdays };

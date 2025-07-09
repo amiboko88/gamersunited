@@ -1,6 +1,5 @@
 // 📁 handlers/presenceRotator.js
-
-const { ActivityType, MessageFlags } = require('discord.js');
+const { ActivityType } = require('discord.js');
 
 const statuses = [
   { type: ActivityType.Playing, text: 'פיפו עם קרציות 👀' },
@@ -14,18 +13,23 @@ const statuses = [
   { type: ActivityType.Playing, text: 'ממתין ל־/fifo...' }
 ];
 
+let currentIndex = 0;
 
-function startPresenceRotation(client) {
-  let index = 0;
-
-function updatePresence() {
-  const { type, text } = statuses[index];
-  client.user.setActivity(text, { type }); // ✅ בלי catch
-  index = (index + 1) % statuses.length;
+/**
+ * מעדכן את הנוכחות (סטטוס) של הבוט לפריט הבא ברשימה.
+ * פונקציה זו נקראת על ידי מתזמן מרכזי (cron).
+ * @param {import('discord.js').Client} client - אובייקט הקליינט של דיסקורד.
+ */
+function rotatePresence(client) {
+  const { type, text } = statuses[currentIndex];
+  
+  try {
+    client.user.setActivity(text, { type });
+    // קדם את האינדקס לפעם הבאה, עם חזרה להתחלה בסוף הרשימה
+    currentIndex = (currentIndex + 1) % statuses.length;
+  } catch (error) {
+    console.error('❌ שגיאה בעדכון הנוכחות של הבוט:', error);
+  }
 }
 
-  updatePresence(); // ריצה ראשונית מיידית
-  setInterval(updatePresence, 1000 * 60 * 5); // כל 5 דקות
-}
-
-module.exports = { startPresenceRotation };
+module.exports = { rotatePresence };

@@ -1,4 +1,5 @@
 const puppeteer = require("puppeteer");
+const sharp = require("sharp"); // ייבוא ספריית sharp
 
 function clean(text) {
   return (text || "")
@@ -8,29 +9,28 @@ function clean(text) {
 
 async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
   const name = clean(fullName);
-  const nextXP = level * 25; // לדוגמה, אם רמה 4, ה-XP הבא הוא 4 * 25 = 100
+  const nextXP = level * 25;
   const percent = Math.min((xp / nextXP) * 100, 100);
   const percentText = `${Math.round(percent)}%`;
 
-  // צבעים דינמיים בהשראת רמות, עם גוונים עשירים יותר
-  let barColor = "#A29BFE"; // סגול עדין כברירת מחדל
-  let rankColor = "#FFD700"; // זהב
+  let barColor = "#A29BFE";
+  let rankColor = "#FFD700";
 
   if (percent >= 100) {
-    barColor = "#2ECC71"; // ירוק בהיר
-    rankColor = "#00FFFF"; // תכלת זוהר לאגדי
+    barColor = "#2ECC71";
+    rankColor = "#00FFFF";
   } else if (percent >= 90) {
-    barColor = "#3498DB"; // כחול בהיר
-    rankColor = "#FF6347"; // כתום-אדום לסופרסייאן
+    barColor = "#3498DB";
+    rankColor = "#FF6347";
   } else if (percent >= 75) {
-    barColor = "#FFC300"; // צהוב-כתום
-    rankColor = "#ADD8E6"; // כחול בהיר לכמעט שם
+    barColor = "#FFC300";
+    rankColor = "#ADD8E6";
   } else if (percent >= 50) {
-    barColor = "#FF5733"; // כתום בוהק
-    rankColor = "#90EE90"; // ירוק בהיר למתאמן
+    barColor = "#FF5733";
+    rankColor = "#90EE90";
   } else {
-    barColor = "#E74C3C"; // אדום
-    rankColor = "#B0C4DE"; // תכלת עדין לטירון
+    barColor = "#E74C3C";
+    rankColor = "#B0C4DE";
   }
 
   const stage =
@@ -39,6 +39,9 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
     percent >= 75 ? "כמעט שם 💪" :
     percent >= 50 ? "מתאמן 🚀" :
     "טירון 🐣";
+
+  // הגדרת רקע דינמי לאווטאר או תמונה בפועל
+  const avatarStyle = avatarDataURL ? `background-image: url("${avatarDataURL}");` : `background-color: #FFD700;`; // עיגול צהוב אם אין תמונה
 
   const html = `
   <!DOCTYPE html>
@@ -50,29 +53,33 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
     <style>
       body {
         margin: 0;
-        width: 600px; /* רוחב מעט גדול יותר, נותן מקום לעיצוב */
-        height: 800px; /* גובה פורטרייט נוח */
-        background: radial-gradient(circle at top left, #1a1a2e, #16213e, #0f3460); /* רקע מדורג יותר */
-        font-family: "Varela Round", "Noto Color Emoji", sans-serif; /* שינוי סדר גופנים */
+        /* הגדרת גודל שיהיה גדול מספיק כדי להכיל את הכרטיס בבטחה,
+           אך לא נרנדר את כל הרקע מסביב, אלא נצלם רק את הכרטיס.
+           זה מאפשר לנו להשאיר את העיצוב הפנימי רחב ויפה. */
+        width: 600px;
+        height: 800px;
+        background: transparent; /* חשוב! רקע שקוף עבור Puppeteer, כדי שלא ייכלל בצילום */
+        font-family: "Varela Round", "Noto Color Emoji", sans-serif;
         display: flex;
         align-items: center;
         justify-content: center;
         direction: rtl;
-        overflow: hidden; /* לוודא שאין גלילה */
+        overflow: hidden;
       }
 
       .card {
-        width: 520px; /* התאמה לרוחב הכולל */
-        padding: 50px 30px; /* ריפוד מוגדל */
-        background: #1e1e2e; /* צבע כרטיס */
-        border-radius: 35px; /* פינות מעוגלות יותר */
-        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.7), 0 0 0 5px rgba(255, 255, 255, 0.05); /* צל עמוק עם מסגרת עדינה */
+        width: 520px;
+        padding: 50px 30px;
+        background: #1e1e2e;
+        border-radius: 35px;
+        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.7), 0 0 0 5px rgba(255, 255, 255, 0.05);
         text-align: center;
         position: relative;
-        overflow: hidden; /* לוודא שצללים פנימיים נחתכים */
+        overflow: hidden;
+        /* כדי לוודא שהכרטיס יהיה בגודל המדויק שנצלם */
+        display: inline-block; /* או block עם width ו-height מוגדרים */
       }
 
-      /* אפקט זוהר עדין מאחורי הכרטיס */
       .card::before {
         content: '';
         position: absolute;
@@ -80,10 +87,10 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
         left: -50px;
         right: -50px;
         bottom: -50px;
-        background: linear-gradient(45deg, #8A2BE2, #4169E1, #FFD700); /* זוהר ססגוני */
-        filter: blur(80px); /* טשטוש חזק */
+        background: linear-gradient(45deg, #8A2BE2, #4169E1, #FFD700);
+        filter: blur(80px);
         z-index: -1;
-        opacity: 0.3; /* עדינות */
+        opacity: 0.3;
         animation: rotateGlow 15s linear infinite;
       }
 
@@ -93,83 +100,86 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
       }
 
       .avatar-container {
-        width: 160px; /* גודל אווטאר מוגדל */
+        width: 160px;
         height: 160px;
         border-radius: 50%;
-        margin: 0 auto 30px; /* מרווח תחתון גדול יותר */
+        margin: 0 auto 30px;
         position: relative;
-        background: linear-gradient(45deg, #FFD700, #FFBF00); /* רקע gradient למסגרת */
-        padding: 6px; /* עובי המסגרת */
-        box-shadow: 0 0 25px rgba(255, 215, 0, 0.6); /* צל זוהר לאווטאר */
+        background: linear-gradient(45deg, #FFD700, #FFBF00);
+        padding: 6px;
+        box-shadow: 0 0 25px rgba(255, 215, 0, 0.6);
       }
 
       .avatar {
         width: 100%;
         height: 100%;
         border-radius: 50%;
-        background-image: url("${avatarDataURL}");
+        ${avatarStyle} /* כאן נשתמש בסגנון דינמי לאווטאר */
         background-size: cover;
         background-position: center;
-        border: 4px solid #1e1e2e; /* מסגרת פנימית כדי "לחתוך" את הגרדיאנט */
+        border: 4px solid #1e1e2e;
+        /* לוודא שהעיגול הצהוב יהיה ממוקם היטב אם אין תמונה */
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
 
       .name {
-        font-size: 38px; /* גודל גופן מוגדל */
+        font-size: 38px;
         font-weight: bold;
         margin-bottom: 10px;
         color: #ffffff;
-        text-shadow: 0 0 10px rgba(255, 255, 255, 0.3); /* צל טקסט עדין */
+        text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
       }
 
       .stats {
-        font-size: 22px; /* גודל גופן מוגדל */
-        color: #bbbbbb; /* צבע אפרפר עדין */
+        font-size: 22px;
+        color: #bbbbbb;
         margin-bottom: 15px;
       }
 
       .rank {
-        font-size: 26px; /* גודל גופן מוגדל */
-        color: ${rankColor}; /* צבע דינמי בהתאם לשלב */
+        font-size: 26px;
+        color: ${rankColor};
         font-weight: bold;
-        margin-bottom: 40px; /* מרווח גדול יותר לפני הפס */
-        text-shadow: 0 0 10px ${rankColor}55; /* צל זוהר קטן */
+        margin-bottom: 40px;
+        text-shadow: 0 0 10px ${rankColor}55;
       }
 
       .bar {
-        width: 100%; /* תופס 100% מרוחב הקארד */
-        height: 38px; /* גובה פס ההתקדמות */
-        background: #333344; /* צבע רקע לפס */
+        width: 100%;
+        height: 38px;
+        background: #333344;
         border-radius: 20px;
         position: relative;
-        overflow: hidden; /* לוודא שהמילוי לא יוצא מהגבולות */
-        box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.4); /* צל פנימי עדין */
+        overflow: hidden;
+        box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.4);
       }
 
       .fill {
-        width: ${percent}%; /* שימוש באחוזים לרוחב המילוי */
+        width: ${percent}%;
         height: 100%;
         border-radius: 20px;
-        background: ${barColor}; /* צבע דינמי */
-        transition: width 0.8s ease-out, background-color 0.8s ease-out; /* אנימציה חלקה */
+        background: ${barColor};
+        transition: width 0.8s ease-out, background-color 0.8s ease-out;
         display: flex;
         align-items: center;
-        justify-content: flex-end; /* יישור אחוזים לימין הפס */
+        justify-content: flex-end;
         position: relative;
       }
 
       .percent {
-        position: absolute; /* מיקום אבסולוטי מעל הפס */
+        position: absolute;
         left: 50%;
         top: 50%;
-        transform: translate(-50%, -50%); /* מרכוז מושלם */
-        font-size: 20px; /* גודל גופן מוגדל */
+        transform: translate(-50%, -50%);
+        font-size: 20px;
         font-weight: bold;
         color: #ffffff;
-        text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); /* צל כהה יותר לאחוז */
-        z-index: 2; /* לוודא שהוא מעל ה-fill */
+        text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
+        z-index: 2;
       }
 
-      /* לוגו או סמל קטן בפינה */
       .corner-logo {
         position: absolute;
         bottom: 20px;
@@ -202,18 +212,24 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
-      "--font-render-hinting=none", // עשוי לעזור ברינדור גופנים
+      "--font-render-hinting=none",
       "--disable-gpu"
     ]
   });
 
   const page = await browser.newPage();
-  // הגדרת Viewport המתאימה לגודל התמונה הסופי
+  // הגדר viewport שיכיל את כל התוכן הפנימי, אבל ה-body יהיה שקוף
   await page.setViewport({ width: 600, height: 800, deviceScaleFactor: 2 });
   await page.setContent(html, { waitUntil: "networkidle0" });
-  await page.evaluateHandle('document.fonts.ready'); // לוודא שגופנים נטענים
+  await page.evaluateHandle('document.fonts.ready');
 
-  const buffer = await page.screenshot({ type: "png" });
+  // מציאת האלמנט .card וצילום מסך רק שלו
+  const cardElement = await page.$('.card');
+  if (!cardElement) {
+      throw new Error("Card element not found for screenshot.");
+  }
+  const buffer = await cardElement.screenshot({ type: "png" }); // מצלם רק את האלמנט
+
   await browser.close();
 
   return buffer;

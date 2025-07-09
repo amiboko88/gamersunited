@@ -1,6 +1,7 @@
+// 📁 handlers/presenceTracker.js
 const { log, logRoleChange } = require('../utils/logger');
 const { updateGameStats } = require('./statTracker');
-const db = require('../utils/firebase'); // ← נדרש לצורך עדכון Firestore
+const db = require('../utils/firebase');
 
 const WARZONE_KEYWORDS = ['Black Ops 6', 'Call Of Duty'];
 const ROLE_WARZONE_ID = process.env.ROLE_WARZONE_ID;
@@ -96,7 +97,7 @@ async function handleMemberPresence(member, presence) {
     }
   }
 
-  // 📊 תיעוד סטטיסטיקה לפי משחק (5 דקות לסריקה)
+  // 📊 תיעוד סטטיסטיקה לפי משחק (בהנחה של 5 דקות לסריקה)
   if (isAny && !isOffline(status)) {
     try {
       await updateGameStats(member.id, gameName, 5, db);
@@ -106,13 +107,13 @@ async function handleMemberPresence(member, presence) {
   }
 }
 
-// 🎯 משמש ל־presenceUpdate
+// 🎯 משמש ל־presenceUpdate (נשאר ללא שינוי)
 async function trackGamePresence(presence) {
   if (!presence || !presence.member || presence.user?.bot) return;
   await handleMemberPresence(presence.member, presence);
 }
 
-// 🟢 סריקה ראשונית לאחר עלייה
+// 🟢 סריקה ראשונית לאחר עלייה (נשאר ללא שינוי)
 async function hardSyncPresenceOnReady(client) {
   for (const guild of client.guilds.cache.values()) {
     try {
@@ -128,20 +129,24 @@ async function hardSyncPresenceOnReady(client) {
   }
 }
 
-// ⏱️ סריקה מחזורית כל 5 דקות
-async function startPresenceLoop(client) {
-  setInterval(async () => {
-    for (const guild of client.guilds.cache.values()) {
-      for (const member of guild.members.cache.values()) {
-        if (member.user.bot) continue;
-        await handleMemberPresence(member, member.presence);
-      }
+/**
+ * מבצע סריקה תקופתית על כל המשתמשים בשרת.
+ * פונקציה זו נקראת על ידי מתזמן מרכזי (cron).
+ * @param {import('discord.js').Client} client 
+ */
+async function periodicPresenceCheck(client) {
+  console.log('⏱️ מבצע סריקה תקופתית של נוכחות...');
+  for (const guild of client.guilds.cache.values()) {
+    for (const member of guild.members.cache.values()) {
+      if (member.user.bot) continue;
+      await handleMemberPresence(member, member.presence);
     }
-  }, 5 * 60 * 1000);
+  }
 }
 
+// ייצוא כל הפונקציות הנדרשות
 module.exports = {
   trackGamePresence,
   hardSyncPresenceOnReady,
-  startPresenceLoop
+  periodicPresenceCheck
 };

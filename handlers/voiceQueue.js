@@ -1,4 +1,4 @@
-// 📁 voiceQueue.js – גרסה סופית עם ping, volume, podcast ועוד
+// 📁 handlers/voiceQueue.js
 const {
   joinVoiceChannel,
   createAudioPlayer,
@@ -49,15 +49,27 @@ async function getOrCreateConnection(channel) {
   return connection;
 }
 
-setInterval(() => {
+/**
+ * סורק ומנקה חיבורים קוליים שלא היו בשימוש.
+ * פונקציה זו נקראת על ידי מתזמן מרכזי (cron).
+ */
+function cleanupIdleConnections() {
   const now = Date.now();
-  for (const [channelId, record] of channelConnections) {
+  for (const [channelId, record] of channelConnections.entries()) {
     if (now - record.lastUsed > CONNECTION_IDLE_TIMEOUT) {
-      try { record.connection.destroy(); } catch {}
+      try {
+        if (record.connection.state.status !== 'destroyed') {
+            record.connection.destroy();
+        }
+      } catch (e) {
+        console.error(`שגיאה בניסיון להרוס חיבור ישן: ${e.message}`);
+      }
       channelConnections.delete(channelId);
+      console.log(`🧹 חיבור קולי לערוץ ${channelId} נוקה עקב חוסר פעילות.`);
     }
   }
-}, 20000);
+}
+
 async function playAudio(connection, audioBuffer, displayName) {
   const player = createAudioPlayer();
   connection.subscribe(player);
@@ -88,7 +100,6 @@ async function playAudio(connection, audioBuffer, displayName) {
     player.stop();
   }
 }
-
 
 async function processUserSmart(member, channel) {
   const key = `${channel.guild.id}-${channel.id}`;
@@ -154,5 +165,6 @@ module.exports = {
   getOrCreateConnection,
   playAudio,
   processUserSmart,
-  processUserExit
+  processUserExit,
+  cleanupIdleConnections // 💡 הפונקציה החדשה שנוספה
 };

@@ -1,38 +1,42 @@
 // 📁 handlers/channelCleaner.js
-const { ChannelType, MessageFlags } = require('discord.js');
+const { ChannelType } = require('discord.js');
 
 const CATEGORY_ID = '689124379019313214'; // קטגוריית פיפו הראשית
-let lastCleanupDate = null;
 
-function startCleanupScheduler(client) {
-  const targetHour = 4;
-  const interval = 60 * 1000; // דקה
+/**
+ * מוחק ערוצים קוליים ריקים ששמם מתחיל ב-"TEAM" בקטגוריה ספציפית.
+ * @param {import('discord.js').Client} client - אובייקט הקליינט של דיסקורד.
+ */
+async function cleanupEmptyChannels(client) {
+  console.log('🧹 מתחיל סריקה לניקוי ערוצים קוליים ריקים...');
+  
+  for (const guild of client.guilds.cache.values()) {
+    const category = guild.channels.cache.get(CATEGORY_ID);
+    if (!category || category.type !== ChannelType.GuildCategory) {
+      console.warn(`לא נמצאה קטגוריה עם ה-ID: ${CATEGORY_ID} בשרת ${guild.name}`);
+      continue;
+    }
 
-  setInterval(async () => {
-    const now = new Date();
-    const hour = now.getHours();
-    const minute = now.getMinutes();
+    const teamChannels = category.children.cache.filter(
+      c => c.type === ChannelType.GuildVoice && c.name.startsWith('TEAM')
+    );
 
-    const dateKey = now.toISOString().split('T')[0];
-    if (hour !== targetHour || minute !== 0 || lastCleanupDate === dateKey) return;
-    lastCleanupDate = dateKey;
+    if (teamChannels.size === 0) {
+      console.log(`לא נמצאו ערוצי TEAM לניקוי בשרת ${guild.name}.`);
+      continue;
+    }
 
-    for (const guild of client.guilds.cache.values()) {
-      const category = guild.channels.cache.get(CATEGORY_ID);
-      if (!category) continue;
-
-      const teamChannels = category.children.cache.filter(
-        c => c.type === ChannelType.GuildVoice && c.name.startsWith('TEAM')
-      );
-
-      for (const [id, channel] of teamChannels) {
-        if (channel.members.size === 0) {
-          await channel.delete().catch(() => {});
-          console.log(`🧹 נמחק הערוץ הריק: ${channel.name}`);
+    for (const [id, channel] of teamChannels) {
+      if (channel.members.size === 0) {
+        try {
+          await channel.delete('ניקוי אוטומטי של ערוץ ריק');
+          console.log(`✅ נמחק הערוץ הריק: ${channel.name}`);
+        } catch (error) {
+          console.error(`❌ שגיאה במחיקת הערוץ ${channel.name}:`, error);
         }
       }
     }
-  }, interval);
+  }
 }
 
-module.exports = { startCleanupScheduler };
+module.exports = { cleanupEmptyChannels };

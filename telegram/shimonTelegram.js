@@ -1,3 +1,4 @@
+// 📁 telegram/shimonTelegram.js
 require("dotenv").config();
 const { Bot, webhookCallback } = require("grammy");
 const express = require("express");
@@ -85,12 +86,7 @@ if (!smart) {
 
 });
 
-const now = new Date();
-const millisUntilNine = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0, 0) - now;
-setTimeout(() => {
-  sendBirthdayMessages();
-  setInterval(sendBirthdayMessages, 24 * 60 * 60 * 1000);
-}, Math.max(millisUntilNine, 0));
+// 💡 בלוק התזמון של ימי ההולדת הוסר מכאן. הוא ינוהל על ידי botLifecycle.js
 
 if (process.env.RAILWAY_STATIC_URL) {
   const app = express();

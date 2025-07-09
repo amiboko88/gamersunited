@@ -9,7 +9,8 @@ const data = new SlashCommandBuilder()
 
 const execute = async (interaction) => {
   const sub = interaction.options.getSubcommand();
-  if (sub === 'panel') return await runPanel(interaction);
+  // תיקון: ודא שתת-הפקודה 'משתמשים' מפעילה את runPanel
+  if (sub === 'משתמשים') return await runPanel(interaction);
 };
 
 async function runPanel(interaction) {
@@ -19,6 +20,9 @@ async function runPanel(interaction) {
       flags: MessageFlags.Ephemeral,
     });
   }
+
+  // חובה: deferReply כדי למנוע "The application did not respond"
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const embed = new EmbedBuilder()
     .setTitle('🛠️ מרכז ניהול פעילות משתמשים')
@@ -51,47 +55,46 @@ async function runPanel(interaction) {
     new StringSelectMenuBuilder()
       .setCustomId('inactivity_action_select')
       .setPlaceholder('בחר פעולה מתקדמת ⬇️')
-.addOptions(
-  {
-    label: '📊 סטטוס נוכחי',
-    description: 'פילוח גרפי לפי statusStage',
-    value: 'show_status_summary'
-  },
-  {
-    label: '❌ משתמשים שנכשל DM אליהם',
-    description: 'לא ניתן היה לשלוח להם הודעה',
-    value: 'show_failed_list'
-  },
-  {
-    label: '💬 משתמשים שהגיבו ל־DM',
-    description: 'רשימת מגיבים פרטיים',
-    value: 'show_replied_list'
-  },
-  {
-    label: '🛑 העף משתמשים לא פעילים + חסומים',
-    description: 'הרחקת משתמשים שסיימו תהליך ולא הגיבו',
-    value: 'kick_failed_users'
-  },
-  {
-    label: '⏱️ לא פעיל 7+ ימים',
-    description: 'משתמשים שלא נראו 7 ימים לפחות',
-    value: 'inactive_7'
-  },
-  {
-    label: '⌛ לא פעיל 14+ ימים',
-    description: 'משתמשים לא פעילים שבועיים',
-    value: 'inactive_14'
-  },
-  {
-    label: '🛑 לא פעיל 30+ ימים',
-    description: 'חודש שלם ללא פעילות',
-    value: 'inactive_30'
-  }
-)
-
+      .addOptions(
+        {
+          label: '📊 סטטוס נוכחי',
+          description: 'פילוח גרפי לפי statusStage',
+          value: 'show_status_summary'
+        },
+        {
+          label: '❌ משתמשים שנכשל DM אליהם',
+          description: 'לא ניתן היה לשלוח להם הודעה',
+          value: 'show_failed_list'
+        },
+        {
+          label: '💬 משתמשים שהגיבו ל־DM',
+          description: 'רשימת מגיבים פרטיים',
+          value: 'show_replied_list'
+        },
+        {
+          label: '🛑 העף משתמשים לא פעילים + חסומים',
+          description: 'הרחקת משתמשים שסיימו תהליך ולא הגיבו',
+          value: 'kick_failed_users'
+        },
+        {
+          label: '⏱️ לא פעיל 7+ ימים',
+          description: 'משתמשים שלא נראו 7 ימים לפחות',
+          value: 'inactive_7'
+        },
+        {
+          label: '⌛ לא פעיל 14+ ימים',
+          description: 'משתמשים לא פעילים שבועיים',
+          value: 'inactive_14'
+        },
+        {
+          label: '🛑 לא פעיל 30+ ימים',
+          description: 'חודש שלם ללא פעילות',
+          value: 'inactive_30'
+        }
+      )
   );
 
-  await interaction.reply({
+  await interaction.editReply({
     embeds: [embed],
     components: [dmRow, selectRow],
     flags: MessageFlags.Ephemeral,

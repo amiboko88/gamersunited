@@ -1,6 +1,6 @@
-const { EmbedBuilder, ChannelType, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+// 📁 handlers/fifoWarzoneAnnouncer.js
+const { EmbedBuilder, ChannelType, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const db = require('../utils/firebase');
-const schedule = require('node-schedule');
 const { generateProBanner } = require('./mediaGenerator');
 
 const TARGET_CHANNEL_ID = '1372283521447497759';
@@ -36,6 +36,12 @@ async function deletePreviousMessage(channel) {
 async function saveLastMessageId(messageId) {
   await db.collection('fifoWarzoneAnnouncer').doc('latestMessage').set({ messageId });
 }
+
+/**
+ * בודק ושולח הכרזה על משחק Warzone אם התנאים מתקיימים.
+ * פונקציה זו נקראת על ידי מתזמן מרכזי (cron).
+ * @param {import('discord.js').Client} client - אובייקט הקליינט של דיסקורד.
+ */
 async function sendWarzoneEmbed(client) {
   try {
     const now = new Date();
@@ -89,14 +95,8 @@ async function sendWarzoneEmbed(client) {
         .setURL(`https://discord.com/channels/${GUILD_ID}/${VOICE_CHANNEL_ID}`)
     );
 
-    let channel;
-    try {
-      channel = await client.channels.fetch(TARGET_CHANNEL_ID);
-      if (!channel || channel.type !== ChannelType.GuildText) return;
-    } catch (err) {
-      console.error('❌ שגיאה בגישה לערוץ:', err.message);
-      return;
-    }
+    const channel = await client.channels.fetch(TARGET_CHANNEL_ID).catch(() => null);
+    if (!channel || channel.type !== ChannelType.GuildText) return;
 
     await deletePreviousMessage(channel);
 
@@ -106,9 +106,7 @@ async function sendWarzoneEmbed(client) {
 
     const tags = missing.map(m => `<@${m.id}>`).join(' ');
 
-    let message;
-    try {
-      message = await channel.send({
+    const message = await channel.send({
         content: [sarcasticMessage, tags.length > 0 ? `🧟 ${tags}` : null]
           .filter(Boolean)
           .join('\n'),
@@ -116,29 +114,14 @@ async function sendWarzoneEmbed(client) {
         files: file ? [file] : [],
         components: [joinButton]
       });
-      await saveLastMessageId(message.id);
-    } catch (err) {
-      console.error('❌ שגיאה בשליחת הודעה:', err.message);
-    }
+      
+    await saveLastMessageId(message.id);
 
   } catch (err) {
     console.error('❌ שגיאה כללית בפונקציית Warzone Embed:', err.message);
   }
 }
 
-function startFifoWarzoneAnnouncer(client) {
-  const hours = [21, 22, 23, 0, 1];
-  for (const hour of hours) {
-    schedule.scheduleJob({ hour, minute: 0, tz: 'Asia/Jerusalem' }, () => {
-      try {
-        sendWarzoneEmbed(client);
-      } catch (err) {
-        console.error('❌ שגיאה בתזמון Warzone Embed:', err);
-      }
-    });
-  }
-}
-
 module.exports = {
-  startFifoWarzoneAnnouncer
+  sendWarzoneEmbed
 };

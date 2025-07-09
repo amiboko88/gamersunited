@@ -1,8 +1,8 @@
 // 📁 utils/fifoMemory.js
 // זיכרון זמני לפיפו – הודעות פעילות למחיקה אוטומטית
 
-const lastFifoMessages = new Map(); // לשימוש קיים
-const fifoMessageMeta = new Map(); // חדש – לכל הודעה תיעוד זמן
+const lastFifoMessages = new Map();
+const fifoMessageMeta = new Map();
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 
@@ -36,9 +36,13 @@ async function deletePreviousFifoMessages(guildId) {
   fifoMessageMeta.delete(guildId); // גם metadata
 }
 
-// 🧼 מנגנון ניקוי כפתורים ישנים כל 10 דקות
-setInterval(async () => {
+/**
+ * מנקה כפתורים מהודעות פיפו ישנות (מעל 6 שעות).
+ * פונקציה זו נקראת על ידי מתזמן מרכזי (cron).
+ */
+async function cleanupOldFifoMessages() {
   const now = Date.now();
+  if (!global.client) return; // הגנה במקרה שהבוט עדיין לא מוכן
 
   for (const [guildId, metaList] of fifoMessageMeta.entries()) {
     for (const meta of metaList) {
@@ -53,19 +57,35 @@ setInterval(async () => {
         if (!channel?.isTextBased()) continue;
 
         const message = await channel.messages.fetch(meta.messageId).catch(() => null);
-        if (!message) continue;
+        if (!message) {
+          meta.cleaned = true; // סמן כנקי אם ההודעה לא קיימת
+          continue;
+        }
 
         await message.edit({ components: [] });
         meta.cleaned = true;
         console.log(`🧼 כפתורים הוסרו מהודעה ${meta.messageId} (שרת ${guildId})`);
       } catch (err) {
-        console.warn('⚠️ שגיאה בניקוי כפתור ישן:', err.message);
+        if (err.code === 10008) { // Unknown Message
+          meta.cleaned = true;
+        } else {
+          console.warn('⚠️ שגיאה בניקוי כפתור ישן:', err.message);
+        }
       }
     }
+    
+    // נקה מהמטא-דאטה את כל מה שכבר טופל
+    const stillActiveMeta = metaList.filter(meta => !meta.cleaned);
+    if (stillActiveMeta.length === 0) {
+        fifoMessageMeta.delete(guildId);
+    } else {
+        fifoMessageMeta.set(guildId, stillActiveMeta);
+    }
   }
-}, 10 * 60 * 1000); // כל 10 דקות
+}
 
 module.exports = {
   deletePreviousFifoMessages,
-  setFifoMessages
+  setFifoMessages,
+  cleanupOldFifoMessages
 };

@@ -1,39 +1,18 @@
 // 📁 handlers/weeklyBirthdayReminder.js
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, TextChannel, MessageFlags } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, TextChannel } = require('discord.js');
 const path = require('path');
 const { log } = require('../utils/logger');
 const db = require('../utils/firebase');
 
 const TARGET_CHANNEL_ID = process.env.BIRTHDAY_CHANNEL_ID || '583575179880431616';
 
-function isSaturdayAt20() {
-  const now = new Date();
-  const israelHour = now.getUTCHours() + 3;
-  return now.getDay() === 6 && israelHour === 20;
-}
-
-async function wasAlreadySentThisWeek() {
-  const statusRef = db.doc('reminders/status');
-  const snap = await statusRef.get();
-  if (!snap.exists) return false;
-
-  const raw = snap.data().lastBirthdayReminder;
-  const lastSent = raw instanceof Date ? raw : raw?.toDate?.() || new Date(0);
-
-  const now = new Date();
-  const oneWeek = 1000 * 60 * 60 * 24 * 7;
-
-  return now - lastSent < oneWeek && lastSent.getDay() === 6;
-}
-
-async function markReminderAsSent() {
-  await db.doc('reminders/status').set({
-    lastBirthdayReminder: new Date()
-  }, { merge: true });
-}
-
+/**
+ * שולח תזכורת שבועית לעדכון יום הולדת.
+ * @param {import('discord.js').Client} client - אובייקט הקליינט של דיסקורד.
+ */
 async function sendWeeklyReminder(client) {
   const guild = client.guilds.cache.first();
+  if (!guild) return;
   const channel = guild.channels.cache.get(TARGET_CHANNEL_ID);
   if (!(channel instanceof TextChannel)) return;
 
@@ -64,19 +43,11 @@ async function sendWeeklyReminder(client) {
   });
 
   log('📅 נשלחה תזכורת שבועית לעדכון יום הולדת.');
-  await markReminderAsSent();
+  
+  // עדכון חותמת זמן למניעת שליחה כפולה אם הבוט יופעל מחדש באותו יום
+  await db.doc('reminders/status').set({
+    lastBirthdayReminder: new Date()
+  }, { merge: true });
 }
 
-function startWeeklyBirthdayReminder(client) {
-  setInterval(async () => {
-    if (isSaturdayAt20()) {
-      const alreadySent = await wasAlreadySentThisWeek();
-      if (alreadySent) {
-        return; // ⚠️ לא מדפיס שוב את הלוג כל 5 דקות
-      }
-      await sendWeeklyReminder(client).catch(console.error);
-    }
-  }, 1000 * 60 * 5); // כל 5 דקות
-}
-
-module.exports = { startWeeklyBirthdayReminder };
+module.exports = { sendWeeklyReminder };

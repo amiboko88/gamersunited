@@ -1,62 +1,13 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { Client, GatewayIntentBits, MessageFlags } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, Partials, REST, Routes } = require('discord.js');
 
-// 🔗 בסיס נתונים ועזרי מערכת
+// --- UTILS & TELEGRAM ---
 const db = require('./utils/firebase');
-
-// 🧠 ניתוח / סטטיסטיקות / XP
-const statTracker = require('./handlers/statTracker');
-const { handleXPMessage } = require('./handlers/engagementManager');
-const { startStatsUpdater } = require('./handlers/statsUpdater');
-
-// 🏆 MVP ו־Reactions
-const { startMvpScheduler } = require('./handlers/mvpTracker');
-const { startMvpReactionWatcher } = require('./handlers/mvpReactions');
-
-// 📊 לוחות ומעקב
-const { startLeaderboardUpdater } = require('./handlers/leaderboardUpdater');
-
-// 🧑‍🤝‍🧑 Replay ופיפו
-const { handleFifoButtons } = require('./handlers/fifoButtonHandler');
-
-// 👥 אימות, אנטי-ספאם ודיבור חכם
-const { startFifoWarzoneAnnouncer } = require('./handlers/fifoWarzoneAnnouncer');
-const { setupVerificationMessage, startDmTracking, handleInteraction: handleVerifyInteraction } = require('./handlers/verificationButton');
-const { handleSpam } = require('./handlers/antispam');
-const smartChat = require('./handlers/smartChat');
-
-// 👤 נוכחות וזיהוי
-const { scanForConsoleAndVerify } = require('./handlers/verificationButton');
-const { trackGamePresence, hardSyncPresenceOnReady, startPresenceLoop } = require('./handlers/presenceTracker');
-const { startPresenceRotation } = require('./handlers/presenceRotator');
-const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
-const welcomeImage = require('./handlers/welcomeImage');
-
-// 🧹 תחזוקה תקופתית
-const { startCleanupScheduler } = require('./handlers/channelCleaner');
-
-// 🪅 מערכת ימי הולדת
-const { startBirthdayCongratulator } = require('./handlers/birthdayCongratulator');
-const handleBirthdayPanel = require('./handlers/birthdayPanelHandler');
-const { startBirthdayTracker } = require('./handlers/birthdayTracker');
-const { startWeeklyBirthdayReminder } = require('./handlers/weeklyBirthdayReminder');
-
-// 🧠 עזרה / כפתורים
-const { handleButton: helpHandleButton } = require('./commands/help');
-const { handleMemberButtons } = require('./handlers/memberButtons');
-
-// 🔊 מוזיקה וסאונד
-const { autocomplete: songAutocomplete } = require('./commands/song');
-const handleMusicControls = require('./handlers/musicControls');
-
-// 🛡️ אימות
-const { startInactivityReminder } = require('./handlers/inactivityReminder');
-
-// 📡 טלגרם
 require("./telegram/shimonTelegram");
 
+// --- CLIENT SETUP ---
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -67,304 +18,164 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.DirectMessages
   ],
- partials: ['CHANNEL', 'MESSAGE', 'USER'] // ← זו התוספת שחסרה!
-
+  partials: [Partials.Channel, Partials.Message, Partials.User]
 });
+
 client.db = db;
 global.client = client;
 
-// 🧠 טעינת Slash Commands (Map)
-const commandMap = new Map();
-const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
+// --- DYNAMIC HANDLER LOADING ---
+client.commands = new Collection();
+client.interactions = new Collection();
+client.dynamicInteractionHandlers = []; // For handlers with function-based customIds
+
+// Load Slash Commands
+const commandsPath = path.join(__dirname, 'commands');
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 for (const file of commandFiles) {
-  const command = require(`./commands/${file}`);
-  if (command?.data?.name && typeof command.execute === 'function') {
-    commandMap.set(command.data.name, command);
+  try {
+    const command = require(path.join(commandsPath, file));
+    if (command?.data?.name) {
+      client.commands.set(command.data.name, command);
+    }
+  } catch(err) {
+      console.warn(`⚠️ שגיאה בטעינת פקודה ${file}: ${err.message}`);
   }
 }
 
-// ✅ רישום Slash Commands אוטומטי מול דיסקורד:
+// Load Interaction Handlers (Buttons, Modals, etc.)
+const interactionsPath = path.join(__dirname, 'interactions');
+if (fs.existsSync(interactionsPath)) {
+    const interactionFolders = fs.readdirSync(interactionsPath);
+    for (const folder of interactionFolders) {
+        const handlerFiles = fs.readdirSync(path.join(interactionsPath, folder)).filter(file => file.endsWith('.js'));
+        for (const file of handlerFiles) {
+            try {
+                const handler = require(path.join(interactionsPath, folder, file));
+                if (typeof handler.customId === 'string') {
+                    client.interactions.set(handler.customId, handler);
+                } else if (typeof handler.customId === 'function') {
+                    client.dynamicInteractionHandlers.push(handler);
+                }
+            } catch(err) {
+                 console.warn(`⚠️ שגיאה בטעינת אינטראקציה ${file}: ${err.message}`);
+            }
+        }
+    }
+}
+
+
+// --- SLASH COMMAND REGISTRATION ---
 (async () => {
-  const { REST, Routes } = require('discord.js');
-  const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-  const CLIENT_ID = process.env.CLIENT_ID;
-  const GUILD_ID = process.env.GUILD_ID;
-  const MODE = 'guild'; // או 'global'
-
-  const slashCommands = [];
-
-  for (const file of commandFiles) {
+    const slashCommands = Array.from(client.commands.values()).map(cmd => cmd.data.toJSON());
     try {
-      const command = require(`./commands/${file}`);
-      if (command?.data?.toJSON && typeof command.execute === 'function') {
-        slashCommands.push(command.data.toJSON());
-      }
+      const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+      console.log(`📦 רושם ${slashCommands.length} Slash Commands...`);
+      await rest.put(
+        Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+        { body: slashCommands },
+      );
+      console.log(`✅ Slash Commands נרשמו בהצלחה לשרת!`);
     } catch (err) {
-      console.warn(`⚠️ שגיאה בטעינת פקודת ${file}: ${err.message}`);
+      console.error('❌ שגיאה ברישום Slash Commands:', err);
     }
-  }
-
-  try {
-    const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
-    if (MODE === 'guild') {
-      await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), {
-        body: slashCommands
-      });
-      console.log(`📦 נרשמו ${slashCommands.length} Slash Commands לשרת`);
-    } else {
-      await rest.put(Routes.applicationCommands(CLIENT_ID), {
-        body: slashCommands
-      });
-      console.log(`🌍 נרשמו ${slashCommands.length} Slash Commands גלובלית`);
-    }
-  } catch (err) {
-    console.error('❌ שגיאה ברישום Slash Commands:', err.message);
-  }
 })();
 
-
+// --- BOT READY EVENT ---
 client.once('ready', async () => {
-  console.log('⚡️ Shimon is READY!');
-
+  console.log(`⚡️ Shimon is READY! Logged in as ${client.user.tag}`);
   try {
+    const { initializeCronJobs } = require('./handlers/botLifecycle');
+    const { initializeMvpReactionListener } = require('./handlers/mvpReactions');
+    const { hardSyncPresenceOnReady } = require('./handlers/presenceTracker');
+    const { setupVerificationMessage } = require('./handlers/verificationButton');
+
     await hardSyncPresenceOnReady(client);
     await setupVerificationMessage(client);
-    await startMvpReactionWatcher(client, db);
-    startBirthdayCongratulator(client);
-    startFifoWarzoneAnnouncer(client);
-    startStatsUpdater(client);
-    welcomeImage(client);
-    startInactivityReminder(client);
-    startDmTracking(client);
-    startLeaderboardUpdater(client);
-    startPresenceLoop(client);
-    startPresenceRotation(client);
-    startBirthdayTracker(client);
-    startWeeklyBirthdayReminder(client);
-    startCleanupScheduler(client);
-    startMvpScheduler(client, db);
+    initializeMvpReactionListener(client);
+    initializeCronJobs(client);
 
-    console.log(`🎉 הבוט באוויר! ${client.user.tag}`);
+    console.log("✅ All systems initialized successfully.");
   } catch (err) {
-    console.error('❌ שגיאה ב־client.ready:', err);
+    console.error('❌ Critical error during client.ready initialization:', err);
   }
 });
 
+// --- MAIN INTERACTION ROUTER ---
+client.on('interactionCreate', async interaction => {
+    try {
+        if (interaction.isCommand() || interaction.isAutocomplete()) {
+            const command = client.commands.get(interaction.commandName);
+            if (!command) return;
+            
+            if(interaction.isAutocomplete() && command.autocomplete) {
+                await command.autocomplete(interaction);
+            } else if (interaction.isCommand()) {
+                await command.execute(interaction, client);
+            }
+            return;
+        }
+
+        let handler;
+        // 1. Find handler by direct customId match
+        if (interaction.customId) {
+            handler = client.interactions.get(interaction.customId);
+        }
+
+        // 2. If not found, check dynamic handlers
+        if (!handler) {
+            handler = client.dynamicInteractionHandlers.find(h => h.customId(interaction.customId || interaction));
+        }
+
+        if (handler) {
+            if (handler.type && !interaction[handler.type]()) return;
+            await handler.execute(interaction, client);
+        }
+    } catch (error) {
+        console.error('❌ שגיאה ב-interactionCreate:', error);
+        const replyOptions = { content: '❌ אירעה שגיאה בביצוע הפעולה.', ephemeral: true };
+        if (interaction.replied || interaction.deferred) {
+            await interaction.followUp(replyOptions).catch(() => {});
+        } else {
+            await interaction.reply(replyOptions).catch(() => {});
+        }
+    }
+});
+
+
+// --- OTHER REAL-TIME EVENT LISTENERS ---
+const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
+const { trackGamePresence } = require('./handlers/presenceTracker');
+const { scanForConsoleAndVerify } = require('./handlers/verificationButton');
+const statTracker = require('./handlers/statTracker');
+const { handleXPMessage } = require('./handlers/engagementManager');
+const { handleSpam } = require('./handlers/antispam');
+const smartChat = require('./handlers/smartChat');
 
 client.on('guildMemberAdd', async member => {
-  const ref = db.collection('memberTracking').doc(member.id);
-  const existing = await ref.get();
-
-  if (!existing.exists) {
-    await ref.set({
-      guildId: member.guild.id,
-      joinedAt: new Date().toISOString(),
-      status: 'active',
-      dmSent: false,
-      replied: false,
-      dmFailed: false,
-      activityWeight: 0,
-      reminderCount: 0,
-      isInactive: false,
-      inactivityLevel: 0
-    });
-  }
-
-  try {
-    await member.send(
-      'במידה והסתבכת — פשוט לחץ על הלינק הבא:\n\n' +
-      'https://discord.com/channels/583574396686434304/1120791404583587971\n\n' +
-      'זה יוביל אותך ישירות לאימות וכניסה מלאה לשרת 👋'
-    );
-    console.log(`📩 נשלח DM הצטרפות ל־${member.user.tag}`);
-  } catch (err) {
-    console.warn(`⚠️ לא ניתן לשלוח DM ל־${member.user.tag}: ${err.message}`);
-  }
-
-  // ← כאן תכניס את שורת הסריקה:
-  setTimeout(() => scanForConsoleAndVerify(member), 30000); // סריקה אחרי 30 שניות
+    try {
+        await db.collection('memberTracking').doc(member.id).set({ guildId: member.guild.id, joinedAt: new Date().toISOString(), status: 'active' }, { merge: true });
+        await member.send(`במידה והסתבכת — פשוט לחץ על הלינק הבא:\n\nhttps://discord.com/channels/${member.guild.id}/${process.env.VERIFICATION_CHANNEL_ID}\n\nזה יוביל אותך ישירות לאימות וכניסה מלאה לשרת 👋`).catch(err => console.warn(`⚠️ לא ניתן לשלוח DM ל־${member.user.tag}: ${err.message}`));
+        setTimeout(() => scanForConsoleAndVerify(member), 30000);
+    } catch (error) {
+        console.error(`Error in guildMemberAdd event for ${member.user.tag}:`, error);
+    }
 });
-
 
 client.on('guildMemberRemove', async member => {
-  await db.collection('memberTracking').doc(member.id).set({
-    status: 'left',
-    leftAt: new Date().toISOString()
-  }, { merge: true });
-
-  console.log(`👋 ${member.user.tag} עזב – עודכן במעקב`);
+  await db.collection('memberTracking').doc(member.id).set({ status: 'left', leftAt: new Date().toISOString() }, { merge: true });
 });
 
-client.on('voiceStateUpdate', (oldState, newState) => {
-  handleVoiceStateUpdate(oldState, newState);
-});
-
-client.on('presenceUpdate', (oldPresence, newPresence) => {
-  trackGamePresence(newPresence);
-});
-
+client.on('voiceStateUpdate', handleVoiceStateUpdate);
+client.on('presenceUpdate', (oldPresence, newPresence) => trackGamePresence(newPresence));
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
-
-  const isDM = !message.guild;
-  if (isDM) {
-    try {
-      const inviteUrl = 'https://discord.gg/2DGAwxDtKW'; // הקישור הקבוע לשרת שלך
-
-      const embed = new EmbedBuilder()
-        .setTitle('📭 שמעון לא מגיב בפרטי')
-        .setDescription([
-          'היי 👋',
-          'נראה שניסית לשלוח הודעה פרטית לשמעון.',
-          '',
-          '⚠️ הוא לא מגיב ל־DMים רגילים.',
-          '📢 כדי לדבר עם שמעון, הצטרף אלינו לשרת 👇'
-        ].join('\n'))
-        .setThumbnail('attachment://logo.png')
-        .setColor(0x5865f2)
-        .setFooter({ text: 'Gamers United IL - קהילת הגיימרים של ישראל 🎮' })
-        .setTimestamp();
-
-      const button = new ButtonBuilder()
-        .setLabel('⏎ הצטרף לשרת')
-        .setStyle(ButtonStyle.Link)
-        .setURL(inviteUrl);
-
-      const row = new ActionRowBuilder().addComponents(button);
-
-      await message.reply({
-        embeds: [embed],
-        components: [row],
-        files: [{
-          attachment: './assets/logo.png',
-          name: 'logo.png'
-        }]
-      });
-    } catch (err) {
-      console.warn('❌ לא ניתן היה להשיב ב־DM:', err.message);
-    }
-    return;
-  }
-
-  // הודעות בתוך שרת
   await statTracker.trackMessage(message);
   await handleXPMessage(message);
-
-  const lowered = message.content.toLowerCase();
-  const targetBot = lowered.includes('שמעון') || lowered.includes('bot') || lowered.includes('shim');
-  const curseWords = require('./handlers/antispam').allCurseWords;
-  const hasCurse = curseWords.some(w => lowered.includes(w));
-  if (targetBot && hasCurse) return smartChat(message);
-
   await handleSpam(message);
   await smartChat(message);
 });
 
-client.on('interactionCreate', async interaction => {
-  // 🔍 Autocomplete
-  if (interaction.isAutocomplete()) return songAutocomplete(interaction);
 
-  // 🧠 ניהול fallback ל־DM
-  if (interaction.isButton() && interaction.customId === 'dm_fallback_reply') {
-    const { showDmFallbackModal } = require('./handlers/dmFallbackModal');
-    return showDmFallbackModal(interaction);
-  }
-  if (interaction.isModalSubmit() && interaction.customId === 'dm_fallback_modal') {
-    const { handleDmFallbackModalSubmit } = require('./handlers/dmFallbackModal');
-    return handleDmFallbackModalSubmit(interaction, client);
-  }
-
-  // 🆘 כפתורי עזרה
-  if (
-    (interaction.isButton() && interaction.customId?.startsWith('help_')) ||
-    (interaction.type === 5 && interaction.customId === 'help_ai_modal')
-  ) {
-    if (await helpHandleButton(interaction)) return;
-  }
-
-  // 🎧 פאנל הקלטות חכם
-  if (
-    (interaction.isStringSelectMenu() && interaction.customId === 'select_voice') ||
-    (interaction.isButton() && ['play_voice_selected', 'delete_voice_selected'].includes(interaction.customId))
-  ) {
-    const recordingsPanel = require('./commands/recordingsPanel');
-    return recordingsPanel.handleInteraction(interaction, client);
-  }
-
-  // 🧑‍🤝‍🧑 כפתורי FIFO (כולל inactivity_action_select)
-  if (
-    interaction.isButton() ||
-    (interaction.isStringSelectMenu() && interaction.customId === 'inactivity_action_select')
-  ) {
-    const id = interaction.customId;
-
-    if (id.startsWith('replay_') || id.startsWith('reset_all_') || id === 'repartition_now') {
-      return handleFifoButtons(interaction, client);
-    }
-
-    const isMemberButton = [
-      'send_dm_batch_list',
-      'send_dm_batch_final_check',
-      'show_failed_list',
-      'show_replied_list',
-      'kick_failed_users',
-      'inactivity_action_select'
-    ].includes(id) || id.startsWith('send_dm_again_') || id.startsWith('send_final_dm_');
-
-    if (isMemberButton) return handleMemberButtons(interaction, client);
-
-    if (['pause', 'resume', 'stop'].includes(id)) {
-      return handleMusicControls(interaction);
-    }
-
-    if (
-      [
-        'bday_list',
-        'bday_next',
-        'bday_add',
-        'bday_missing',
-        'bday_remind_missing'
-      ].includes(id)
-    ) {
-      return handleBirthdayPanel(interaction);
-    }
-
-    if (id.startsWith('vote_') || id === 'show_stats') {
-      return handleRSVP(interaction, client);
-    }
-
-    if (id.startsWith('manualSync::')) {
-      const manualSync = require('./commands/manualSyncCommand');
-      if (manualSync.handleButtonInteraction) {
-        return manualSync.handleButtonInteraction(interaction);
-      }
-    }
-
-    return handleVerifyInteraction(interaction);
-  }
-
-  // 📝 מודאלים נוספים
-  if (interaction.isModalSubmit() && interaction.customId === 'birthday_modal') {
-    return handleBirthdayPanel(interaction);
-  }
-
-  // 🧠 פקודות סלאש רגילות
-  if (!interaction.isCommand()) return;
-
-  await statTracker.trackSlash(interaction);
-
-  const command = commandMap.get(interaction.commandName);
-  if (!command) return;
-
-  try {
-    await command.execute(interaction, client);
-  } catch (err) {
-    console.error(`❌ שגיאה בביצוע Slash "${interaction.commandName}":`, err);
-    if (!interaction.replied) {
-      await interaction.reply({ content: '❌ שגיאה בביצוע הפקודה.', flags: MessageFlags.Ephemeral });
-    }
-  }
-});
-
-// 🚀 הפעלת הבוט
+// --- BOT LOGIN ---
 client.login(process.env.DISCORD_TOKEN);

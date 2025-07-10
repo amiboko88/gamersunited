@@ -1,4 +1,4 @@
-// 📁 handlers/botLifecycle.js (הגרסה המלאה והמתוקנת)
+// 📁 handlers/botLifecycle.js (הגרסה המלאה והמעודכנת)
 const cron = require('node-cron');
 const { sendStaffLog } = require('../utils/staffLogger');
 
@@ -16,8 +16,9 @@ const { checkPendingDms } = require('./verificationButton');
 const { cleanupIdleConnections } = require('./voiceQueue');
 const { sendBirthdayMessages: sendTelegramBirthdays } = require('../telegram/birthdayNotifierTelegram');
 const { cleanupOldFifoMessages } = require('../utils/fifoMemory');
-// 💡 ייבוא הפונקציות כולל הפונקציה החדשה לדוח חודשי
-const { startAutoTracking, sendScheduledReminders, kickFailedUsers, sendMonthlyKickReport } = require('./memberButtons'); 
+
+// ✅ ייבוא פונקציות ה-CRON של אי-פעילות מהקובץ החדש
+const { runAutoTracking, runScheduledReminders, runMonthlyKickReport } = require('./inactivityCronJobs');
 const { updateWeeklyLeaderboard } = require('./leaderboardUpdater');
 const { sendWarzoneEmbed } = require('./fifoWarzoneAnnouncer');
 
@@ -34,16 +35,11 @@ function initializeCronJobs(client) {
         { name: 'עדכון ערוץ "In Voice"', schedule: '* * * * *', func: updateDisplayChannel, quiet: true },
         { name: 'בדיקת קבוצות פעילות', schedule: '* * * * *', func: checkActiveGroups, quiet: true },
         { name: 'בדיקת DM אימות ממתינים', schedule: '*/10 * * * *', func: checkPendingDms },
-        
-        // ✅ משימות ניהול משתמשים - עודכנו
-        { name: 'עדכון סטטוס אי-פעילות אוטומטי', schedule: '*/30 * * * *', func: startAutoTracking },
-        { name: 'שליחת תזכורות אי-פעילות אוטומטית', schedule: '0 8 * * *', func: sendScheduledReminders, timezone: 'Asia/Jerusalem' },
-        
-        // 💡 הוספנו דוח חודשי במקום הרחקה אוטומטית
-        { name: 'שליחת דוח הרחקה חודשי', schedule: '0 10 1 * *', func: sendMonthlyKickReport, timezone: 'Asia/Jerusalem' },
 
-        // 🛑 משימת ההרחקה האוטומטית בוטלה. היא תתבצע רק ידנית דרך פקודת /ניהול.
-        // { name: 'הרחקת משתמשים לא פעילים אוטומטית', schedule: '0 5 * * *', func: kickFailedUsers, timezone: 'Asia/Jerusalem' },
+        // ✅ משימות ניהול משתמשים - עודכנו לקריאה מהקובץ החדש
+        { name: 'עדכון סטטוס אי-פעילות אוטומטי', schedule: '*/30 * * * *', func: runAutoTracking }, // ✅
+        { name: 'שליחת תזכורות אי-פעילות אוטומטית', schedule: '0 8 * * *', func: runScheduledReminders, timezone: 'Asia/Jerusalem' }, // ✅
+        { name: 'שליחת דוח הרחקה חודשי', schedule: '0 10 1 * *', func: runMonthlyKickReport, timezone: 'Asia/Jerusalem' }, // ✅
 
         // משימות ימי הולדת
         { name: 'מעקב אחר ימי הולדת של היום', schedule: '*/30 * * * *', func: checkBirthdays },

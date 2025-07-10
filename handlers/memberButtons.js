@@ -1,4 +1,4 @@
-// 📁 handlers/memberButtons.js (הגרסה המלאה והמתוקנת)
+// 📁 handlers/memberButtons.js (הגרסה המלאה והמתוקנת עם סיכום לוגים ודוח חודשי)
 const db = require('../utils/firebase');
 const { EmbedBuilder, Collection, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const smartChat = require('./smartChat');
@@ -7,6 +7,8 @@ const { sendStaffLog } = require('../utils/staffLogger');
 const INACTIVITY_DAYS = 7; 
 let lastInactiveIds = [];
 
+// --- פונקציות עזר ---
+
 function hasChanged(current) {
   const ids = current.map(u => u.id).sort();
   const changed = ids.length !== lastInactiveIds.length ||
@@ -14,6 +16,41 @@ function hasChanged(current) {
 
   if (changed) lastInactiveIds = ids;
   return changed;
+}
+
+/**
+ * 💡 פונקציית עזר חדשה לפיצול רשימות ארוכות לשדות Embed תקינים
+ * @param {string} title - כותרת השדה (למשל '🚨 21+ ימים')
+ * @param {string[]} lines - מערך של שורות טקסט (למשל רשימת משתמשים)
+ * @returns {import('discord.js').EmbedField[]} - מערך של שדות תקינים ל-Embed
+ */
+function createPaginatedFields(title, lines) {
+    if (!lines.length) {
+        return [{ name: title, value: '—', inline: false }];
+    }
+
+    const fields = [];
+    let currentDescription = '';
+
+    for (const line of lines) {
+        if (currentDescription.length + line.length + 2 > 1024) {
+            fields.push({ 
+                name: fields.length === 0 ? title : `${title} (המשך)`, 
+                value: currentDescription, 
+                inline: false 
+            });
+            currentDescription = '';
+        }
+        currentDescription += `${line}\n`;
+    }
+
+    fields.push({ 
+        name: fields.length === 0 ? title : `${title} (המשך)`, 
+        value: currentDescription, 
+        inline: false 
+    });
+
+    return fields;
 }
 
 async function updateMemberStatus(userId, updates) {
@@ -26,6 +63,7 @@ async function updateMemberStatus(userId, updates) {
   }
 }
 
+// ✅ פונקציה מעודכנת שמחזירה אובייקט עם תוצאה
 async function sendReminderDM(client, guild, members, userId, isFinal = false) {
   const docRef = db.collection('memberTracking').doc(userId);
   const doc = await docRef.get();
@@ -37,9 +75,8 @@ async function sendReminderDM(client, guild, members, userId, isFinal = false) {
   const memberReal = members.get(userId) || await guild.members.fetch(userId).catch(() => null);
   const user = memberReal?.user || await client.users.fetch(userId).catch(() => null);
   if (!user || typeof user.send !== 'function') {
-      await sendStaffLog(client, '❌ נכשל DM', `לא ניתן לשלוח DM ל- ${userId} (לא נמצא משתמש או לא ניתן לשלוח הודעה).`, 0xFF0000);
       await updateMemberStatus(userId, { dmFailed: true, dmFailedAt: new Date().toISOString(), statusStage: 'failed_dm' });
-      return false;
+      return { success: false, reason: 'No user object or cannot send DMs' };
   }
 
   const fakeMessage = {
@@ -61,47 +98,41 @@ async function sendReminderDM(client, guild, members, userId, isFinal = false) {
   try {
     dm = await smartChat.smartRespond(fakeMessage, isFinal ? 'קשוח' : 'רגיש');
   } catch (err) {
-    console.warn(`[SMARTCHAT] ❌ smartRespond נכשל עבור ${user.username}:`, err.message);
-    await sendStaffLog(client, '❌ שגיאת SmartChat', `SmartChat נכשל עבור <@${user.id}>: \`\`\`${err.message}\`\`\``, 0xFF0000);
-    return false;
+    return { success: false, reason: `SmartChat Error: ${err.message}`};
   }
 
   if (!dm || typeof dm !== 'string' || dm.length < 2) {
-      await sendStaffLog(client, '⚠️ SmartChat תגובה ריקה', `SmartChat החזיר תגובה ריקה עבור <@${user.id}>. לא נשלח DM.`, 0xFFA500);
-      return false;
+      return { success: false, reason: 'SmartChat returned empty response'};
   }
 
   try {
     await user.send(dm);
     const updates = { dmSent: true, dmSentAt: new Date().toISOString(), reminderCount: isFinal ? (d.reminderCount || 0) + 1 : 1, statusStage: isFinal ? 'final_warning' : 'dm_sent' };
     await updateMemberStatus(userId, updates);
-    await sendStaffLog(client, '✉️ DM נשלח', `DM ${isFinal ? 'סופי' : 'רגיל'} נשלח בהצלחה ל- <@${user.id}>.`, 0x00FF00, [{ name: 'תוכן הודעה', value: dm.substring(0, 1000) + (dm.length > 1000 ? '...' : '') }]);
-    return true;
+    return { success: true };
   } catch (err) {
-    console.warn(`[DM] ❌ נכשל DM ל־${user.username}:`, err.message);
-    await sendStaffLog(client, '❌ נכשל DM ישיר', `נכשל ניסיון שליחת DM ישיר ל- <@${user.id}>: \`\`\`${err.message}\`\`\``, 0xFF0000);
+    // השארנו את הלוגיקה המקורית שלך עם כפתור ה-fallback
     try {
       const fallbackButton = new ButtonBuilder().setCustomId('dm_fallback_reply').setLabel('💬 שלח תגובה לשמעון').setStyle(ButtonStyle.Primary);
       const row = new ActionRowBuilder().addComponents(fallbackButton);
       const dmChan = await user.createDM();
       await dmChan.send({ content: '📬 לא הצלחנו לשלוח הודעה רשמית. תוכל להשיב כאן:', components: [row] });
-      await sendStaffLog(client, '⚠️ DM Fallback נשלח', `Fallback DM נשלח בהצלחה ל- <@${user.id}>.`, 0xFFA500);
     } catch (fallbackErr) {
-      console.warn(`[DM] ⚠️ נכשל גם fallback ל־${user.username}:`, fallbackErr.message);
-      await sendStaffLog(client, '❌ נכשל גם Fallback DM', `נכשל גם ניסיון שליחת Fallback DM ל- <@${user.id}>: \`\`\`${fallbackErr.message}\`\`\``, 0xFF0000);
+        // כישלון גם ב-fallback
     }
-
     await updateMemberStatus(userId, { dmFailed: true, dmFailedAt: new Date().toISOString(), statusStage: 'failed_dm' });
-    return false;
+    return { success: false, reason: `Direct DM Failed: ${err.message}`};
   }
 }
 
+// ✅ פונקציה מעודכנת עם לוגי סיכום
 async function startAutoTracking(client) {
   const guild = await client.guilds.fetch(process.env.GUILD_ID);
   const members = await guild.members.fetch();
   const snapshot = await db.collection('memberTracking').get();
   const now = Date.now();
   const allInactive = [];
+  const statusChanges = []; // מערך לאיסוף שינויים
 
   for (const doc of snapshot.docs) {
     const d = doc.data();
@@ -112,6 +143,7 @@ async function startAutoTracking(client) {
     if (!member || member.user.bot || userId === client.user.id || ['left', 'kicked'].includes(d.statusStage)) {
         if (!member && !['left', 'kicked'].includes(d.statusStage)) {
             await updateMemberStatus(userId, { statusStage: 'left', leftAt: new Date().toISOString() });
+            // זהו לוג חשוב, נשאיר אותו - הוא לא קורה בתדירות גבוהה
             await sendStaffLog(client, '🚪 משתמש עזב', `<@${userId}> עזב את השרת ונרשם כעזב במערכת.`, 0x808080);
         }
         continue;
@@ -132,7 +164,7 @@ async function startAutoTracking(client) {
 
     if (newStatus !== currentStatus) {
         await updateMemberStatus(userId, { statusStage: newStatus, statusUpdated: new Date().toISOString() });
-        await sendStaffLog(client, '🔄 עדכון סטטוס משתמש', `<@${userId}>: ${currentStatus} ➡️ ${newStatus} (ימי אי פעילות: ${days})`, 0x3498db, [{ name: 'פרטים', value: `הסטטוס של ${member.user.username} עודכן אוטומטית.` }]);
+        statusChanges.push(`• <@${userId}>: \`${currentStatus}\` ➡️ \`${newStatus}\``); // איסוף השינוי
     }
 
     if (days >= INACTIVITY_DAYS && !['left', 'kicked', 'responded', 'active'].includes(newStatus)) {
@@ -140,107 +172,150 @@ async function startAutoTracking(client) {
     }
   }
 
+  // שליחת לוג סיכום על שינויי סטטוס
+  if (statusChanges.length > 0) {
+      const fields = createPaginatedFields('🔄 סיכום עדכוני סטטוס', statusChanges);
+      await sendStaffLog(client, '📜 עדכון סטטוסים אוטומטי', `בוצעו ${statusChanges.length} עדכוני סטטוס.`, 0x3498db, fields);
+  }
+
   if (hasChanged(allInactive)) {
     const group1 = allInactive.filter(u => u.days >= 7 && u.days <= 13);
     const group2 = allInactive.filter(u => u.days >= 14 && u.days <= 20);
     const group3 = allInactive.filter(u => u.days > 20);
-    const embed = new EmbedBuilder()
-      .setTitle('📢 משתמשים לא פעילים לחלוטין (עדכון אוטומטי)')
-      .addFields(
-        { name: '🕒 7–13 ימים', value: group1.length ? group1.map(u => `• <@${u.id}> – ${u.days} ימים (סטטוס: ${u.status})`).join('\n') : '—', inline: false },
-        { name: '⏳ 14–20 ימים', value: group2.length ? group2.map(u => `• <@${u.id}> – ${u.days} ימים (סטטוס: ${u.status})`).join('\n') : '—', inline: false },
-        { name: '🚨 21+ ימים', value: group3.length ? group3.map(u => `• <@${u.id}> – ${u.days} ימים (סטטוס: ${u.status})`).join('\n') : '—', inline: false }
-      )
-      .setColor(0xe67e22)
-      .setFooter({ text: `Shimon BOT – זיהוי משתמשים לא פעילים (${allInactive.length})` })
-      .setTimestamp();
-    await sendStaffLog(client, '🚨 דו"ח פעילות שוטף', 'זוהו שינויים ברשימת המשתמשים הלא פעילים:', 0xe67e22, embed.data.fields);
+    
+    const fields1 = createPaginatedFields('🕒 7–13 ימים', group1.map(u => `• <@${u.id}> – ${u.days} ימים (סטטוס: ${u.status})`));
+    const fields2 = createPaginatedFields('⏳ 14–20 ימים', group2.map(u => `• <@${u.id}> – ${u.days} ימים (סטטוס: ${u.status})`));
+    const fields3 = createPaginatedFields('🚨 21+ ימים', group3.map(u => `• <@${u.id}> – ${u.days} ימים (סטטוס: ${u.status})`));
+    
+    const allFields = [...fields1, ...fields2, ...fields3];
+    
+    const embeds = [];
+    for (let i = 0; i < allFields.length; i += 25) {
+        const chunk = allFields.slice(i, i + 25);
+        const embed = new EmbedBuilder()
+          .setTitle(i === 0 ? '📢 דוח משתמשים לא פעילים' : `📢 דוח משתמשים לא פעילים (המשך)`)
+          .setColor(0xe67e22)
+          .setFooter({ text: `Shimon BOT – ${allInactive.length} לא פעילים` })
+          .setTimestamp()
+          .addFields(chunk);
+        embeds.push(embed);
+    }
+    
+    const staffChannel = client.channels.cache.get(process.env.STAFF_CHANNEL_ID);
+    if (staffChannel) {
+        for (const embed of embeds) {
+            await staffChannel.send({ embeds: [embed] });
+        }
+    }
+  }
+}// ✅ פונקציה מעודכנת עם לוגי סיכום
+async function sendScheduledReminders(client) {
+  const guild = await client.guilds.fetch(process.env.GUILD_ID);
+  const members = await guild.members.fetch();
+  const allTracked = await db.collection('memberTracking').get();
+  const now = Date.now();
+  const success = [];
+  const fails = [];
+
+  for (const doc of allTracked.docs) {
+    const d = doc.data();
+    const userId = doc.id;
+    const status = d.statusStage || 'joined';
+    let shouldSend = false;
+    let isFinal = false;
+
+    // שלח תזכורת רגילה אם הסטטוס 'waiting_dm'
+    if (status === 'waiting_dm') {
+      shouldSend = true;
+      isFinal = false;
+    }
+    // שלח תזכורת סופית אם הסטטוס 'final_warning'
+    else if (status === 'final_warning' && d.dmSent) {
+      shouldSend = true;
+      isFinal = true;
+    }
+
+    if (shouldSend) {
+      const result = await sendReminderDM(client, guild, members, userId, isFinal);
+      if (result.success) {
+        success.push(`<@${userId}> (${isFinal ? 'סופי' : 'רגיל'})`);
+      } else {
+        fails.push(`<@${userId}> (${result.reason})`);
+      }
+    }
+  }
+
+  if (success.length > 0 || fails.length > 0) {
+      const fields = [];
+      if (success.length > 0) fields.push(...createPaginatedFields('✅ נשלחו בהצלחה', success));
+      if (fails.length > 0) fields.push(...createPaginatedFields('❌ נכשלו', fails));
+      await sendStaffLog(client, '📤 סיכום שליחת תזכורות', `הושלם סבב אוטומטי.`, 0x00aaff, fields);
   }
 }
 
-/**
- * 💡 פונקציה חדשה שחולצה מהכפתורים. אחראית על הרחקת משתמשים.
- * ניתן לקרוא לה מכל מקום, כולל Cron.
- */
 async function kickFailedUsers(client) {
-    const guild = await client.guilds.fetch(process.env.GUILD_ID);
-    const members = await guild.members.fetch();
-    const allTracked = await db.collection('memberTracking').get();
-    let count = 0;
-    let notInGuild = [];
-    let failedKick = [];
-    let kickedList = [];
+  const guild = await client.guilds.fetch(process.env.GUILD_ID);
+  const members = await guild.members.fetch();
+  const allTracked = await db.collection('memberTracking').get();
+  let count = 0;
+  let notInGuild = [];
+  let failedKick = [];
+  let kickedList = [];
+  const eligibleToKick = allTracked.docs.filter(doc => {
+    const d = doc.data();
+    return ['failed_dm', 'final_warning', 'final_warning_auto'].includes(d.statusStage || '') && d.statusStage !== 'left';
+  });
 
+  for (const doc of eligibleToKick) {
+    const userId = doc.id;
+    const member = members.get(userId);
+    if (!member) {
+      notInGuild.push(`<@${userId}>`);
+      await db.collection('memberTracking').doc(userId).delete();
+      await sendStaffLog(client, '🧹 ניקוי משתמש (לא בשרת)', `המשתמש <@${userId}> לא נמצא בשרת ונמחק ממעקב הפעילות.`, 0x808080);
+      continue;
+    }
+    try {
+      await member.kick('בעיטה לפי סטטוס – לא פעיל + חסום + לא הגיב');
+      await db.collection('memberTracking').doc(userId).delete();
+      kickedList.push(`<@${userId}>`);
+      count++;
+      await sendStaffLog(client, '👢 משתמש הורחק', `המשתמש <@${userId}> הורחק מהשרת בהצלחה.`, 0xFF3300, [{ name: 'סיבה', value: 'לא פעיל + חסום + לא הגיב' }]);
+    } catch (err) {
+      failedKick.push(`<@${userId}>`);
+      await sendStaffLog(client, '❌ כשל בהרחקה', `נכשל ניסיון הרחקת המשתמש <@${userId}>: \`\`\`${err.message}\`\`\``, 0xFF0000);
+    }
+  }
+  return { count, kickedList, notInGuild, failedKick };
+}
+
+
+/**
+ * 💡 פונקציה חדשה: דוח חודשי למנהלים על מועמדים להרחקה
+ */
+async function sendMonthlyKickReport(client) {
+    const allTracked = await db.collection('memberTracking').get();
     const eligibleToKick = allTracked.docs.filter(doc => {
-      const d = doc.data();
-      return ['failed_dm', 'final_warning', 'final_warning_auto'].includes(d.statusStage || '') && d.statusStage !== 'left';
+        const d = doc.data();
+        return ['failed_dm', 'final_warning', 'final_warning_auto'].includes(d.statusStage || '') && d.statusStage !== 'left';
     });
 
-    for (const doc of eligibleToKick) {
-      const userId = doc.id;
-      const member = members.get(userId);
-      if (!member) {
-        notInGuild.push(`<@${userId}>`);
-        await db.collection('memberTracking').doc(userId).delete();
-        await sendStaffLog(client, '🧹 ניקוי משתמש (לא בשרת)', `המשתמש <@${userId}> לא נמצא בשרת ונמחק ממעקב הפעילות.`, 0x808080);
-        continue;
-      }
-      try {
-        await member.kick('בעיטה לפי סטטוס – לא פעיל + חסום + לא הגיב');
-        await db.collection('memberTracking').doc(userId).delete();
-        kickedList.push(`<@${userId}>`);
-        count++;
-        await sendStaffLog(client, '👢 משתמש הורחק', `המשתמש <@${userId}> הורחק מהשרת בהצלחה.`, 0xFF3300, [{ name: 'סיבה', value: 'לא פעיל + חסום + לא הגיב' }]);
-      } catch (err) {
-        failedKick.push(`<@${userId}>`);
-        await sendStaffLog(client, '❌ כשל בהרחקה', `נכשל ניסיון הרחקת המשתמש <@${userId}>: \`\`\`${err.message}\`\`\``, 0xFF0000);
-      }
+    if (eligibleToKick.length === 0) {
+        await sendStaffLog(client, '🗓️ דוח הרחקה חודשי', 'אין משתמשים העומדים בקריטריונים להרחקה החודש.', 0x00ff00);
+        return;
     }
-    
-    // החזרת אובייקט סיכום למקרה שהקוד הקורא ירצה אותו
-    return { count, kickedList, notInGuild, failedKick };
+
+    const userLines = eligibleToKick.map(doc => `• <@${doc.id}> (סטטוס: \`${doc.data().statusStage}\`)`);
+    const fields = createPaginatedFields(`מועמדים להרחקה (${eligibleToKick.length})`, userLines);
+
+    await sendStaffLog(
+        client,
+        '🗓️ דוח הרחקה חודשי',
+        'להלן המשתמשים שניתן להרחיק עקב אי-פעילות. לביצוע, השתמשו בפקודת `/ניהול` ובחרו באפשרות ההרחקה.',
+        0xffa500,
+        fields
+    );
 }
-
-/**
- * 💡 פונקציה חדשה שחולצה מהכפתורים. אחראית לשליחת תזכורות.
- * ניתן לקרוא לה מכל מקום, כולל Cron.
- */
-async function sendScheduledReminders(client) {
-    const guild = await client.guilds.fetch(process.env.GUILD_ID);
-    const members = await guild.members.fetch();
-    const allTracked = await db.collection('memberTracking').get();
-    const now = Date.now();
-    let regularCount = 0;
-    let finalCount = 0;
-
-    // שליחת תזכורות רגילות
-    for (const doc of allTracked.docs) {
-      const d = doc.data();
-      const userId = doc.id;
-      const last = new Date(d.lastActivity || d.joinedAt || 0).getTime();
-      const daysInactive = (now - last) / 86400000;
-      if (daysInactive > INACTIVITY_DAYS && !d.dmSent && !d.dmFailed && d.statusStage !== 'final_warning') {
-        const sent = await sendReminderDM(client, guild, members, userId, false);
-        if (sent) regularCount++;
-      }
-    }
-
-    // שליחת תזכורות סופיות
-    for (const doc of allTracked.docs) {
-        const d = doc.data();
-        const userId = doc.id;
-        const last = new Date(d.lastActivity || d.joinedAt || 0).getTime();
-        const daysInactive = (now - last) / 86400000;
-        if (daysInactive > INACTIVITY_DAYS && d.dmSent && !d.replied && !d.dmFailed && d.statusStage !== 'final_warning') {
-            const sent = await sendReminderDM(client, guild, members, userId, true);
-            if (sent) finalCount++;
-        }
-    }
-
-    // החזרת אובייקט סיכום
-    return { regularSent: regularCount, finalSent: finalCount };
-}
-
 
 async function handleMemberButtons(interaction, client) {
   await interaction.deferReply({ ephemeral: true });
@@ -248,11 +323,9 @@ async function handleMemberButtons(interaction, client) {
   const value = interaction.values?.[0];
   const action = interaction.customId === 'inactivity_action_select' ? value : interaction.customId;
 
-  // 💡 קריאה לפונקציות החדשות מהכפתורים המתאימים
   if (action === 'send_dm_batch_list' || action === 'send_dm_batch_final_check') {
-    const { regularSent, finalSent } = await sendScheduledReminders(client);
-    await sendStaffLog(client, '📤 שליחת תזכורות ידנית', `הושלם סבב ידני. נשלחו ${regularSent} תזכורות רגילות ו-${finalSent} סופיות.`, 0x00aaff);
-    return interaction.editReply({ content: `📤 הושלם סבב תזכורות. נשלחו ${regularSent} רגילות ו-${finalSent} סופיות.`, ephemeral: true });
+    await sendScheduledReminders(client);
+    return interaction.editReply({ content: '📤 סבב תזכורות ידני הורץ. סיכום יישלח לערוץ הצוות.', ephemeral: true });
   }
   
   if (action === 'kick_failed_users') {
@@ -273,7 +346,6 @@ async function handleMemberButtons(interaction, client) {
 
   const allTracked = await db.collection('memberTracking').get();
   
-  // 💬 הצגת מי שענה ל־DM
   if (action === 'show_replied_list') {
     const replied = allTracked.docs.filter(doc => doc.data().replied);
     if (!replied.length) {
@@ -283,7 +355,6 @@ async function handleMemberButtons(interaction, client) {
     return interaction.editReply({ embeds: [embed], ephemeral: true });
   }
 
-  // ❌ הצגת משתמשים שנכשל DM אליהם
   if (action === 'show_failed_list') {
     const failedUsers = allTracked.docs.filter(doc => doc.data().dmFailed);
     if (!failedUsers.length) {
@@ -293,7 +364,6 @@ async function handleMemberButtons(interaction, client) {
     return interaction.editReply({ embeds: [embed], ephemeral: true });
   }
 
-   // 📊 סטטוס נוכחי של משתמשים
   if (action === 'show_status_summary') {
     const summary = {};
     for (const doc of allTracked.docs) {
@@ -306,7 +376,6 @@ async function handleMemberButtons(interaction, client) {
     return interaction.editReply({ embeds: [embed] });
   }
   
-  // 📊 משתמשים לא פעילים X ימים
   if (action.startsWith('inactive_')) {
     const days = parseInt(action.split('_')[1]);
     const now = Date.now();
@@ -334,10 +403,10 @@ async function handleMemberButtons(interaction, client) {
   return interaction.editReply({ content: 'פעולה לא ידועה או לא נתמכת.', ephemeral: true });
 }
 
-// ✅ הייצוא הסופי והנכון, כולל הפונקציות החדשות שחולצו
 module.exports = {
   handleMemberButtons,
   startAutoTracking,
   sendScheduledReminders,
-  kickFailedUsers
+  kickFailedUsers,
+  sendMonthlyKickReport // ✅ ייצוא הפונקציה החדשה
 };

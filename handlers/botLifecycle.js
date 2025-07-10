@@ -16,8 +16,8 @@ const { checkPendingDms } = require('./verificationButton');
 const { cleanupIdleConnections } = require('./voiceQueue');
 const { sendBirthdayMessages: sendTelegramBirthdays } = require('../telegram/birthdayNotifierTelegram');
 const { cleanupOldFifoMessages } = require('../utils/fifoMemory');
-// 💡 ייבוא הפונקציות הנכונות מהקובץ המתוקן של memberButtons
-const { startAutoTracking, sendScheduledReminders, kickFailedUsers } = require('./memberButtons'); 
+// 💡 ייבוא הפונקציות כולל הפונקציה החדשה לדוח חודשי
+const { startAutoTracking, sendScheduledReminders, kickFailedUsers, sendMonthlyKickReport } = require('./memberButtons'); 
 const { updateWeeklyLeaderboard } = require('./leaderboardUpdater');
 const { sendWarzoneEmbed } = require('./fifoWarzoneAnnouncer');
 
@@ -25,6 +25,7 @@ function initializeCronJobs(client) {
     console.log('[CRON] מאתחל את כל משימות התזמון המרכזיות...');
 
     const tasks = [
+        // משימות כלליות
         { name: 'החלפת נוכחות הבוט', schedule: '*/5 * * * *', func: rotatePresence, quiet: true },
         { name: 'ניקוי חיבורים קוליים ישנים', schedule: '* * * * *', func: cleanupIdleConnections, quiet: true },
         { name: 'ניקוי כפתורי FIFO ישנים', schedule: '*/10 * * * *', func: cleanupOldFifoMessages },
@@ -34,10 +35,15 @@ function initializeCronJobs(client) {
         { name: 'בדיקת קבוצות פעילות', schedule: '* * * * *', func: checkActiveGroups, quiet: true },
         { name: 'בדיקת DM אימות ממתינים', schedule: '*/10 * * * *', func: checkPendingDms },
         
-        // ✅ משימות ניהול משתמשים - תוקנו
+        // ✅ משימות ניהול משתמשים - עודכנו
         { name: 'עדכון סטטוס אי-פעילות אוטומטי', schedule: '*/30 * * * *', func: startAutoTracking },
         { name: 'שליחת תזכורות אי-פעילות אוטומטית', schedule: '0 8 * * *', func: sendScheduledReminders, timezone: 'Asia/Jerusalem' },
-        { name: 'הרחקת משתמשים לא פעילים אוטומטית', schedule: '0 5 * * *', func: kickFailedUsers, timezone: 'Asia/Jerusalem' },
+        
+        // 💡 הוספנו דוח חודשי במקום הרחקה אוטומטית
+        { name: 'שליחת דוח הרחקה חודשי', schedule: '0 10 1 * *', func: sendMonthlyKickReport, timezone: 'Asia/Jerusalem' },
+
+        // 🛑 משימת ההרחקה האוטומטית בוטלה. היא תתבצע רק ידנית דרך פקודת /ניהול.
+        // { name: 'הרחקת משתמשים לא פעילים אוטומטית', schedule: '0 5 * * *', func: kickFailedUsers, timezone: 'Asia/Jerusalem' },
 
         // משימות ימי הולדת
         { name: 'מעקב אחר ימי הולדת של היום', schedule: '*/30 * * * *', func: checkBirthdays },

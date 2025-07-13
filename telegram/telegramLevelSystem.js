@@ -1,33 +1,29 @@
-// 📁 telegram/telegramLevelSystem.js (מעודכן: תיקון ייבואים, הוספת calculateXP וניקיון)
+// 📁 telegram/telegramLevelSystem.js (מעודכן: תיקון שימוש ב-XP_PER_MESSAGE)
 const db = require("../utils/firebase");
-const generateXPLeaderboardImage = require("./generateXPLeaderboardImage"); // ודא שנתיב זה נכון
+const generateXPLeaderboardImage = require("./generateXPLeaderboardImage");
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 const FormData = require("form-data");
-const openai = require('../utils/openaiConfig'); // ייבוא אובייקט OpenAI גלובלי
-const { InputFile } = require("grammy"); // ייבוא InputFile (לשליחת תמונה)
+const openai = require('../utils/openaiConfig');
+const { InputFile } = require("grammy");
 
-const XP_PER_MESSAGE = 15; // ✅ משתנה זה ישמש כעת
-const LEVEL_UP_MULTIPLIER = 100; // XP needed for next level = current_level * LEVEL_UP_MULTIPLIER
-const XP_COOLDOWN = 60 * 1000; // 60 שניות בין קבלת XP על הודעות
+const XP_PER_MESSAGE = 15; // ✅ משתנה זה ישמש כעת כ-XP קבוע פר הודעה
+const LEVEL_UP_MULTIPLIER = 100;
+const XP_COOLDOWN = 60 * 1000;
 
-const lastXpMessage = new Map(); // userId -> timestamp
-const topCooldown = new Map(); // ✅ הוספת topCooldown (היה חסר)
+const lastXpMessage = new Map();
+const topCooldown = new Map();
 
 
 /**
- * ✅ פונקציה: calculateXP - מחושבת XP על בסיס אורך הטקסט
+ * ✅ פונקציה: calculateXP - תחזיר XP קבוע פר הודעה
  * @param {string} text - הטקסט של ההודעה.
  * @returns {number} - כמות ה-XP שתיצבר.
  */
 function calculateXP(text) {
-    // בוא נניח ש-XP_PER_MESSAGE הוא הבסיס לחישוב
-    // ונניח שזה 1 XP לכל 10 תווים, או בסיס קבוע
-    const charCount = text.length;
-    // נניח ש-1 XP לכל 10 תווים, עם מינימום 1 XP אם יש טקסט
-    if (charCount > 0) {
-        return Math.max(1, Math.floor(charCount / 10)); // לפחות 1 XP אם יש טקסט, או 1 XP_PER_MESSAGE קבוע
+    if (text && text.length > 0) { // אם יש טקסט כלשהו
+        return XP_PER_MESSAGE; // ✅ החזר את הערך הקבוע של XP_PER_MESSAGE
     }
     return 0; // אין טקסט, אין XP
 }
@@ -40,7 +36,7 @@ function calculateXP(text) {
  */
 function calculateLevel(xp) {
     let level = 0;
-    let nextLevelXpThreshold = LEVEL_UP_MULTIPLIER; // XP נדרש לרמה 1
+    let nextLevelXpThreshold = LEVEL_UP_MULTIPLIER;
 
     while (xp >= nextLevelXpThreshold) {
         level++;
@@ -69,7 +65,7 @@ async function updateXp(messageData, ctx = null) {
 
     const now = Date.now();
     if (lastXpMessage.has(userId) && (now - lastXpMessage.get(userId) < XP_COOLDOWN)) {
-        return { addedXp: 0 }; // עדיין ב-cooldown, לא מוסיף XP
+        return { addedXp: 0 };
     }
 
     lastXpMessage.set(userId, now);
@@ -85,10 +81,10 @@ async function updateXp(messageData, ctx = null) {
         currentXp = data.xp || 0;
         currentLevel = data.level || 0;
     } else {
-        await userRef.set({ xp: 0, level: 0, fullName: name, username: messageData.username || null, createdAt: Date.now() }); // רמה 0 בהתחלה
+        await userRef.set({ xp: 0, level: 0, fullName: name, username: messageData.username || null, createdAt: Date.now() });
     }
 
-    const gain = calculateXP((messageData.text || "").trim()); // ✅ שימוש בפונקציה calculateXP
+    const gain = calculateXP((messageData.text || "").trim());
     if (gain === 0) return { addedXp: 0 };
 
     const newXp = currentXp + gain;
@@ -101,7 +97,6 @@ async function updateXp(messageData, ctx = null) {
         fullName: name
     }, { merge: true });
 
-    // ✅ טיפול בהודעות עליית רמה - שליחה ב-DM בלבד
     if (newLevel > currentLevel) {
         const xpNeededForNext = getXpForNextLevel(newLevel);
         let xpAtCurrentLevelStart = 0;
@@ -118,9 +113,9 @@ async function updateXp(messageData, ctx = null) {
                                `**התקדמות לרמה הבאה:** ${xpProgressInCurrentLevel}/${xpNeededForNext} XP (${progressPercent}%)\n\n` +
                                `המשך לצבור XP כדי להגיע לרמות גבוהות יותר!`;
         
-        if (ctx) { // ודא שיש קונטקסט לשליחת DM
+        if (ctx) {
             try {
-                await ctx.api.sendMessage(userId, levelUpMessage); // ✅ שליחה ב-DM למשתמש
+                await ctx.api.sendMessage(userId, levelUpMessage);
             } catch (dmError) {
                 console.warn(`⚠️ לא ניתן לשלוח הודעת עליית רמה ב-DM למשתמש ${userId}:`, dmError.message);
             }
@@ -154,7 +149,7 @@ function registerTopButton(bot) {
   bot.callbackQuery("profile_top", async (ctx) => {
     const userId = ctx.from.id;
     const now = Date.now();
-    const lastUsed = topCooldown.get(userId) || 0; // ✅ שימוש במשתנה topCooldown
+    const lastUsed = topCooldown.get(userId) || 0;
 
     if (now - lastUsed < 15000) { // 15 שניות cooldown
       return ctx.answerCallbackQuery({

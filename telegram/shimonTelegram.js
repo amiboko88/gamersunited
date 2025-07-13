@@ -1,15 +1,15 @@
-// 📁 telegram/shimonTelegram.js (תיקון הפעלת Roast ו-Smart Reply)
+// 📁 telegram/shimonTelegram.js (מעודכן: תיקון הפעלת Roast ו-Smart Reply וטיפול ב-updateXP)
 // require("dotenv").config(); // יש לוודא שורה זו נמחקה אם לא בשימוש.
 const { Bot, webhookCallback } = require("grammy");
 const express = require("express");
-const { analyzeTextForRoast, registerRoastButtons } = require("./roastTelegram"); // ✅ ייבוא analyzeTextForRoast
+const { analyzeTextForRoast, registerRoastButtons } = require("./roastTelegram");
 const db = require("../utils/firebase");
 const registerCommands = require("./telegramCommands");
 const { registerBirthdayHandler, validateBirthday, saveBirthday } = require("./telegramBirthday");
-const { updateXP, handleTop, registerTopButton } = require("./telegramLevelSystem");
-const handleSmartReply = require("./shimonSmart"); // ✅ ייבוא handleSmartReply
+const { updateXp, handleTop, registerTopButton } = require("./telegramLevelSystem"); // ✅ תיקון: ייבוא updateXp ישירות
+const handleSmartReply = require("./shimonSmart");
 const { isSpam } = require("./antiSpam");
-const { triggerWords } = require("./smartKeywords"); // ✅ ייבוא triggerWords
+const { triggerWords } = require("./smartKeywords");
 
 
 const WAITING_USERS = new Map();
@@ -70,15 +70,15 @@ bot.on("message", async (ctx) => {
 
   // 4. טיפול ב"צלייה" (Roast)
   // analyzeTextForRoast כבר שולחת את התגובה בעצמה, ומחזירה true אם שלחה
-  const roasted = await analyzeTextForRoast(text, ctx); // ✅ הקריאה התקינה
+  const roasted = await analyzeTextForRoast(text, ctx);
   if (roasted) {
       // אם בוצע roast, אין צורך להמשיך ל-smart reply או XP באותה הודעה
       return; 
   }
 
   // 5. טיפול ב"תגובה חכמה" (Smart Reply)
-  // handleSmartReply יחליט אם ואיך להגיב, והוא שולח את התגובה בעצמו.
-  const smartReplied = await handleSmartReply(ctx); // ✅ הקריאה התקינה
+  // handleSmartReply יחליט אם ואיך להגיב, והוא שולח את התגובה בעצמה.
+  const smartReplied = await handleSmartReply(ctx);
   // אם הופעלה תגובה חכמה, אין צורך להמשיך ל-XP
   if (smartReplied) { 
       return; 
@@ -92,7 +92,7 @@ bot.on("message", async (ctx) => {
   // ✅ עדכון XP מתבצע רק אם זו הודעה "לגיטימית" ולא סתם טריגר קצר
   // הודעות XP יעלו לרמת ה-DM בלבד!
   if (!isOnlyEmoji && cleanedText.length >= 3 && !isTriggerText) {
-      await updateXP({
+      await updateXp({ // ✅ תיקון הקריאה ל-updateXp
           id: ctx.from.id,
           first_name: ctx.from.first_name,
           username: ctx.from.username,

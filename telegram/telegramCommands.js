@@ -14,7 +14,7 @@ module.exports = function registerTelegramCommands(bot, WAITING_USERS) {
   // 🎛️ תפריט ראשי
 bot.command("start", async (ctx) => {
   const userId = ctx.from?.id;
-  const now = Date.now();
+  const now = Date.Now(); // ✅ תיקון: Date.now() - אות גדולה ל-Now
   const lastTime = lastStartCommand.get(userId) || 0;
 
   // 📛 אם שולח שוב תוך פחות מ־15 שניות – עקיצה במקום תפריט
@@ -91,7 +91,7 @@ bot.command("start", async (ctx) => {
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
-const FormData = require("form-data");
+const FormData = require("form_data"); // ✅ תיקון: FormData מיובא כך
 const { InputFile } = require("grammy"); // ייבוא InputFile (לשליחת תמונה)
 
 bot.callbackQuery("profile_xp", async (ctx) => {

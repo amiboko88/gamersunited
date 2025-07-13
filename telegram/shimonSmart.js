@@ -120,7 +120,7 @@ async function handleSmartReply(ctx) {
   const isNight = isNightMode();
   const hasTrigger = isTrigger(text);
   const isDirectMention = talksAboutShimon(text);
-  const isSeekingAttention = isAttentionSeeking(text); // ✅ תיקון טעות הקלדה
+  const isSeekingAttention = isAttentionSeeking(text);
   const isTextOffensive = isOffensive(text);
   const isTextNice = isNice(text);
   const isTextQuestion = isQuestion(text);

@@ -1,5 +1,5 @@
-// 📁 telegram/antiSpam.js (מעודכן: שיפור תגובות אנטי-ספאם ושימוש ב-OpenAI גלובלי)
-const openai = require('../utils/openaiConfig'); // ✅ ייבוא אובייקט OpenAI גלובלי
+// 📁 telegram/antiSpam.js (מעודכן: תיקון שגיאות reply_to_message_id ו-sendStaffLog)
+const openai = require('../utils/openaiConfig');
 const db = require('../utils/firebase');
 
 const SPAM_THRESHOLD_TIME = 5000; // 5 שניות
@@ -12,14 +12,8 @@ const userMessageHistory = new Map(); // userId -> [{ timestamp, text }]
 const userLinkCount = new Map(); // userId -> count
 const userCurseCount = new Map(); // userId -> count
 
-// ✅ STAFF_CHANNEL_ID מוגדר ב-utils/staffLogger.js
-// לכן, לא צריך להגדיר אותו כאן שוב, אלא לייבא את sendStaffLog
-const { sendStaffLog } = require('../utils/staffLogger'); // ✅ ייבוא sendStaffLog
-
-// ⚠️ ודא שקובץ curses.json קיים ב-data/curses.json
-// const curses = require('../data/curses.json'); 
-// אם אתה מעדיף להשתמש בזה, יש לוודא שהנתיב נכון והקובץ קיים.
-// אחרת, ניתן להעביר רשימת קללות ישירות לכאן, או להשתמש ב-smartKeywords.offensiveWords
+// ✅ אין צורך להגדיר STAFF_CHANNEL_ID כאן אם sendStaffLog משמש
+const { sendStaffLog: discordSendStaffLog } = require('../utils/staffLogger'); // ייבוא עם שם שונה כדי למנוע התנגשות
 
 // רשימת קללות בסיסית (אם אין קובץ חיצוני)
 const defaultCurses = [
@@ -44,7 +38,7 @@ const defaultCurses = [
 async function isSpam(ctx) {
     const message = ctx.message;
     const userId = message.from.id;
-    const chatId = message.chat.id;
+    const chatId = message.chat.id; // ✅ המשתנה הזה קיים בשימוש, כפי שדנו קודם.
     const messageText = message.text || '';
     const now = Date.now();
 
@@ -78,6 +72,7 @@ async function isSpam(ctx) {
 
     // 3. בדיקת ספאם קללות (דורש רשימת קללות)
     const cursesList = typeof curses !== 'undefined' ? curses : defaultCurses; // ✅ שימוש ברשימה המיובאת או בדיפולט
+
     const lowerCaseText = messageText.toLowerCase();
     const curseMatches = cursesList.filter(curse => lowerCaseText.includes(curse));
     if (curseMatches.length > 0) {
@@ -108,32 +103,30 @@ async function isSpam(ctx) {
  */
 async function handleSpam(ctx, spamType) {
     try {
+        // מחק את הודעת הספאם
         await ctx.deleteMessage().catch(e => console.error('Failed to delete spam message:', e));
 
+        // שלח תגובה חכמה באמצעות GPT
         const spamResponse = await getAntiSpamResponse(spamType);
-        await ctx.reply(spamResponse, { reply_to_message_id: ctx.message.message_id, parse_mode: 'HTML' }).catch(e => console.error('Failed to reply to spam:', e)); // ✅ הוספת parse_mode
+        // ✅ תיקון: הסרת reply_to_message_id מכיוון שההודעה נמחקת
+        await ctx.reply(spamResponse, { parse_mode: 'HTML' }).catch(e => console.error('Failed to reply to spam:', e)); 
 
         const user = ctx.from;
-        const chat = ctx.chat;
+        const chat = ctx.chat; // ✅ המשתנה הזה קיים בשימוש, כפי שדנו קודם.
         const logMessage = `🚨 **ספאם זוהה ומטופל!**\n` +
                            `**משתמש:** ${user.first_name} (@${user.username || user.id})\n` +
                            `**צ'אט:** ${chat.title || chat.type} (ID: ${chat.id})\n` +
                            `**סוג ספאם:** ${spamType.replace('_', ' ')}\n` +
                            `**הודעה מקורית:** \`${ctx.message.text ? ctx.message.text.substring(0, 100) : '[אין טקסט]'}\``;
         
-        // ✅ שימוש ב-sendStaffLog במקום ב-ctx.api.sendMessage ישירות
-        await sendStaffLog(ctx.client, '🚨 ספאם זוהה', logMessage, 0xFF0000); // ✅ שימוש ב-sendStaffLog (צריך להבטיח client זמין)
-        // הערה: sendStaffLog מצפה ל-client, לא ל-ctx.
-        // אם sendStaffLog משתמש ב-client.channels.cache.get, ודא שה-client הזה הוא ה-client של הדיסקורד.
-        // אם זהו בוט טלגרם, sendStaffLog לא רלוונטי כאן אלא אם יש אינטגרציה מיוחדת.
-        // נניח ש-sendStaffLog מיועד לדיסקורד, אז נשלח לוג לקונסול בלבד עבור טלגרם אם אין גשר.
+        // ✅ שימוש ב-discordSendStaffLog רק אם קיים גשר לדיסקורד
+        if (typeof global.client !== 'undefined' && global.client.channels) { // בדיקה בטוחה
+            await discordSendStaffLog(global.client, '🚨 ספאם טלגרם זוהה', logMessage, 0xFF0000);
+        } else {
+            // אם אין גשר לדיסקורד, נדפיס לקונסול בלבד עבור לוגים של טלגרם
+            console.log(`[STAFF_LOG_TELEGRAM] ${logMessage}`);
+        }
         
-        // תיקון זמני - לוודא שאנחנו לא שולחים לוגים של דיסקורד מבוט טלגרם אם אין גשר
-        // אם sendStaffLog מוגדר ל-client של דיסקורד, הוא לא יופעל עם ctx של טלגרם.
-        // לוג קונסול חלופי עבור ספאם טלגרם:
-        console.log(`[STAFF_LOG_TELEGRAM] ${logMessage}`);
-
-
     } catch (error) {
         console.error('❌ שגיאה בטיפול בספאם:', error);
     }
@@ -149,7 +142,7 @@ async function getAntiSpamResponse(spamType) {
     switch (spamType) {
         case 'fast_spam':
             prompt = `משתמש שולח הודעות מהר מדי. הגב בטון עוקצני אך מתוחכם, כאילו אתה מתלונן על הרעש. אל תהיה בוטה.
-            דוגמאות: "אפשר להוריד את הווליום, אנחנו עדיין פה.", "הקצב שלך מהיר יותר מהמוח שלי. תאט קצת.", "נראה לי שהמקלדת שלך נתקעה על הילוך חמישי."
+            דוגמאות: "אפשר להוריד את הווליום, אנחנו עדיין פה.", "הקצב שלך שלך מהיר יותר מהמוח שלי. תאט קצת.", "נראה לי שהמקלדת שלך נתקעה על הילוך חמישי."
             תגובה:`;
             break;
         case 'link_spam':
@@ -173,7 +166,7 @@ async function getAntiSpamResponse(spamType) {
     }
 
     try {
-        const response = await openai.chat.completions.create({ // ✅ שימוש באובייקט openai המיובא
+        const response = await openai.chat.completions.create({
             model: 'gpt-4o', // או 'gpt-3.5-turbo' לחיסכון
             messages: [{ role: 'user', content: prompt }],
             max_tokens: 50,

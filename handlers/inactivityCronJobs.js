@@ -1,14 +1,14 @@
-// 📁 handlers/inactivityCronJobs.js
-const { EmbedBuilder } = require('discord.js'); // נחוץ עבור EmbedBuilder ב runAutoTracking
-const db = require('../utils/firebase'); // נתיב יחסי נכון
-const { sendStaffLog } = require('../utils/staffLogger'); // נתיב יחסי נכון
-const { createPaginatedFields } = require('../interactions/selectors/inactivitySelectMenuHandler'); // ייבוא פונקציה לבניית שדות מרובי עמודים
-const { sendReminderDM } = require('../interactions/buttons/inactivityDmButtons'); // ייבוא פונקציית שליחת DM
-// יש לייצא את executeKickFailedUsers מ inactivityKickButton.js אם הוא משמש כאן
+// 📁 handlers/inactivityCronJobs.js (מעודכן לשימוש ב-sendStaffLog במקום console.warn)
+const { EmbedBuilder } = require('discord.js');
+const db = require('../utils/firebase');
+const { sendStaffLog } = require('../utils/staffLogger'); // ייבוא הפונקציה
+
+const { createPaginatedFields } = require('../interactions/selectors/inactivitySelectMenuHandler');
+const { sendReminderDM } = require('../interactions/buttons/inactivityDmButtons');
 const { executeKickFailedUsers } = require('../interactions/buttons/inactivityKickButton'); // ייבוא פונקציית הרחקה
 
 const INACTIVITY_DAYS = 7;
-let lastInactiveIds = []; // משתנה לניהול שינויים בדוחות
+let lastInactiveIds = [];
 
 /**
  * פונקציית עזר לעדכון סטטוס משתמש ב-Firebase.
@@ -114,13 +114,13 @@ async function runAutoTracking(client) {
         embeds.push(embed);
     }
 
-    const staffChannel = client.channels.cache.get(process.env.STAFF_CHANNEL_ID);
-    if (staffChannel) {
+    const staffChannel = client.channels.cache.get(process.env.STAFF_CHANNEL_ID); // עדיין משתמש ב-process.env, אבל sendStaffLog מטפל בזה
+    if (staffChannel) { // אם הערוץ נמצא, שלח לו
         for (const embed of embeds) {
             await staffChannel.send({ embeds: [embed] });
         }
-    } else {
-        console.warn(`[STAFF_LOG] ⚠️ ערוץ הצוות לא נמצא (ID: ${process.env.STAFF_CHANNEL_ID}). דוח אי-פעילות לא נשלח.`);
+    } else { // אם לא נמצא, דווח דרך sendStaffLog
+        await sendStaffLog(client, '⚠️ ערוץ צוות חסר', `לא ניתן למצוא את ערוץ הצוות (ID: ${process.env.STAFF_CHANNEL_ID}). דוח אי-פעילות לא נשלח לערוץ.`, 0xFFA500);
     }
   }
 }

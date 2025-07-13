@@ -1,7 +1,5 @@
-// 📁 telegram/generateRoastText.js – יצירת ירידה חד פעמית לפי שם
-
-const { OpenAI } = require("openai");
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// 📁 telegram/generateRoastText.js (מעודכן: שימוש ב-OpenAI גלובלי)
+const openai = require('../utils/openaiConfig'); // ✅ ייבוא אובייקט OpenAI גלובלי
 
 const fallbackRoasts = [
   name => `${name} זה כמו return null בצ'אט – פשוט מיותר.`,
@@ -11,6 +9,11 @@ const fallbackRoasts = [
   name => `ל${name} יש פינג גבוה גם בשיחות פנים מול פנים.`
 ];
 
+/**
+ * מייצר טקסט "צלייה" (Roast) חד פעמי באמצעות GPT.
+ * @param {string} name - השם שעליו לבצע Roast.
+ * @returns {Promise<string>} - טקסט ה־Roast שנוצר.
+ */
 async function generateRoastText(name) {
   const prompt = `
 אתה בוט בשם שמעון.
@@ -21,7 +24,7 @@ async function generateRoastText(name) {
 `.trim();
 
   try {
-    const gptRes = await openai.chat.completions.create({
+    const gptRes = await openai.chat.completions.create({ // ✅ שימוש באובייקט openai המיובא
       model: "gpt-4o",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.95,

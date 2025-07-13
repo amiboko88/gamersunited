@@ -1,56 +1,197 @@
-// antiSpam.js
-const { OpenAI } = require("openai");
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const spamMap = new Map();
+// 📁 telegram/antiSpam.js (מעודכן: שיפור תגובות אנטי-ספאם ושימוש ב-OpenAI גלובלי)
+const openai = require('../utils/openaiConfig'); // ✅ ייבוא אובייקט OpenAI גלובלי
+const db = require('../utils/firebase');
 
+const SPAM_THRESHOLD_TIME = 5000; // 5 שניות
+const SPAM_THRESHOLD_COUNT = 3; // 3 הודעות
+const SPAM_LINK_THRESHOLD = 2; // 2 קישורים
+const SPAM_CURSE_THRESHOLD = 3; // 3 קללות
+const SPAM_SAME_MESSAGE_THRESHOLD = 3; // 3 הודעות זהות
+
+const userMessageHistory = new Map(); // userId -> [{ timestamp, text }]
+const userLinkCount = new Map(); // userId -> count
+const userCurseCount = new Map(); // userId -> count
+
+// ✅ STAFF_CHANNEL_ID מוגדר ב-utils/staffLogger.js
+// לכן, לא צריך להגדיר אותו כאן שוב, אלא לייבא את sendStaffLog
+const { sendStaffLog } = require('../utils/staffLogger'); // ✅ ייבוא sendStaffLog
+
+// ⚠️ ודא שקובץ curses.json קיים ב-data/curses.json
+// const curses = require('../data/curses.json'); 
+// אם אתה מעדיף להשתמש בזה, יש לוודא שהנתיב נכון והקובץ קיים.
+// אחרת, ניתן להעביר רשימת קללות ישירות לכאן, או להשתמש ב-smartKeywords.offensiveWords
+
+// רשימת קללות בסיסית (אם אין קובץ חיצוני)
+const defaultCurses = [
+  'זין', 'חרא', 'בן זונה', 'כוס', 'כוסית', 'זונה', 'מטומטם', 'מפגר', 'נכה', 'בהמה',
+  'אפס', 'פח', 'ילד כאפות', 'סמרטוט', 'שמן', 'מכוער', 'חולה נפש', 'אידיוט', 'עקום', 'עיוור',
+  'נבלה', 'חלאה', 'שרמוטה', 'סתום', 'תמות', 'טיפש', 'חרא בן אדם', 'נאצי', 'אנס', 'זי*ן', 'כ*ס',
+  'fuck', 'shit', 'bitch', 'dick', 'pussy', 'asshole', 'retard', 'faggot', 'moron', 'jerk',
+  'loser', 'idiot', 'stupid', 'whore', 'slut', 'f*ck', 'sh*t', 'c*nt', 'dumb', 'suck',
+  'lame', 'douche', 'f@ggot', 'n*gga', 'ret@rd', 'pu$$y', 'cuck', 'אידיוטית', 'קללה',
+  'משוגע', 'עלוב', 'שפל', 'דביל', 'סתומה', 'תחת', 'זבל', 'מטונף', 'מזדיין', 'כושי',
+  'ערבי מסריח', 'רוסי זבל', 'אשכנזי מסריח', 'מרוקאי חמום', 'אתיופי טיפש',
+  'חצי בן אדם', 'מושתן', 'דפוק', 'קשקשן', 'חפרן', 'מזבלה', 'רפש', 'שאריות',
+  'שטן', 'קללה רב מערכתית', 'ילד חרא', 'לא יוצלח', 'נודניק', 'שקרן', 'אנס סדרתי'
+];
+
+
+/**
+ * בודק אם הודעה היא ספאם.
+ * @param {import('grammy').Context} ctx - אובייקט הקונטקסט של grammy.
+ * @returns {Promise<boolean>} - האם ההודעה היא ספאם.
+ */
 async function isSpam(ctx) {
-  const userId = ctx.from.id;
-  const text = ctx.message?.text?.trim() || "";
-  if (!text || text.length < 2) return false;
+    const message = ctx.message;
+    const userId = message.from.id;
+    const chatId = message.chat.id;
+    const messageText = message.text || '';
+    const now = Date.now();
 
-  const now = Date.now();
-  const userData = spamMap.get(userId) || {
-    lastText: "",
-    count: 0,
-    lastTime: now
-  };
-
-  if (userData.lastText === text) {
-    userData.count++;
-  } else {
-    userData.count = 1;
-    userData.lastText = text;
-  }
-
-  const tooFast = now - userData.lastTime < 10000;
-  userData.lastTime = now;
-
-  spamMap.set(userId, userData);
-
-  const isSpammer = userData.count >= 3 || tooFast;
-
-  if (isSpammer) {
-    try {
-      const prompt = `
-משתמש בטלגרם מציף את הקבוצה עם הודעות חוזרות או בתדירות גבוהה:
-"${text}"
-ענה אליו בעוקצנות בסגנון שמעון – קצר, חד, בלי שמות, בלי מרכאות, ובלי קללות.
-`;      
-      const gptRes = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.85,
-        max_tokens: 50
-      });
-      const reply = gptRes.choices?.[0]?.message?.content?.trim();
-      if (reply) await ctx.reply(`‏${reply}`, { parse_mode: "HTML" });
-    } catch (err) {
-      console.error("❌ GPT AntiSpam Error:", err);
+    // 1. בדיקת ספאם מהיר (הודעות רבות בזמן קצר)
+    if (!userMessageHistory.has(userId)) {
+        userMessageHistory.set(userId, []);
     }
-    return true;
-  }
+    const history = userMessageHistory.get(userId);
+    history.push({ timestamp: now, text: messageText });
 
-  return false;
+    userMessageHistory.set(userId, history.filter(msg => now - msg.timestamp < SPAM_THRESHOLD_TIME));
+
+    if (userMessageHistory.get(userId).length > SPAM_THRESHOLD_COUNT) {
+        await handleSpam(ctx, 'fast_spam');
+        return true;
+    }
+
+    // 2. בדיקת ספאם קישורים
+    const linkRegex = /(https?:\/\/[^\s]+)/g;
+    const links = messageText.match(linkRegex);
+    if (links && links.length > 0) {
+        userLinkCount.set(userId, (userLinkCount.get(userId) || 0) + links.length);
+        if (userLinkCount.get(userId) > SPAM_LINK_THRESHOLD) {
+            await handleSpam(ctx, 'link_spam');
+            userLinkCount.set(userId, 0); // Reset after action
+            return true;
+        }
+    } else {
+        userLinkCount.set(userId, 0);
+    }
+
+    // 3. בדיקת ספאם קללות (דורש רשימת קללות)
+    const cursesList = typeof curses !== 'undefined' ? curses : defaultCurses; // ✅ שימוש ברשימה המיובאת או בדיפולט
+    const lowerCaseText = messageText.toLowerCase();
+    const curseMatches = cursesList.filter(curse => lowerCaseText.includes(curse));
+    if (curseMatches.length > 0) {
+        userCurseCount.set(userId, (userCurseCount.get(userId) || 0) + curseMatches.length);
+        if (userCurseCount.get(userId) > SPAM_CURSE_THRESHOLD) {
+            await handleSpam(ctx, 'curse_spam');
+            userCurseCount.set(userId, 0); // Reset after action
+            return true;
+        }
+    } else {
+        userCurseCount.set(userId, 0);
+    }
+
+    // 4. בדיקת הודעות זהות חוזרות
+    const sameMessages = history.filter(msg => msg.text === messageText);
+    if (sameMessages.length > SPAM_SAME_MESSAGE_THRESHOLD) {
+        await handleSpam(ctx, 'same_message_spam');
+        return true;
+    }
+
+    return false;
 }
 
-module.exports = { isSpam };
+/**
+ * מטפל בהודעת ספאם - מוחק אותה ושולח תגובה.
+ * @param {import('grammy').Context} ctx - אובייקט הקונטקסט של grammy.
+ * @param {string} spamType - סוג הספאם שזוהה.
+ */
+async function handleSpam(ctx, spamType) {
+    try {
+        await ctx.deleteMessage().catch(e => console.error('Failed to delete spam message:', e));
+
+        const spamResponse = await getAntiSpamResponse(spamType);
+        await ctx.reply(spamResponse, { reply_to_message_id: ctx.message.message_id, parse_mode: 'HTML' }).catch(e => console.error('Failed to reply to spam:', e)); // ✅ הוספת parse_mode
+
+        const user = ctx.from;
+        const chat = ctx.chat;
+        const logMessage = `🚨 **ספאם זוהה ומטופל!**\n` +
+                           `**משתמש:** ${user.first_name} (@${user.username || user.id})\n` +
+                           `**צ'אט:** ${chat.title || chat.type} (ID: ${chat.id})\n` +
+                           `**סוג ספאם:** ${spamType.replace('_', ' ')}\n` +
+                           `**הודעה מקורית:** \`${ctx.message.text ? ctx.message.text.substring(0, 100) : '[אין טקסט]'}\``;
+        
+        // ✅ שימוש ב-sendStaffLog במקום ב-ctx.api.sendMessage ישירות
+        await sendStaffLog(ctx.client, '🚨 ספאם זוהה', logMessage, 0xFF0000); // ✅ שימוש ב-sendStaffLog (צריך להבטיח client זמין)
+        // הערה: sendStaffLog מצפה ל-client, לא ל-ctx.
+        // אם sendStaffLog משתמש ב-client.channels.cache.get, ודא שה-client הזה הוא ה-client של הדיסקורד.
+        // אם זהו בוט טלגרם, sendStaffLog לא רלוונטי כאן אלא אם יש אינטגרציה מיוחדת.
+        // נניח ש-sendStaffLog מיועד לדיסקורד, אז נשלח לוג לקונסול בלבד עבור טלגרם אם אין גשר.
+        
+        // תיקון זמני - לוודא שאנחנו לא שולחים לוגים של דיסקורד מבוט טלגרם אם אין גשר
+        // אם sendStaffLog מוגדר ל-client של דיסקורד, הוא לא יופעל עם ctx של טלגרם.
+        // לוג קונסול חלופי עבור ספאם טלגרם:
+        console.log(`[STAFF_LOG_TELEGRAM] ${logMessage}`);
+
+
+    } catch (error) {
+        console.error('❌ שגיאה בטיפול בספאם:', error);
+    }
+}
+
+/**
+ * מייצר תגובה אנטי-ספאם חכמה באמצעות OpenAI.
+ * @param {string} spamType - סוג הספאם.
+ * @returns {Promise<string>} - התגובה שנוצרה.
+ */
+async function getAntiSpamResponse(spamType) {
+    let prompt = '';
+    switch (spamType) {
+        case 'fast_spam':
+            prompt = `משתמש שולח הודעות מהר מדי. הגב בטון עוקצני אך מתוחכם, כאילו אתה מתלונן על הרעש. אל תהיה בוטה.
+            דוגמאות: "אפשר להוריד את הווליום, אנחנו עדיין פה.", "הקצב שלך מהיר יותר מהמוח שלי. תאט קצת.", "נראה לי שהמקלדת שלך נתקעה על הילוך חמישי."
+            תגובה:`;
+            break;
+        case 'link_spam':
+            prompt = `משתמש שולח הרבה קישורים. הגב בסרקסטיות, כאילו אתה מזהיר אותו מההשלכות או מתלונן על הפרסומות.
+            דוגמאות: "תודה על הקישור, אבל אני לא מחפש הלוואה מהירה כרגע.", "האם אתה מנסה למכור לי משהו? כי אני לא קונה.", "אני מניח שאתה מקבל עמלה על כל קישור שאתה שולח."
+            תגובה:`;
+            break;
+        case 'curse_spam':
+            prompt = `משתמש מקלל. הגב בטון מתנשא וציני, כאילו אתה מעל השפה הזו. אל תחזיר קללות.
+            דוגמאות: "הלקסיקון שלך מרשים... בערך.", "נראה שמישהו שכח את המילים היפות בבית.", "האם זה ניסיון להרשים? כי זה לא עובד."
+            תגובה:`;
+            break;
+        case 'same_message_spam':
+            prompt = `משתמש שולח הודעות זהות שוב ושוב. הגב בסרקסטיות על חוסר היצירתיות או על חוסר הטעם.
+            דוגמאות: "כבר הבנו, יש לך רק מילה אחת בלקסיקון?", "האם אתה תקוע בלופ? כי אני לא.", "העתק-הדבק זה כל כך 2000 ואחת."
+            תגובה:`;
+            break;
+        default:
+            prompt = `זוהה ספאם. הגב בטון סרקסטי ועוקצני.
+            תגובה:`;
+    }
+
+    try {
+        const response = await openai.chat.completions.create({ // ✅ שימוש באובייקט openai המיובא
+            model: 'gpt-4o', // או 'gpt-3.5-turbo' לחיסכון
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: 50,
+            temperature: 0.9,
+        });
+        return response.choices[0].message.content.trim();
+    } catch (error) {
+        console.error('❌ שגיאה ביצירת תגובת אנטי-ספאם מ-OpenAI:', error);
+        const defaultResponses = {
+            'fast_spam': 'נראה שאתה ממהר. תאט קצת, אנחנו לא במירוץ.',
+            'link_spam': 'תודה על הקישור, אבל אני לא לוחץ על כל דבר.',
+            'curse_spam': 'הלקסיקון שלך מרשים... בערך.',
+            'same_message_spam': 'כבר הבנו, יש לך רק מילה אחת בלקסיקון?'
+        };
+        return defaultResponses[spamType] || 'נראה שיש כאן קצת רעש.';
+    }
+}
+
+module.exports = {
+    isSpam,
+};

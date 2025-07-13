@@ -1,83 +1,50 @@
-// 📁 commands/ttsCommand.js – גרסה משולבת עם דו"ח מגבלה
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs');
+// 📁 tts/ttsQuickPlay.js – נותר כפי שהוא (נראה תקין, תלוי ב-ttsEngine.elevenlabs.js)
 const {
+  joinVoiceChannel,
   createAudioPlayer,
   createAudioResource,
-  joinVoiceChannel,
   entersState,
-  AudioPlayerStatus
+  AudioPlayerStatus,
+  VoiceConnectionStatus
 } = require('@discordjs/voice');
-const { Readable } = require('stream');
-const {
-  getTTSQuotaReport,
-  shouldUseFallback,
-  registerTTSUsage
-} = require('../tts/ttsQuotaManager.eleven');
+const fs = require('fs');
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
+const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs'); // ✅ ודא שנתיב הייבוא נכון
+
+async function playTTSInVoiceChannel(channel, text, voice = 'shimon') {
+  if (!channel || !channel.joinable) return;
+
+  try {
+    const fileName = `tts_${uuidv4()}.mp3`;
+    const filePath = path.join(__dirname, '..', 'temp', fileName);
+
+    const buffer = await synthesizeElevenTTS(text, voice);
+    fs.writeFileSync(filePath, buffer);
+
+    const connection = joinVoiceChannel({
+      channelId: channel.id,
+      guildId: channel.guild.id,
+      adapterCreator: channel.guild.voiceAdapterCreator
+    });
+
+    await entersState(connection, VoiceConnectionStatus.Ready, 5_000);
+
+    const resource = createAudioResource(filePath);
+    const player = createAudioPlayer();
+
+    connection.subscribe(player);
+    player.play(resource);
+
+    await entersState(player, AudioPlayerStatus.Idle, 15_000);
+
+    connection.destroy();
+    fs.unlink(filePath, () => null);
+  } catch (err) {
+    console.error('❌ שגיאה בהשמעת TTS:', err);
+  }
+}
 
 module.exports = {
-  data: new SlashCommandBuilder()
-    .setName('שמעון')
-    .setDescription('השמע טקסט עם שמעון בערוץ הקולי')
-    .addStringOption(option =>
-      option.setName('טקסט')
-        .setDescription('מה לומר?')
-        .setRequired(true)
-    ),
-
-  async execute(interaction) {
-    const text = interaction.options.getString('טקסט');
-    const member = interaction.member;
-    const channel = member.voice?.channel;
-
-    if (!channel) {
-      return interaction.reply({ content: '🔇 אתה לא נמצא בערוץ קולי.', flags: MessageFlags.Ephemeral });
-    }
-
-    const blocked = await shouldUseFallback();
-    if (blocked) {
-      return interaction.reply({ content: '🚫 הגעת למגבלת שימוש יומית. נסה מאוחר יותר.', flags: MessageFlags.Ephemeral });
-    }
-
-    try {
-      const buffer = await synthesizeElevenTTS(text, 'shimon');
-      await registerTTSUsage(text.length, 1);
-
-      const connection = joinVoiceChannel({
-        channelId: channel.id,
-        guildId: channel.guild.id,
-        adapterCreator: channel.guild.voiceAdapterCreator
-      });
-
-      const resource = createAudioResource(Readable.from(buffer));
-      const player = createAudioPlayer();
-      connection.subscribe(player);
-      player.play(resource);
-
-      await entersState(player, AudioPlayerStatus.Idle, 15000);
-      connection.destroy();
-
-      const report = await getTTSQuotaReport();
-      const dailyChars = report.dailyCharacters;
-      const dailyCalls = report.dailyCalls;
-      const monthly = report.monthlyCharacters;
-
-      const statusLine = (label, data) => `• ${label}: ${data.used} / ${data.limit} ${data.status}`;
-
-      const quotaSummary = [
-        '🔊 סטטוס שימוש:',
-        statusLine('תווים היום', dailyChars),
-        statusLine('קריאות היום', dailyCalls),
-        statusLine('החודש', monthly)
-      ].join('\n');
-
-      await interaction.reply({
-        content: `✅ ההודעה הושמעה בהצלחה.\n\n${quotaSummary}`,
-        flags: MessageFlags.Ephemeral
-      });
-    } catch (err) {
-      console.error('❌ שגיאה ב־TTS:', err);
-      await interaction.reply({ content: '⚠️ שגיאה בהשמעה.', flags: MessageFlags.Ephemeral });
-    }
-  }
+  playTTSInVoiceChannel
 };

@@ -1,4 +1,4 @@
-// 📁 handlers/birthdayPanelHandler.js
+// 📁 handlers/birthdayPanelHandler.js (מעודכן לטיפול בסלקטור החדש)
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const db = require('../utils/firebase');
 const generateBirthdayCard = require('../utils/generateBirthdayCard');
@@ -24,17 +24,18 @@ function parseBirthdayInput(input) {
   return { day, month, year, age };
 }
 
-// ---------------- פונקציה חדשה וממוקדת לטיפול במודאל ----------------
+// ---------------- טיפול במודאל ----------------
 async function handleBirthdayModalSubmit(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const input = interaction.fields.getTextInputValue('birthday_input');
     const parsed = parseBirthdayInput(input);
     const userId = interaction.user.id;
     const doc = await db.collection(BIRTHDAY_COLLECTION).doc(userId).get();
     if (doc.exists) {
-        return interaction.reply({ content: '🔁 כבר הזנת תאריך יום הולדת בעבר.', flags: MessageFlags.Ephemeral });
+        return interaction.editReply({ content: '🔁 כבר הזנת תאריך יום הולדת בעבר.', flags: MessageFlags.Ephemeral });
     }
     if (!parsed) {
-        return interaction.reply({ content: '❌ תאריך לא תקין. נסה פורמט כמו 31/12/1990 או 1.1.88', flags: MessageFlags.Ephemeral });
+        return interaction.editReply({ content: '❌ תאריך לא תקין. נסה פורמט כמו 31/12/1990 או 1.1.88', flags: MessageFlags.Ephemeral });
     }
     const { day, month, year, age } = parsed;
     const sourceId = `discord:${userId}`;
@@ -53,36 +54,76 @@ async function handleBirthdayModalSubmit(interaction) {
         await db.collection(BIRTHDAY_COLLECTION).doc(userId).set(newData);
     }
     const embed = new EmbedBuilder().setColor('Green').setTitle('🎂 יום הולדת נרשם בהצלחה!').setDescription(`📅 תאריך: **${day}.${month}.${year}**\n🎈 גיל: **${age}**`).setFooter({ text: 'שמעון תמיד זוכר 🎉' }).setTimestamp();
-    return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    return interaction.editReply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 }
 
-// ---------------- הפונקציה המקורית, עכשיו מטפלת רק בכפתורים ----------------
-async function handleBirthdayPanel(interaction) {
+// ---------------- פונקציה מרכזית לטיפול באינטראקציות של יום הולדת ----------------
+// היא תטפל גם בכפתורים וגם בבחירות מה-Select Menu
+async function handleBirthdayPanel(interaction, client) {
   const { customId, member, guild } = interaction;
+  let actionId = customId;
+
+  // ✅ אם זו אינטראקציה של Select Menu, נקבל את הערך הנבחר
+  if (interaction.isStringSelectMenu()) {
+      actionId = interaction.values?.[0]; // הערך שנבחר
+  }
+  
+  // ✅ deferReply בתחילת ה-handler, לפני כל לוגיקה
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral }); 
 
   // 🎁 הצגת רשימת ימי הולדת
-  if (customId === 'bday_list') {
+  if (actionId === 'bday_list') {
     const snapshot = await db.collection(BIRTHDAY_COLLECTION).get();
-    if (snapshot.empty) return interaction.reply({ content: '🙈 אין ימי הולדת רשומים עדיין.', flags: MessageFlags.Ephemeral });
+    if (snapshot.empty) return interaction.editReply({ content: '🙈 אין ימי הולדת רשומים עדיין.', flags: MessageFlags.Ephemeral });
     const months = Array.from({ length: 12 }, () => []);
     snapshot.forEach(doc => {
       const data = doc.data();
       if (data.birthday) {
         const { day, month, year, age } = data.birthday;
-        months[month - 1].push(`📅 ${day}.${month}.${year} — ${data.fullName} (${age})`);
+        months[month - 1].push(`• 📅 ${String(day).padStart(2, '0')}.${String(month).padStart(2, '0')}.${year} — ${data.fullName} (${age})`);
       }
     });
-    const embed = new EmbedBuilder().setColor('Purple').setTitle('📆 ימי הולדת בקהילה').setFooter({ text: 'ממוינים לפי חודש • שמעון' });
+
+    const embeds = [];
+    let currentFields = [];
+    let pageNum = 1;
+
     months.forEach((arr, i) => {
-      if (arr.length > 0) embed.addFields({ name: `חודש ${i + 1}`, value: arr.join('\n'), inline: false });
+      if (arr.length > 0) {
+        const monthName = new Date(0, i).toLocaleString('he-IL', { month: 'long' });
+        const newField = { name: `חודש ${monthName} (${i + 1})`, value: arr.join('\n'), inline: false };
+
+        // בדיקה למגבלות Embed (25 שדות, 6000 תווים)
+        if (currentFields.length + 1 > 25 || (currentFields.reduce((sum, f) => sum + f.name.length + f.value.length, 0) + newField.name.length + newField.value.length > 5500)) {
+            embeds.push(new EmbedBuilder().setColor('Purple').setTitle('📆 ימי הולדת בקהילה').setFooter({ text: `עמוד ${pageNum} מתוך ... • שמעון` }).addFields(currentFields));
+            currentFields = [];
+            pageNum++;
+        }
+        currentFields.push(newField);
+      }
     });
-    return interaction.reply({ embeds: [embed] });
+    // הוסף את השדות האחרונים
+    if (currentFields.length > 0) {
+        embeds.push(new EmbedBuilder().setColor('Purple').setTitle('📆 ימי הולדת בקהילה').setFooter({ text: `עמוד ${pageNum} מתוך ... • שמעון` }).addFields(currentFields));
+    }
+
+    embeds.forEach((embed, index) => {
+        embed.fields.forEach(field => {
+            if (field.value.length > 1024) {
+                field.value = field.value.slice(0, 1021) + '...';
+            }
+        });
+        // עדכון הפוטר עם סה"כ עמודים
+        embed.footer.text = embed.footer.text.replace('...', embeds.length.toString());
+    });
+
+    return interaction.editReply({ embeds: embeds.length > 0 ? embeds : [new EmbedBuilder().setColor('Purple').setTitle('📆 ימי הולדת בקהילה').setDescription('אין ימי הולדת רשומים עדיין.').setFooter({ text: 'שמעון' })] });
   }
 
   // 🔮 הצגת היום הולדת הבא
-  if (customId === 'bday_next') {
+  if (actionId === 'bday_next') {
     const snapshot = await db.collection(BIRTHDAY_COLLECTION).get();
-    if (snapshot.empty) return interaction.reply({ content: '😢 אין ימי הולדת בכלל.' });
+    if (snapshot.empty) return interaction.editReply({ content: '😢 אין ימי הולדת בכלל.' });
     const today = new Date();
     const nowDay = today.getDate();
     const nowMonth = today.getMonth() + 1;
@@ -95,38 +136,42 @@ async function handleBirthdayPanel(interaction) {
         if (month < nowMonth || (month === nowMonth && day < nowDay)) date.setFullYear(today.getFullYear() + 1);
         return { fullName, day, month, year, date, userId: doc.id };
       }).filter(Boolean).sort((a, b) => a.date - b.date)[0];
-    if (!upcoming) return interaction.reply({ content: 'לא נמצא יום הולדת קרוב.' });
+    if (!upcoming) return interaction.editReply({ content: 'לא נמצא יום הולדת קרוב.' });
     const user = await interaction.guild.members.fetch(upcoming.userId).then(m => m.user).catch(() => null);
     const profileUrl = user?.displayAvatarURL({ extension: 'png', size: 128 }) || 'https://cdn.discordapp.com/embed/avatars/0.png';
-    const buffer = await generateBirthdayCard({ fullName: upcoming.fullName, birthdate: `${upcoming.day}.${upcoming.month}.${upcoming.year}`, profileUrl });
-    return interaction.reply({ content: '🎉 הקרוב ביותר לחגוג:', files: [{ attachment: buffer, name: 'birthday_banner.png' }] });
+    const buffer = await generateBirthdayCard({ fullName: upcoming.fullName, birthdate: `${String(upcoming.day).padStart(2, '0')}.${String(upcoming.month).padStart(2, '0')}.${upcoming.year}`, profileUrl });
+    return interaction.editReply({ content: '🎉 הקרוב ביותר לחגוג:', files: [{ attachment: buffer, name: 'birthday_banner.png' }] });
   }
 
   // ➕ פתיחת מודל הוספת יום הולדת
-  if (customId === 'bday_add' || customId === 'open_birthday_modal') {
-    const modal = new ModalBuilder().setCustomId('birthday_modal').setTitle('🎉 הוספת יום הולדת');
-    const input = new TextInputBuilder().setCustomId('birthday_input').setLabel('הכנס תאריך (למשל: 14/05/1993)').setStyle(TextInputStyle.Short).setPlaceholder('פורמט: 31/12/1990 או 1.1.88').setRequired(true);
-    const row = new ActionRowBuilder().addComponents(input);
-    modal.addComponents(row);
-    return interaction.showModal(modal);
+  // customId 'bday_add' מגיע מהכפתור, 'open_birthday_modal' מגיע מהתזכורת השבועית
+  if (actionId === 'bday_add' || actionId === 'open_birthday_modal') {
+    // ✅ אין צורך ב-editReply כאן, showModal מטפל בזה
+    await showBirthdayModal(interaction); 
+    return; // חשוב לסיים את הפונקציה לאחר הצגת המודאל
   }
 
   // ❓ הצגת רשימת משתמשים ללא יום הולדת
-  if (customId === 'bday_missing') {
-    if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '⛔ הפקודה זמינה רק לאדמינים.', flags: MessageFlags.Ephemeral });
+  if (actionId === 'bday_missing') {
+    if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.editReply({ content: '⛔ הפקודה זמינה רק לאדמינים.', flags: MessageFlags.Ephemeral });
     await guild.members.fetch();
     const allMembers = guild.members.cache.filter(m => !m.user.bot && m.roles.cache.has(VERIFIED_ROLE_ID));
     const snapshot = await db.collection(BIRTHDAY_COLLECTION).get();
     const registeredIds = new Set(snapshot.docs.map(doc => doc.id));
     const missing = allMembers.filter(m => !registeredIds.has(m.id));
-    const embed = new EmbedBuilder().setColor('DarkRed').setTitle('❓ משתמשים שעדיין לא הזינו יום הולדת').setDescription(missing.size === 0 ? '✅ כל המשתמשים מעודכנים!' : missing.map(m => `• ${m.displayName}`).join('\n')).setFooter({ text: `סה"כ חסרים: ${missing.size}` });
-    return interaction.reply({ embeds: [embed], components: missing.size > 0 ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('bday_remind_missing').setLabel('📨 שלח תזכורת למשתמשים החסרים').setStyle(ButtonStyle.Primary))] : [], flags: MessageFlags.Ephemeral });
+
+    const missingUsersList = missing.map(m => `• ${m.displayName}`).join('\n');
+    const displayDescription = missing.size === 0 ? '✅ כל המשתמשים מעודכנים!' : (missingUsersList.length > 1000 ? missingUsersList.slice(0, 997) + '...' : missingUsersList);
+
+    const embed = new EmbedBuilder().setColor('DarkRed').setTitle('❓ משתמשים שעדיין לא הזינו יום הולדת').setDescription(displayDescription).setFooter({ text: `סה"כ חסרים: ${missing.size}` });
+    return interaction.editReply({ embeds: [embed], components: missing.size > 0 ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('bday_remind_missing').setLabel('📨 שלח תזכורת למשתמשים החסרים').setStyle(ButtonStyle.Primary))] : [], flags: MessageFlags.Ephemeral });
   }
 
   // 📨 שליחת תזכורות למי שלא הזין
-  if (customId === 'bday_remind_missing') {
-    if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '⛔ אין הרשאה.', flags: MessageFlags.Ephemeral });
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  // customId 'bday_remind_missing' (מכפתור) או 'bday_remind_missing_admin' (מסלקטור)
+  if (actionId === 'bday_remind_missing' || actionId === 'bday_remind_missing_admin') {
+    if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.editReply({ content: '⛔ אין הרשאה.', flags: MessageFlags.Ephemeral });
+    
     await guild.members.fetch();
     const allMembers = guild.members.cache.filter(m => !m.user.bot && m.roles.cache.has(VERIFIED_ROLE_ID));
     const snapshot = await db.collection(BIRTHDAY_COLLECTION).get();
@@ -146,8 +191,18 @@ async function handleBirthdayPanel(interaction) {
   }
 }
 
-// ייצוא שתי הפונקציות
+// ---------------- פונקציה חדשה: פתיחת מודאל יום הולדת ----------------
+async function showBirthdayModal(interaction) {
+    const modal = new ModalBuilder().setCustomId('birthday_modal').setTitle('🎉 הוספת יום הולדת');
+    const input = new TextInputBuilder().setCustomId('birthday_input').setLabel('הכנס תאריך (למשל: 14/05/1993)').setStyle(TextInputStyle.Short).setPlaceholder('פורמט: 31/12/1990 או 1.1.88').setRequired(true);
+    const row = new ActionRowBuilder().addComponents(input);
+    modal.addComponents(row);
+    await interaction.showModal(modal);
+}
+
+// ייצוא שתי הפונקציות העיקריות
 module.exports = {
-    handleBirthdayPanel,
-    handleBirthdayModalSubmit
+    handleBirthdayPanel, // מטפל בכפתורים
+    handleBirthdayModalSubmit, // מטפל בשליחת המודאל
+    showBirthdayModal // פונקציה עזר לפתיחת המודאל
 };

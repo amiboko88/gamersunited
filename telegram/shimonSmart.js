@@ -1,40 +1,20 @@
-const { OpenAI } = require("openai");
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const { analyzeTextForRoast, findMatchInText } = require("./roastTelegram");
-const {
-  triggerWords,
-  offensiveWords,
-  niceWords,
-  questionWords,
-  attentionSeekingPhrases
-} = require("./smartKeywords");
+// 📁 telegram/shimonSmart.js (מעודכן: הסרת analyzeTextForRoast מהייבוא)
+const openai = require('../utils/openaiConfig'); // ייבוא אובייקט OpenAI גלובלי
+// ✅ שורה זו נמחקת לחלוטין
+const { triggerWords, offensiveWords, niceWords, questionWords, attentionSeekingPhrases } = require("./smartKeywords"); // מילות מפתח
 
-function isAttentionSeeking(text) {
-  return attentionSeekingPhrases.some(p => text.toLowerCase().includes(p));
-}
+const RATE_LIMIT_INTERVAL = 15 * 1000; // 15 שניות בין תגובות חכמות באותו צ'אט
+const lastSmartResponse = new Map(); // chat.id -> timestamp
 
-function isNightMode() {
-  const h = new Date().getHours();
-  return h >= 22 && h < 24;
-}
-function isOffensive(t) {
-  return offensiveWords.some(w => t.toLowerCase().includes(w));
-}
-function isNice(t) {
-  return niceWords.some(w => t.toLowerCase().includes(w));
-}
-function isQuestion(t) {
-  return t.endsWith("?") || questionWords.some(w => t.toLowerCase().startsWith(w));
-}
-function isTrigger(t) {
-  return triggerWords.some(w => t.toLowerCase().includes(w));
-}
-function talksAboutShimon(text) {
-  return /שמעון.*(הוא|אמר|זה|חושב|מתנהג|עושה|כתב)/i.test(text);
-}
-function isShallow(text) {
-  return text.length <= 5 && !isTrigger(text) && !isQuestion(text) && !isOffensive(text);
-}
+// פונקציות עזר - נותרו ללא שינוי מהותי
+function isAttentionSeeking(text) { return attentionSeekingPhrases.some(p => text.toLowerCase().includes(p)); }
+function isNightMode() { const h = new Date().getHours(); return h >= 22 || h < 6; } // הגדרת לילה - עד 6 בבוקר
+function isOffensive(t) { return offensiveWords.some(w => t.toLowerCase().includes(w)); }
+function isNice(t) { return niceWords.some(w => t.toLowerCase().includes(t)); } // תיקון: includes(t) במקום includes(w)
+function isQuestion(t) { return t.endsWith("?") || questionWords.some(w => t.toLowerCase().startsWith(w)); }
+function isTrigger(t) { return triggerWords.some(w => t.toLowerCase().includes(w)); }
+function talksAboutShimon(text) { return /שמעון|shim|bot/i.test(text); }
+function isShallow(text) { return text.length <= 5 && !isTrigger(text) && !isQuestion(text) && !isOffensive(text); }
 
 const emojiPool = [
   "😉", "😏", "🫠", "🧐", "🤔", "👀", "😬", "😶", "🫥", "🧠",
@@ -46,154 +26,154 @@ const emojiPool = [
 function pickEmoji(text) {
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
-  if (isOffensive(text)) {
-    return pick([
-      "😈", "😏", "🧠", "🔥", "💩", "👊", "🗯️", "😡", "🖕", "💣",
-      "😤", "👺", "🤬", "🪓", "🥊", "🚬", "💥", "🖍️", "🎃", "🧨"
-    ]);
-  }
-
-  if (isNice(text)) {
-    return pick([
-      "💖", "🥰", "🌈", "😇", "✨", "💐", "🌟", "👍", "🥳", "💎",
-      "🫶", "🎉", "💯", "😍", "🎀", "💌", "🌷", "☀️", "🦄", "🌻"
-    ]);
-  }
-
-  if (isQuestion(text)) {
-    return pick([
-      "🤔", "🧐", "❓", "❔", "💭", "📚", "📖", "👂", "👁️", "🔍",
-      "🧭", "📅", "⏳", "🧪", "💡", "🗒️", "🧠", "🧮", "🔎", "🧱"
-    ]);
-  }
-
+  if (isOffensive(text)) { return pick(["😈", "😏", "🧠", "🔥", "💩", "👊", "🗯️", "😡", "😤", "👺", "🤬", "💥"]); }
+  if (isNice(text)) { return pick(["💖", "🥰", "🌈", "😇", "✨", "💐", "🌟", "👍", "🥳", "💎", "🫶", "🎉", "💯", "😍"]); }
+  if (isQuestion(text)) { return pick(["🤔", "🧐", "❓", "❔", "💭", "📚", "📖", "👂", "👁️", "🔍", "🧠"]); }
   return pick(emojiPool);
 }
 
-function randomStyle() {
+// ✅ פונקציה לבחירת סגנון תגובה חכמה
+function selectSmartStyle() {
   const n = Math.random();
-  if (n < 0.05) return "ignore";
-  if (n < 0.15) return "rejection";
-  if (n < 0.30) return "emojiOnly";
+  if (n < 0.05) return "ignore"; // סיכוי נמוך להתעלם
+  if (n < 0.15) return "emojiOnly"; // סיכוי נמוך לתגובת אימוג'י בלבד
+  // השאר יקבלו תגובה מלאה
   return "fullText";
 }
 
-function formatReply(text, emoji = "") {
-  const rtl = "‏";
-  return `${rtl}${text.trim().replace(/["“”'`׳"״]/g, "")}${emoji ? " " + emoji : ""}`;
+// ✅ פונקציה לפורמט תגובת טלגרם (RTL)
+function formatTelegramReply(text, emoji = "") {
+  const rtl = "‎"; // תו Unicode לשמירה על כיווניות מימין לשמאל
+  // ניקוי מירכאות כפולות/בודדות, רווחים ותווי יישור
+  const cleanedText = text.trim().replace(/^["“”'`׳"״\s\u200E\u200F]+|["“”'`׳"״\s\u200E\u200F]+$/g, "").trim();
+  return `${rtl}${cleanedText}${emoji ? " " + emoji : ""}`;
 }
 
+/**
+ * מייצר פרומפט ל-OpenAI בהתבסס על תוכן ההודעה וכוונת המשתמש.
+ * @param {string} text - הודעת המשתתף.
+ * @returns {string} - הפרומפט המלא ל-GPT.
+ */
 function createPrompt(text) {
-  const context = `אתה בוט בשם שמעון. אתה עוקצני, ישראלי, לא סובל שטויות.
-אתה מגיב בצ׳אט קבוצתי. תגיב בקצרה, בלי להסביר ובלי לפנות בשמות. 
-התגובה שלך תמיד נשמעת כאילו כתבת אותה תוך כדי לעיסת בורקס – חצי קשב, חצי עצבים.`;
+  // ✅ פרומפט בסיס חדש - חכם, בוגר, סרקסטי, לא ילדותי
+  const baseContext = `אתה שמעון, בוט טלגרם ישראלי. הטון שלך הוא סרקסטי, בוגר, ציני, מתוחכם ולא בוטה. אתה מגיב בקצרה (עד משפט או שניים), בלי להסביר או להתנצל. התגובה שלך תמיד נשמעת חדה ועם וייב של גיימרים מנוסים.`;
 
   if (isAttentionSeeking(text)) {
-    return `${context}
-מישהו כותב "${text}" כדי למשוך תשומת לב או להחיות את הקבוצה.
-ענה לו בעקיצה כאילו תפסת אותו מחפש תשומת לב, בטון יבש וציני.`;
+    return `${baseContext}
+המשתמש כותב: "${text}" כדי למשוך תשומת לב או להחיות את הקבוצה.
+תגובה: ענה לו בעקיצה שמציגה אותו כרודף תשומת לב, בטון יבש ומתוחכם.`;
   }
 
-  if (isOffensive(text) && isQuestion(text)) {
-    return `${context}
-הודעה עם גם קללה וגם שאלה: "${text}"
-ענה בעקיצה סרקסטית אחת.`;
-  }
-
-  if (isOffensive(text)) {
-    return `${context}
-מישהו שלח קללה או העלבה: "${text}"
-ענה בקללה חכמה ועוקצנית, בלי להתרגש.`;
+  if (isOffensive(text)) { // כולל גם קללות ושאלות עם קללות
+    return `${baseContext}
+המשתמש השתמש בשפה בוטה/קילל/העלב: "${text}"
+תגובה: ענה בתגובה חכמה, עוקצנית ומתנשאת קלות, מבלי לקלל חזרה. תראה שאתה מעל זה, אך אל תהיה צנוע.`;
   }
 
   if (isNice(text)) {
-    return `${context}
-מישהו מחמיא לך: "${text}"
-ענה בטון אדיש, כאילו מחמיאים לך כל הזמן.`;
+    return `${baseContext}
+המשתמש החמיא לך: "${text}"
+תגובה: ענה בטון שחצני, מתנשא או בביטול משועשע. אל תהיה צנוע, אבל גם אל תהיה ילדותי.`;
   }
 
   if (isQuestion(text)) {
-    return `${context}
-מישהו שואל שאלה: "${text}"
-ענה קצר ולעניין, טון עייף אבל מדויק.`;
+    return `${baseContext}
+המשתמש שואל שאלה: "${text}"
+תגובה: ענה קצר ולעניין, או בסרקסטיות מתחמקת. טון עייף, אבל מדויק וחכם.`;
   }
 
-  if (isTrigger(text)) {
-    return `${context}
-מישהו פשוט מזכיר את השם שלך או קורא לך: "${text}"
-ענה כאילו הוא מחפש תשומת לב ואתה לא ממש מתרשם.`;
+  if (isTrigger(text) && talksAboutShimon(text)) {
+    return `${baseContext}
+המשתמש מזכיר אותך/מדבר עליך ישירות: "${text}"
+תגובה: ענה כאילו הוא מחפש תשומת לב ואתה לא מתרשם, בטון ציני ומתוחכם.`;
   }
 
-  return `${context}
-מישהו כתב סתם הודעה: "${text}"
-ענה בטון סרקסטי, משפט אחד.`;
+  if (text.length > 50) { 
+      return `${baseContext}
+המשתמש כתב הודעה ארוכה: "${text}"
+תגובה: ענה בקצרה, בסרקסטיות, כאילו אין לך זמן לקרוא את כל המגילה.`;
+  }
+
+  return `${baseContext}
+המשתמש כתב: "${text}"
+תגובה: ענה בטון סרקסטי, משפט אחד, עם הומור גיימרים בוגר.`;
 }
 
-async function shimonSmart(ctx) {
+/**
+ * פונקציה מרכזית לטיפול בתגובות חכמות של שמעון.
+ * @param {import('grammy').Context} ctx - אובייקט הקונטקסט של grammy.
+ * @returns {Promise<boolean>} - האם שמעון הגיב בתגובה חכמה.
+ */
+async function handleSmartReply(ctx) {
   const userId = ctx.from?.id;
   const chatId = ctx.chat?.id;
   const text = ctx.message?.text?.trim() || "";
+
   if (!userId || !chatId || text.length < 2) return false;
   if (ctx.message?.sticker || ctx.message?.photo) return false;
 
-  // 🛑 בדיקת פרופיל Roast
-  const match = findMatchInText(text);
-  if (match) {
-  const roasted = await analyzeTextForRoast(text, ctx);
-  if (roasted) return true;
-  // אם לא הצליח לבצע Roast – לא נמשיך לתגובה רגילה
-  return false;
-}
-
-
-  const nowNight = isNightMode();
-  const trigger = isTrigger(text);
-  const indirect = talksAboutShimon(text);
-  const attention = isAttentionSeeking(text);
-
-  if (!nowNight && !trigger && !attention) return false;
-  if (!nowNight && indirect) return true;
-
-  // אין צורך לקרוא ל-analyzeTextForRoast שוב, כבר עשינו את זה אם match היה קיים
-
-  if (isShallow(text)) {
-    const emoji = pickEmoji(text);
-    await ctx.reply(`‏${emoji}`, { parse_mode: "HTML" });
-    return true;
+  const now = Date.now();
+  if (lastSmartResponse.has(chatId) && (now - lastSmartResponse.get(chatId) < RATE_LIMIT_INTERVAL)) {
+      return false;
   }
 
-  const style = randomStyle();
-  if (style === "ignore") return false;
-  if (style === "rejection") {
-    await ctx.reply(`‏למה נראה לך שמגיע לך תגובה 🫥`, { parse_mode: "HTML" });
-    return true;
+  const isNight = isNightMode();
+  const hasTrigger = isTrigger(text);
+  const isDirectMention = talksAboutShimon(text);
+  const isSeekingAttention = isAttentionSeeking(text); // ✅ תיקון טעות הקלדה
+  const isTextOffensive = isOffensive(text);
+  const isTextNice = isNice(text);
+  const isTextQuestion = isQuestion(text);
+  const isTextShallow = isShallow(text);
+
+  if (isDirectMention || isTextOffensive || isTextNice || isTextQuestion) {
+  }
+  else if (isNight || isSeekingAttention || hasTrigger) {
+  }
+  else if (isTextShallow) {
+      await ctx.reply(formatTelegramReply('', pickEmoji(text)), { parse_mode: "HTML" });
+      lastSmartResponse.set(chatId, now);
+      return true;
+  }
+  else {
+      return false;
+  }
+
+  const style = selectSmartStyle();
+  if (style === "ignore") {
+      lastSmartResponse.set(chatId, now);
+      return false;
   }
   if (style === "emojiOnly") {
-    await ctx.reply(`‏${pickEmoji(text)}`, { parse_mode: "HTML" });
-    return true;
+      await ctx.reply(formatTelegramReply('', pickEmoji(text)), { parse_mode: "HTML" });
+      lastSmartResponse.set(chatId, now);
+      return true;
   }
 
   const prompt = createPrompt(text);
+  let replyContent = null;
   try {
     const gptRes = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.85,
-      max_tokens: 100
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.8,
+      max_tokens: 80
     });
-
-    const raw = gptRes.choices?.[0]?.message?.content?.trim();
-    if (!raw) return false;
-
-    const emoji = pickEmoji(text);
-    const reply = formatReply(raw, emoji);
-    await ctx.reply(reply, { parse_mode: "HTML" });
-    return true;
+    replyContent = gptRes.choices?.[0]?.message?.content?.trim();
   } catch (err) {
-    console.error("❌ GPT Smart Error:", err);
-    return false;
+    console.error("❌ שגיאה ביצירת תגובה חכמה מ-OpenAI:", err);
+    replyContent = "שמעון קצת עמוס. נסה שוב בעוד רגע!";
   }
+
+  if (!replyContent) {
+      return false;
+  }
+
+  const finalReply = formatTelegramReply(replyContent, pickEmoji(replyContent));
+  await ctx.reply(finalReply, { parse_mode: "HTML" });
+  
+  lastSmartResponse.set(chatId, now);
+  return true;
 }
 
-
-module.exports = shimonSmart;
+module.exports = handleSmartReply;

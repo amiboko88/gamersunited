@@ -1,13 +1,12 @@
+// 📁 telegram/telegramCommands.js (מעודכן: הסרת nameOf המיותר)
 const { getUpcomingBirthdaysText } = require("./telegramBirthday");
 const { generateXPProfileCard } = require("./generateXPProfileCard"); 
 const db = require("../utils/firebase");
 const lastStartCommand = new Map(); // userId -> timestamp
 const { generateRoastText } = require("./generateRoastText");
-const { OpenAI } = require("openai");
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = require('../utils/openaiConfig'); // ייבוא אובייקט OpenAI גלובלי
 
 module.exports = function registerTelegramCommands(bot, WAITING_USERS) {
-  const nameOf = (ctx) => ctx.from?.first_name || "חבר";
   bot.api.setMyCommands([
     { command: "start", description: "🚀 פתיחת תפריט ראשי" }
   ]);
@@ -19,32 +18,29 @@ bot.command("start", async (ctx) => {
   const lastTime = lastStartCommand.get(userId) || 0;
 
   // 📛 אם שולח שוב תוך פחות מ־15 שניות – עקיצה במקום תפריט
-if (now - lastTime < 15000) {
-  const prompt = `משתמש מריץ שוב ושוב את הפקודה /start. תן לו עקיצה קצרה, חכמה, בסגנון שמעון. בלי לקלל.`;
-  try {
-    const gptRes = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.85,
-      max_tokens: 60
-    });
+  if (now - lastTime < 15000) {
+    const prompt = `משתמש מריץ שוב ושוב את הפקודה /start. תן לו עקיצה קצרה, חכמה, בסגנון שמעון. בלי לקלל.`;
+    try {
+      const gptRes = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.85,
+        max_tokens: 60
+      });
 
-    let reply = gptRes.choices?.[0]?.message?.content?.trim();
+      let reply = gptRes.choices?.[0]?.message?.content?.trim();
 
-    // ✅ ניקוי מירכאות, רווחים, יישור לימין
-    reply = (reply || "יאללה מספיק עם ה־/start הזה אחי.")
-      .replace(/^["“”'`׳"״\s]+|["“”'`׳"״\s]+$/g, "").trim();
-    reply = `\u200F${reply}`;
+      reply = (reply || "יאללה מספיק עם ה־/start הזה אחי.")
+        .replace(/^["“”'`׳"״\s]+|["“”'`׳"״\s]+$/g, "").trim();
+      reply = `\u200F${reply}`;
 
-    return ctx.reply(reply, { parse_mode: "HTML" });
-  } catch (err) {
-    console.error("❌ GPT עקיצה /start:", err);
-    return ctx.reply("תפריט כבר פתוח, תנשום.");
+      return ctx.reply(reply, { parse_mode: "HTML" });
+    } catch (err) {
+      console.error("❌ GPT עקיצה /start:", err);
+      return ctx.reply("תפריט כבר פתוח, תנשום.");
+    }
   }
-}
 
-
-  // ✅ תפריט רגיל
   lastStartCommand.set(userId, now);
 
   await ctx.reply("ברוכים הבאים לתפריט של שמעון ", {
@@ -96,6 +92,7 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 const FormData = require("form-data");
+const { InputFile } = require("grammy"); // ייבוא InputFile (לשליחת תמונה)
 
 bot.callbackQuery("profile_xp", async (ctx) => {
   const userId = ctx.from.id.toString();
@@ -113,10 +110,10 @@ bot.callbackQuery("profile_xp", async (ctx) => {
     // 🖼️ אוואטר (כ־data:image)
     let avatarDataURL = null;
     try {
-      const photos = await ctx.getUserProfilePhotos();
+      const photos = await ctx.api.getUserProfilePhotos(userId);
       if (photos.total_count > 0) {
         const fileId = photos.photos[0][0].file_id;
-        const link = await ctx.telegram.getFileLink(fileId);
+        const link = await ctx.api.getFileLink(fileId);
         const res = await axios.get(link.href, { responseType: "arraybuffer" });
         const base64 = Buffer.from(res.data).toString("base64");
         avatarDataURL = `data:image/jpeg;base64,${base64}`;
@@ -136,13 +133,11 @@ bot.callbackQuery("profile_xp", async (ctx) => {
     const filePath = path.join("/tmp", `xp_profile_${userId}.png`);
     fs.writeFileSync(filePath, buffer);
 
-    const form = new FormData();
-    form.append("chat_id", ctx.chat.id);
-    form.append("photo", fs.createReadStream(filePath));
-    form.append("parse_mode", "HTML");
-
-    const telegramUrl = `https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendPhoto`;
-    await axios.post(telegramUrl, form, { headers: form.getHeaders() });
+    // ✅ שליחת קובץ באמצעות ctx.replyWithPhoto (עם InputFile)
+    await ctx.replyWithPhoto(new InputFile(filePath, `xp_profile_${userId}.png`), {
+      caption: `✨ <b>פרופיל ה־XP של ${name}</b>`,
+      parse_mode: "HTML"
+    });
 
     fs.unlink(filePath, () => {});
     await ctx.answerCallbackQuery();
@@ -241,11 +236,12 @@ bot.callbackQuery("demo_roast", async (ctx) => {
 
   const cleanRoast = roast
     .replace(/^["“”'`׳"״\s]+|["“”'`׳"״\s]+$/g, "").trim();
-  const rtlRoast = `\u200F${cleanRoast}`;
+  const rtlRoast = `\u200F<b>${cleanRoast}</b>`;
 
-  await ctx.reply(`🧠 דוגמת ירידה:\n\n<b>${rtlRoast}</b>`, {
+  await ctx.reply(`🧠 דוגמת ירידה:\n\n${rtlRoast}`, {
     parse_mode: "HTML"
   });
+  await ctx.answerCallbackQuery();
 });
 
 // 🎧 קול של שמעון – עם הגנה מלאה

@@ -1,5 +1,4 @@
-// 📁 tts/ttsQuotaManager.eleven.js – ניהול מגבלות שימוש ב־TTS של ElevenLabs
-
+// 📁 tts/ttsQuotaManager.eleven.js – נותר כפי שהוא (נראה תקין)
 const admin = require('firebase-admin');
 
 const DAILY_CHAR_LIMIT = 15000;
@@ -18,6 +17,7 @@ function getMonthKey() {
 
 async function getTTSQuotaReport() {
   try {
+    // ✅ גישה ל-Firestore דרך admin.firestore() כאן היא תקינה
     const db = admin.firestore();
     const dateKey = getDateKey();
     const monthKey = getMonthKey();
@@ -68,7 +68,7 @@ async function getTTSQuotaReport() {
 
 async function shouldUseFallback() {
   const report = await getTTSQuotaReport();
-  if (!report) return true;
+  if (!report) return true; // אם יש שגיאה, נניח שימוש ב-fallback
 
   const nearingLimit = report.dailyCharacters.used >= report.dailyCharacters.limit * 0.9 ||
                        report.monthlyCharacters.used >= report.monthlyCharacters.limit * 0.9 ||
@@ -78,6 +78,7 @@ async function shouldUseFallback() {
 
 async function registerTTSUsage(chars = 0, calls = 1) {
   try {
+    // ✅ גישה ל-Firestore דרך admin.firestore() כאן היא תקינה
     const db = admin.firestore();
     const dateKey = getDateKey();
     const monthKey = getMonthKey();

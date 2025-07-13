@@ -2,8 +2,9 @@ const puppeteer = require("puppeteer");
 const sharp = require("sharp"); // ייבוא ספריית sharp, למרות שלא בשימוש ישיר כאן, נשאר כי צוין
 
 function clean(text) {
+  // תיקון הביטוי הרגולרי: הוסר הלוכסן הכפול לפני \p{L} ו-\p{N}, והמקף הועבר לסוף כדי שלא יפורש כטווח.
   return (text || "")
-    .replace(/[^\\p{L}\\p{N} _.\\-@!?:א-ת\\u200F\\u200E\\u202B\\u202E]/gu, "")
+    .replace(/[^ \p{L}\p{N}._@!?:א-ת\u200F\u200E\u202B\u202E-]/gu, "")
     .trim();
 }
 

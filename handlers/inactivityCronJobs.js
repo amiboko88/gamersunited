@@ -1,15 +1,17 @@
 // 📁 handlers/inactivityCronJobs.js
-const db = require('../utils/firebase'); // נתיב יחסי נכון ל-firebase.js
-const { sendStaffLog } = require('../utils/staffLogger'); // נתיב יחסי נכון ל-staffLogger.js
-const { createPaginatedFields } = require('../interactions/selectors/inactivitySelectMenuHandler'); // ✅ ייבוא פונקציה לבניית שדות מרובי עמודים
-const { sendReminderDM } = require('../interactions/buttons/inactivityDmButtons'); // ✅ ייבוא פונקציית שליחת DM
+const { EmbedBuilder } = require('discord.js'); // נחוץ עבור EmbedBuilder ב runAutoTracking
+const db = require('../utils/firebase'); // נתיב יחסי נכון
+const { sendStaffLog } = require('../utils/staffLogger'); // נתיב יחסי נכון
+const { createPaginatedFields } = require('../interactions/selectors/inactivitySelectMenuHandler'); // ייבוא פונקציה לבניית שדות מרובי עמודים
+const { sendReminderDM } = require('../interactions/buttons/inactivityDmButtons'); // ייבוא פונקציית שליחת DM
+// יש לייצא את executeKickFailedUsers מ inactivityKickButton.js אם הוא משמש כאן
+const { executeKickFailedUsers } = require('../interactions/buttons/inactivityKickButton'); // ייבוא פונקציית הרחקה
 
 const INACTIVITY_DAYS = 7;
 let lastInactiveIds = []; // משתנה לניהול שינויים בדוחות
 
 /**
  * פונקציית עזר לעדכון סטטוס משתמש ב-Firebase.
- * (זוהי גרסה מצומצמת יותר מזו שב-inactivityDmButtons.js, שכן היא לא מחזירה הצלחה/כישלון מפורט).
  * @param {string} userId - ה-ID של המשתמש.
  * @param {object} updates - אובייקט עם השדות לעדכון.
  */
@@ -33,7 +35,7 @@ async function runAutoTracking(client) {
   const snapshot = await db.collection('memberTracking').get();
   const now = Date.now();
   const allInactive = [];
-  const statusChanges = []; // מערך לאיסוף שינויים
+  const statusChanges = [];
 
   for (const doc of snapshot.docs) {
     const d = doc.data();
@@ -42,61 +44,53 @@ async function runAutoTracking(client) {
     const days = Math.floor((now - last) / 86400000);
     const member = members.get(userId);
 
-    // טיפול במשתמשים שעזבו או בוטים
     if (!member || member.user.bot || userId === client.user.id || ['left', 'kicked'].includes(d.statusStage)) {
         if (!member && !['left', 'kicked'].includes(d.statusStage)) {
-            // אם המשתמש לא בשרת ולא סומן כעזב/הורחק, עדכן סטטוס
             await updateMemberStatus(userId, { statusStage: 'left', leftAt: new Date().toISOString() });
             await sendStaffLog(client, '🚪 משתמש עזב', `<@${userId}> עזב את השרת ונרשם כעזב במערכת.`, 0x808080);
         }
-        continue; // דלג על בוטים ומשתמשים שעזבו/הורחקו
+        continue;
     }
 
     let currentStatus = d.statusStage || 'joined';
     let newStatus = currentStatus;
 
-    // עדכון סטטוסים לפי ימי אי-פעילות
     if (days >= 30 && currentStatus !== 'final_warning_auto' && currentStatus !== 'final_warning') {
         newStatus = 'final_warning_auto';
     } else if (days >= 14 && currentStatus === 'dm_sent') {
         newStatus = 'final_warning';
     } else if (days >= INACTIVITY_DAYS && currentStatus === 'joined') {
         newStatus = 'waiting_dm';
-    } else if (currentStatus === 'waiting_dm' && days < INACTIVITY_DAYS) { // משתמש חזר לפעילות לפני DM
+    } else if (currentStatus === 'waiting_dm' && days < INACTIVITY_DAYS) {
         newStatus = 'active';
-    } else if (d.replied && currentStatus !== 'responded') { // משתמש הגיב ל-DM
+    } else if (d.replied && currentStatus !== 'responded') {
         newStatus = 'responded';
     } else if (!d.dmFailed && !d.replied && days < INACTIVITY_DAYS && currentStatus !== 'joined') {
-        // אם משתמש חזר להיות פעיל ואין לו כשלון DM והוא לא הגיב
         newStatus = 'active';
     }
 
 
     if (newStatus !== currentStatus) {
         await updateMemberStatus(userId, { statusStage: newStatus, statusUpdated: new Date().toISOString() });
-        statusChanges.push(`• <@${userId}>: \`${currentStatus}\` ➡️ \`${newStatus}\``); // איסוף השינוי
+        statusChanges.push(`• <@${userId}>: \`${currentStatus}\` ➡️ \`${newStatus}\``);
     }
 
-    // אסוף משתמשים "לא פעילים" לצורך דוח תקופתי (אם הסטטוס שלהם לא 'active', 'responded', 'left', 'kicked')
     if (days >= INACTIVITY_DAYS && !['left', 'kicked', 'responded', 'active'].includes(newStatus)) {
         allInactive.push({ id: userId, days, tag: member.user.username, status: newStatus });
     }
   }
 
-  // שליחת לוג סיכום על שינויי סטטוס (אם היו)
   if (statusChanges.length > 0) {
       const fields = createPaginatedFields('🔄 סיכום עדכוני סטטוס', statusChanges);
       await sendStaffLog(client, '📜 עדכון סטטוסים אוטומטי', `בוצעו ${statusChanges.length} עדכוני סטטוס.`, 0x3498db, fields);
   }
 
-  // שליחת דוח משתמשים לא פעילים רק אם היו שינויים משמעותיים ברשימה
-  // (הלוגיקה של hasChanged מ memberButtons.js המקורי, ניתן לשמור כאן פנימית)
   const currentInactiveIds = allInactive.map(u => u.id).sort();
   const changed = currentInactiveIds.length !== lastInactiveIds.length ||
                   currentInactiveIds.some((id, i) => id !== lastInactiveIds[i]);
 
   if (changed) {
-    lastInactiveIds = currentInactiveIds; // עדכן את רשימת המזהים
+    lastInactiveIds = currentInactiveIds;
 
     const group1 = allInactive.filter(u => u.days >= 7 && u.days <= 13);
     const group2 = allInactive.filter(u => u.days >= 14 && u.days <= 20);
@@ -109,7 +103,6 @@ async function runAutoTracking(client) {
     const allFields = [...fields1, ...fields2, ...fields3];
 
     const embeds = [];
-    // נחלק ל-Embeds נפרדים אם יש יותר מדי שדות
     for (let i = 0; i < allFields.length; i += 25) {
         const chunk = allFields.slice(i, i + 25);
         const embed = new EmbedBuilder()
@@ -150,19 +143,16 @@ async function runScheduledReminders(client) {
     let shouldSend = false;
     let isFinal = false;
 
-    // שלח תזכורת רגילה אם הסטטוס 'waiting_dm'
     if (status === 'waiting_dm') {
       shouldSend = true;
       isFinal = false;
-    }
-    // שלח תזכורת סופית אם הסטטוס 'final_warning'
-    else if (status === 'final_warning') { // הסרנו d.dmSent כי הסטטוס כבר מצביע על כך
+    } else if (status === 'final_warning') {
       shouldSend = true;
       isFinal = true;
     }
 
     if (shouldSend) {
-      const result = await sendReminderDM(client, guild, members, userId, isFinal); // ✅ שימוש בפונקציה המיובאת
+      const result = await sendReminderDM(client, guild, members, userId, isFinal);
       if (result.success) {
         success.push(`<@${userId}> (${isFinal ? 'סופי' : 'רגיל'})`);
       } else {
@@ -173,8 +163,8 @@ async function runScheduledReminders(client) {
 
   if (success.length > 0 || fails.length > 0) {
       const fields = [];
-      if (success.length > 0) fields.push(createPaginatedFields('✅ נשלחו בהצלחה', success)[0]); // [0] כדי לקבל את השדה הראשון
-      if (fails.length > 0) fields.push(createPaginatedFields('❌ נכשלו', fails)[0]); // [0] כדי לקבל את השדה הראשון
+      if (success.length > 0) fields.push(createPaginatedFields('✅ נשלחו בהצלחה', success)[0]);
+      if (fails.length > 0) fields.push(createPaginatedFields('❌ נכשלו', fails)[0]);
 
       await sendStaffLog(client, '📤 סיכום שליחת תזכורות אוטומטי', `הושלם סבב אוטומטי.`, 0x00aaff, fields);
   }
@@ -189,7 +179,6 @@ async function runMonthlyKickReport(client) {
     const allTracked = await db.collection('memberTracking').get();
     const eligibleToKick = allTracked.docs.filter(doc => {
         const d = doc.data();
-        // מועמדים להרחקה: מי שנכשלה שליחת DM, או קיבל אזהרה סופית (אוטומטית או ידנית), ולא עזב.
         return ['failed_dm', 'final_warning', 'final_warning_auto'].includes(d.statusStage || '') && d.statusStage !== 'left';
     });
 
@@ -215,4 +204,6 @@ module.exports = {
   runAutoTracking,
   runScheduledReminders,
   runMonthlyKickReport,
+  // export executeKickFailedUsers if it's used directly as a cron job here
+  // If kick is only by button, it doesn't need to be exported here
 };

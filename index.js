@@ -1,10 +1,11 @@
+// 📁 index.js (מעודכן)
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { Client, GatewayIntentBits, Collection, Partials, REST, Routes } = require('discord.js');
 
 // --- UTILS & TELEGRAM ---
-const db = require('./utils/firebase');
+const db = require('./utils/firebase'); // ודא שנתיב זה נכון
 require("./telegram/shimonTelegram");
 
 // --- CLIENT SETUP ---
@@ -21,7 +22,7 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message, Partials.User]
 });
 
-client.db = db;
+client.db = db; // ✅ חיוני: הקצאת אובייקט ה-db ל-client
 global.client = client;
 
 // --- DYNAMIC HANDLER LOADING ---
@@ -43,7 +44,7 @@ for (const file of commandFiles) {
   }
 }
 
-// ✅ Improved Interaction Loader - Recursive and Safe
+// Improved Interaction Loader - Recursive and Safe
 const interactionsPath = path.join(__dirname, 'interactions');
 if (fs.existsSync(interactionsPath)) {
     const loadHandlers = (dir) => {
@@ -51,7 +52,7 @@ if (fs.existsSync(interactionsPath)) {
         for (const item of filesAndFolders) {
             const itemPath = path.join(dir, item.name);
             if (item.isDirectory()) {
-                loadHandlers(itemPath); // Recursive call for sub-folders
+                loadHandlers(itemPath);
             } else if (item.isFile() && item.name.endsWith('.js')) {
                 try {
                     const handler = require(itemPath);
@@ -99,7 +100,7 @@ client.once('ready', async () => {
     await hardSyncPresenceOnReady(client);
     await setupVerificationMessage(client);
     initializeMvpReactionListener(client);
-    initializeCronJobs(client);
+    initializeCronJobs(client); // client.db יהיה זמין בתוך Cron Jobs
 
     console.log("✅ All systems initialized successfully.");
   } catch (err) {
@@ -130,18 +131,16 @@ client.on('interactionCreate', async interaction => {
 
         // 2. If not found, check dynamic handlers
         if (!handler) {
-            // השורה המתוקנת
-handler = client.dynamicInteractionHandlers.find(h => h.customId(interaction));
+            handler = client.dynamicInteractionHandlers.find(h => h.customId(interaction));
         }
 
         if (handler) {
-            // Optional: Check interaction type if specified in the handler
-            if (handler.type && !interaction[handler.type]()) return;
+            if (handler.type && !interaction[handler.type]()) return; // Added type check here
             await handler.execute(interaction, client);
         }
     } catch (error) {
         console.error('❌ שגיאה ב-interactionCreate:', error);
-        const replyOptions = { content: '❌ אירעה שגיאה בביצוע הפעולה.', ephemeral: true };
+        const replyOptions = { content: '❌ אירעה שגיאה בביצוע הפעולה.', flags: MessageFlags.Ephemeral }; // Corrected here
         if (interaction.replied || interaction.deferred) {
             await interaction.followUp(replyOptions).catch(() => {});
         } else {

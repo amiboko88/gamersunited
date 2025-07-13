@@ -1,7 +1,7 @@
 // 📁 interactions/buttons/inactivityKickButton.js
 const { EmbedBuilder, MessageFlags } = require('discord.js');
-const db = require('../../utils/firebase'); // נתיב יחסי נכון ל-firebase.js
-const { sendStaffLog } = require('../../utils/staffLogger'); // נתיב יחסי נכון ל-staffLogger.js
+const db = require('../../utils/firebase'); // נתיב יחסי נכון
+const { sendStaffLog } = require('../../utils/staffLogger'); // נתיב יחסי נכון
 
 /**
  * פונקציה שמבצעת הרחקה של משתמשים העומדים בקריטריונים לאי-פעילות.
@@ -17,9 +17,6 @@ async function executeKickFailedUsers(client) {
   let failedKick = [];
   let kickedList = [];
 
-  // סינון משתמשים כשירים להרחקה:
-  // משתמשים שהסטטוס שלהם הוא 'failed_dm', 'final_warning', או 'final_warning_auto'
-  // וטרם סומנו כ'left' (עזבו את השרת)
   const eligibleToKick = allTracked.docs.filter(doc => {
     const d = doc.data();
     return ['failed_dm', 'final_warning', 'final_warning_auto'].includes(d.statusStage || '') && d.statusStage !== 'left';
@@ -29,7 +26,6 @@ async function executeKickFailedUsers(client) {
     const userId = doc.id;
     const member = members.get(userId);
 
-    // אם המשתמש לא נמצא בשרת, ננקה אותו מהמעקב ב-Firebase
     if (!member) {
       notInGuild.push(`<@${userId}>`);
       await db.collection('memberTracking').doc(userId).delete();
@@ -38,16 +34,12 @@ async function executeKickFailedUsers(client) {
     }
 
     try {
-      // נבצע הרחקה של המשתמש מהשרת
       await member.kick('בעיטה לפי סטטוס – לא פעיל + חסום + לא הגיב');
-      // נמחק את המשתמש ממעקב הפעילות ב-Firebase לאחר הרחקה מוצלחת
       await db.collection('memberTracking').doc(userId).delete();
       kickedList.push(`<@${userId}>`);
       count++;
-      // נשלח לוג לערוץ הצוות על הרחקה מוצלחת
       await sendStaffLog(client, '👢 משתמש הורחק', `המשתמש <@${userId}> הורחק מהשרת בהצלחה.`, 0xFF3300, [{ name: 'סיבה', value: 'לא פעיל + חסום + לא הגיב' }]);
     } catch (err) {
-      // אם ההרחקה נכשלה, נוסיף לרשימת הכשלונות ונשלח לוג שגיאה לצוות
       failedKick.push(`<@${userId}>`);
       await sendStaffLog(client, '❌ כשל בהרחקה', `נכשל ניסיון הרחקת המשתמש <@${userId}>: \`\`\`${err.message}\`\`\``, 0xFF0000);
     }
@@ -61,11 +53,11 @@ async function executeKickFailedUsers(client) {
  * @param {import('discord.js').Client} client - אובייקט הקליינט של הבוט.
  */
 const execute = async (interaction, client) => {
-  await interaction.deferReply({ ephemeral: true });
+  // תיקון: שימוש ב-flags במקום ephemeral
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const { count, kickedList, notInGuild, failedKick } = await executeKickFailedUsers(client);
 
-  // בניית Embed לסיכום פעולת ההרחקה
   const summaryEmbed = new EmbedBuilder()
     .setTitle('🛑 סיכום פעולת הרחקת משתמשים')
     .setDescription(`**הושלמה פעולת הרחקה ידנית.**`)
@@ -74,11 +66,10 @@ const execute = async (interaction, client) => {
         { name: `🚫 לא בשרת (נמחקו מהמעקב) (${notInGuild.length})`, value: notInGuild.length ? notInGuild.join('\n').slice(0, 1024) : '—', inline: false },
         { name: `⚠️ נכשלו בהרחקה (${failedKick.length})`, value: failedKick.length ? failedKick.join('\n').slice(0, 1024) : '—', inline: false }
      )
-    .setColor(0xff3300) // אדום עמוק
+    .setColor(0xff3300)
     .setTimestamp()
     .setFooter({ text: 'Shimon BOT — ניהול משתמשים' });
 
-  // שליחת הסיכום לערוץ הצוות
   const staffChannel = client.channels.cache.get(process.env.STAFF_CHANNEL_ID);
   if (staffChannel) {
       await staffChannel.send({ embeds: [summaryEmbed] });
@@ -86,12 +77,9 @@ const execute = async (interaction, client) => {
       console.warn(`[STAFF_LOG] ⚠️ ערוץ הצוות לא נמצא (ID: ${process.env.STAFF_CHANNEL_ID}). סיכום הרחקה לא נשלח.`);
   }
 
-
-  return interaction.editReply({ content: '✅ הפעולה בוצעה. סיכום נשלח לערוץ הצוות.', ephemeral: true });
+  return interaction.editReply({ content: '✅ הפעולה בוצעה. סיכום נשלח לערוץ הצוות.', flags: MessageFlags.Ephemeral });
 };
 
-// ה-customId שייקלט על ידי ה-client.on('interactionCreate')
-// ויופנה ל-handler זה (כפונקציה דינמית)
 const customId = (interaction) => {
   return interaction.customId === 'kick_failed_users';
 };
@@ -99,4 +87,5 @@ const customId = (interaction) => {
 module.exports = {
   customId,
   execute,
+  executeKickFailedUsers // ייצוא הפונקציה לשימוש ע"י Cron jobs אם צריך
 };

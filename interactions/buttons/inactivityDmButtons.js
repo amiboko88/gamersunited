@@ -1,8 +1,8 @@
 // 📁 interactions/buttons/inactivityDmButtons.js
 const { ButtonBuilder, ActionRowBuilder, ButtonStyle, Collection, EmbedBuilder, MessageFlags } = require('discord.js');
-const db = require('../../utils/firebase'); // נתיב יחסי נכון ל-firebase.js
-const smartChat = require('../../handlers/smartChat'); // נתיב יחסי נכון ל-smartChat.js
-const { sendStaffLog } = require('../../utils/staffLogger'); // נתיב יחסי נכון ל-staffLogger.js
+const db = require('../../utils/firebase'); // נתיב יחסי נכון
+const smartChat = require('../../handlers/smartChat'); // נתיב יחסי נכון
+const { sendStaffLog } = require('../../utils/staffLogger'); // נתיב יחסי נכון
 
 // פונקציית עזר לעדכון סטטוס משתמש ב-Firebase
 async function updateMemberStatus(userId, updates) {
@@ -35,7 +35,7 @@ async function sendReminderDM(client, guild, members, userId, isFinal = false) {
   const memberReal = members.get(userId) || await guild.members.fetch(userId).catch(() => null);
   const user = memberReal?.user || await client.users.fetch(userId).catch(() => null);
 
-  if (!user || typeof user.send !== 'function' || user.bot) { // ודא שזה לא בוט
+  if (!user || typeof user.send !== 'function' || user.bot) {
       await updateMemberStatus(userId, { dmFailed: true, dmFailedAt: new Date().toISOString(), statusStage: 'failed_dm' });
       return { success: false, reason: 'No user object, cannot send DMs, or is a bot' };
   }
@@ -44,9 +44,9 @@ async function sendReminderDM(client, guild, members, userId, isFinal = false) {
     content: '',
     author: { id: user.id, username: user.username, avatar: user.avatar, bot: user.bot },
     member: memberReal || { displayName: user.username, permissions: { has: () => false }, roles: { cache: new Collection() } },
-    channel: { id: '000' }, // ערוץ פיקטיבי לצורך SmartChat
+    channel: { id: '000' },
     client,
-    _simulateOnly: true // לומר ל-SmartChat שזו סימולציה
+    _simulateOnly: true
   };
 
   const prompt = `${user.username} לא היה פעיל כבר ${daysInactive} ימים.\n` +
@@ -92,11 +92,12 @@ async function sendReminderDM(client, guild, members, userId, isFinal = false) {
  * @param {import('discord.js').Client} client - אובייקט הקליינט של הבוט.
  */
 const execute = async (interaction, client) => {
-  await interaction.deferReply({ ephemeral: true });
+  // תיקון: שימוש ב-flags במקום ephemeral
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const isFinal = interaction.customId === 'send_dm_batch_final_check';
   const guild = interaction.guild;
-  const members = await guild.members.fetch(); // Fetch all members once
+  const members = await guild.members.fetch();
 
   const allTracked = await db.collection('memberTracking').get();
   const success = [];
@@ -108,14 +109,9 @@ const execute = async (interaction, client) => {
     const status = d.statusStage || 'joined';
     let shouldSend = false;
 
-    // לוגיקה לשליחת תזכורות:
-    // שלח תזכורת רגילה אם הסטטוס 'waiting_dm' (משתמשים שלא קיבלו DM עדיין)
     if (!isFinal && status === 'waiting_dm') {
       shouldSend = true;
-    }
-    // שלח תזכורת סופית אם זו בקשה לתזכורת סופית
-    // והסטטוס הוא 'final_warning' (אחרי שקיבלו DM רגיל)
-    else if (isFinal && status === 'final_warning') {
+    } else if (isFinal && status === 'final_warning') {
       shouldSend = true;
     }
 
@@ -129,11 +125,11 @@ const execute = async (interaction, client) => {
     }
   }
 
-  // יצירת Embed לסיכום הפעולה
   const summaryEmbed = new EmbedBuilder()
     .setTitle(`📤 סיכום שליחת תזכורות ${isFinal ? 'סופיות' : 'רגילות'}`)
     .setDescription('הושלם סבב שליחת תזכורות ידני.')
-    .setColor(isFinal ? 0xFF6347 : 0x00aaff) // כתום-אדום לסופי, כחול לרגיל
+    // תיקון: העברה ישירה של ערך הצבע
+    .setColor(isFinal ? 0xFF6347 : 0x00aaff)
     .setTimestamp();
 
   if (success.length > 0) {
@@ -156,14 +152,12 @@ const execute = async (interaction, client) => {
     summaryEmbed.addFields({ name: '❌ נכשלו', value: '—', inline: false });
   }
 
-  // שליחת הסיכום לערוץ הצוות
-  await sendStaffLog(client, `📤 סיכום שליחת תזכורות`, `בוצע סבב שליחת תזכורות DM.`, summaryEmbed.color, summaryEmbed.fields);
+  // תיקון: העברה ישירה של ערך הצבע ל-sendStaffLog
+  await sendStaffLog(client, `📤 סיכום שליחת תזכורות`, `בוצע סבב שליחת תזכורות DM.`, isFinal ? 0xFF6347 : 0x00aaff, summaryEmbed.fields);
 
-  return interaction.editReply({ content: '✅ סבב התזכורות בוצע. סיכום נשלח לערוץ הצוות.', ephemeral: true });
+  return interaction.editReply({ content: '✅ סבב התזכורות בוצע. סיכום נשלח לערוץ הצוות.', flags: MessageFlags.Ephemeral });
 };
 
-// ה-customId שייקלט על ידי ה-client.on('interactionCreate')
-// ויופנה ל-handler זה (כפונקציה דינמית, כפי שיש לך כבר)
 const customId = (interaction) => {
   return interaction.customId === 'send_dm_batch_list' ||
          interaction.customId === 'send_dm_batch_final_check';
@@ -172,4 +166,5 @@ const customId = (interaction) => {
 module.exports = {
   customId,
   execute,
+  sendReminderDM // ייצוא הפונקציה לשימוש ע"י Cron jobs
 };

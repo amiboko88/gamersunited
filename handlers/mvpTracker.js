@@ -1,7 +1,9 @@
-// 📁 handlers/mvpTracker.js
+// 📁 handlers/mvpTracker.js (מעודכן)
 const admin = require('firebase-admin');
 const { renderMvpImage } = require('./mvpRenderer');
 const { log } = require('../utils/logger');
+// ✅ ייבוא ישיר של DB (מומלץ)
+const db = require('../utils/firebase'); // וודא שהנתיב נכון
 
 const Timestamp = admin.firestore.Timestamp;
 const MVP_ROLE_ID = process.env.ROLE_MVP_ID;
@@ -9,7 +11,8 @@ const MVP_CHANNEL_ID = '583575179880431616';
 
 let lastPrintedDate = null;
 
-async function calculateAndAnnounceMVP(client, db, force = false) {
+// ✅ פונקציה זו מקבלת client ו-db
+async function calculateAndAnnounceMVP(client, db) {
   const now = new Date(Date.now() + 3 * 60 * 60 * 1000); // זמן ישראל
   const today = now.toISOString().split('T')[0];
   const statusRef = db.doc('mvpSystem/status');
@@ -65,7 +68,6 @@ async function calculateAndAnnounceMVP(client, db, force = false) {
     log(`⚠️ שגיאה בטעינת משתמשים`);
   }
 
-  await member.roles.add(mvpRole).catch(() => {});
   const mvpStatsRef = db.doc(`mvpStats/${topUser.id}`);
   const mvpStatsSnap = await mvpStatsRef.get();
   const wins = mvpStatsSnap.exists ? (mvpStatsSnap.data().wins || 0) + 1 : 1;
@@ -110,6 +112,7 @@ async function calculateAndAnnounceMVP(client, db, force = false) {
   log(`🏆 MVP: ${member.user.username} (${topUser.voice} דקות, ${topUser.xp} XP, ${wins} זכיות)`);
 }
 
+// ✅ פונקציה זו מקבלת client ו-db
 async function checkMVPStatusAndRun(client, db) {
   const now = new Date(Date.now() + 3 * 60 * 60 * 1000); // Israel time
   const today = now.toISOString().split('T')[0];
@@ -117,7 +120,7 @@ async function checkMVPStatusAndRun(client, db) {
 
   if (day !== 0) return; // Run only on Sundays
 
-  const statusSnap = await db.doc('mvpSystem/status').get();
+  const statusSnap = await db.doc('mvpSystem/status').get(); // שורה 120 (או קרוב אליה)
   const lastDate = statusSnap.exists ? statusSnap.data()?.lastAnnouncedDate : null;
 
   if (lastDate === today) {
@@ -127,14 +130,14 @@ async function checkMVPStatusAndRun(client, db) {
       }
       return;
   }
-  
+
   log(`📢 יום ראשון – מחשב MVP...`);
   lastPrintedDate = today;
-  
+
   await calculateAndAnnounceMVP(client, db);
 }
 
-// 🧠 עדכון פעילות קולית מצטברת
+// ✅ פונקציה זו מקבלת db
 async function updateVoiceActivity(userId, minutes, db) {
   const ref = db.collection('voiceLifetime').doc(userId);
   const doc = await ref.get();
@@ -145,7 +148,6 @@ async function updateVoiceActivity(userId, minutes, db) {
   }, { merge: true });
 }
 
-// ייצוא כל הפונקציות הנדרשות באובייקט אחד
 module.exports = {
   calculateAndAnnounceMVP,
   checkMVPStatusAndRun,

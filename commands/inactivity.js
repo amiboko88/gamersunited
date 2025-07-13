@@ -1,7 +1,6 @@
 // 📁 commands/inactivity.js (הגרסה המפושטת והמעודכנת)
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 // ייבוא פונקציות בניית ה-Embed והקומפוננטות וגם שליפת הנתונים מהקובץ החדש
-// (הן ממוקמות ב-interactions/selectors/inactivitySelectMenuHandler.js לפי ההסכמה האחרונה)
 const { buildMainPanelEmbed, buildMainPanelComponents, getDetailedInactivityStats } = require('../interactions/selectors/inactivitySelectMenuHandler');
 
 const data = new SlashCommandBuilder()
@@ -22,11 +21,8 @@ const execute = async (interaction, client) => {
     }
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    // שלוף נתונים אמיתיים באמצעות הפונקציה המועברת
     const stats = await getDetailedInactivityStats(client);
-    // בנה Embed עם נתונים באמצעות הפונקציה המועברת
     const embed = buildMainPanelEmbed(client, stats);
-    // בנה רכיבים (כפתורים ותפריט בחירה) באמצעות הפונקציה המועברת
     const components = buildMainPanelComponents();
 
     await interaction.editReply({

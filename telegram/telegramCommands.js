@@ -1,4 +1,4 @@
-// 📁 telegram/telegramCommands.js (מעודכן: הסרת nameOf המיותר)
+// 📁 telegram/telegramCommands.js (מעודכן: תיקון ייבוא form-data)
 const { getUpcomingBirthdaysText } = require("./telegramBirthday");
 const { generateXPProfileCard } = require("./generateXPProfileCard"); 
 const db = require("../utils/firebase");
@@ -14,7 +14,7 @@ module.exports = function registerTelegramCommands(bot, WAITING_USERS) {
   // 🎛️ תפריט ראשי
 bot.command("start", async (ctx) => {
   const userId = ctx.from?.id;
-  const now = Date.Now(); // ✅ תיקון: Date.now() - אות גדולה ל-Now
+  const now = Date.now(); // תיקון: Date.now() - אות קטנה
   const lastTime = lastStartCommand.get(userId) || 0;
 
   // 📛 אם שולח שוב תוך פחות מ־15 שניות – עקיצה במקום תפריט
@@ -91,7 +91,7 @@ bot.command("start", async (ctx) => {
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
-const FormData = require("form_data"); // ✅ תיקון: FormData מיובא כך
+const FormData = require("form-data"); // ✅ תיקון: ייבוא form-data
 const { InputFile } = require("grammy"); // ייבוא InputFile (לשליחת תמונה)
 
 bot.callbackQuery("profile_xp", async (ctx) => {
@@ -269,7 +269,7 @@ bot.callbackQuery("demo_voice", async (ctx) => {
     await generateRoastVoice(ctx);
   } catch (err) {
     console.error("🎤 שגיאה במחולל קול:", err);
-    await ctx.reply("😵 שמעון שתק הפעם. נסה שוב מאוחר יותר.");
+    await ctx.reply("😵 שגיאה ביצירת הקול. נסה שוב מאוחר יותר.");
   } finally {
     runningVoiceUsers.delete(userId); // שחרור ללחיצה הבאה
   }

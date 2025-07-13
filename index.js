@@ -1,5 +1,4 @@
-// 📁 index.js (מעודכן)
-require('dotenv').config();
+// 📁 index.js (מעודכן ומתוקן)
 const fs = require('fs');
 const path = require('path');
 const { Client, GatewayIntentBits, Collection, Partials, REST, Routes } = require('discord.js');
@@ -22,7 +21,7 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message, Partials.User]
 });
 
-client.db = db; // ✅ חיוני: הקצאת אובייקט ה-db ל-client
+client.db = db; // חיוני: הקצאת אובייקט ה-db ל-client
 global.client = client;
 
 // --- DYNAMIC HANDLER LOADING ---
@@ -96,11 +95,13 @@ client.once('ready', async () => {
     const { initializeMvpReactionListener } = require('./handlers/mvpReactions');
     const { hardSyncPresenceOnReady } = require('./handlers/presenceTracker');
     const { setupVerificationMessage } = require('./handlers/verificationButton');
+    const setupWelcomeImage = require('./handlers/welcomeImage'); // ✅ הוספת ייבוא של welcomeImage
 
     await hardSyncPresenceOnReady(client);
     await setupVerificationMessage(client);
     initializeMvpReactionListener(client);
-    initializeCronJobs(client); // client.db יהיה זמין בתוך Cron Jobs
+    initializeCronJobs(client);
+    setupWelcomeImage(client); // ✅ הפעלת מודול welcomeImage כאן
 
     console.log("✅ All systems initialized successfully.");
   } catch (err) {

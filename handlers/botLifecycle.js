@@ -8,7 +8,7 @@ const { checkBirthdays } = require('./birthdayTracker');
 const { cleanupEmptyChannels } = require('./channelCleaner');
 const { checkActiveGroups } = require('./groupTracker');
 const { checkMvpReactions } = require('./mvpReactions');
-const { checkMVPStatusAndRun } = require('./mvpTracker'); // ✅ ודא ש-updateVoiceActivity מיובא אם הוא מופעל כ-cron
+const { checkMVPStatusAndRun } = require('./mvpTracker');
 const { rotatePresence } = require('./presenceRotator');
 const { periodicPresenceCheck } = require('./presenceTracker');
 const { updateDisplayChannel } = require('./statsUpdater');
@@ -17,10 +17,12 @@ const { cleanupIdleConnections } = require('./voiceQueue');
 const { sendBirthdayMessages: sendTelegramBirthdays } = require('../telegram/birthdayNotifierTelegram');
 const { cleanupOldFifoMessages } = require('../utils/fifoMemory');
 
-// ייבוא פונקציות ה-CRON של אי-פעילות מהקובץ החדש
 const { runAutoTracking, runScheduledReminders, runMonthlyKickReport } = require('./inactivityCronJobs');
 const { updateWeeklyLeaderboard } = require('./leaderboardUpdater');
 const { sendWarzoneEmbed } = require('./fifoWarzoneAnnouncer');
+
+// ✅ ייבוא מודול ה-podcastManager
+const podcastManager = require('./podcastManager'); 
 
 function initializeCronJobs(client) {
     console.log('[CRON] מאתחל את כל משימות התזמון המרכזיות...');
@@ -48,11 +50,14 @@ function initializeCronJobs(client) {
         { name: 'שליחת ברכות יום הולדת לטלגרם', schedule: '5 9 * * *', func: sendTelegramBirthdays, timezone: 'Asia/Jerusalem', args: [client] },
 
         // משימות MVP וקהילה
-        // ✅ תיקון: העברת client ו-client.db כארגומנטים לפונקציות ה-MVP
         { name: 'בדיקה והכרזת MVP', schedule: '* * * * *', func: checkMVPStatusAndRun, quiet: true, args: [client, client.db] },
-        { name: 'בדיקת ריאקשנים ל-MVP', schedule: '* * * * *', func: checkMvpReactions, quiet: true, args: [client, client.db] }, // אם checkMvpReactions דורש db
+        { name: 'בדיקת ריאקשנים ל-MVP', schedule: '* * * * *', func: checkMvpReactions, quiet: true, args: [client, client.db] },
         { name: 'עדכון Leaderboard שבועי', schedule: '0 21 * * 6', func: updateWeeklyLeaderboard, timezone: 'Asia/Jerusalem', args: [client] },
-        { name: 'הכרזת Warzone', schedule: '0 21-23,0,1 * * 0-4,6', func: sendWarzoneEmbed, timezone: 'Asia/Jerusalem', args: [client] }
+        { name: 'הכרזת Warzone', schedule: '0 21-23,0,1 * * 0-4,6', func: sendWarzoneEmbed, timezone: 'Asia/Jerusalem', args: [client] },
+
+        // ✅ משימות תזמון לפודקאסט
+        { name: 'הפעלת ניטור פודקאסטים (שעות פעילות)', schedule: '0 18 * * *', func: () => podcastManager.setPodcastMonitoring(true), timezone: 'Asia/Jerusalem', args: [] },
+        { name: 'כיבוי ניטור פודקאסטים (סיום שעות פעילות)', schedule: '0 6 * * *', func: () => podcastManager.setPodcastMonitoring(false), timezone: 'Asia/Jerusalem', args: [] },
     ];
 
     tasks.forEach(task => {

@@ -1,66 +1,104 @@
-// 📁 ttsEngine.elevenlabs.js – מוחלף זמנית ל־OpenAI TTS עם עברית טבעית
+// 📁 ttsEngine.elevenlabs.js – מותאם כעת ל־ElevenLabs V3 בלבד
 const axios = require('axios');
 const admin = require('firebase-admin');
 const { log } = require('../utils/logger');
-const { getLineForUser, getScriptByUserId, fallbackScripts } = require('../data/fifoLines');
+// ייבוא הפונונקציה החדשה buildDynamicPodcastScript מ-fifoLines.js
+const { getLineForUser, getScriptByUserId, fallbackScripts, buildDynamicPodcastScript } = require('../data/fifoLines'); 
 const { registerTTSUsage } = require('./ttsQuotaManager.eleven');
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_TTS_URL = 'https://api.openai.com/v1/audio/speech';
+// 🔑 יש להגדיר את זה כמשתנה סביבה ב-Railway
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY; 
+// 🌐 נקודת הקצה של ElevenLabs Text-to-Speech API
+const ELEVENLABS_TTS_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 
+// 🗣️ מיפויי קולות ספציפיים ל-ElevenLabs V3
 const VOICE_MAP = {
-  shimon: 'echo', // קול עברי־ניטרלי יותר
-  shirley: 'nova'
+  shimon: 'TxGEqnHWrfWFTfGW9XjX', // Eli - קול גברי ישראלי - תומך Multi-Lingual
+  shirley: 'EXAVITQu4vr4xnSDxMaL' // Rachel - קול נשי - תומך Multi-Lingual
 };
 
+// 💡 מודל ברירת מחדל ל-V3
+// המודל multi-lingual_v2 מומלץ לעברית ב-V3
+const DEFAULT_ELEVENLABS_MODEL = 'eleven_multilingual_v2'; 
+
+/**
+ * מחזיר את ה-Voice ID המתאים לרמקול.
+ * @param {string} speaker - שם הדובר ('shimon' או 'shirley').
+ * @returns {string} ה-Voice ID המתאים.
+ */
 function getVoiceId(speaker = 'shimon') {
-  return VOICE_MAP[speaker] || VOICE_MAP['shimon'];
+  return VOICE_MAP[speaker] || VOICE_MAP['shimon']; // אם הספיקר לא ממופה, נחזיר את קול ברירת המחדל של שמעון
 }
 
+/**
+ * מבצע סינתזת דיבור באמצעות ElevenLabs V3 API.
+ * @param {string} text - הטקסט להמרה לדיבור.
+ * @param {string} speaker - הדובר המבוקש ('shimon' או 'shirley').
+ * @returns {Promise<Buffer>} Buffer המכיל את נתוני האודיו.
+ * @throws {Error} אם מפתח ה-API אינו מוגדר או מתרחשת שגיאת רשת/API.
+ */
 async function synthesizeElevenTTS(text, speaker = 'shimon') {
-  const voice = getVoiceId(speaker);
-  const cleanText = text
-    .trim()
-    .replace(/\s+/g, ' ')
-    .replace(/\.{3,}/g, '...')
-    .replace(/[^\u0590-\u05FF\s\.\,\!\?]/g, '');
+  if (!ELEVENLABS_API_KEY) {
+    console.error('🛑 ELEVENLABS_API_KEY אינו מוגדר. לא ניתן לבצע TTS.');
+    throw new Error('ElevenLabs API Key is not configured.');
+  }
 
-  log(`🎙️ OpenAI TTS (${speaker}) – ${cleanText.length} תווים`);
+  const voiceId = getVoiceId(speaker);
+  const cleanText = text.trim(); // אין צורך ב-cleanText מורכב כמו ב-OpenAI, ElevenLabs יותר גמיש
+
+  log(`🎙️ ElevenLabs TTS (V3, ${speaker}, Voice ID: ${voiceId}) – ${cleanText.length} תווים`);
 
   let response;
   try {
     response = await axios.post(
-      OPENAI_TTS_URL,
+      `${ELEVENLABS_TTS_URL}/${voiceId}`,
       {
-        model: 'tts-1-hd',
-        voice,
-        input: cleanText
+        text: cleanText,
+        model_id: DEFAULT_ELEVENLABS_MODEL, // שימוש במודל V3 multi-lingual
+        voice_settings: {
+          stability: 0.75, // מומלץ: לשחק עם הערכים 0-1
+          similarity_boost: 0.75 // מומלץ: לשחק עם הערכים 0-1
+        },
+        // פרמטר language_id: 'he' אינו נתמך ישירות ב-V1 Text-to-Speech API Path
+        // המודל ה-multilingual אמור לזהות אוטומטית.
       },
       {
-        responseType: 'arraybuffer',
+        responseType: 'arraybuffer', // לקבל את התגובה כ-Buffer
         headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
+          'xi-api-key': ELEVENLABS_API_KEY,
+          'Content-Type': 'application/json',
+          'Accept': 'audio/mpeg' // ניתן לשנות ל-audio/wav או פורמטים אחרים
         }
       }
     );
   } catch (err) {
-    console.error('🛑 שגיאה בבקשת TTS מ־OpenAI:', err.message);
-    throw new Error('שגיאת רשת מול OpenAI');
+    console.error('🛑 שגיאה בבקשת TTS מ־ElevenLabs:', err.message);
+    if (err.response) {
+      console.error('Response data:', err.response.data ? new TextDecoder().decode(err.response.data) : 'No data');
+      console.error('Response status:', err.response.status);
+      console.error('Response headers:', err.response.headers);
+    }
+    throw new Error(`שגיאת רשת מול ElevenLabs: ${err.message}`);
   }
 
-  if (!response.data || !(response.data instanceof ArrayBuffer) || response.data.byteLength < 1200) {
-    throw new Error('🔇 OpenAI החזיר נתון שגוי או קצר מדי');
+  // בדיקת תגובה תקינה
+  if (!response.data || !(response.data instanceof ArrayBuffer) || response.data.byteLength < 500) {
+    throw new Error('🔇 ElevenLabs החזיר נתון שגוי או קצר מדי. ייתכן שאין תוכן קולי.');
   }
 
   const audioBuffer = Buffer.from(response.data);
 
+  // רישום שימוש במכסה
   await registerTTSUsage(cleanText.length, 1);
 
   return audioBuffer;
 }
 
-
+/**
+ * משיג קטע TTS קצר עבור פרופיל משתמש.
+ * @param {object} member - אובייקט Member של דיסקורד.
+ * @returns {Promise<Buffer>} Buffer המכיל את נתוני האודיו.
+ */
 async function getShortTTSByProfile(member) {
   const userId = member.id;
   const displayName = member.displayName;
@@ -68,63 +106,57 @@ async function getShortTTSByProfile(member) {
   return await synthesizeElevenTTS(text, 'shimon');
 }
 
+/**
+ * מרכיב אודיו עבור פודקאסט מרובה דוברים באמצעות ElevenLabs.
+ * @param {string[]} displayNames - שמות תצוגה של המשתתפים.
+ * @param {string[]} ids - ID-ים של המשתתפים.
+ * @param {object} joinTimestamps - מפתחות זמן הצטרפות של המשתתפים.
+ * @returns {Promise<Buffer>} Buffer מאוחד של כל קטעי האודיו.
+ * @throws {Error} אם אין משפטים קוליים חוקיים להשמעה.
+ */
 async function getPodcastAudioEleven(displayNames = [], ids = [], joinTimestamps = {}) {
   const buffers = [];
   const participants = ids.map((uid, i) => ({
     id: uid,
     name: displayNames[i] || 'שחקן',
-    joinedAt: joinTimestamps[uid] || 0,
-    script: getScriptByUserId(uid)
+    joinedAt: joinTimestamps[uid] || 0
   }));
 
-  participants.sort((a, b) => a.joinedAt - b.joinedAt);
+  // 🆕 קריאה לפונקציה החדשה לבניית הסקריפט הדינמי מ-fifoLines.js
+  const podcastScriptLines = buildDynamicPodcastScript(participants);
 
-  const hasCustom = participants.some(p => p.script?.shimon || p.script?.shirley);
-  const scriptsToUse = hasCustom
-    ? participants.map(p => p.script || getRandomFallbackScript())
-    : [getRandomFallbackScript()];
-
-  for (const script of scriptsToUse) {
-    if (script.shimon?.trim()) {
+  for (const line of podcastScriptLines) {
+    if (line.text?.trim()) {
       try {
-        buffers.push(await synthesizeElevenTTS(script.shimon, 'shimon'));
+        buffers.push(await synthesizeElevenTTS(line.text, line.speaker));
       } catch (err) {
-        console.warn('⚠️ כשל בהשמעת שמעון:', err.message);
-      }
-    }
-    if (script.shirley?.trim()) {
-      try {
-        buffers.push(await synthesizeElevenTTS(script.shirley, 'shirley'));
-      } catch (err) {
-        console.warn('⚠️ כשל בהשמעת שירלי:', err.message);
-      }
-    }
-  }
-
-  // 🧠 תמיד מוסיפים punch רק אם היה script אישי כלשהו
-  if (participants.some(p => p.script)) {
-    const punchScript = getRandomFallbackScript().punch;
-    if (punchScript?.trim()) {
-      try {
-        buffers.push(await synthesizeElevenTTS(punchScript, 'shimon'));
-      } catch (err) {
-        console.warn('⚠️ כשל בהשמעת punch:', err.message);
+        console.warn(`⚠️ כשל בהשמעת ${line.speaker} (ElevenLabs):`, err.message);
       }
     }
   }
 
   if (buffers.length === 0) {
-    throw new Error('🔇 אין משפטים קוליים חוקיים להשמעה');
+    throw new Error('🔇 אין משפטים קוליים חוקיים להשמעה בפודקאסט');
   }
 
   return Buffer.concat(buffers);
 }
 
-
+/**
+ * משיג סקריפט fallback רנדומלי.
+ * @returns {object} אובייקט סקריפט.
+ */
 function getRandomFallbackScript() {
   return fallbackScripts[Math.floor(Math.random() * fallbackScripts.length)];
 }
 
+/**
+ * בודק אם משתמש מורשה להשתמש ב-TTS.
+ * (כרגע תמיד מחזיר true, יש להשלים לוגיקה אם נדרש).
+ * @param {string} userId - ה-ID של המשתמש.
+ * @param {number} limit - מגבלת שימוש.
+ * @returns {Promise<boolean>} האם המשתמש מורשה.
+ */
 async function canUserUseTTS(userId, limit = 5) {
   return true;
 }

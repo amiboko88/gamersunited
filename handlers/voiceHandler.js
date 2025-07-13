@@ -1,3 +1,4 @@
+// 📁 handlers/voiceHandler.js
 const fs = require('fs');
 const path = require('path');
 const { updateVoiceActivity } = require('./mvpTracker');
@@ -7,32 +8,28 @@ const {
   trackJoinDuration,
   trackActiveHour
 } = require('./statTracker');
-const { getPodcastAudioEleven } = require('../tts/ttsEngine.elevenlabs');
-const {
-  joinVoiceChannel,
-  createAudioPlayer,
-  createAudioResource,
-  AudioPlayerStatus,
-  entersState
-} = require('@discordjs/voice');
-
 const db = require('../utils/firebase');
+const podcastManager = require('./podcastManager'); // ייבוא מודול ניהול הפודקאסט
 
-const CHANNEL_ID = process.env.TTS_TEST_CHANNEL_ID;
-const FIFO_ROLE_NAME = 'FIFO';
-const EXTRA_CATEGORY_ID = '1138785781322887233';
+// הגדרות כלליות עבור הבוט ותפקידים
+const CHANNEL_ID = process.env.TTS_TEST_CHANNEL_ID; // משמש לזיהוי ערוץ ספציפי
+const FIFO_ROLE_NAME = 'FIFO'; // שם התפקיד לניהול FIFO
+const EXTRA_CATEGORY_ID = '1138785781322887233'; // קטגוריה נוספת לניטור ערוצים
 
+// מפות לניהול זמני כניסה ופעילות קולית
 const joinTimestamps = new Map();
 const recentJoiners = new Map();
-const lastTriggeredByChannel = new Map();
-const lastVoiceActivityByChannel = new Map();
 
-const triggerLevels = [2, 4, 6, 8, 10];
-const triggerCooldownMs = 60 * 60 * 1000; // שעה
-const minPresenceMs = 5000;
-const recentJoinCooldownMs = 30000;
-const minSilenceMs = 10000;
+// הגדרות ספציפיות לתזמון פודקאסט - אלו משתנים שאינם בשימוש ישיר כאן ורלוונטיים ל-podcastManager
+// triggerLevels = [2, 4, 6, 8, 10]; // רמות טריגר לפודקאסט
+// triggerCooldownMs = 60 * 60 * 1000; // שעה
+// minPresenceMs = 5000; // נוכחות מינימלית בערוץ
+// recentJoinCooldownMs = 30000; // קירור לאחר הצטרפות
+// minSilenceMs = 10000; // שקט מינימלי לפני פודקאסט
+// lastTriggeredByChannel = new Map(); //
+// lastVoiceActivityByChannel = new Map(); //
 
+// טעינת קובץ צליל "פינג" אם קיים
 let pingBuffer = null;
 try {
   const pingPath = path.join(__dirname, '../assets/xbox.mp3');
@@ -41,6 +38,13 @@ try {
   }
 } catch {}
 
+/**
+ * בודק האם Channel ID נתון מנוטר.
+ * פונקציה זו יכולה להיות שימושית עבור לוגיקה נוספת שאינה קשורה לפודקאסט הראשי.
+ * @param {string} channelId - ה-ID של הערוץ.
+ * @param {import('discord.js').Guild} guild - אובייקט השרת.
+ * @returns {boolean} האם הערוץ מנוטר.
+ */
 function channelIdIsMonitored(channelId, guild) {
   const chan = guild.channels.cache.get(channelId);
   return (
@@ -49,6 +53,13 @@ function channelIdIsMonitored(channelId, guild) {
   );
 }
 
+/**
+ * בודק האם שני מערכים שווים (לצורך השוואת משתמשים בערוץ).
+ * פונקציה זו שימושית ללוגיקת קירור פנימית (אם נדרשת).
+ * @param {Array<string>} a - מערך ראשון.
+ * @param {Array<string>} b - מערך שני.
+ * @returns {boolean} האם המערכים שווים.
+ */
 function arraysAreEqual(a, b) {
   if (!a || !b || a.length !== b.length) return false;
   const aSorted = [...a].sort();
@@ -56,8 +67,15 @@ function arraysAreEqual(a, b) {
   return aSorted.every((val, i) => val === bSorted[i]);
 }
 
+/**
+ * מטפל בעדכוני מצב קולי של משתמשים.
+ * זוהי נקודת הכניסה העיקרית לאירועי קול בבוט.
+ * @param {import('discord.js').VoiceState} oldState - מצב הקול הישן של המשתמש.
+ * @param {import('discord.js').VoiceState} newState - מצב הקול החדש של המשתמש.
+ */
 async function handleVoiceStateUpdate(oldState, newState) {
   const member = newState.member;
+  // התעלם מבוטים
   if (!member || member.user.bot) return;
 
   const userId = member.id;
@@ -65,10 +83,12 @@ async function handleVoiceStateUpdate(oldState, newState) {
   const newChannelId = newState.channelId;
   const guild = member.guild;
   const now = Date.now();
+  const client = member.client; // גישה לאובייקט ה-client של הבוט
 
+  // התעלם מערוץ AFK
   if (newChannelId === guild.afkChannelId || oldChannelId === guild.afkChannelId) return;
 
-  // 🎖️ תפקיד FIFO
+  // 🎖️ ניהול תפקיד FIFO (בדיקה וכיוונון תפקידים על בסיס כניסה/יציאה מערוץ מסוים)
   const fifoRole = guild.roles.cache.find(r => r.name === FIFO_ROLE_NAME);
   if (fifoRole) {
     try {
@@ -83,22 +103,22 @@ async function handleVoiceStateUpdate(oldState, newState) {
     }
   }
 
-  // ⏱️ הצטרפות
+  // ⏱️ מעקב אחר הצטרפות ויציאה מערוץ קולי עבור סטטיסטיקות
   const joined = !oldChannelId && newChannelId;
   const left = oldChannelId && !newChannelId;
 
   if (joined) {
     joinTimestamps.set(userId, now);
-    recentJoiners.set(userId, now);
+    recentJoiners.set(userId, now); // לשימוש במידת הצורך ב-statTracker/podcastManager
     await db.collection('voiceEntries').doc(userId).set({ joinedAt: now });
   }
 
   if (left) {
-    const joinedAt = joinTimestamps.get(userId) || now - 60000;
+    const joinedAt = joinTimestamps.get(userId) || now - 60000; // 60 שניות ברירת מחדל אם אין חותמת זמן
     const durationMs = now - joinedAt;
     const durationMinutes = Math.max(1, Math.round(durationMs / 1000 / 60));
 
-    if (durationMinutes > 0 && durationMinutes < 600) {
+    if (durationMinutes > 0 && durationMinutes < 600) { // הגבלת משך זמן הגיוני
       await updateVoiceActivity(userId, durationMinutes, db);
       await trackVoiceMinutes(userId, durationMinutes);
       await trackJoinCount(userId);
@@ -115,77 +135,19 @@ async function handleVoiceStateUpdate(oldState, newState) {
     await db.collection('voiceEntries').doc(userId).delete().catch(() => {});
   }
 
-  // 🎧 ניטור שמעון
-  if (newChannelId && channelIdIsMonitored(newChannelId, guild)) {
-    const channel = newState.channel;
-    if (!channel) return;
+  // 🎧 הפעלת לוגיקת הפודקאסט המרכזית (מועברת למודול ייעודי)
+  // קריאה לפונקציית הטריגר במודול podcastManager.js
+  await podcastManager.handlePodcastTrigger(newState, client);
 
-    lastVoiceActivityByChannel.set(channel.id, now);
-
-    const members = [...channel.members.values()].filter(m => !m.user.bot && !m.voice.selfMute);
-    const count = members.length;
-    const userIds = members.map(m => m.id);
-    const displayNames = members.map(m => m.displayName);
-    const timestamps = Object.fromEntries(userIds.map(id => [id, joinTimestamps.get(id) || now]));
-
-    const activeEnough = userIds.filter(uid => now - (joinTimestamps.get(uid) || 0) >= minPresenceMs);
-    if (activeEnough.length < 2) return;
-
-    if (recentJoiners.has(userId) && now - recentJoiners.get(userId) < recentJoinCooldownMs) return;
-
-    const nextLevel = [...triggerLevels].reverse().find(lvl => count >= lvl);
-    if (!nextLevel) return;
-
-    const prev = lastTriggeredByChannel.get(channel.id);
-    if (
-      prev &&
-      prev.level === nextLevel &&
-      arraysAreEqual(prev.userIds, userIds) &&
-      now - prev.timestamp < triggerCooldownMs
-    ) return;
-
-    if (now - (lastVoiceActivityByChannel.get(channel.id) || 0) < minSilenceMs) {
-      console.log('⏸️ שיחה חיה – שמעון ממתין');
-      return;
-    }
-
-    lastTriggeredByChannel.set(channel.id, { level: nextLevel, userIds, timestamp: now });
-
-    try {
-      const buffer = await getPodcastAudioEleven(displayNames, userIds, timestamps);
-      if (!Buffer.isBuffer(buffer) || buffer.length < 1200) {
-        console.warn('⚠️ שמעון קיבל Buffer לא תקין – לא משמיעים');
-        return;
-      }
-
-      const connection = joinVoiceChannel({
-        channelId: channel.id,
-        guildId: guild.id,
-        adapterCreator: guild.voiceAdapterCreator,
-        selfDeaf: false
-      });
-
-      const player = createAudioPlayer();
-
-      if (pingBuffer) {
-        const pingResource = createAudioResource(pingBuffer);
-        player.play(pingResource);
-        connection.subscribe(player);
-        await entersState(player, AudioPlayerStatus.Playing, 2000);
-        await entersState(player, AudioPlayerStatus.Idle, 10000);
-      }
-
-      const resource = createAudioResource(buffer);
-      player.play(resource);
-      connection.subscribe(player);
-
-      player.on(AudioPlayerStatus.Idle, () => connection.destroy());
-      player.on('error', err => console.error('🎧 שגיאת שמעון בזמן ניגון:', err.message));
-
-    } catch (err) {
-      console.error('🎙️ פודקאסט שמעון נכשל:', err.message);
-    }
-  }
+  // הערה: כל לוגיקת "ניטור שמעון" שהייתה כאן בעבר עבור הפודקאסט
+  // הועברה במלואה ל-`handlers/podcastManager.js`.
+  // `voiceHandler.js` אחראי כעת בעיקר על:
+  // 1. מעקב אחר הצטרפות/עזיבה לסטטיסטיקות.
+  // 2. ניהול תפקידי FIFO.
+  // 3. העברת אירועי `voiceStateUpdate` למנהל הפודקאסט.
+  // אם ישנן השמעות קוליות נוספות שאינן חלק מהפודקאסט וצריכות להישאר
+  // ב-`voiceHandler.js`, יש להוסיף אותן כאן,
+  // ולוודא שהן לא פועלות בזמן שהבוט בפודקאסט פעיל (ניתן לבדוק עם `podcastManager.isBotPodcasting`).
 }
 
 module.exports = {

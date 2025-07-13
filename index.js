@@ -13,7 +13,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildVoiceStates, // חשוב לניטור ערוצי קול
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.DirectMessages
@@ -22,7 +22,7 @@ const client = new Client({
 });
 
 client.db = db; // חיוני: הקצאת אובייקט ה-db ל-client
-global.client = client;
+global.client = client; // ✅ מאפשר גישה ל-client מכל מקום (כמו podcastManager)
 
 // --- DYNAMIC HANDLER LOADING ---
 client.commands = new Collection();
@@ -95,13 +95,13 @@ client.once('ready', async () => {
     const { initializeMvpReactionListener } = require('./handlers/mvpReactions');
     const { hardSyncPresenceOnReady } = require('./handlers/presenceTracker');
     const { setupVerificationMessage } = require('./handlers/verificationButton');
-    const setupWelcomeImage = require('./handlers/welcomeImage'); // ✅ הוספת ייבוא של welcomeImage
+    const setupWelcomeImage = require('./handlers/welcomeImage');
 
     await hardSyncPresenceOnReady(client);
     await setupVerificationMessage(client);
     initializeMvpReactionListener(client);
-    initializeCronJobs(client);
-    setupWelcomeImage(client); // ✅ הפעלת מודול welcomeImage כאן
+    initializeCronJobs(client); // יפעיל את ה-cron jobs של הפודקאסט
+    setupWelcomeImage(client);
 
     console.log("✅ All systems initialized successfully.");
   } catch (err) {
@@ -110,8 +110,21 @@ client.once('ready', async () => {
 });
 
 // --- MAIN INTERACTION ROUTER ---
+// ✅ ייבוא podcastManager לטיפול ב"נעילה" של פקודות
+const podcastManager = require('./handlers/podcastManager'); 
+
 client.on('interactionCreate', async interaction => {
     try {
+        // 🔒 לוגיקת "נעילה" - התעלמות מפקודות ספציפיות בזמן פודקאסט
+        if (interaction.isCommand() && interaction.guildId) { // וודא שזה בשרת
+            if (podcastManager.isBotPodcasting(interaction.guildId, interaction.channelId)) {
+                const commandName = interaction.commandName;
+                if (podcastManager.restrictedCommands.includes(commandName)) {
+                    return interaction.reply({ content: 'שמעון עסוק כרגע בפודקאסט ולא ניתן להפריע לו!', ephemeral: true });
+                }
+            }
+        }
+
         if (interaction.isCommand() || interaction.isAutocomplete()) {
             const command = client.commands.get(interaction.commandName);
             if (!command) return;
@@ -125,23 +138,20 @@ client.on('interactionCreate', async interaction => {
         }
 
         let handler;
-        // 1. Find handler by direct customId match
         if (interaction.customId) {
             handler = client.interactions.get(interaction.customId);
         }
-
-        // 2. If not found, check dynamic handlers
         if (!handler) {
             handler = client.dynamicInteractionHandlers.find(h => h.customId(interaction));
         }
 
         if (handler) {
-            if (handler.type && !interaction[handler.type]()) return; // Added type check here
+            if (handler.type && !interaction[handler.type]()) return;
             await handler.execute(interaction, client);
         }
     } catch (error) {
         console.error('❌ שגיאה ב-interactionCreate:', error);
-        const replyOptions = { content: '❌ אירעה שגיאה בביצוע הפעולה.', flags: MessageFlags.Ephemeral }; // Corrected here
+        const replyOptions = { content: '❌ אירעה שגיאה בביצוע הפעולה.', flags: MessageFlags.Ephemeral };
         if (interaction.replied || interaction.deferred) {
             await interaction.followUp(replyOptions).catch(() => {});
         } else {
@@ -177,7 +187,8 @@ client.on('guildMemberRemove', async member => {
   await db.collection('memberTracking').doc(member.id).set({ status: 'left', leftAt: new Date().toISOString() }, { merge: true });
 });
 
-client.on('voiceStateUpdate', handleVoiceStateUpdate);
+// ✅ handleVoiceStateUpdate יקרא כעת ל-podcastManager
+client.on('voiceStateUpdate', handleVoiceStateUpdate); 
 client.on('presenceUpdate', (oldPresence, newPresence) => trackGamePresence(newPresence));
 client.on('messageCreate', async message => {
   if (message.author.bot) return;

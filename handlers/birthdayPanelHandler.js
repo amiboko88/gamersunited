@@ -74,7 +74,9 @@ async function handleBirthdayPanel(interaction, client) {
   // 🎁 הצגת רשימת ימי הולדת
   if (actionId === 'bday_list') {
     const snapshot = await db.collection(BIRTHDAY_COLLECTION).get();
-    if (snapshot.empty) return interaction.editReply({ content: '🙈 אין ימי הולדת רשומים עדיין.', flags: MessageFlags.Ephemeral });
+    if (snapshot.empty) {
+        return interaction.editReply({ content: '🙈 אין ימי הולדת רשומים עדיין.', flags: MessageFlags.Ephemeral });
+    }
     const months = Array.from({ length: 12 }, () => []);
     snapshot.forEach(doc => {
       const data = doc.data();
@@ -107,15 +109,24 @@ async function handleBirthdayPanel(interaction, client) {
         embeds.push(new EmbedBuilder().setColor('Purple').setTitle('📆 ימי הולדת בקהילה').setFooter({ text: `עמוד ${pageNum} מתוך ... • שמעון` }).addFields(currentFields));
     }
 
-    embeds.forEach((embed, index) => {
-        embed.fields.forEach(field => {
-            if (field.value.length > 1024) {
-                field.value = field.value.slice(0, 1021) + '...';
+    // ✅ בדיקה אם יש בכלל embeds לפני ביצוע forEach
+    if (embeds.length > 0) {
+        embeds.forEach((embed, index) => {
+            // ✅ בדיקה אם יש שדות לפני ביצוע forEach
+            if (embed.data.fields && Array.isArray(embed.data.fields)) {
+                embed.data.fields.forEach(field => {
+                    if (field.value && field.value.length > 1024) {
+                        field.value = field.value.slice(0, 1021) + '...';
+                    }
+                });
+            }
+            // ✅ בדיקה אם יש פוטר לפני גישה למאפיינים שלו
+            if (embed.data.footer && embed.data.footer.text) {
+                // עדכון הפוטר עם סה"כ עמודים
+                embed.setFooter({ text: embed.data.footer.text.replace('...', embeds.length.toString()) });
             }
         });
-        // עדכון הפוטר עם סה"כ עמודים
-        embed.footer.text = embed.footer.text.replace('...', embeds.length.toString());
-    });
+    }
 
     return interaction.editReply({ embeds: embeds.length > 0 ? embeds : [new EmbedBuilder().setColor('Purple').setTitle('📆 ימי הולדת בקהילה').setDescription('אין ימי הולדת רשומים עדיין.').setFooter({ text: 'שמעון' })] });
   }
@@ -195,8 +206,11 @@ async function handleBirthdayPanel(interaction, client) {
 async function showBirthdayModal(interaction) {
     const modal = new ModalBuilder().setCustomId('birthday_modal').setTitle('🎉 הוספת יום הולדת');
     const input = new TextInputBuilder().setCustomId('birthday_input').setLabel('הכנס תאריך (למשל: 14/05/1993)').setStyle(TextInputStyle.Short).setPlaceholder('פורמט: 31/12/1990 או 1.1.88').setRequired(true);
-    const row = new ActionRowBuilder().addComponents(input);
-    modal.addComponents(row);
+    
+    // תקן כאן: צריך להוסיף את שדה הקלט לתוך ActionRowBuilder, ואת ה-ActionRow ל-modal
+    const row = new ActionRowBuilder().addComponents(input); // נוסיף את ה-input לתוך row
+    modal.addComponents(row); // ונוסיף את ה-row למודאל
+    
     await interaction.showModal(modal);
 }
 

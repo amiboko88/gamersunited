@@ -3,7 +3,7 @@ const sharp = require("sharp"); // ייבוא ספריית sharp, למרות ש�
 
 function clean(text) {
   return (text || "")
-    .replace(/[^\p{L}\p{N} _.\-@!?:א-ת\u200F\u200E\u202B\u202E]/gu, "")
+    .replace(/[^\\p{L}\\p{N} _.\\-@!?:א-ת\\u200F\\u200E\\u202B\\u202E]/gu, "")
     .trim();
 }
 
@@ -24,184 +24,113 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
     barColor = "#3498DB"; // כחול
     rankColor = "#FF6347"; // כתום-אדום
   } else if (percent >= 75) {
-    barColor = "#FFC300"; // צהוב-כתום
-    rankColor = "#ADD8E6"; // כחול בהיר
-  } else if (percent >= 50) {
-    barColor = "#FF5733"; // אדום-כתום
-    rankColor = "#90EE90"; // ירוק בהיר
-  } else {
-    barColor = "#E74C3C"; // אדום עמוק
-    rankColor = "#B0C4DE"; // אפור-כחול
+    barColor = "#FFC300"; // צהוב
+    rankColor = "#DAF7A6"; // ירוק-בהיר מאוד
   }
 
-  const stage =
-    percent >= 100 ? "אגדי ✨" :
-    percent >= 90 ? "סופרסייאן 🔥" :
-    percent >= 75 ? "כמעט שם 💪" :
-    percent >= 50 ? "מתאמן 🚀" :
-    "טירון 🐣";
-
-  // שינוי ברירת המחדל לאווטאר: אייקון כללי נקי יותר או רקע אחיד
-  const avatarContent = avatarDataURL ?
-    `<div class="avatar" style="background-image: url('${avatarDataURL}');"></div>` :
-    `<div class="avatar default-avatar"></div>`; // הוספנו קלאס עבור עיצוב ברירת מחדל
+  const avatarContent = avatarDataURL ? `<img src="${avatarDataURL}" class="avatar-image" />` : '<div class="avatar-placeholder"></div>';
 
   const html = `
   <!DOCTYPE html>
-  <html lang="he" dir="rtl">
+  <html>
   <head>
-    <meta charset="UTF-8" />
-    <link href="https://fonts.googleapis.com/css2?family=Varela+Round&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap" rel="stylesheet">
     <style>
       body {
         margin: 0;
-        /* הגדרת גודל שיהיה גדול מספיק כדי להכיל את הכרטיס בבטחה,
-           אך לא נרנדר את כל הרקע מסביב, אלא נצלם רק את הכרטיס.
-           זה מאפשר לנו להשאיר את העיצוב הפנימי רחב ויפה. */
-        width: 580px; /* הוקטן מעט */
-        height: 750px; /* הוקטן מעט */
-        background: transparent; /* חשוב! רקע שקוף עבור Puppeteer, כדי שלא ייכלל בצילום */
-        font-family: "Varela Round", "Noto Color Emoji", sans-serif;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        direction: rtl;
-        overflow: hidden;
+        padding: 0;
+        overflow: hidden; /* מונע סקרולבר ומוודא שהתוכן לא חורג */
+        background-color: transparent; /* וודא שהרקע שקוף */
       }
-
       .card {
-        width: 480px; /* הוקטן מעט */
-        padding: 40px 25px; /* הוקטן מעט את הפאדינג */
-        background: #1e1e2e;
-        border-radius: 30px; /* מעט קטן יותר */
-        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6), 0 0 0 4px rgba(255, 255, 255, 0.04); /* קצת עדין יותר */
+        width: 100%;
+        max-width: 550px; /* הוקטן מעט כדי למנוע שוליים */
+        height: auto;
+        background-color: #2c2f33;
+        border-radius: 15px;
+        color: white;
+        font-family: Arial, sans-serif;
         text-align: center;
+        padding: 20px;
+        box-sizing: border-box;
         position: relative;
         overflow: hidden;
-        display: inline-block;
       }
-
-      .card::before {
-        content: '';
-        position: absolute;
-        top: -40px; /* מותאם לגודל החדש */
-        left: -40px; /* מותאם לגודל החדש */
-        right: -40px; /* מותאם לגודל החדש */
-        bottom: -40px; /* מותאם לגודל החדש */
-        background: linear-gradient(45deg, #8A2BE2, #4169E1, #FFD700);
-        filter: blur(70px); /* טשטוש עדין יותר */
-        z-index: -1;
-        opacity: 0.3;
-        animation: rotateGlow 15s linear infinite;
-      }
-
-      @keyframes rotateGlow {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-      }
-
       .avatar-container {
-        width: 150px; /* הוקטן מעט */
-        height: 150px; /* הוקטן מעט */
+        width: 120px;
+        height: 120px;
         border-radius: 50%;
-        margin: 0 auto 25px; /* מרווח קטן יותר */
-        position: relative;
-        background: linear-gradient(45deg, #A29BFE, #6C5CE7); /* שינוי הברדר מסביב לאווטאר לצבע סגול-כחול */
-        padding: 5px; /* הוקטן מעט */
-        box-shadow: 0 0 20px rgba(162, 155, 254, 0.5); /* צל בהתאם לצבע החדש */
+        overflow: hidden;
+        margin: 0 auto 15px auto;
+        border: 4px solid #7289DA;
+        box-shadow: 0 0 15px rgba(114, 137, 218, 0.6);
       }
-
-      .avatar {
+      .avatar-image {
         width: 100%;
         height: 100%;
-        border-radius: 50%;
-        background-size: cover;
-        background-position: center;
-        border: 3px solid #1e1e2e; /* עובי בורדר קטן יותר */
+        object-fit: cover;
+      }
+      .avatar-placeholder {
+        width: 100%;
+        height: 100%;
+        background-color: #5865F2;
         display: flex;
         align-items: center;
         justify-content: center;
+        font-size: 60px;
+        color: #fff;
       }
-
-      .default-avatar {
-        background-color: #3f3f5a; /* צבע אפור-כחול כהה נעים יותר */
-        position: relative;
-      }
-
-      .default-avatar::before {
-        content: '👤'; /* איקון משתמש */
-        font-size: 80px; /* גודל האיקון */
-        color: #ffffff; /* צבע האיקון */
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        opacity: 0.7;
-      }
-
       .name {
-        font-size: 36px; /* הוקטן מעט */
+        font-size: 28px;
         font-weight: bold;
-        margin-bottom: 8px; /* הוקטן מעט */
-        color: #ffffff;
-        text-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
+        margin-bottom: 8px;
+        color: #f0f0f0;
       }
-
       .stats {
-        font-size: 20px; /* הוקטן מעט */
-        color: #bbbbbb;
-        margin-bottom: 12px; /* הוקטן מעט */
+        font-size: 18px;
+        color: #b0b0b0;
+        margin-bottom: 15px;
       }
-
       .rank {
-        font-size: 24px; /* הוקטן מעט */
-        color: ${rankColor};
+        font-size: 22px;
         font-weight: bold;
-        margin-bottom: 35px; /* הוקטן מעט */
-        text-shadow: 0 0 8px ${rankColor}55;
+        color: ${rankColor};
+        margin-bottom: 20px;
+        text-shadow: 0 0 8px rgba(255, 215, 0, 0.7);
       }
-
       .bar {
-        width: 100%;
-        height: 35px; /* הוקטן מעט */
-        background: #333344;
-        border-radius: 18px; /* מותאם לגובה */
-        position: relative;
+        width: 90%;
+        height: 18px;
+        background-color: #40444b;
+        border-radius: 10px;
+        margin: 0 auto 10px auto;
         overflow: hidden;
-        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3); /* צל עדין יותר */
-      }
-
-      .fill {
-        width: ${percent}%;
-        height: 100%;
-        border-radius: 18px; /* מותאם לגובה */
-        background: ${barColor};
-        transition: width 0.8s ease-out, background-color 0.8s ease-out;
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
         position: relative;
       }
-
+      .fill {
+        height: 100%;
+        width: ${percent}%;
+        background-color: ${barColor};
+        border-radius: 10px;
+        transition: width 0.5s ease-in-out;
+      }
       .percent {
         position: absolute;
-        left: 50%;
+        right: 10px;
         top: 50%;
-        transform: translate(-50%, -50%);
-        font-size: 18px; /* הוקטן מעט */
+        transform: translateY(-50%);
+        font-size: 14px;
         font-weight: bold;
-        color: #ffffff;
-        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.6); /* צל עדין יותר */
-        z-index: 2;
+        color: rgba(255, 255, 255, 0.9);
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.4);
       }
-
       .corner-logo {
         position: absolute;
-        bottom: 18px; /* מותאם */
-        right: 18px; /* מותאם */
-        font-size: 15px; /* הוקטן מעט */
-        color: rgba(255, 255, 255, 0.25); /* עדין יותר */
+        bottom: 10px;
+        left: 10px;
+        font-size: 14px;
+        color: rgba(255, 255, 255, 0.7);
+        font-style: italic;
+        text-shadow: 0 0 5px rgba(0, 0, 0, 0.25); /* עדין יותר */
         font-weight: bold;
       }
     </style>
@@ -236,20 +165,38 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
   const page = await browser.newPage();
   // הגדר viewport שיכיל את כל התוכן הפנימי, אבל ה-body יהיה שקוף
   // הגודל הכללי הוקטן כדי למנוע שוליים לבנים מיותרים
-  await page.setViewport({ width: 580, height: 750, deviceScaleFactor: 2 });
+  await page.setViewport({ width: 590, height: 400, deviceScaleFactor: 2 }); // גודל מותאם יותר לתוכן
+
   await page.setContent(html, { waitUntil: "networkidle0" });
   await page.evaluateHandle('document.fonts.ready');
 
-  // מציאת האלמנט .card וצילום מסך רק שלו
+  // קבל את הגבולות המדויקים של אלמנט ה-card
   const cardElement = await page.$('.card');
   if (!cardElement) {
-      throw new Error("Card element not found for screenshot.");
+    await browser.close();
+    throw new Error("אלמנט ה-card לא נמצא לצילום מסך.");
   }
-  const buffer = await cardElement.screenshot({ type: "png" }); // מצלם רק את האלמנט
+
+  const boundingBox = await cardElement.boundingBox();
+
+  if (!boundingBox) {
+    await browser.close();
+    throw new Error("לא ניתן לקבל את גבולות אלמנט ה-card.");
+  }
+
+  // צלם מסך של אלמנט ה-card בלבד
+  const screenshotBuffer = await page.screenshot({
+    clip: {
+      x: boundingBox.x,
+      y: boundingBox.y,
+      width: boundingBox.width,
+      height: boundingBox.height,
+    },
+    omitBackground: true // וודא שקיפות של הרקע
+  });
 
   await browser.close();
-
-  return buffer;
+  return screenshotBuffer;
 }
 
 module.exports = { generateXPProfileCard };

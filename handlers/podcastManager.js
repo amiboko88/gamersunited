@@ -1,23 +1,47 @@
 // 📁 handlers/podcastManager.js - מודול חדש לניהול לוגיקת הפודקאסט המרכזית
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, entersState } = require('@discordjs/voice');
 const { getPodcastAudioEleven } = require('../tts/ttsEngine.elevenlabs');
-const { log } = require('../utils/logger'); // וודא ש-logger.js קיים ב-utils
-const { Collection } = require('discord.js'); // לייבוא Collection אם לא גלובלי
+const { log } = require('../utils/logger');
+const { Collection } = require('discord.js');
+const { loadBotState, saveBotState } = require('../utils/botStateManager'); // ✅ ייבוא botStateManager
 
-// --- דגלי מצב גלובליים לפודקאסט ---
+// --- דגלי מצב גלובליים לפודקאסט (ינוהלו עכשיו דרך המצב השמור) ---
 let isPodcastActive = false;
 let activePodcastChannelId = null;
-let podcastMonitoringEnabled = false; // נשלט על ידי ה-cron jobs
+let podcastMonitoringEnabled = false; // יאותחל מ-botStateManager ויושפע מ-cron
+
+// מפתח למצב הפודקאסט ב-Firestore
+const PODCAST_STATE_KEY = 'podcastStatus';
 
 // 🔇 הגדרת רשימת פקודות שיושבתו בזמן פודקאסט
-const restrictedCommands = ['leave', 'stop', 'mute', 'kick', 'play', 'soundboard', 'forceleave', 'forcestop']; // דוגמאות
+const restrictedCommands = ['leave', 'stop', 'mute', 'kick', 'play', 'soundboard', 'forceleave', 'forcestop'];
+
+/**
+ * טוען את מצב הפודקאסט מ-Firestore בעת עליית הבוט.
+ * נקרא מ-botLifecycle.js.
+ */
+async function initializePodcastState() {
+    const savedState = await loadBotState(PODCAST_STATE_KEY);
+    if (savedState) {
+        // אם הבוט קרס או עשה ריסטרט בתוך שעות הפעילות, הוא יחזור למצב זה
+        podcastMonitoringEnabled = savedState.podcastMonitoringEnabled || false;
+        // isPodcastActive = savedState.isPodcastActive || false; // לא נרצה להפעיל פודקאסט שהיה פעיל אם קרס
+        // activePodcastChannelId = savedState.activePodcastChannelId || null;
+        console.log(`[PODCAST_STATE] מצב פודקאסט טען: monitoringEnabled=${podcastMonitoringEnabled}`);
+    } else {
+        // ברירת מחדל אם אין מצב שמור
+        podcastMonitoringEnabled = false; 
+        await saveBotState(PODCAST_STATE_KEY, { podcastMonitoringEnabled: false });
+    }
+}
 
 /**
  * מפעיל/מכבה את ניטור ערוצי הקול לפודקאסט. נקרא ממשימות Cron.
  * @param {boolean} enable - האם לאפשר ניטור.
  */
-function setPodcastMonitoring(enable) {
+async function setPodcastMonitoring(enable) { // ✅ הפונקציה הפכה ל-async
     podcastMonitoringEnabled = enable;
+    await saveBotState(PODCAST_STATE_KEY, { podcastMonitoringEnabled: enable }); // ✅ שמור מצב ב-Firestore
     if (enable) {
         log('🎙️ ניטור פודקאסטים הופעל.');
     } else {
@@ -45,7 +69,6 @@ function setPodcastMonitoring(enable) {
  * @returns {boolean}
  */
 function isBotPodcasting(guildId, channelId = null) {
-    // וודא ש-global.client ו-global.client.voiceConnections קיימים ומהסוג הנכון
     const connectionExists = global.client && 
                            global.client.voiceConnections instanceof Collection && 
                            global.client.voiceConnections.has(activePodcastChannelId);
@@ -81,7 +104,7 @@ async function handlePodcastTrigger(newState, client) {
         const humanMembers = oldChannel.members.filter(m => !m.user.bot).size;
         if (humanMembers < 2) { 
             log(`🎙️ פודקאסט הופסק בערוץ ${oldChannel.name} עקב מיעוט משתתפים (${humanMembers} נותרו).`);
-            stopPodcast(oldChannel.id);
+            await stopPodcast(oldChannel.id); // ✅ וודא ש-stopPodcast הוא async
             return;
         }
         log(`[DEBUG] Podcast active, but enough members remain (${humanMembers}).`);
@@ -177,7 +200,7 @@ async function handlePodcastTrigger(newState, client) {
             } finally {
                 log('[DEBUG] Podcast finished or encountered error. Stopping and resetting state.');
                 // ניתוק ואיפוס מצב הבוט לאחר הפודקאסט
-                stopPodcast(newChannel.id);
+                await stopPodcast(newChannel.id); // ✅ וודא ש-stopPodcast הוא async
             }
         } else {
             log(`[DEBUG] Member count (${memberCount}) is not a trigger level. Skipping podcast trigger.`);
@@ -191,7 +214,7 @@ async function handlePodcastTrigger(newState, client) {
  * מנתק את הבוט מהערוץ ומאפס את מצב הפודקאסט.
  * @param {string} channelId - ה-ID של הערוץ לניתוק.
  */
-function stopPodcast(channelId) {
+async function stopPodcast(channelId) { // ✅ הפונקציה הפכה ל-async
     log(`[DEBUG] Attempting to stop podcast for channel ID: ${channelId}`);
     if (global.client) {
         const connection = global.client.voiceConnections.get(channelId);
@@ -212,10 +235,13 @@ function stopPodcast(channelId) {
         isPodcastActive = false;
         activePodcastChannelId = null;
     }
+    // ✅ שמור מצב ב-Firestore לאחר עצירת הפודקאסט
+    await saveBotState(PODCAST_STATE_KEY, { podcastMonitoringEnabled: podcastMonitoringEnabled }); // שמור את מצב הניטור הנוכחי
 }
 
 
 module.exports = {
+    initializePodcastState, // ✅ ייצוא הפונקציה החדשה לאתחול מצב
     setPodcastMonitoring,
     handlePodcastTrigger,
     isBotPodcasting,

@@ -1,53 +1,18 @@
 // 📁 handlers/inactivityCronJobs.js
 const { EmbedBuilder } = require('discord.js');
 const db = require('../utils/firebase');
-// ✅ אין צורך לייבא את sendStaffLog כאן כי היא תוגדר בתוך הקובץ עצמו
-// const { sendStaffLog } = require('../utils/staffLogger'); 
+const { sendStaffLog } = require('../utils/staffLogger'); // ✅ ייבוא sendStaffLog מ-utils/staffLogger.js
 
 const { createPaginatedFields } = require('../interactions/selectors/inactivitySelectMenuHandler');
 const { sendReminderDM } = require('../interactions/buttons/inactivityDmButtons');
-const { executeKickFailedUsers } = require('../interactions/buttons/inactivityKickButton'); // ייבוא פונקציית הרחקה
-
-// 🚨 הגדר את ה-ID של ערוץ הצוות כאן
-const STAFF_CHANNEL_ID = '881445829100060723'; // ה-ID הקבוע של ערוץ הצוות שלך
+// ✅ אין צורך לייבא את executeKickFailedUsers אם היא מופעלת רק דרך כפתור בממשק משתמש
+// ואינה מופעלת ישירות כחלק ממשימות ה-Cron.
+// אם אתה מתכוון להפעיל אותה אוטומטית, נצטרך להחזיר אותה.
+// לצורך ניקיון קוד, נניח שהיא מופעלת רק דרך אינטראקציית כפתור חיצונית.
+// const { executeKickFailedUsers } = require('../interactions/buttons/inactivityKickButton');
 
 const INACTIVITY_DAYS = 7;
 let lastInactiveIds = [];
-
-// ✅ פונקציית sendStaffLog - הועברה לכאן במלואה
-/**
- * שולח הודעת לוג לערוץ הצוות.
- * @param {import('discord.js').Client} client - אובייקט הקליינט.
- * @param {string} title - כותרת ההודעה.
- * @param {string} description - תוכן ההודעה.
- * @param {number} color - צבע האמבד (בפורמט הקסדצימלי, לדוגמה 0x00FF00).
- * @param {Array<Object>} [fields=[]] - מערך של שדות להוספה לאמבד.
- */
-async function sendStaffLog(client, title, description, color, fields = []) {
-    if (!STAFF_CHANNEL_ID) {
-        console.error('⚠️ STAFF_CHANNEL_ID אינו מוגדר בקובץ inactivityCronJobs.js. לא ניתן לשלוח לוג צוות.');
-        return;
-    }
-
-    try {
-        const staffChannel = await client.channels.fetch(STAFF_CHANNEL_ID); 
-        if (staffChannel) {
-            const embed = new EmbedBuilder()
-                .setTitle(title)
-                .setDescription(description)
-                .setColor(color)
-                .setTimestamp()
-                .addFields(fields); // הוספת השדות
-            await staffChannel.send({ embeds: [embed] });
-            console.log(`✅ לוג צוות נשלח לערוץ ${staffChannel.name}: ${title}`);
-        } else {
-            console.error(`❌ לא ניתן למצוא את ערוץ הצוות (ID: ${STAFF_CHANNEL_ID}). דוח אי-פעילות לא נשלח לערוץ.`);
-        }
-    } catch (error) {
-        console.error(`🛑 שגיאה בשליחת לוג צוות לערוץ ${STAFF_CHANNEL_ID}:`, error);
-    }
-}
-
 
 /**
  * פונקציית עזר לעדכון סטטוס משתמש ב-Firebase.
@@ -69,7 +34,6 @@ async function updateMemberStatus(userId, updates) {
  * @param {import('discord.js').Client} client - אובייקט הקליינט של הבוט.
  */
 async function runAutoTracking(client) {
-  // log('🔍 מריץ עדכון סטטוס אי-פעילות אוטומטי...'); // ניתן להוסיף לוג התחלה
   const guild = await client.guilds.fetch(process.env.GUILD_ID);
   const members = await guild.members.fetch();
   const snapshot = await db.collection('memberTracking').get();
@@ -142,11 +106,8 @@ async function runAutoTracking(client) {
 
     const allFields = [...fields1, ...fields2, ...fields3];
 
-    const embeds = [];
-    // ✅ שימוש ב-sendStaffLog במקום שליחה ישירה ל-staffChannel
-    // הלוגיקה לשליחת האמבדים בערוץ הצוות תהיה בתוך sendStaffLog
     const reportTitle = allInactive.length > 0 ? '📢 דוח משתמשים לא פעילים' : '📢 דוח משתמשים לא פעילים (אין שינויים משמעותיים)';
-    const reportColor = allInactive.length > 0 ? 0xe67e22 : 0x00FF00; // כתום אם יש לא פעילים, ירוק אם אין
+    const reportColor = allInactive.length > 0 ? 0xe67e22 : 0x00FF00;
 
     await sendStaffLog(client, reportTitle, `סה"כ ${allInactive.length} משתמשים לא פעילים.`, reportColor, allFields);
   }
@@ -157,7 +118,6 @@ async function runAutoTracking(client) {
  * @param {import('discord.js').Client} client - אובייקט הקליינט של הבוט.
  */
 async function runScheduledReminders(client) {
-  // log('🔍 מריץ שליחת תזכורות אוטומטיות...'); // ניתן להוסיף לוג התחלה
   const guild = await client.guilds.fetch(process.env.GUILD_ID);
   const members = await guild.members.fetch();
   const allTracked = await db.collection('memberTracking').get();
@@ -204,7 +164,6 @@ async function runScheduledReminders(client) {
  * @param {import('discord.js').Client} client - אובייקט הקליינט של הבוט.
  */
 async function runMonthlyKickReport(client) {
-    // log('🔍 מריץ דוח הרחקה חודשי...'); // ניתן להוסיף לוג התחלה
     const allTracked = await db.collection('memberTracking').get();
     const eligibleToKick = allTracked.docs.filter(doc => {
         const d = doc.data();

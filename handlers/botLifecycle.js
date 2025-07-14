@@ -1,7 +1,8 @@
-// 📁 handlers/botLifecycle.js (הגרסה המלאה והמעודכנת)
+// 📁 handlers/botLifecycle.js
 const cron = require('node-cron');
 const { sendStaffLog } = require('../utils/staffLogger');
 
+// ייבוא כל המודולים הנדרשים
 const { sendWeeklyReminder } = require('./weeklyBirthdayReminder');
 const { sendBirthdayMessage } = require('./birthdayCongratulator');
 const { checkBirthdays } = require('./birthdayTracker');
@@ -22,10 +23,19 @@ const { updateWeeklyLeaderboard } = require('./leaderboardUpdater');
 const { sendWarzoneEmbed } = require('./fifoWarzoneAnnouncer');
 
 // ✅ ייבוא מודול ה-podcastManager
-const podcastManager = require('./podcastManager'); 
+const podcastManager = require('./podcastManager');
 
+/**
+ * מאתחל ומגדיר את כל משימות ה-Cron של הבוט.
+ * פונקציה זו נקראת פעם אחת בעת עליית הבוט.
+ * @param {import('discord.js').Client} client - אובייקט הקליינט של הבוט.
+ */
 function initializeCronJobs(client) {
     console.log('[CRON] מאתחל את כל משימות התזמון המרכזיות...');
+
+    // ✅ קריאה לפונקציית האתחול של מצב הפודקאסט מ-podcastManager.js
+    // זה מבטיח שמצב הפודקאסט נטען מ-Firestore מיד עם עליית הבוט.
+    podcastManager.initializePodcastState();
 
     const tasks = [
         // משימות כלליות
@@ -38,7 +48,7 @@ function initializeCronJobs(client) {
         { name: 'בדיקת קבוצות פעילות', schedule: '* * * * *', func: checkActiveGroups, quiet: true, args: [client] },
         { name: 'בדיקת DM אימות ממתינים', schedule: '*/10 * * * *', func: checkPendingDms, args: [client] },
 
-        // משימות ניהול משתמשים - עודכנו לקריאה מהקובץ החדש
+        // משימות ניהול משתמשים
         { name: 'עדכון סטטוס אי-פעילות אוטומטי', schedule: '*/30 * * * *', func: runAutoTracking, args: [client] },
         { name: 'שליחת תזכורות אי-פעילות אוטומטית', schedule: '0 8 * * *', func: runScheduledReminders, timezone: 'Asia/Jerusalem', args: [client] },
         { name: 'שליחת דוח הרחקה חודשי', schedule: '0 10 1 * *', func: runMonthlyKickReport, timezone: 'Asia/Jerusalem', args: [client] },
@@ -61,16 +71,19 @@ function initializeCronJobs(client) {
     ];
 
     tasks.forEach(task => {
+        // וודא ש-Cron schedule תקין.
         if (!cron.validate(task.schedule)) {
             console.error(`[CRON] ❌ לוח זמנים לא תקין עבור "${task.name}": ${task.schedule}`);
             return;
         }
+        // תזמן את המשימה.
         cron.schedule(task.schedule, async () => {
             if (!task.quiet) { console.log(`[CRON] ▶️  מריץ משימה: ${task.name}`); }
             try {
-                // שימוש בארגומנטים שהוגדרו או ב-client בלבד כברירת מחדל
+                // הפעל את הפונקציה של המשימה עם הארגומנטים המתאימים.
                 await task.func(...(task.args || [client]));
             } catch (error) {
+                // טיפול בשגיאות ושליחת לוג לצוות במקרה של כשל במשימת Cron.
                 console.error(`[CRON] ❌ שגיאה במשימה "${task.name}":`, error);
                 await sendStaffLog(client, `❌ Cron Job: כשל במשימה "${task.name}"`, `אירעה שגיאה: \`\`\`${error.message}\`\`\``, 0xFF0000);
             }

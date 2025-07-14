@@ -1,14 +1,14 @@
-// 📁 handlers/podcastManager.js - מודול חדש לניהול לוגיקת הפודקאסט המרכזית
+// 📁 handlers/podcastManager.js
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, entersState } = require('@discordjs/voice');
 const { getPodcastAudioEleven } = require('../tts/ttsEngine.elevenlabs');
 const { log } = require('../utils/logger');
 const { Collection } = require('discord.js');
-const { loadBotState, saveBotState } = require('../utils/botStateManager'); // ✅ ייבוא botStateManager
+const { loadBotState, saveBotState } = require('../utils/botStateManager');
 
-// --- דגלי מצב גלובליים לפודקאסט (ינוהלו עכשיו דרך המצב השמור) ---
+// --- דגלי מצב גלובליים לפודקאסט ---
 let isPodcastActive = false;
 let activePodcastChannelId = null;
-let podcastMonitoringEnabled = false; // יאותחל מ-botStateManager ויושפע מ-cron
+let podcastMonitoringEnabled = false; 
 
 // מפתח למצב הפודקאסט ב-Firestore
 const PODCAST_STATE_KEY = 'podcastStatus';
@@ -17,36 +17,49 @@ const PODCAST_STATE_KEY = 'podcastStatus';
 const restrictedCommands = ['leave', 'stop', 'mute', 'kick', 'play', 'soundboard', 'forceleave', 'forcestop'];
 
 /**
- * טוען את מצב הפודקאסט מ-Firestore בעת עליית הבוט.
- * נקרא מ-botLifecycle.js.
+ * טוען את מצב הפודקאסט מ-Firestore בעת עליית הבוט, ומתאים לשעות הפעילות.
  */
 async function initializePodcastState() {
+    console.log('[PODCAST_STATE] מאתחל מצב פודקאסט...');
     const savedState = await loadBotState(PODCAST_STATE_KEY);
+    
+    const options = { hour: 'numeric', minute: 'numeric', hour12: false, timeZone: 'Asia/Jerusalem' };
+    const jerusalemTime = new Date().toLocaleString('en-US', options);
+    const [jerusalemHour, jerusalemMinute] = jerusalemTime.split(':').map(Number);
+    const isCurrentlyActiveHours = (jerusalemHour >= 18 || jerusalemHour < 6); // 18:00 עד 05:59
+
     if (savedState) {
-        // אם הבוט קרס או עשה ריסטרט בתוך שעות הפעילות, הוא יחזור למצב זה
-        podcastMonitoringEnabled = savedState.podcastMonitoringEnabled || false;
-        // isPodcastActive = savedState.isPodcastActive || false; // לא נרצה להפעיל פודקאסט שהיה פעיל אם קרס
-        // activePodcastChannelId = savedState.activePodcastChannelId || null;
-        console.log(`[PODCAST_STATE] מצב פודקאסט טען: monitoringEnabled=${podcastMonitoringEnabled}`);
+        console.log(`[PODCAST_STATE] מצב שמור נמצא: monitoringEnabled=${savedState.podcastMonitoringEnabled}, isCurrentlyActiveHours=${isCurrentlyActiveHours}`);
+        // אם המצב השמור מראה שהניטור היה פעיל (או אם אנחנו בתוך שעות הפעילות), הפעל
+        if (savedState.podcastMonitoringEnabled || isCurrentlyActiveHours) {
+            podcastMonitoringEnabled = true;
+            console.log('[PODCAST_STATE] ניטור הופעל על בסיס מצב שמור או שעות פעילות נוכחיות.');
+        } else {
+            podcastMonitoringEnabled = false;
+            console.log('[PODCAST_STATE] ניטור כבוי על בסיס מצב שמור או שעות פעילות נוכחיות.');
+        }
     } else {
-        // ברירת מחדל אם אין מצב שמור
-        podcastMonitoringEnabled = false; 
-        await saveBotState(PODCAST_STATE_KEY, { podcastMonitoringEnabled: false });
+        // אם אין מצב שמור בכלל, קבע לפי השעות הנוכחיות
+        console.log(`[PODCAST_STATE] לא נמצא מצב שמור. קובע לפי שעות פעילות נוכחיות: ${isCurrentlyActiveHours}`);
+        podcastMonitoringEnabled = isCurrentlyActiveHours;
     }
+
+    // וודא שהמצב הנוכחי נשמר (כדי שה-Cron Jobs הבאים לא יצטרכו לנחש)
+    await saveBotState(PODCAST_STATE_KEY, { podcastMonitoringEnabled: podcastMonitoringEnabled });
+    console.log(`[PODCAST_STATE] מצב פודקאסט סופי לאחר אתחול: monitoringEnabled=${podcastMonitoringEnabled}`);
 }
 
 /**
  * מפעיל/מכבה את ניטור ערוצי הקול לפודקאסט. נקרא ממשימות Cron.
  * @param {boolean} enable - האם לאפשר ניטור.
  */
-async function setPodcastMonitoring(enable) { // ✅ הפונקציה הפכה ל-async
+async function setPodcastMonitoring(enable) { 
     podcastMonitoringEnabled = enable;
-    await saveBotState(PODCAST_STATE_KEY, { podcastMonitoringEnabled: enable }); // ✅ שמור מצב ב-Firestore
+    await saveBotState(PODCAST_STATE_KEY, { podcastMonitoringEnabled: enable }); 
     if (enable) {
         log('🎙️ ניטור פודקאסטים הופעל.');
     } else {
         log('🎙️ ניטור פודקאסטים כובה.');
-        // אם מכבים את הניטור, נתק כל פודקאסט פעיל
         if (isPodcastActive && activePodcastChannelId && global.client) {
             const connection = global.client.voiceConnections.get(activePodcastChannelId);
             if (connection) {
@@ -104,7 +117,7 @@ async function handlePodcastTrigger(newState, client) {
         const humanMembers = oldChannel.members.filter(m => !m.user.bot).size;
         if (humanMembers < 2) { 
             log(`🎙️ פודקאסט הופסק בערוץ ${oldChannel.name} עקב מיעוט משתתפים (${humanMembers} נותרו).`);
-            await stopPodcast(oldChannel.id); // ✅ וודא ש-stopPodcast הוא async
+            await stopPodcast(oldChannel.id);
             return;
         }
         log(`[DEBUG] Podcast active, but enough members remain (${humanMembers}).`);
@@ -199,8 +212,7 @@ async function handlePodcastTrigger(newState, client) {
                 log(`❌ שגיאה בהפעלת פודקאסט בערוץ ${newChannel.name}: ${error.message}`);
             } finally {
                 log('[DEBUG] Podcast finished or encountered error. Stopping and resetting state.');
-                // ניתוק ואיפוס מצב הבוט לאחר הפודקאסט
-                await stopPodcast(newChannel.id); // ✅ וודא ש-stopPodcast הוא async
+                await stopPodcast(newChannel.id); 
             }
         } else {
             log(`[DEBUG] Member count (${memberCount}) is not a trigger level. Skipping podcast trigger.`);
@@ -214,7 +226,7 @@ async function handlePodcastTrigger(newState, client) {
  * מנתק את הבוט מהערוץ ומאפס את מצב הפודקאסט.
  * @param {string} channelId - ה-ID של הערוץ לניתוק.
  */
-async function stopPodcast(channelId) { // ✅ הפונקציה הפכה ל-async
+async function stopPodcast(channelId) { 
     log(`[DEBUG] Attempting to stop podcast for channel ID: ${channelId}`);
     if (global.client) {
         const connection = global.client.voiceConnections.get(channelId);

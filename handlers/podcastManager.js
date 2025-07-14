@@ -4,7 +4,7 @@ const { getPodcastAudioEleven } = require('../tts/ttsEngine.elevenlabs');
 const { log } = require('../utils/logger'); // וודא ש-logger.js קיים ב-utils
 const { Collection } = require('discord.js'); // לייבוא Collection אם לא גלובלי
 
-// --- דגלי מצב גלובליים לפודקאסט (ייתכן שיהיו על ה-client עצמו, אבל כאן לארגון) ---
+// --- דגלי מצב גלובליים לפודקאסט ---
 let isPodcastActive = false;
 let activePodcastChannelId = null;
 let podcastMonitoringEnabled = false; // נשלט על ידי ה-cron jobs
@@ -45,8 +45,13 @@ function setPodcastMonitoring(enable) {
  * @returns {boolean}
  */
 function isBotPodcasting(guildId, channelId = null) {
-    // ✅ תיקון: וודא ש-global.client ו-global.client.voiceConnections קיימים לפני גישה ל-.has()
-    const connectionExists = global.client && global.client.voiceConnections instanceof Collection && global.client.voiceConnections.has(activePodcastChannelId);
+    // וודא ש-global.client ו-global.client.voiceConnections קיימים ומהסוג הנכון
+    const connectionExists = global.client && 
+                           global.client.voiceConnections instanceof Collection && 
+                           global.client.voiceConnections.has(activePodcastChannelId);
+    
+    log(`[DEBUG] isBotPodcasting check: isPodcastActive=${isPodcastActive}, connectionExists=${connectionExists}, activePodcastChannelId=${activePodcastChannelId}, requestedChannelId=${channelId}`);
+    
     return isPodcastActive && connectionExists && (channelId === null || activePodcastChannelId === channelId);
 }
 
@@ -56,46 +61,74 @@ function isBotPodcasting(guildId, channelId = null) {
  * @param {import('discord.js').Client} client - אובייקט הקליינט.
  */
 async function handlePodcastTrigger(newState, client) {
-    if (!podcastMonitoringEnabled || newState.member.user.bot) return; // אם ניטור לא פעיל או זה בוט
+    log(`[DEBUG] handlePodcastTrigger triggered for user: ${newState.member.user.tag} (${newState.member.user.id}), channel: ${newState.channel?.name || 'none'}, oldChannel: ${newState.oldState?.channel?.name || 'none'}`);
+
+    if (!podcastMonitoringEnabled) {
+        log('[DEBUG] Podcast monitoring is NOT enabled. Returning.');
+        return;
+    }
+    if (newState.member.user.bot) {
+        log('[DEBUG] Triggered by a BOT. Returning.');
+        return;
+    }
     
     const newChannel = newState.channel;
-    const oldChannel = newState.oldState?.channel; // וודא שזה קיים
+    const oldChannel = newState.oldState?.channel;
 
     // טיפול בניתוק פודקאסט אם משתתפים ירדו
     if (oldChannel && !newChannel && isBotPodcasting(oldChannel.guild.id, oldChannel.id)) {
+        log(`[DEBUG] User left podcast channel: ${oldChannel.name}. Checking remaining members.`);
         const humanMembers = oldChannel.members.filter(m => !m.user.bot).size;
-        if (humanMembers < 2) { // פחות מ-2 משתתפים אנושיים
+        if (humanMembers < 2) { 
             log(`🎙️ פודקאסט הופסק בערוץ ${oldChannel.name} עקב מיעוט משתתפים (${humanMembers} נותרו).`);
             stopPodcast(oldChannel.id);
             return;
         }
+        log(`[DEBUG] Podcast active, but enough members remain (${humanMembers}).`);
     }
 
     // טיפול בהצטרפות לערוץ וטריגר פודקאסט
     if (newChannel && !oldChannel) { // משתמש הצטרף לערוץ
+        log(`[DEBUG] User joined channel: ${newChannel.name}.`);
+
         // אם הבוט כבר בפודקאסט, אל תתחיל חדש (אלא אם זה בדיוק אותו ערוץ)
         if (isBotPodcasting(newChannel.guild.id) && activePodcastChannelId !== newChannel.id) {
-            log('❌ הבוט כבר בפודקאסט פעיל בערוץ אחר. מבטל פודקאסט חדש.');
+            log('[DEBUG] Bot is already podcasting in ANOTHER channel. Skipping new podcast.');
             return; 
         }
-        if (isBotPodcasting(newChannel.guild.id, newChannel.id)) { // כבר בפודקאסט בערוץ זה
+        // אם הבוט כבר בפודקאסט באותו ערוץ, אין צורך להתחיל שוב
+        if (isBotPodcasting(newChannel.guild.id, newChannel.id)) { 
+            log('[DEBUG] Bot is already podcasting in THIS channel. Skipping new podcast.');
             return; 
         }
 
         const humanMembers = newChannel.members.filter(m => !m.user.bot);
         const memberCount = humanMembers.size;
+        log(`[DEBUG] Human member count in ${newChannel.name}: ${memberCount}`);
 
         // 🎯 זיהוי מספר המשתתפים הרצוי
-        if ([2, 4, 6, 8, 10].includes(memberCount)) {
+        const triggerLevels = [2, 4, 6, 8, 10]; // הגדרת רמות הטריגר כאן
+        if (triggerLevels.includes(memberCount)) {
             log(`⏳ זוהו ${memberCount} משתתפים בערוץ ${newChannel.name}. ממתין לשקט לפני הפודקאסט...`);
             
             // 🔇 המתנה לשקט (פשוטה) - ניתן לשפר עם VAD
             await new Promise(resolve => setTimeout(resolve, 7000)); // המתן 7 שניות
+            log('[DEBUG] Finished 7-second wait. Re-checking conditions...');
 
             // בדוק שוב את מספר המשתתפים ואת מצב הבוט לאחר ההמתנה
             const currentHumanMembers = newChannel.members.filter(m => !m.user.bot).size;
-            if (![2, 4, 6, 8, 10].includes(currentHumanMembers) || isBotPodcasting(newChannel.guild.id)) {
-                log('❌ תנאי הפודקאסט לא מתקיימים עוד (שינוי משתתפים/בוט כבר פעיל). מבטל.');
+            log(`[DEBUG] Current human member count AFTER WAIT: ${currentHumanMembers}.`);
+
+            if (!triggerLevels.includes(currentHumanMembers)) {
+                log('❌ Condition changed: Member count is no longer a trigger level. Cancelling podcast.');
+                return;
+            }
+            if (isBotPodcasting(newChannel.guild.id, newChannel.id)) { 
+                log('❌ Condition changed: Bot started podcast in this channel during wait. Cancelling this trigger.');
+                return;
+            }
+            if (isBotPodcasting(newChannel.guild.id) && activePodcastChannelId !== newChannel.id) {
+                log('❌ Condition changed: Bot started podcast in ANOTHER channel during wait. Cancelling this trigger.');
                 return;
             }
 
@@ -121,17 +154,20 @@ async function handlePodcastTrigger(newState, client) {
                 const participantIds = humanMembers.map(m => m.id);
                 const joinTimestamps = {};
                 humanMembers.forEach(m => {
-                    if (m.voice.channel) {
+                    if (m.voice.channel) { // וודא שהמשתמש עדיין בערוץ
                         joinTimestamps[m.id] = m.voice.channel.joinTimestamp;
                     }
                 });
 
+                log('[DEBUG] Calling getPodcastAudioEleven to generate audio...');
                 const audioBuffer = await getPodcastAudioEleven(participantNames, participantIds, joinTimestamps);
+                log('[DEBUG] Audio buffer generated. Playing...');
                 const resource = createAudioResource(audioBuffer);
 
                 player.play(resource);
 
                 // המתן לסיום הפודקאסט או לזמן מקסימלי
+                log('[DEBUG] Waiting for podcast to finish (max 5 minutes)...');
                 await entersState(player, AudioPlayerStatus.Idle, 60_000 * 5); // מקסימום 5 דקות
                 log('🎙️ פודקאסט הסתיים בהצלחה.');
 
@@ -139,10 +175,15 @@ async function handlePodcastTrigger(newState, client) {
                 console.error('🛑 שגיאה בהפעלת פודקאסט:', error);
                 log(`❌ שגיאה בהפעלת פודקאסט בערוץ ${newChannel.name}: ${error.message}`);
             } finally {
+                log('[DEBUG] Podcast finished or encountered error. Stopping and resetting state.');
                 // ניתוק ואיפוס מצב הבוט לאחר הפודקאסט
                 stopPodcast(newChannel.id);
             }
+        } else {
+            log(`[DEBUG] Member count (${memberCount}) is not a trigger level. Skipping podcast trigger.`);
         }
+    } else {
+        log('[DEBUG] Not a user joining event. Skipping podcast trigger.');
     }
 }
 
@@ -151,15 +192,23 @@ async function handlePodcastTrigger(newState, client) {
  * @param {string} channelId - ה-ID של הערוץ לניתוק.
  */
 function stopPodcast(channelId) {
+    log(`[DEBUG] Attempting to stop podcast for channel ID: ${channelId}`);
     if (global.client) {
         const connection = global.client.voiceConnections.get(channelId);
         if (connection) {
+            log('[DEBUG] Destroying voice connection.');
             connection.destroy();
             global.client.voiceConnections.delete(channelId);
             global.client.audioPlayers.delete(channelId);
+        } else {
+            log('[DEBUG] No active voice connection found for this channel ID.');
         }
+    } else {
+        log('[DEBUG] global.client is not available.');
     }
+    
     if (activePodcastChannelId === channelId) {
+        log('[DEBUG] Resetting podcast active state.');
         isPodcastActive = false;
         activePodcastChannelId = null;
     }

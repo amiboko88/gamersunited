@@ -1,10 +1,10 @@
-// 📁 index.js (מעודכן ומתוקן)
+// 📁 index.js
 const fs = require('fs');
 const path = require('path');
 const { Client, GatewayIntentBits, Collection, Partials, REST, Routes } = require('discord.js');
 
 // --- UTILS & TELEGRAM ---
-const db = require('./utils/firebase'); // ודא שנתיב זה נכון
+const db = require('./utils/firebase');
 require("./telegram/shimonTelegram");
 
 // --- CLIENT SETUP ---
@@ -21,13 +21,17 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message, Partials.User]
 });
 
-client.db = db; // חיוני: הקצאת אובייקט ה-db ל-client
-global.client = client; // ✅ מאפשר גישה ל-client מכל מקום (כמו podcastManager)
+client.db = db;
+global.client = client; 
 
 // --- DYNAMIC HANDLER LOADING ---
 client.commands = new Collection();
 client.interactions = new Collection();
-client.dynamicInteractionHandlers = []; // For handlers with function-based customIds
+client.dynamicInteractionHandlers = []; 
+
+// ✅ קריטי: אתחול הקולקציות לניהול חיבורי קול ונגני אודיו
+client.voiceConnections = new Collection(); 
+client.audioPlayers = new Collection();     
 
 // Load Slash Commands
 const commandsPath = path.join(__dirname, 'commands');
@@ -110,13 +114,11 @@ client.once('ready', async () => {
 });
 
 // --- MAIN INTERACTION ROUTER ---
-// ✅ ייבוא podcastManager לטיפול ב"נעילה" של פקודות
 const podcastManager = require('./handlers/podcastManager'); 
 
 client.on('interactionCreate', async interaction => {
     try {
-        // 🔒 לוגיקת "נעילה" - התעלמות מפקודות ספציפיות בזמן פודקאסט
-        if (interaction.isCommand() && interaction.guildId) { // וודא שזה בשרת
+        if (interaction.isCommand() && interaction.guildId) { 
             if (podcastManager.isBotPodcasting(interaction.guildId, interaction.channelId)) {
                 const commandName = interaction.commandName;
                 if (podcastManager.restrictedCommands.includes(commandName)) {
@@ -187,7 +189,6 @@ client.on('guildMemberRemove', async member => {
   await db.collection('memberTracking').doc(member.id).set({ status: 'left', leftAt: new Date().toISOString() }, { merge: true });
 });
 
-// ✅ handleVoiceStateUpdate יקרא כעת ל-podcastManager
 client.on('voiceStateUpdate', handleVoiceStateUpdate); 
 client.on('presenceUpdate', (oldPresence, newPresence) => trackGamePresence(newPresence));
 client.on('messageCreate', async message => {

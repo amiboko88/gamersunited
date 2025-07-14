@@ -2,7 +2,7 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, entersState } = require('@discordjs/voice');
 const { getPodcastAudioEleven } = require('../tts/ttsEngine.elevenlabs');
 const { log } = require('../utils/logger');
-const { Collection } = require('discord.js');
+const { Collection } = require('discord.js'); // לייבוא Collection
 const { loadBotState, saveBotState } = require('../utils/botStateManager');
 
 // --- דגלי מצב גלובליים לפודקאסט ---
@@ -30,7 +30,6 @@ async function initializePodcastState() {
 
     if (savedState) {
         console.log(`[PODCAST_STATE] מצב שמור נמצא: monitoringEnabled=${savedState.podcastMonitoringEnabled}, isCurrentlyActiveHours=${isCurrentlyActiveHours}`);
-        // אם המצב השמור מראה שהניטור היה פעיל (או אם אנחנו בתוך שעות הפעילות), הפעל
         if (savedState.podcastMonitoringEnabled || isCurrentlyActiveHours) {
             podcastMonitoringEnabled = true;
             console.log('[PODCAST_STATE] ניטור הופעל על בסיס מצב שמור או שעות פעילות נוכחיות.');
@@ -39,12 +38,10 @@ async function initializePodcastState() {
             console.log('[PODCAST_STATE] ניטור כבוי על בסיס מצב שמור או שעות פעילות נוכחיות.');
         }
     } else {
-        // אם אין מצב שמור בכלל, קבע לפי השעות הנוכחיות
         console.log(`[PODCAST_STATE] לא נמצא מצב שמור. קובע לפי שעות פעילות נוכחיות: ${isCurrentlyActiveHours}`);
         podcastMonitoringEnabled = isCurrentlyActiveHours;
     }
 
-    // וודא שהמצב הנוכחי נשמר (כדי שה-Cron Jobs הבאים לא יצטרכו לנחש)
     await saveBotState(PODCAST_STATE_KEY, { podcastMonitoringEnabled: podcastMonitoringEnabled });
     console.log(`[PODCAST_STATE] מצב פודקאסט סופי לאחר אתחול: monitoringEnabled=${podcastMonitoringEnabled}`);
 }
@@ -61,11 +58,14 @@ async function setPodcastMonitoring(enable) {
     } else {
         log('🎙️ ניטור פודקאסטים כובה.');
         if (isPodcastActive && activePodcastChannelId && global.client) {
-            const connection = global.client.voiceConnections.get(activePodcastChannelId);
-            if (connection) {
-                connection.destroy();
-                global.client.voiceConnections.delete(activePodcastChannelId);
-                global.client.audioPlayers.delete(activePodcastChannelId);
+            // ✅ וודא שקולקציות voiceConnections ו-audioPlayers קיימות לפני גישה
+            if (global.client.voiceConnections instanceof Collection && global.client.audioPlayers instanceof Collection) {
+                const connection = global.client.voiceConnections.get(activePodcastChannelId);
+                if (connection) {
+                    connection.destroy();
+                    global.client.voiceConnections.delete(activePodcastChannelId);
+                    global.client.audioPlayers.delete(activePodcastChannelId);
+                }
             }
             isPodcastActive = false;
             activePodcastChannelId = null;
@@ -82,6 +82,7 @@ async function setPodcastMonitoring(enable) {
  * @returns {boolean}
  */
 function isBotPodcasting(guildId, channelId = null) {
+    // ✅ וודא ש-global.client ו-global.client.voiceConnections קיימים ומהסוג הנכון
     const connectionExists = global.client && 
                            global.client.voiceConnections instanceof Collection && 
                            global.client.voiceConnections.has(activePodcastChannelId);
@@ -173,6 +174,12 @@ async function handlePodcastTrigger(newState, client) {
                 isPodcastActive = true;
                 activePodcastChannelId = newChannel.id;
 
+                // ✅ וודא ש-client.voiceConnections ו-client.audioPlayers קיימים לפני גישה
+                if (!(client.voiceConnections instanceof Collection) || !(client.audioPlayers instanceof Collection)) {
+                    console.error('🛑 ERROR: client.voiceConnections or client.audioPlayers are not initialized as Collections!');
+                    throw new Error('Voice collections not ready. Cannot start podcast.');
+                }
+
                 const connection = joinVoiceChannel({
                     channelId: newChannel.id,
                     guildId: newChannel.guild.id,
@@ -183,14 +190,14 @@ async function handlePodcastTrigger(newState, client) {
                 const player = createAudioPlayer();
                 connection.subscribe(player);
 
-                client.voiceConnections.set(newChannel.id, connection);
-                client.audioPlayers.set(newChannel.id, player);
+                client.voiceConnections.set(newChannel.id, connection); // שורה 186 אם זו הקריסה
+                client.audioPlayers.set(newChannel.id, player); 
 
                 const participantNames = humanMembers.map(m => m.displayName);
                 const participantIds = humanMembers.map(m => m.id);
                 const joinTimestamps = {};
                 humanMembers.forEach(m => {
-                    if (m.voice.channel) { // וודא שהמשתמש עדיין בערוץ
+                    if (m.voice.channel) { 
                         joinTimestamps[m.id] = m.voice.channel.joinTimestamp;
                     }
                 });
@@ -229,14 +236,19 @@ async function handlePodcastTrigger(newState, client) {
 async function stopPodcast(channelId) { 
     log(`[DEBUG] Attempting to stop podcast for channel ID: ${channelId}`);
     if (global.client) {
-        const connection = global.client.voiceConnections.get(channelId);
-        if (connection) {
-            log('[DEBUG] Destroying voice connection.');
-            connection.destroy();
-            global.client.voiceConnections.delete(channelId);
-            global.client.audioPlayers.delete(channelId);
+        // ✅ וודא שקולקציות voiceConnections ו-audioPlayers קיימות לפני גישה
+        if (global.client.voiceConnections instanceof Collection && global.client.audioPlayers instanceof Collection) {
+            const connection = global.client.voiceConnections.get(channelId); // שורה 232 אם זו הקריסה
+            if (connection) {
+                log('[DEBUG] Destroying voice connection.');
+                connection.destroy();
+                global.client.voiceConnections.delete(channelId);
+                global.client.audioPlayers.delete(channelId);
+            } else {
+                log('[DEBUG] No active voice connection found for this channel ID.');
+            }
         } else {
-            log('[DEBUG] No active voice connection found for this channel ID.');
+            log('[DEBUG] global.client.voiceConnections or global.client.audioPlayers are not Collections. Cannot stop podcast cleanly.');
         }
     } else {
         log('[DEBUG] global.client is not available.');
@@ -247,15 +259,14 @@ async function stopPodcast(channelId) {
         isPodcastActive = false;
         activePodcastChannelId = null;
     }
-    // ✅ שמור מצב ב-Firestore לאחר עצירת הפודקאסט
-    await saveBotState(PODCAST_STATE_KEY, { podcastMonitoringEnabled: podcastMonitoringEnabled }); // שמור את מצב הניטור הנוכחי
+    await saveBotState(PODCAST_STATE_KEY, { podcastMonitoringEnabled: podcastMonitoringEnabled }); 
 }
 
 
 module.exports = {
-    initializePodcastState, // ✅ ייצוא הפונקציה החדשה לאתחול מצב
+    initializePodcastState, 
     setPodcastMonitoring,
     handlePodcastTrigger,
     isBotPodcasting,
-    restrictedCommands // ייצוא רשימת הפקודות המוגבלות לשימוש ב-index.js
+    restrictedCommands 
 };

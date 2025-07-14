@@ -1,20 +1,68 @@
-// 📁 handlers/podcastManager.js
+// 📁 handlers/podcastManager.js - מודול לניהול לוגיקת הפודקאסט המרכזית
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, entersState } = require('@discordjs/voice');
-const { getPodcastAudioEleven } = require('../tts/ttsEngine.elevenlabs');
+const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs');
 const { log } = require('../utils/logger');
-const { Collection } = require('discord.js'); // לייבוא Collection
+const { Collection } = require('discord.js');
 const { loadBotState, saveBotState } = require('../utils/botStateManager');
+// ✅ ייבוא getScriptByUserId ו-getLineForUser
+const { getScriptByUserId, getLineForUser } = require('../data/fifoLines'); 
 
 // --- דגלי מצב גלובליים לפודקאסט ---
-let isPodcastActive = false;
-let activePodcastChannelId = null;
-let podcastMonitoringEnabled = false; 
+let isPodcastActive = false; // האם פודקאסט (צליה) פעיל כרגע
+let activePodcastChannelId = null; // הערוץ בו מתבצעת הצליה
+let podcastMonitoringEnabled = false; // נשלט על ידי ה-cron jobs
 
 // מפתח למצב הפודקאסט ב-Firestore
 const PODCAST_STATE_KEY = 'podcastStatus';
 
-// 🔇 הגדרת רשימת פקודות שיושבתו בזמן פודקאסט
+// 🔇 הגדרת רשימת פקודות שיושבתו בזמן פודקאסט קצר (אם נדרש)
 const restrictedCommands = ['leave', 'stop', 'mute', 'kick', 'play', 'soundboard', 'forceleave', 'forcestop'];
+
+// --- הגדרות חדשות לטריגר "צליה" ---
+const MIN_MEMBERS_FOR_ROAST = 4; // לפחות 4 חברים לפני שהמצטרף החמישי גורם לטריגר
+const MAX_MEMBERS_FOR_ROAST = 12; // יפעל עד 12 אנשים בערוץ (מצטרף 5 עד 12)
+const ROAST_COOLDOWN_MS = 60 * 1000; // קירור של דקה בין צליה לצליה באותו ערוץ
+const channelRoastCooldowns = new Map(); // Map<channelId, lastRoastTimestamp>
+
+/**
+ * פונקציה לבניית סקריפט צליה למשתמש ספציפי (שמעון ושירלי).
+ * ✅ מעודכן: משתמש ב-getScriptByUserId וב-getLineForUser
+ * @param {import('discord.js').GuildMember} memberToRoast - המשתמש שצולים.
+ * @returns {Array<Object>} מערך אובייקטים {speaker: 'shimon'/'shirley', text: '...'}.
+ */
+function buildRoastScriptForMember(memberToRoast) {
+    const userId = memberToRoast.id;
+    const displayName = memberToRoast.displayName;
+    const roastLines = [];
+
+    // נסה למצוא סקריפט אישי למשתמש
+    const selectedScript = getScriptByUserId(userId); 
+    
+    if (selectedScript && selectedScript.shimon && selectedScript.shirley) { // וודא שיש גם שמעון וגם שירלי בסקריפט
+        log(`[ROAST] מצא סקריפט צליה אישי/כללי ל- ${displayName}.`);
+        // שמעון מתחיל
+        if (selectedScript.shimon) {
+            roastLines.push({ speaker: 'shimon', text: selectedScript.shimon.replace(/{name}/g, displayName) });
+        }
+        // שירלי ממשיכה
+        if (selectedScript.shirley) {
+            roastLines.push({ speaker: 'shirley', text: selectedScript.shirley.replace(/{name}/g, displayName) });
+        }
+        // פאנץ' ליין (שמעון)
+        if (selectedScript.punch) {
+            roastLines.push({ speaker: 'shimon', text: selectedScript.punch.replace(/{name}/g, displayName) });
+        }
+    } else {
+        // ✅ אם אין סקריפט ספציפי או שהוא לא מלא, נשתמש ב-getLineForUser
+        log(`[ROAST] לא נמצא סקריפט צליה מלא/אישי ל- ${displayName}. משתמש ב-getLineForUser.`);
+        const genericLine = getLineForUser(userId, displayName); // ✅ קריאה ל-getLineForUser
+        roastLines.push({ speaker: 'shimon', text: genericLine });
+        // ניתן להוסיף שורת תגובה משירלי גם כאן אם רוצים
+        roastLines.push({ speaker: 'shirley', text: `שמעון, נראה ש${displayName} לא נערך לכניסה כזו. אני כאן כדי לוודא שישמעו אותו היטב.` });
+    }
+
+    return roastLines;
+}
 
 /**
  * טוען את מצב הפודקאסט מ-Firestore בעת עליית הבוט, ומתאים לשעות הפעילות.
@@ -58,7 +106,6 @@ async function setPodcastMonitoring(enable) {
     } else {
         log('🎙️ ניטור פודקאסטים כובה.');
         if (isPodcastActive && activePodcastChannelId && global.client) {
-            // ✅ וודא שקולקציות voiceConnections ו-audioPlayers קיימות לפני גישה
             if (global.client.voiceConnections instanceof Collection && global.client.audioPlayers instanceof Collection) {
                 const connection = global.client.voiceConnections.get(activePodcastChannelId);
                 if (connection) {
@@ -82,7 +129,6 @@ async function setPodcastMonitoring(enable) {
  * @returns {boolean}
  */
 function isBotPodcasting(guildId, channelId = null) {
-    // ✅ וודא ש-global.client ו-global.client.voiceConnections קיימים ומהסוג הנכון
     const connectionExists = global.client && 
                            global.client.voiceConnections instanceof Collection && 
                            global.client.voiceConnections.has(activePodcastChannelId);
@@ -93,7 +139,7 @@ function isBotPodcasting(guildId, channelId = null) {
 }
 
 /**
- * מטפל בלוגיקת הפעלת הפודקאסט כאשר התנאים מתקיימים.
+ * מטפל בלוגיקת הפעלת הפודקאסט (צליה) כאשר התנאים מתקיימים.
  * @param {import('discord.js').VoiceState} newState - מצב הקול החדש.
  * @param {import('discord.js').Client} client - אובייקט הקליינט.
  */
@@ -111,6 +157,7 @@ async function handlePodcastTrigger(newState, client) {
     
     const newChannel = newState.channel;
     const oldChannel = newState.oldState?.channel;
+    const memberTriggered = newState.member; // המשתמש שגרם ל-voiceStateUpdate
 
     // טיפול בניתוק פודקאסט אם משתתפים ירדו
     if (oldChannel && !newChannel && isBotPodcasting(oldChannel.guild.id, oldChannel.id)) {
@@ -118,24 +165,18 @@ async function handlePodcastTrigger(newState, client) {
         const humanMembers = oldChannel.members.filter(m => !m.user.bot).size;
         if (humanMembers < 2) { 
             log(`🎙️ פודקאסט הופסק בערוץ ${oldChannel.name} עקב מיעוט משתתפים (${humanMembers} נותרו).`);
-            await stopPodcast(oldChannel.id);
+            await stopPodcast(oldChannel.id); 
             return;
         }
         log(`[DEBUG] Podcast active, but enough members remain (${humanMembers}).`);
     }
 
-    // טיפול בהצטרפות לערוץ וטריגר פודקאסט
+    // 🎯 טיפול בהצטרפות לערוץ וטריגר "צליה"
     if (newChannel && !oldChannel) { // משתמש הצטרף לערוץ
         log(`[DEBUG] User joined channel: ${newChannel.name}.`);
 
-        // אם הבוט כבר בפודקאסט, אל תתחיל חדש (אלא אם זה בדיוק אותו ערוץ)
-        if (isBotPodcasting(newChannel.guild.id) && activePodcastChannelId !== newChannel.id) {
-            log('[DEBUG] Bot is already podcasting in ANOTHER channel. Skipping new podcast.');
-            return; 
-        }
-        // אם הבוט כבר בפודקאסט באותו ערוץ, אין צורך להתחיל שוב
-        if (isBotPodcasting(newChannel.guild.id, newChannel.id)) { 
-            log('[DEBUG] Bot is already podcasting in THIS channel. Skipping new podcast.');
+        if (isPodcastActive) { 
+            log('[DEBUG] Bot is already active with a roast/podcast. Skipping new trigger.');
             return; 
         }
 
@@ -143,42 +184,18 @@ async function handlePodcastTrigger(newState, client) {
         const memberCount = humanMembers.size;
         log(`[DEBUG] Human member count in ${newChannel.name}: ${memberCount}`);
 
-        // 🎯 זיהוי מספר המשתתפים הרצוי
-        const triggerLevels = [2, 4, 6, 8, 10]; // הגדרת רמות הטריגר כאן
-        if (triggerLevels.includes(memberCount)) {
-            log(`⏳ זוהו ${memberCount} משתתפים בערוץ ${newChannel.name}. ממתין לשקט לפני הפודקאסט...`);
+        const currentRoastCooldown = channelRoastCooldowns.get(newChannel.id) || 0;
+        const now = Date.now();
+
+        if (memberCount > MIN_MEMBERS_FOR_ROAST && memberCount <= MAX_MEMBERS_FOR_ROAST && (now - currentRoastCooldown > ROAST_COOLDOWN_MS)) {
+            log(`🎯 טריגר צליה: משתמש ${memberTriggered.displayName} הצטרף. ספירת חברים: ${memberCount}.`);
             
-            // 🔇 המתנה לשקט (פשוטה) - ניתן לשפר עם VAD
-            await new Promise(resolve => setTimeout(resolve, 7000)); // המתן 7 שניות
-            log('[DEBUG] Finished 7-second wait. Re-checking conditions...');
-
-            // בדוק שוב את מספר המשתתפים ואת מצב הבוט לאחר ההמתנה
-            const currentHumanMembers = newChannel.members.filter(m => !m.user.bot).size;
-            log(`[DEBUG] Current human member count AFTER WAIT: ${currentHumanMembers}.`);
-
-            if (!triggerLevels.includes(currentHumanMembers)) {
-                log('❌ Condition changed: Member count is no longer a trigger level. Cancelling podcast.');
-                return;
-            }
-            if (isBotPodcasting(newChannel.guild.id, newChannel.id)) { 
-                log('❌ Condition changed: Bot started podcast in this channel during wait. Cancelling this trigger.');
-                return;
-            }
-            if (isBotPodcasting(newChannel.guild.id) && activePodcastChannelId !== newChannel.id) {
-                log('❌ Condition changed: Bot started podcast in ANOTHER channel during wait. Cancelling this trigger.');
-                return;
-            }
-
             try {
-                log(`🎙️ מפעיל פודקאסט בערוץ: ${newChannel.name} עם ${currentHumanMembers} משתתפים.`);
-                isPodcastActive = true;
-                activePodcastChannelId = newChannel.id;
+                isPodcastActive = true; 
+                activePodcastChannelId = newChannel.id; 
+                channelRoastCooldowns.set(newChannel.id, now); 
 
-                // ✅ וודא ש-client.voiceConnections ו-client.audioPlayers קיימים לפני גישה
-                if (!(client.voiceConnections instanceof Collection) || !(client.audioPlayers instanceof Collection)) {
-                    console.error('🛑 ERROR: client.voiceConnections or client.audioPlayers are not initialized as Collections!');
-                    throw new Error('Voice collections not ready. Cannot start podcast.');
-                }
+                const roastScriptLines = buildRoastScriptForMember(memberTriggered); // ✅ קריאה ל-buildRoastScriptForMember
 
                 const connection = joinVoiceChannel({
                     channelId: newChannel.id,
@@ -190,39 +207,34 @@ async function handlePodcastTrigger(newState, client) {
                 const player = createAudioPlayer();
                 connection.subscribe(player);
 
-                client.voiceConnections.set(newChannel.id, connection); // שורה 186 אם זו הקריסה
+                if (!(client.voiceConnections instanceof Collection) || !(client.audioPlayers instanceof Collection)) {
+                    console.error('🛑 ERROR: client.voiceConnections or client.audioPlayers are not initialized as Collections! Cannot save connection.');
+                    throw new Error('Voice collections not ready. Cannot start podcast.');
+                }
+                client.voiceConnections.set(newChannel.id, connection); 
                 client.audioPlayers.set(newChannel.id, player); 
 
-                const participantNames = humanMembers.map(m => m.displayName);
-                const participantIds = humanMembers.map(m => m.id);
-                const joinTimestamps = {};
-                humanMembers.forEach(m => {
-                    if (m.voice.channel) { 
-                        joinTimestamps[m.id] = m.voice.channel.joinTimestamp;
+                log('[DEBUG] Generating and playing roast audio...');
+                for (const line of roastScriptLines) {
+                    if (line.text?.trim()) {
+                        const audioBuffer = await synthesizeElevenTTS(line.text, line.speaker);
+                        const resource = createAudioResource(audioBuffer);
+                        player.play(resource);
+                        await entersState(player, AudioPlayerStatus.Playing, 5000); 
+                        await entersState(player, AudioPlayerStatus.Idle, 15000); 
                     }
-                });
-
-                log('[DEBUG] Calling getPodcastAudioEleven to generate audio...');
-                const audioBuffer = await getPodcastAudioEleven(participantNames, participantIds, joinTimestamps);
-                log('[DEBUG] Audio buffer generated. Playing...');
-                const resource = createAudioResource(audioBuffer);
-
-                player.play(resource);
-
-                // המתן לסיום הפודקאסט או לזמן מקסימלי
-                log('[DEBUG] Waiting for podcast to finish (max 5 minutes)...');
-                await entersState(player, AudioPlayerStatus.Idle, 60_000 * 5); // מקסימום 5 דקות
-                log('🎙️ פודקאסט הסתיים בהצלחה.');
+                }
+                log('🎙️ צליה הסתיימה בהצלחה.');
 
             } catch (error) {
-                console.error('🛑 שגיאה בהפעלת פודקאסט:', error);
-                log(`❌ שגיאה בהפעלת פודקאסט בערוץ ${newChannel.name}: ${error.message}`);
+                console.error('🛑 שגיאה בהפעלת צליה:', error);
+                log(`❌ שגיאה בהפעלת צליה בערוץ ${newChannel.name}: ${error.message}`);
             } finally {
-                log('[DEBUG] Podcast finished or encountered error. Stopping and resetting state.');
+                log('[DEBUG] Roast finished or encountered error. Stopping and resetting state.');
                 await stopPodcast(newChannel.id); 
             }
         } else {
-            log(`[DEBUG] Member count (${memberCount}) is not a trigger level. Skipping podcast trigger.`);
+            log(`[DEBUG] Member count (${memberCount}) or cooldown not met for roast trigger. Skipping.`);
         }
     } else {
         log('[DEBUG] Not a user joining event. Skipping podcast trigger.');
@@ -236,16 +248,15 @@ async function handlePodcastTrigger(newState, client) {
 async function stopPodcast(channelId) { 
     log(`[DEBUG] Attempting to stop podcast for channel ID: ${channelId}`);
     if (global.client) {
-        // ✅ וודא שקולקציות voiceConnections ו-audioPlayers קיימות לפני גישה
         if (global.client.voiceConnections instanceof Collection && global.client.audioPlayers instanceof Collection) {
-            const connection = global.client.voiceConnections.get(channelId); // שורה 232 אם זו הקריסה
+            const connection = global.client.voiceConnections.get(channelId); 
             if (connection) {
                 log('[DEBUG] Destroying voice connection.');
                 connection.destroy();
                 global.client.voiceConnections.delete(channelId);
                 global.client.audioPlayers.delete(channelId);
             } else {
-                log('[DEBUG] No active voice connection found for this channel ID.');
+                log('[DEBUG] No active voice connection found for this channel ID. It might have already been destroyed.');
             }
         } else {
             log('[DEBUG] global.client.voiceConnections or global.client.audioPlayers are not Collections. Cannot stop podcast cleanly.');

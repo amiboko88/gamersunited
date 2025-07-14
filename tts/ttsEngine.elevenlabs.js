@@ -2,7 +2,9 @@
 const axios = require('axios');
 const admin = require('firebase-admin'); 
 const { log } = require('../utils/logger');
-const { getLineForUser, buildDynamicPodcastScript } = require('../data/fifoLines'); 
+// ✅ ייבוא רק את getLineForUser ו-synthesizeElevenTTS,
+// בניית הסקריפט עברה ל-podcastManager
+const { getLineForUser } = require('../data/fifoLines'); 
 const { registerTTSUsage } = require('./ttsQuotaManager.eleven');
 
 // 🔑 יש להגדיר את זה כמשתנה סביבה ב-Railway
@@ -26,7 +28,7 @@ const DEFAULT_ELEVENLABS_MODEL = 'eleven_multilingual_v2';
  * @returns {string} ה-Voice ID המתאים.
  */
 function getVoiceId(speaker = 'shimon') {
-  return VOICE_MAP[speaker] || VOICE_MAP['shimon']; // אם הספיקר לא ממופה, נחזיר את קול ברירת המחדל של שמעון
+  return VOICE_MAP[speaker] || VOICE_MAP['shimon']; 
 }
 
 /**
@@ -43,7 +45,7 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
   }
 
   const voiceId = getVoiceId(speaker);
-  const cleanText = text.trim(); // אין צורך ב-cleanText מורכב כמו ב-OpenAI, ElevenLabs יותר גמיש
+  const cleanText = text.trim(); 
 
   log(`🎙️ ElevenLabs TTS (V3, ${speaker}, Voice ID: ${voiceId}) – ${cleanText.length} תווים`);
 
@@ -53,20 +55,18 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
       `${ELEVENLABS_TTS_URL}/${voiceId}`,
       {
         text: cleanText,
-        model_id: DEFAULT_ELEVENLABS_MODEL, // שימוש במודל V3 multi-lingual
+        model_id: DEFAULT_ELEVENLABS_MODEL, 
         voice_settings: {
-          stability: 0.75, // מומלץ: לשחק עם הערכים 0-1
-          similarity_boost: 0.75 // מומלץ: לשחק עם הערכים 0-1
+          stability: 0.75, 
+          similarity_boost: 0.75 
         },
-        // פרמטר language_id: 'he' אינו נתמך ישירות ב-V1 Text-to-Speech API Path
-        // המודל ה-multilingual אמור לזהות אוטומטית.
       },
       {
-        responseType: 'arraybuffer', // לקבל את התגובה כ-Buffer
+        responseType: 'arraybuffer', 
         headers: {
           'xi-api-key': ELEVENLABS_API_KEY,
           'Content-Type': 'application/json',
-          'Accept': 'audio/mpeg' // ניתן לשנות ל-audio/wav או פורמטים אחרים
+          'Accept': 'audio/mpeg' 
         }
       }
     );
@@ -80,14 +80,12 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
     throw new Error(`שגיאת רשת מול ElevenLabs: ${err.message}`);
   }
 
-  // בדיקת תגובה תקינה
   if (!response.data || !(response.data instanceof ArrayBuffer) || response.data.byteLength < 500) {
     throw new Error('🔇 ElevenLabs החזיר נתון שגוי או קצר מדי. ייתכן שאין תוכן קולי.');
   }
 
   const audioBuffer = Buffer.from(response.data);
 
-  // רישום שימוש במכסה
   await registerTTSUsage(cleanText.length, 1);
 
   return audioBuffer;
@@ -105,57 +103,25 @@ async function getShortTTSByProfile(member) {
   return await synthesizeElevenTTS(text, 'shimon');
 }
 
-/**
- * מרכיב אודיו עבור פודקאסט מרובה דוברים באמצעות ElevenLabs.
- * @param {string[]} displayNames - שמות תצוגה של המשתתפים.
- * @param {string[]} ids - ID-ים של המשתתפים.
- * @param {object} joinTimestamps - מפתחות זמן הצטרפות של המשתתפים.
- * @returns {Promise<Buffer>} Buffer מאוחד של כל קטעי האודיו.
- * @throws {Error} אם אין משפטים קוליים חוקיים להשמעה.
- */
-async function getPodcastAudioEleven(displayNames = [], ids = [], joinTimestamps = {}) {
-  const buffers = [];
-  const participants = ids.map((uid, i) => ({
-    id: uid,
-    name: displayNames[i] || 'שחקן',
-    joinedAt: joinTimestamps[uid] || 0
-  }));
-
-  // 🆕 קריאה לפונקציה החדשה לבניית הסקריפט הדינמי מ-fifoLines.js
-  const podcastScriptLines = buildDynamicPodcastScript(participants);
-
-  for (const line of podcastScriptLines) {
-    if (line.text?.trim()) {
-      try {
-        buffers.push(await synthesizeElevenTTS(line.text, line.speaker));
-      } catch (err) {
-        console.warn(`⚠️ כשל בהשמעת ${line.speaker} (ElevenLabs):`, err.message);
-      }
-    }
-  }
-
-  if (buffers.length === 0) {
-    throw new Error('🔇 אין משפטים קוליים חוקיים להשמעה בפודקאסט');
-  }
-
-  return Buffer.concat(buffers);
-}
+// ✅ פונקציה getPodcastAudioEleven הוסרה, נשתמש ב-synthesizeElevenTTS ישירות לצליה.
+// אם פונקציה זו משמשת במקום אחר, יש להשאיר אותה.
+// מאחר והצליה היא רצף של synthesizeElevenTTS, הלוגיקה תהיה ב-podcastManager.
 
 /**
  * בודק אם משתמש מורשה להשתמש ב-TTS.
  * (כרגע תמיד מחזיר true, יש להשלים לוגיקה אם נדרש).
  * @param {string} userId - ה-ID של המשתמש.
  * @param {number} limit - מגבלת שימוש.
- * @returns {Promise<boolean>} האם המשתמש מורשה.
+ * @returns {Promise<boolean>} האם המשתתמש מורשה.
  */
 async function canUserUseTTS(userId, limit = 5) {
   return true;
 }
 
 module.exports = {
-  synthesizeElevenTTS,
-  getShortTTSByProfile,
-  getPodcastAudioEleven,
+  synthesizeElevenTTS, // נשאר כי משתמשים בו ישירות
+  getShortTTSByProfile, // נשאר לשימושים אחרים
+  // getPodcastAudioEleven, // הוסר מפה
   getVoiceId,
   canUserUseTTS,
 };

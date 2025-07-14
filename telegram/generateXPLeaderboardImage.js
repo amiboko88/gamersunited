@@ -275,4 +275,8 @@ async function generateXPLeaderboardImage(leaderboardData) {
   return screenshotBuffer;
 }
 
-module.exports = { generateXPLeaderboardImage, clean, formatTime };
+// ייצוא הפונקציה הראשית generateXPLeaderboardImage כייצוא ברירת מחדל,
+// וייצוא הפונקציות הנוספות clean ו-formatTime כמאפיינים שלה.
+module.exports = generateXPLeaderboardImage;
+module.exports.clean = clean;
+module.exports.formatTime = formatTime;

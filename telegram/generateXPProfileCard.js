@@ -91,7 +91,8 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
         color: #b0b0b0;
         margin-bottom: 15px;
       }
-      .rank {
+      /* הסרת המשתנה 'stage' שגרם לשגיאה */
+      .rank { /* ה-div נשאר עבור עיצוב, אך ללא תוכן שאינו מוגדר */
         font-size: 22px;
         font-weight: bold;
         color: ${rankColor};
@@ -143,8 +144,7 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
       </div>
       <div class="name">${name}</div>
       <div class="stats">XP: ${xp}/${nextXP} · רמה ${level}</div>
-      <div class="rank">${stage}</div>
-      <div class="bar">
+      <div class="rank"></div> <div class="bar">
         <div class="fill"></div>
         <div class="percent">${percentText}</div>
       </div>

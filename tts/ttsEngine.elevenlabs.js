@@ -1,9 +1,8 @@
 // 📁 ttsEngine.elevenlabs.js – מותאם כעת ל־ElevenLabs V3 בלבד
 const axios = require('axios');
-const admin = require('firebase-admin');
+const admin = require('firebase-admin'); 
 const { log } = require('../utils/logger');
-// ייבוא הפונונקציה החדשה buildDynamicPodcastScript מ-fifoLines.js
-const { getLineForUser, getScriptByUserId, fallbackScripts, buildDynamicPodcastScript } = require('../data/fifoLines'); 
+const { getLineForUser, buildDynamicPodcastScript } = require('../data/fifoLines'); 
 const { registerTTSUsage } = require('./ttsQuotaManager.eleven');
 
 // 🔑 יש להגדיר את זה כמשתנה סביבה ב-Railway
@@ -143,14 +142,6 @@ async function getPodcastAudioEleven(displayNames = [], ids = [], joinTimestamps
 }
 
 /**
- * משיג סקריפט fallback רנדומלי.
- * @returns {object} אובייקט סקריפט.
- */
-function getRandomFallbackScript() {
-  return fallbackScripts[Math.floor(Math.random() * fallbackScripts.length)];
-}
-
-/**
  * בודק אם משתמש מורשה להשתמש ב-TTS.
  * (כרגע תמיד מחזיר true, יש להשלים לוגיקה אם נדרש).
  * @param {string} userId - ה-ID של המשתמש.
@@ -166,5 +157,5 @@ module.exports = {
   getShortTTSByProfile,
   getPodcastAudioEleven,
   getVoiceId,
-  canUserUseTTS
+  canUserUseTTS,
 };

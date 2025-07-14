@@ -1,4 +1,4 @@
-// 📁 handlers/birthdayPanelHandler.js (מעודכן לטיפול בסלקטור החדש)
+// 📁 handlers/birthdayPanelHandler.js (מעודכן לטיפול בסלקטור החדש ולתיקון שגיאת InteractionAlreadyReplied)
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const db = require('../utils/firebase');
 const generateBirthdayCard = require('../utils/generateBirthdayCard');
@@ -63,13 +63,16 @@ async function handleBirthdayPanel(interaction, client) {
   const { customId, member, guild } = interaction;
   let actionId = customId;
 
-  // ✅ אם זו אינטראקציה של Select Menu, נקבל את הערך הנבחר
+  // אם זו אינטראקציה של Select Menu, נקבל את הערך הנבחר
   if (interaction.isStringSelectMenu()) {
       actionId = interaction.values?.[0]; // הערך שנבחר
   }
   
-  // ✅ deferReply בתחילת ה-handler, לפני כל לוגיקה
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral }); 
+  // ✅ תיקון: בצע deferReply רק אם הפעולה אינה פתיחת מודאל
+  // showModal מטפל במענה לאינטראקציה בעצמו.
+  if (actionId !== 'bday_add' && actionId !== 'open_birthday_modal') {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral }); 
+  }
 
   // 🎁 הצגת רשימת ימי הולדת
   if (actionId === 'bday_list') {
@@ -109,10 +112,10 @@ async function handleBirthdayPanel(interaction, client) {
         embeds.push(new EmbedBuilder().setColor('Purple').setTitle('📆 ימי הולדת בקהילה').setFooter({ text: `עמוד ${pageNum} מתוך ... • שמעון` }).addFields(currentFields));
     }
 
-    // ✅ בדיקה אם יש בכלל embeds לפני ביצוע forEach
+    // בדיקה אם יש בכלל embeds לפני ביצוע forEach
     if (embeds.length > 0) {
         embeds.forEach((embed, index) => {
-            // ✅ בדיקה אם יש שדות לפני ביצוע forEach
+            // בדיקה אם יש שדות לפני ביצוע forEach
             if (embed.data.fields && Array.isArray(embed.data.fields)) {
                 embed.data.fields.forEach(field => {
                     if (field.value && field.value.length > 1024) {
@@ -120,7 +123,7 @@ async function handleBirthdayPanel(interaction, client) {
                     }
                 });
             }
-            // ✅ בדיקה אם יש פוטר לפני גישה למאפיינים שלו
+            // בדיקה אם יש פוטר לפני גישה למאפיינים שלו
             if (embed.data.footer && embed.data.footer.text) {
                 // עדכון הפוטר עם סה"כ עמודים
                 embed.setFooter({ text: embed.data.footer.text.replace('...', embeds.length.toString()) });
@@ -155,9 +158,8 @@ async function handleBirthdayPanel(interaction, client) {
   }
 
   // ➕ פתיחת מודל הוספת יום הולדת
-  // customId 'bday_add' מגיע מהכפתור, 'open_birthday_modal' מגיע מהתזכורת השבועית
   if (actionId === 'bday_add' || actionId === 'open_birthday_modal') {
-    // ✅ אין צורך ב-editReply כאן, showModal מטפל בזה
+    // אין צורך ב-editReply כאן, showModal מטפל בזה
     await showBirthdayModal(interaction); 
     return; // חשוב לסיים את הפונקציה לאחר הצגת המודאל
   }
@@ -179,7 +181,6 @@ async function handleBirthdayPanel(interaction, client) {
   }
 
   // 📨 שליחת תזכורות למי שלא הזין
-  // customId 'bday_remind_missing' (מכפתור) או 'bday_remind_missing_admin' (מסלקטור)
   if (actionId === 'bday_remind_missing' || actionId === 'bday_remind_missing_admin') {
     if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.editReply({ content: '⛔ אין הרשאה.', flags: MessageFlags.Ephemeral });
     

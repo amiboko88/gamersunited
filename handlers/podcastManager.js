@@ -9,13 +9,6 @@ let isPodcastActive = false;
 let activePodcastChannelId = null;
 let podcastMonitoringEnabled = false; // נשלט על ידי ה-cron jobs
 
-// --- קולקציות לניהול חיבורים ונגנים ---
-// נשתמש בקולקציות ספציפיות למודול זה או באלו שעל ה-client
-// בהנחה שה-client.voiceConnections ו-client.audioPlayers קיימים ומנוהלים ב-index.js
-// אם לא, נגדיר כאן:
-// const voiceConnections = new Collection();
-// const audioPlayers = new Collection();
-
 // 🔇 הגדרת רשימת פקודות שיושבתו בזמן פודקאסט
 const restrictedCommands = ['leave', 'stop', 'mute', 'kick', 'play', 'soundboard', 'forceleave', 'forcestop']; // דוגמאות
 
@@ -52,8 +45,8 @@ function setPodcastMonitoring(enable) {
  * @returns {boolean}
  */
 function isBotPodcasting(guildId, channelId = null) {
-    // בודק גם שהקונקשן קיים ופעיל
-    const connectionExists = global.client?.voiceConnections.has(activePodcastChannelId);
+    // ✅ תיקון: וודא ש-global.client ו-global.client.voiceConnections קיימים לפני גישה ל-.has()
+    const connectionExists = global.client && global.client.voiceConnections instanceof Collection && global.client.voiceConnections.has(activePodcastChannelId);
     return isPodcastActive && connectionExists && (channelId === null || activePodcastChannelId === channelId);
 }
 

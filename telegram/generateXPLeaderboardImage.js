@@ -1,13 +1,8 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios'); // נשאר למרות שלא בשימוש ישיר בפונקציה זו, כפי שסופק במקור.
+const axios = require('axios'); // נשאר כי צוין במקור.
 
-/**
- * מנקה טקסט מתווים לא רצויים.
- * @param {string} text - הטקסט לניקוי.
- * @returns {string} הטקסט הנקי.
- */
 function clean(text) {
   // תיקון הביטוי הרגולרי: הוסר הלוכסן הכפול לפני \p{L} ו-\p{N}, והמקף הועבר לסוף כדי שלא יפורש כטווח.
   return (text || "")
@@ -15,11 +10,6 @@ function clean(text) {
     .trim();
 }
 
-/**
- * ממיר מילישניות לפורמט זמן קריא (שעות, דקות, שניות).
- * @param {number} ms - זמן במילישניות.
- * @returns {string} פורמט זמן קריא.
- */
 function formatTime(ms) {
   const seconds = Math.floor(ms / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -30,48 +20,40 @@ function formatTime(ms) {
   let parts = [];
   if (hours > 0) parts.push(`${hours} שעות`);
   if (remainingMinutes > 0) parts.push(`${remainingMinutes} דקות`);
-  if (remainingSeconds > 0 || parts.length === 0) parts.push(`${remainingSeconds} שניות`); // תמיד להציג שניות אם אין שעות/דקות
+  if (remainingSeconds > 0 || parts.length === 0) parts.push(`${remainingSeconds} שניות`);
 
   return parts.join(' ');
 }
 
-
-/**
- * מחולל תמונת לוח הישגים (XP Leaderboard).
- * @param {Array<Object>} leaderboardData - מערך אובייקטים המכיל נתוני לוח הישגים.
- * @returns {Buffer} - תמונה של לוח ההישגים כ-Buffer.
- */
 async function generateXPLeaderboardImage(leaderboardData) {
   // מיון הנתונים: קודם לפי רמה (level) בסדר יורד, ואז לפי XP בסדר יורד.
   leaderboardData.sort((a, b) => {
     if (b.level !== a.level) {
-      return b.level - a.level; // רמה גבוהה יותר קודם
+      return b.level - a.level;
     }
-    return b.xp - a.xp; // אם הרמות זהות, XP גבוה יותר קודם
+    return b.xp - a.xp;
   });
 
   const usersHtml = leaderboardData.map((user, index) => {
     const userName = clean(user.fullName);
-    const xpPercent = (user.xp / (user.level * 25 || 1)) * 100; // חישוב אחוזים
-    const nextLevelXP = user.level * 25; // XP נדרש לרמה הבאה
+    const xpPercent = (user.xp / (user.level * 25 || 1)) * 100;
+    const nextLevelXP = user.level * 25;
 
-    // לוגיקה לבחירת צבע הבר (כפי שמופיע בקארד הפרופיל)
     let barColor = "#A29BFE";
     if (xpPercent >= 100) {
-      barColor = "#2ECC71"; // ירוק בהיר
+      barColor = "#2ECC71";
     } else if (xpPercent >= 90) {
-      barColor = "#3498DB"; // כחול
+      barColor = "#3498DB";
     } else if (xpPercent >= 75) {
-      barColor = "#FFC300"; // צהוב
+      barColor = "#FFC300";
     }
 
-    const rankNumber = index + 1; // הדירוג בפועל לאחר המיון
+    const rankNumber = index + 1;
     let rankEmoji = '';
     if (rankNumber === 1) rankEmoji = '🥇';
     else if (rankNumber === 2) rankEmoji = '🥈';
     else if (rankNumber === 3) rankEmoji = '🥉';
 
-    // הצגת XP נוכחי ו-XP לרמה הבאה, ובנוסף אחוז התקדמות
     const xpDisplay = `XP: ${user.xp}/${nextLevelXP} (${Math.round(xpPercent)}%)`;
 
     return `
@@ -101,23 +83,26 @@ async function generateXPLeaderboardImage(leaderboardData) {
   <!DOCTYPE html>
   <html>
   <head>
+    <meta charset="UTF-8">
     <style>
-      body {
-        margin: 0;
-        padding: 0;
-        overflow: hidden;
-        background-color: transparent; /* וודא שהרקע שקוף */
+      /* איפוס גורף למניעת שוליים ורווחים */
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        background-color: transparent !important;
+        box-sizing: border-box !important;
       }
       .container {
         width: 100%;
-        max-width: 700px; /* רוחב מרבי ללוח ההישגים */
+        max-width: 700px;
         background-color: #2c2f33;
         border-radius: 15px;
         padding: 25px;
-        font-family: 'Arial', sans-serif;
+        font-family: 'Arial', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; /* הוספת פונטים לאימוג'ים */
         color: white;
         box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
-        direction: rtl; /* יישור לימין עבור עברית */
+        direction: rtl;
         box-sizing: border-box;
       }
       h2 {
@@ -130,7 +115,7 @@ async function generateXPLeaderboardImage(leaderboardData) {
         justify-content: center;
       }
       h2 img {
-        margin-left: 10px; /* רווח קטן בין הטקסט לתמונה */
+        margin-left: 10px;
       }
       .user-row {
         display: flex;
@@ -144,29 +129,29 @@ async function generateXPLeaderboardImage(leaderboardData) {
       .rank-info {
         display: flex;
         align-items: center;
-        width: 70px; /* רוחב קבוע לדירוג */
+        width: 70px;
         font-size: 24px;
         font-weight: bold;
         color: #f0f0f0;
-        justify-content: flex-start; /* יישור לימין */
+        justify-content: flex-start;
         margin-left: 15px;
       }
       .rank-number {
-        width: 35px; /* רוחב קבוע למספר הדירוג */
-        text-align: right; /* יישור המספר לימין */
+        width: 35px;
+        text-align: right;
       }
       .rank-emoji {
         font-size: 28px;
-        margin-right: 5px; /* רווח בין המספר לאימוג'י */
+        margin-right: 5px;
       }
       .avatar-container {
         width: 60px;
         height: 60px;
-        border-radius: 50%;
+        border-radius: 50%; /* וודא צורה עגולה מושלמת */
         overflow: hidden;
         margin-left: 15px;
         border: 2px solid #5865F2;
-        flex-shrink: 0; /* מונע כיווץ */
+        flex-shrink: 0;
       }
       .avatar {
         width: 100%;
@@ -175,7 +160,7 @@ async function generateXPLeaderboardImage(leaderboardData) {
       }
       .user-details {
         flex-grow: 1;
-        text-align: right; /* יישור לימין */
+        text-align: right;
       }
       .user-name {
         font-size: 20px;
@@ -189,10 +174,10 @@ async function generateXPLeaderboardImage(leaderboardData) {
         margin-bottom: 5px;
       }
       .level {
-        color: #99FFFF; /* צבע מיוחד לרמה */
+        color: #99FFFF;
       }
       .xp {
-        color: #FFD700; /* צבע מיוחד ל-XP */
+        color: #FFD700;
       }
       .progress-bar-container {
         width: 95%;
@@ -200,8 +185,8 @@ async function generateXPLeaderboardImage(leaderboardData) {
         background-color: #40444b;
         border-radius: 5px;
         overflow: hidden;
-        margin-right: auto; /* דוחף לשמאל, משאיר רווח מימין אם צריך */
-        margin-left: 0; /* מוודא שהוא מתחיל מהקצה השמאלי */
+        margin-right: auto;
+        margin-left: 0;
       }
       .progress-bar-fill {
         height: 100%;
@@ -224,27 +209,23 @@ async function generateXPLeaderboardImage(leaderboardData) {
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--font-render-hinting=none",
-      "--disable-gpu"
+      "--disable-gpu",
+      // הוספת פונטים כדי לתמוך באימוג'ים - ייתכן ויהיה צורך בהתקנה במערכת ההפעלה של Railway
+      '--font-directories=/usr/share/fonts',
+      '--enable-font-antialiasing',
+      '--disable-web-security' // לעיתים עוזר בבעיות טעינת תמונות/פונטים מקומיים
     ]
   });
 
   const page = await browser.newPage();
-  // הגדר viewport גדול מספיק שיכיל את התוכן, אבל אנו נצלם רק את הקונטיינר
-  // הגודל הכללי הוקטן כדי למנוע שוליים לבנים מיותרים
-  await page.setViewport({ width: 750, height: 1000, deviceScaleFactor: 2 }); // Scale factor 2 לחדות גבוהה
+  await page.setViewport({ width: 750, height: 1000, deviceScaleFactor: 2 });
 
-  // הטען את תוכן ה-HTML והמתן עד שהרשת תהיה בטלה
   await page.setContent(html, { waitUntil: 'networkidle0' });
-
-  // וודא שכל הפונטים נטענו
   await page.evaluateHandle('document.fonts.ready');
 
-  // המתן לטעינת כל התמונות בתוך '.user-row'
-  // זה חשוב כדי שהאווטארים יופיעו לפני הצילום
   await page.waitForSelector('.user-row img.avatar', { visible: true, timeout: 5000 }).catch(() => {
     console.log("חלק מהאווטארים לא נטענו, ממשיך בצילום.");
   });
-
 
   const containerElement = await page.$('.container');
   if (!containerElement) {
@@ -252,7 +233,6 @@ async function generateXPLeaderboardImage(leaderboardData) {
     throw new Error("אלמנט ה-Container לא נמצא לצילום מסך.");
   }
 
-  // קבל את הגבולות המדויקים של אלמנט ה-container
   const boundingBox = await containerElement.boundingBox();
 
   if (!boundingBox) {
@@ -260,23 +240,21 @@ async function generateXPLeaderboardImage(leaderboardData) {
     throw new Error("לא ניתן לקבל את גבולות אלמנט ה-Container.");
   }
 
-  // צלם מסך של אלמנט ה-container בלבד
+  // צלם מסך של אלמנט ה-container בלבד, תוך התאמה קלה ל-clip
   const screenshotBuffer = await page.screenshot({
     clip: {
-      x: boundingBox.x,
-      y: boundingBox.y,
-      width: boundingBox.width,
-      height: boundingBox.height,
+      x: Math.floor(boundingBox.x),
+      y: Math.floor(boundingBox.y),
+      width: Math.ceil(boundingBox.width),
+      height: Math.ceil(boundingBox.height),
     },
-    omitBackground: true // וודא שקיפות של הרקע
+    omitBackground: true
   });
 
   await browser.close();
   return screenshotBuffer;
 }
 
-// ייצוא הפונקציה הראשית generateXPLeaderboardImage כייצוא ברירת מחדל,
-// וייצוא הפונקציות הנוספות clean ו-formatTime כמאפיינים שלה.
 module.exports = generateXPLeaderboardImage;
 module.exports.clean = clean;
 module.exports.formatTime = formatTime;

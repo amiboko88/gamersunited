@@ -1,5 +1,5 @@
 const puppeteer = require("puppeteer");
-const sharp = require("sharp"); // ייבוא ספריית sharp, למרות שלא בשימוש ישיר כאן, נשאר כי צוין
+const sharp = require("sharp"); // נשאר כי צוין במקור, למרות שלא בשימוש ישיר בפונקציה זו
 
 function clean(text) {
   // תיקון הביטוי הרגולרי: הוסר הלוכסן הכפול לפני \p{L} ו-\p{N}, והמקף הועבר לסוף כדי שלא יפורש כטווח.
@@ -17,7 +17,6 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
   let barColor = "#A29BFE";
   let rankColor = "#FFD700";
 
-  // לוגיקה מעודכנת לצבעי בר ומדרגה
   if (percent >= 100) {
     barColor = "#2ECC71"; // ירוק בהיר
     rankColor = "#00FFFF"; // טורקיז
@@ -35,16 +34,19 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
   <!DOCTYPE html>
   <html>
   <head>
+    <meta charset="UTF-8">
     <style>
-      body {
-        margin: 0;
-        padding: 0;
-        overflow: hidden; /* מונע סקרולבר ומוודא שהתוכן לא חורג */
-        background-color: transparent; /* וודא שהרקע שקוף */
+      /* איפוס גורף למניעת שוליים ורווחים */
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        background-color: transparent !important;
+        box-sizing: border-box !important;
       }
       .card {
         width: 100%;
-        max-width: 550px; /* הוקטן מעט כדי למנוע שוליים */
+        max-width: 580px; /* הוחזר לרוחב קומפקטי ונוח לצפייה */
         height: auto;
         background-color: #2c2f33;
         border-radius: 15px;
@@ -55,11 +57,12 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
         box-sizing: border-box;
         position: relative;
         overflow: hidden;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
       }
       .avatar-container {
         width: 120px;
         height: 120px;
-        border-radius: 50%;
+        border-radius: 50%; /* וודא צורה עגולה מושלמת */
         overflow: hidden;
         margin: 0 auto 15px auto;
         border: 4px solid #7289DA;
@@ -91,8 +94,7 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
         color: #b0b0b0;
         margin-bottom: 15px;
       }
-      /* הסרת המשתנה 'stage' שגרם לשגיאה */
-      .rank { /* ה-div נשאר עבור עיצוב, אך ללא תוכן שאינו מוגדר */
+      .rank {
         font-size: 22px;
         font-weight: bold;
         color: ${rankColor};
@@ -132,7 +134,7 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
         font-size: 14px;
         color: rgba(255, 255, 255, 0.7);
         font-style: italic;
-        text-shadow: 0 0 5px rgba(0, 0, 0, 0.25); /* עדין יותר */
+        text-shadow: 0 0 5px rgba(0, 0, 0, 0.25);
         font-weight: bold;
       }
     </style>
@@ -159,19 +161,22 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--font-render-hinting=none",
-      "--disable-gpu"
+      "--disable-gpu",
+      // הוספת פונטים כדי לתמוך באימוג'ים - ייתכן ויהיה צורך בהתקנה במערכת ההפעלה של Railway
+      '--font-directories=/usr/share/fonts',
+      '--enable-font-antialiasing',
+      '--disable-web-security' // לעיתים עוזר בבעיות טעינת תמונות/פונטים מקומיים
     ]
   });
 
   const page = await browser.newPage();
   // הגדר viewport שיכיל את כל התוכן הפנימי, אבל ה-body יהיה שקוף
-  // הגודל הכללי הוקטן כדי למנוע שוליים לבנים מיותרים
-  await page.setViewport({ width: 590, height: 400, deviceScaleFactor: 2 }); // גודל מותאם יותר לתוכן
+  // הגודל הכללי הותאם שוב. ייתכן שיידרש כיוונון עדין על ידך
+  await page.setViewport({ width: 600, height: 400, deviceScaleFactor: 2 });
 
   await page.setContent(html, { waitUntil: "networkidle0" });
   await page.evaluateHandle('document.fonts.ready');
 
-  // קבל את הגבולות המדויקים של אלמנט ה-card
   const cardElement = await page.$('.card');
   if (!cardElement) {
     await browser.close();
@@ -185,15 +190,15 @@ async function generateXPProfileCard({ fullName, level, xp, avatarDataURL }) {
     throw new Error("לא ניתן לקבל את גבולות אלמנט ה-card.");
   }
 
-  // צלם מסך של אלמנט ה-card בלבד
+  // צלם מסך של אלמנט ה-card בלבד, תוך התאמה קלה ל-clip
   const screenshotBuffer = await page.screenshot({
     clip: {
-      x: boundingBox.x,
-      y: boundingBox.y,
-      width: boundingBox.width,
-      height: boundingBox.height,
+      x: Math.floor(boundingBox.x),
+      y: Math.floor(boundingBox.y),
+      width: Math.ceil(boundingBox.width),
+      height: Math.ceil(boundingBox.height),
     },
-    omitBackground: true // וודא שקיפות של הרקע
+    omitBackground: true
   });
 
   await browser.close();

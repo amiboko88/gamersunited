@@ -1,15 +1,16 @@
+// 📁 commands/fifo.js
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 
 const { createGroupsAndChannels } = require('../utils/squadBuilder');
 const { log } = require('../utils/logger');
 const { startGroupTracking } = require('../handlers/groupTracker');
 const { resetReplayVotes, registerTeam } = require('../utils/replayManager');
-const { playTTSInVoiceChannel } = require('../utils/ttsQuickPlay');
-const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs');
+const { playTTSInVoiceChannel } = require('../utils/ttsQuickPlay'); // ✅ זהו המקור היחיד לפונקציה זו
+// const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs'); // ❌ שורה זו מבוטלת/נמחקת - היא לא משמשת כאן ישירות
 const { deletePreviousFifoMessages, setFifoMessages } = require('../utils/fifoMemory');
 
 const TEAM_COLORS = ['🟦', '🟥', '🟩', '🟨', '🟪', '⬛'];
-const PUBLIC_CHANNEL_ID = '1372283521447497759';
+const PUBLIC_CHANNEL_ID = '1372283521447497759'; // 🔁 עדכן לפי ערוץ הפיפו הציבורי שלך
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -86,26 +87,24 @@ module.exports = {
             registerTeam(teamName, userIds);
 
             try {
-              await new Promise(res => setTimeout(res, 5000));
+              // השתק את המשתמשים לפני ההודעה
               for (const member of group) {
-                try { await member.voice.setMute(true, 'שמעון משתיק'); } catch {}
+                if (member.voice.channel) await member.voice.setMute(true, 'שמעון משתיק לפני הודעה');
               }
-
+              
+              // השמעת המשפטים בנפרד (שמעון)
               const intro = `שלום ל־${teamName}... שמעון איתכם.`;
               const nameList = `נראה לי שפה יש לנו את: ${group.map(m => m.displayName).join(', ')}`;
               const roast = 'טוב, עם ההרכב הזה אני לא מצפה לכלום. בהצלחה עם ריספawns 🎮';
 
-              const buffer = Buffer.concat([
-                await synthesizeElevenTTS(intro),
-                await synthesizeElevenTTS(nameList),
-                await synthesizeElevenTTS(roast)
-              ]);
+              await playTTSInVoiceChannel(channels[i], intro, 'shimon');
+              await playTTSInVoiceChannel(channels[i], nameList, 'shimon');
+              await playTTSInVoiceChannel(channels[i], roast, 'shimon');
 
-              await playTTSInVoiceChannel(channels[i], buffer);
-
-              await new Promise(res => setTimeout(res, 5000));
+              // המתן מעט לאחר ה-TTS ואז בטל השתקה
+              await new Promise(resolve => setTimeout(resolve, 2000)); // המתן 2 שניות לאחר ה-TTS
               for (const member of group) {
-                try { await member.voice.setMute(false, 'שמעון סיים'); } catch {}
+                if (member.voice.channel) await member.voice.setMute(false, 'שמעון סיים לדבר');
               }
             } catch (err) {
               console.error(`❌ שגיאה בברכת שמעון לקבוצה ${teamName}:`, err.message);

@@ -6,6 +6,12 @@ const { Collection } = require('discord.js');
 const { loadBotState, saveBotState } = require('../utils/botStateManager');
 // ✅ ייבוא getScriptByUserId ו-getLineForUser
 const { getScriptByUserId, getLineForUser } = require('../data/fifoLines'); 
+// ✅ ייבוא dayjs עם פלאגינים לטיפול באזור זמן
+const dayjs = require('dayjs');
+const utc = require('dayjs/plugin/utc');
+const timezone = require('dayjs/plugin/timezone');
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 // --- דגלי מצב גלובליים לפודקאסט ---
 let isPodcastActive = false; // האם פודקאסט (צליה) פעיל כרגע
@@ -31,14 +37,15 @@ const channelRoastCooldowns = new Map(); // Map<channelId, lastRoastTimestamp>
  * @returns {Array<Object>} מערך אובייקטים {speaker: 'shimon'/'shirley', text: '...'}.
  */
 function buildRoastScriptForMember(memberToRoast) {
-    const userId = memberToRoast.id;
+    const userId = memberToRoast.id; // ✅ תיקון: הוסר הרווח
     const displayName = memberToRoast.displayName;
     const roastLines = [];
 
-    // נסה למצוא סקריפט אישי למשתמש
+    // נסה למצוא סקריפט אישי למשתמש דרך getScriptByUserId
     const selectedScript = getScriptByUserId(userId); 
     
-    if (selectedScript && selectedScript.shimon && selectedScript.shirley) { // וודא שיש גם שמעון וגם שירלי בסקריפט
+    // וודא שהסקריפט שנמצא מכיל את שני הדוברים הנדרשים לצליה
+    if (selectedScript && selectedScript.shimon && selectedScript.shirley) { 
         log(`[ROAST] מצא סקריפט צליה אישי/כללי ל- ${displayName}.`);
         // שמעון מתחיל
         if (selectedScript.shimon) {
@@ -48,7 +55,7 @@ function buildRoastScriptForMember(memberToRoast) {
         if (selectedScript.shirley) {
             roastLines.push({ speaker: 'shirley', text: selectedScript.shirley.replace(/{name}/g, displayName) });
         }
-        // פאנץ' ליין (שמעון)
+        // פאנץ' ליין (שמעון) - אופציונלי
         if (selectedScript.punch) {
             roastLines.push({ speaker: 'shimon', text: selectedScript.punch.replace(/{name}/g, displayName) });
         }
@@ -71,13 +78,15 @@ async function initializePodcastState() {
     console.log('[PODCAST_STATE] מאתחל מצב פודקאסט...');
     const savedState = await loadBotState(PODCAST_STATE_KEY);
     
-    const options = { hour: 'numeric', minute: 'numeric', hour12: false, timeZone: 'Asia/Jerusalem' };
-    const jerusalemTime = new Date().toLocaleString('en-US', options);
-    const [jerusalemHour, jerusalemMinute] = jerusalemTime.split(':').map(Number);
+    // ✅ שימוש ב-dayjs ובאזור זמן מדויק להשוואת שעות
+    const jerusalemTime = dayjs().tz('Asia/Jerusalem');
+    const jerusalemHour = jerusalemTime.hour();
     const isCurrentlyActiveHours = (jerusalemHour >= 18 || jerusalemHour < 6); // 18:00 עד 05:59
 
+    console.log(`[PODCAST_STATE] שעה נוכחית בירושלים: ${jerusalemTime.format('HH:mm')}. שעות פעילות: ${isCurrentlyActiveHours}`);
+
     if (savedState) {
-        console.log(`[PODCAST_STATE] מצב שמור נמצא: monitoringEnabled=${savedState.podcastMonitoringEnabled}, isCurrentlyActiveHours=${isCurrentlyActiveHours}`);
+        console.log(`[PODCAST_STATE] מצב שמור נמצא: monitoringEnabled=${savedState.podcastMonitoringEnabled}.`);
         if (savedState.podcastMonitoringEnabled || isCurrentlyActiveHours) {
             podcastMonitoringEnabled = true;
             console.log('[PODCAST_STATE] ניטור הופעל על בסיס מצב שמור או שעות פעילות נוכחיות.');
@@ -86,10 +95,12 @@ async function initializePodcastState() {
             console.log('[PODCAST_STATE] ניטור כבוי על בסיס מצב שמור או שעות פעילות נוכחיות.');
         }
     } else {
+        // אם אין מצב שמור בכלל, קבע לפי השעות הנוכחיות
         console.log(`[PODCAST_STATE] לא נמצא מצב שמור. קובע לפי שעות פעילות נוכחיות: ${isCurrentlyActiveHours}`);
         podcastMonitoringEnabled = isCurrentlyActiveHours;
     }
 
+    // וודא שהמצב הנוכחי נשמר (כדי שה-Cron Jobs הבאים לא יצטרכו לנחש)
     await saveBotState(PODCAST_STATE_KEY, { podcastMonitoringEnabled: podcastMonitoringEnabled });
     console.log(`[PODCAST_STATE] מצב פודקאסט סופי לאחר אתחול: monitoringEnabled=${podcastMonitoringEnabled}`);
 }

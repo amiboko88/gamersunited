@@ -1,8 +1,8 @@
 // 📁 interactions/buttons/inactivityDmButtons.js
 const { ButtonBuilder, ActionRowBuilder, ButtonStyle, Collection, EmbedBuilder, MessageFlags } = require('discord.js');
-const db = require('../../utils/firebase'); // נתיב יחסי נכון
-const smartChat = require('../../handlers/smartChat'); // נתיב יחסי נכון
-const { sendStaffLog } = require('../../utils/staffLogger'); // נתיב יחסי נכון
+const db = require('../../utils/firebase');
+const smartChat = require('../../handlers/smartChat');
+const { sendStaffLog } = require('../../utils/staffLogger');
 
 // פונקציית עזר לעדכון סטטוס משתמש ב-Firebase
 async function updateMemberStatus(userId, updates) {
@@ -88,11 +88,11 @@ async function sendReminderDM(client, guild, members, userId, isFinal = false) {
 
 /**
  * פונקציית handler לכפתורי שליחת תזכורות DM.
+ * ✅ פונקציות customId ו-execute של האינטראקציה
  * @param {import('discord.js').ButtonInteraction} interaction - אובייקט האינטראקציה.
  * @param {import('discord.js').Client} client - אובייקט הקליינט של הבוט.
  */
 const execute = async (interaction, client) => {
-  // תיקון: שימוש ב-flags במקום ephemeral
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const isFinal = interaction.customId === 'send_dm_batch_final_check';
@@ -128,7 +128,6 @@ const execute = async (interaction, client) => {
   const summaryEmbed = new EmbedBuilder()
     .setTitle(`📤 סיכום שליחת תזכורות ${isFinal ? 'סופיות' : 'רגילות'}`)
     .setDescription('הושלם סבב שליחת תזכורות ידני.')
-    // תיקון: העברה ישירה של ערך הצבע
     .setColor(isFinal ? 0xFF6347 : 0x00aaff)
     .setTimestamp();
 
@@ -152,7 +151,6 @@ const execute = async (interaction, client) => {
     summaryEmbed.addFields({ name: '❌ נכשלו', value: '—', inline: false });
   }
 
-  // תיקון: העברה ישירה של ערך הצבע ל-sendStaffLog
   await sendStaffLog(client, `📤 סיכום שליחת תזכורות`, `בוצע סבב שליחת תזכורות DM.`, isFinal ? 0xFF6347 : 0x00aaff, summaryEmbed.fields);
 
   return interaction.editReply({ content: '✅ סבב התזכורות בוצע. סיכום נשלח לערוץ הצוות.', flags: MessageFlags.Ephemeral });

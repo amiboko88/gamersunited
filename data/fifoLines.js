@@ -308,51 +308,6 @@ function isRareUser(userId, userStats) {
   return podcastAppearances < 3;
 }
 
-// 🆕 פונקציה לבניית סקריפט פודקאסט דינמי על בסיס משתתפים ופרופילים
-function buildDynamicPodcastScript(participants) {
-    let combinedLines = [];
-
-    // שלב 1: איסוף שורות מותאמות אישית וכלליות עבור כל משתתף
-    // נשתמש ב-getScriptByUserId כדי למשוך את הסקריפט המתאים
-    participants.forEach(p => {
-        const scriptForUser = getScriptByUserId(p.id); // ✅ קריאה ל-getScriptByUserId
-        if (scriptForUser) {
-            // הוסף שורות מהסקריפט שנבחר עבור המשתמש
-            if (scriptForUser.shimon) combinedLines.push({ speaker: 'shimon', text: scriptForUser.shimon.replace(/{name}/g, p.name) });
-            if (scriptForUser.shirley) combinedLines.push({ speaker: 'shirley', text: scriptForUser.shirley.replace(/{name}/g, p.name) });
-            // ה-punch יטופל בסוף הפודקאסט כמכלול, לא פר-משתמש כאן
-        } else {
-            // אם לא נמצא סקריפט ספציפי (לא אישי ולא fallback), נשתמש בסקריפט כללי רנדומלי
-            const randomFallback = fallbackScripts[Math.floor(Math.random() * fallbackScripts.length)];
-            combinedLines.push({ speaker: 'shimon', text: randomFallback.shimon.replace(/{name}/g, p.name) });
-            combinedLines.push({ speaker: 'shirley', text: randomFallback.shirley.replace(/{name}/g, p.name) });
-        }
-    });
-
-    // שלב 2: הוספת פאנץ' ליין סופי
-    // נבחר פאנץ' ליין רנדומלי כללי
-    const finalPunchScript = fallbackScripts[Math.floor(Math.random() * fallbackScripts.length)];
-    if (finalPunchScript.punch) {
-        combinedLines.push({ speaker: 'shimon', text: finalPunchScript.punch }); // הפאנץ' ליין ייאמר על ידי שמעון
-    }
-
-    // שלב 3: ערבוב (Shuffle) השורות ליצירת זרימה טבעית יותר
-    // זה ימנע מצב שבו כל שורות שמעון באות ברצף ואז כל שורות שירלי
-    for (let i = combinedLines.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [combinedLines[i], combinedLines[j]] = [combinedLines[j], combinedLines[i]];
-    }
-
-    // וודא שיש מינימום שורות, גם אם לא נמצאו משתתפים או סקריפטים
-    if (combinedLines.length === 0) {
-        const randomFallback = fallbackScripts[Math.floor(Math.random() * fallbackScripts.length)];
-        combinedLines.push({ speaker: 'shimon', text: randomFallback.shimon });
-        combinedLines.push({ speaker: 'shirley', text: randomFallback.shirley });
-        if (randomFallback.punch) combinedLines.push({ speaker: 'shimon', text: randomFallback.punch });
-    }
-
-    return combinedLines;
-}
 
 module.exports = {
   getLineForUser,
@@ -360,5 +315,4 @@ module.exports = {
   fallbackScripts, // עדיין מייצא את זה למטרות גיבוי/שימוש אחר
   personalPodcastScripts, // מייצא גם את זה אם יש צורך בגישה ישירה
   isRareUser,
-  buildDynamicPodcastScript // ייצוא הפונקציה החדשה
 };

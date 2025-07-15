@@ -1,14 +1,13 @@
-// 📁 ttsEngine.elevenlabs.js – מותאם כעת ל־ElevenLabs V3 בלבד
+// 📁 handlers/ttsEngine.elevenlabs.js – מותאם כעת ל־ElevenLabs V3 בלבד
 const axios = require('axios');
 const admin = require('firebase-admin'); 
 const { log } = require('../utils/logger');
-// ✅ ייבוא רק את getLineForUser ו-synthesizeElevenTTS,
-// בניית הסקריפט עברה ל-podcastManager
+// ✅ ייבוא רק את getLineForUser (משמשת ב-getShortTTSByProfile)
 const { getLineForUser } = require('../data/fifoLines'); 
 const { registerTTSUsage } = require('./ttsQuotaManager.eleven');
 
 // 🔑 יש להגדיר את זה כמשתנה סביבה ב-Railway
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY; 
+const ELEVENLABS_API_KEY = process.env.ELEVEN_API_KEY; 
 // 🌐 נקודת הקצה של ElevenLabs Text-to-Speech API
 const ELEVENLABS_TTS_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 
@@ -103,25 +102,23 @@ async function getShortTTSByProfile(member) {
   return await synthesizeElevenTTS(text, 'shimon');
 }
 
-// ✅ פונקציה getPodcastAudioEleven הוסרה, נשתמש ב-synthesizeElevenTTS ישירות לצליה.
+// ✅ פונקציה getPodcastAudioEleven הוסרה מכאן - הלוגיקה שלה עברה ל-podcastManager.js
 // אם פונקציה זו משמשת במקום אחר, יש להשאיר אותה.
-// מאחר והצליה היא רצף של synthesizeElevenTTS, הלוגיקה תהיה ב-podcastManager.
 
 /**
  * בודק אם משתמש מורשה להשתמש ב-TTS.
  * (כרגע תמיד מחזיר true, יש להשלים לוגיקה אם נדרש).
  * @param {string} userId - ה-ID של המשתמש.
  * @param {number} limit - מגבלת שימוש.
- * @returns {Promise<boolean>} האם המשתתמש מורשה.
+ * @returns {Promise<boolean>} האם המשתתף מורשה.
  */
 async function canUserUseTTS(userId, limit = 5) {
   return true;
 }
 
 module.exports = {
-  synthesizeElevenTTS, // נשאר כי משתמשים בו ישירות
-  getShortTTSByProfile, // נשאר לשימושים אחרים
-  // getPodcastAudioEleven, // הוסר מפה
+  synthesizeElevenTTS, // נשאר כי משתמשים בו ישירות (ב-podcastManager ובמקומות אחרים)
+  getShortTTSByProfile, // נשאר לשימושים אחרים (כמו BirthdayTracker)
   getVoiceId,
   canUserUseTTS,
 };

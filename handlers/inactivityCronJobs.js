@@ -1,18 +1,15 @@
 // 📁 handlers/inactivityCronJobs.js
 const { EmbedBuilder } = require('discord.js');
 const db = require('../utils/firebase');
-const { sendStaffLog } = require('../utils/staffLogger'); // ✅ ייבוא sendStaffLog מ-utils/staffLogger.js
+const { sendStaffLog } = require('../utils/staffLogger'); // ייבוא sendStaffLog מ-utils/staffLogger.js
 
-const { createPaginatedFields } = require('../interactions/selectors/inactivitySelectMenuHandler');
-const { sendReminderDM } = require('../interactions/buttons/inactivityDmButtons');
-// ✅ אין צורך לייבא את executeKickFailedUsers אם היא מופעלת רק דרך כפתור בממשק משתמש
-// ואינה מופעלת ישירות כחלק ממשימות ה-Cron.
-// אם אתה מתכוון להפעיל אותה אוטומטית, נצטרך להחזיר אותה.
-// לצורך ניקיון קוד, נניח שהיא מופעלת רק דרך אינטראקציית כפתור חיצונית.
-// const { executeKickFailedUsers } = require('../interactions/buttons/inactivityKickButton');
+// ✅ ייבוא הפונקציות הנחוצות למשימות ה-CRON בלבד
+const { createPaginatedFields } = require('../interactions/selectors/inactivitySelectMenuHandler'); // עדיין נחוץ לדוחות
+const { sendReminderDM } = require('../interactions/buttons/inactivityDmButtons'); // נחוץ לשליחת DMs בתזכורות
+
 
 const INACTIVITY_DAYS = 7;
-let lastInactiveIds = [];
+let lastInactiveIds = []; // לניהול דוחות שוטפים
 
 /**
  * פונקציית עזר לעדכון סטטוס משתמש ב-Firebase.
@@ -34,7 +31,17 @@ async function updateMemberStatus(userId, updates) {
  * @param {import('discord.js').Client} client - אובייקט הקליינט של הבוט.
  */
 async function runAutoTracking(client) {
-  const guild = await client.guilds.fetch(process.env.GUILD_ID);
+  const guildId = process.env.GUILD_ID;
+  if (!guildId) {
+      console.error('❌ GUILD_ID אינו מוגדר. לא ניתן להריץ runAutoTracking.');
+      return;
+  }
+  const guild = await client.guilds.fetch(guildId).catch(err => {
+      console.error(`❌ לא ניתן לאחזר שרת (ID: ${guildId}) עבור runAutoTracking: ${err.message}`);
+      return null;
+  });
+  if (!guild) return;
+
   const members = await guild.members.fetch();
   const snapshot = await db.collection('memberTracking').get();
   const now = Date.now();
@@ -118,7 +125,17 @@ async function runAutoTracking(client) {
  * @param {import('discord.js').Client} client - אובייקט הקליינט של הבוט.
  */
 async function runScheduledReminders(client) {
-  const guild = await client.guilds.fetch(process.env.GUILD_ID);
+  const guildId = process.env.GUILD_ID;
+  if (!guildId) {
+      console.error('❌ GUILD_ID אינו מוגדר. לא ניתן להריץ runScheduledReminders.');
+      return;
+  }
+  const guild = await client.guilds.fetch(guildId).catch(err => {
+      console.error(`❌ לא ניתן לאחזר שרת (ID: ${guildId}) עבור runScheduledReminders: ${err.message}`);
+      return null;
+  });
+  if (!guild) return;
+
   const members = await guild.members.fetch();
   const allTracked = await db.collection('memberTracking').get();
   const success = [];
@@ -164,6 +181,17 @@ async function runScheduledReminders(client) {
  * @param {import('discord.js').Client} client - אובייקט הקליינט של הבוט.
  */
 async function runMonthlyKickReport(client) {
+    const guildId = process.env.GUILD_ID;
+    if (!guildId) {
+        console.error('❌ GUILD_ID אינו מוגדר. לא ניתן להריץ runMonthlyKickReport.');
+        return;
+    }
+    const guild = await client.guilds.fetch(guildId).catch(err => {
+        console.error(`❌ לא ניתן לאחזר שרת (ID: ${guildId}) עבור runMonthlyKickReport: ${err.message}`);
+        return null;
+    });
+    if (!guild) return;
+
     const allTracked = await db.collection('memberTracking').get();
     const eligibleToKick = allTracked.docs.filter(doc => {
         const d = doc.data();
@@ -187,9 +215,12 @@ async function runMonthlyKickReport(client) {
     );
 }
 
+// ✅ הסרת הגדרות customId ו-execute של אינטראקציות, שאינן שייכות לכאן.
+// הן שייכות ל-interactions/buttons/inactivityDmButtons.js
 
 module.exports = {
   runAutoTracking,
   runScheduledReminders,
   runMonthlyKickReport,
+  // ✅ אין צורך לייצא כאן sendReminderDM או פונקציות אינטראקציה
 };

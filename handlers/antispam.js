@@ -1,13 +1,16 @@
 // 📁 handlers/antispam.js
 const { EmbedBuilder, MessageFlags } = require('discord.js');
 const db = require('../utils/firebase');
-const { smartRespond } = require('./smartChat');
+const { smartRespond } = require('./smartChat'); 
 
 const STAFF_CHANNEL_ID = '881445829100060723';
 const TRACKING_COLLECTION = 'dmTracking';
 const INFRACTIONS_COLLECTION = 'infractions';
 const WARNING_TTL_MS = 1000 * 60 * 60 * 24; // 24 שעות
 
+const { sendStaffLog } = require('../utils/staffLogger'); // ✅ ייבוא sendStaffLog ישירות, ללא שם חדש
+
+// ✅ רשימות הקללות הקיימות בתוך הקובץ הזה
 const badWordsHe = [
   'תזדיין', 'תמות', 'זדיין', 'מפגר', 'מטומטם', 'בן זונה', 'בן אלף זונות',
   'אמא שלך', 'אבא שלך', 'זין', 'זיונר', 'מזדיין', 'מתרומם', 'מתומתם',
@@ -32,12 +35,15 @@ const badWordsEn = [
   'shithead', 'fool', 'wanker'
 ];
 
+// ✅ רשימת הקללות המאוחדת שתשמש לבדיקה
+const allCursesCombined = badWordsHe.concat(badWordsEn);
+
 const invitePatterns = ['discord.gg', 'discord.com/invite', 'https://discord.gg'];
 
 function checkMessageType(content) {
   const lowered = content.toLowerCase();
   if (invitePatterns.some(p => lowered.includes(p))) return 'invite';
-  if (badWordsHe.concat(badWordsEn).some(word => lowered.includes(word))) return 'curse';
+  if (allCursesCombined.some(word => lowered.includes(word))) return 'curse'; 
   return null;
 }
 
@@ -96,17 +102,21 @@ async function handleSpam(message) {
     collector.on('collect', async reply => {
       responded = true;
       await db.collection(TRACKING_COLLECTION).doc(userId).update({ status: 'responded', response: reply.content });
-      await logDmReplyToStaff(userId, reply.content, message.guild);
+      // ✅ קריאה ל-sendStaffLog (הפעם הנכונה)
+      await sendStaffLog(client, '📬 תגובה לאזהרת DM', `<@${userId}> הגיב ל־DM: \`${reply.content}\``, 0xFFA500); 
     });
 
     collector.on('end', async () => {
       if (!responded) {
         await db.collection(TRACKING_COLLECTION).doc(userId).update({ status: 'ignored' });
-        await logNoReplyToStaff(userId, message.guild);
+        // ✅ קריאה ל-sendStaffLog (הפעם הנכונה)
+        await sendStaffLog(client, '⏱️ לא התקבלה תגובה ל־DM', `<@${userId}> לא הגיב תוך 24 שעות להודעת הבוט.`, 0xFFA500);
       }
     });
-  } catch {
-    console.log(`📭 לא ניתן לשלוח DM ל־${displayName}`);
+  } catch (err) { // לתפוס שגיאות שליחת DM
+    console.log(`📭 לא ניתן לשלוח DM ל־${displayName}: ${err.message}`);
+    // עדיין נרצה לתעד זאת ב-STAFF LOG אם נכשל
+    await sendStaffLog(client, '❌ כשלון שליחת DM', `נכשל שליחת DM ל־<@${userId}> (${displayName}): ${err.message}`, 0xFF0000);
   }
 
   try {
@@ -123,9 +133,13 @@ async function handleSpam(message) {
     console.error('❌ שגיאה בשמירת אזהרה:', err.message);
   }
 
-  await logViolationToStaff(userId, displayName, type, content, message.guild);
+  // ✅ קריאה ל-sendStaffLog (הפעם הנכונה)
+  await sendStaffLog(client, '🚨 זוהתה הפרת שפה', 
+      `**משתמש:** <@${userId}> (${displayName})\n**סוג הפרה:** \`${type}\`\n**הודעה מקורית:** \`${original || '—'}\``, 0xFF0000);
 }
 
+// ✅ פונקציות העזר הועברו למעלה, אין צורך בהן ב-module.exports
+/*
 async function logDmReplyToStaff(userId, content, guild) {
   const staffChannel = guild.channels.cache.get(STAFF_CHANNEL_ID);
   if (!staffChannel?.isTextBased()) return;
@@ -168,8 +182,9 @@ async function logViolationToStaff(userId, displayName, type, original, guild) {
 
   staffChannel.send({ embeds: [embed] }).catch(() => {});
 }
+*/
 
 module.exports = {
-  handleSpam,
-  allCurseWords: badWordsHe.concat(badWordsEn)
+    handleSpam,
+    // ✅ allCurseWords מוסר מהייצוא, כי משמש רק פנימית
 };

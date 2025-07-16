@@ -29,6 +29,7 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
   const cleanText = text.trim(); 
 
   log(`🎙️ ElevenLabs TTS (V3, ${speaker}, Voice ID: ${voiceId}) – ${cleanText.length} תווים`);
+  console.log(`[DEBUG TTS] הטקסט הנשלח ל-ElevenLabs: "${cleanText}"`); // ✅ לוג חדש להצגת הטקסט
 
   let response;
   try {
@@ -55,19 +56,16 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
     console.error('🛑 שגיאה בבקשת TTS מ־ElevenLabs:', err.message);
     if (err.response) {
       const errorData = err.response.data ? new TextDecoder().decode(err.response.data) : 'No data';
-      console.error('Response data from ElevenLabs:', errorData); // ✅ לוג מפורט יותר
+      console.error('Response data from ElevenLabs:', errorData); 
       console.error('Response status from ElevenLabs:', err.response.status);
       console.error('Response headers from ElevenLabs:', err.response.headers);
       
-      // ✅ זרוק שגיאה עם המידע המפורט מה-API
       throw new Error(`שגיאת API מול ElevenLabs (סטטוס ${err.response.status}): ${errorData}`);
     }
     throw new Error(`שגיאת רשת מול ElevenLabs: ${err.message}`);
   }
 
-  // בדיקת תגובה תקינה (אחרי שבדקנו שגיאות מה-API במפורש)
   if (!response.data || !(response.data instanceof ArrayBuffer) || response.data.byteLength < 500) {
-    // ✅ שינוי הודעת שגיאה - כעת תתרחש רק אם ה-buffer באמת קצר אחרי שה-API לא דיווח שגיאה
     throw new Error('🔇 ElevenLabs החזיר Buffer קצר/ריק ללא שגיאת API מפורשת. ייתכן שאין תוכן קולי.');
   }
 

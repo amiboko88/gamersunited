@@ -48,7 +48,7 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
         },
       },
       {
-        responseType: 'arraybuffer', 
+        responseType: 'arraybuffer', // axios אמור להחזיר ArrayBuffer או Buffer
         headers: {
           'xi-api-key': ELEVENLABS_API_KEY,
           'Content-Type': 'application/json',
@@ -76,16 +76,18 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
     throw new Error(`שגיאת רשת מול ElevenLabs: ${err.message}`);
   }
 
-  // ✅ תיקון קריטי לדיבוג: הדפס את אורך הבאפר בפועל לפני זריקת השגיאה
-  const actualByteLength = response.data ? response.data.byteLength : 'null';
+  // ✅ תיקון קריטי: וודא שהנתונים הם Buffer או ArrayBuffer, ובדוק אורך.
+  // axios עם responseType: 'arraybuffer' יכול להחזיר Buffer ב-Node.js
+  const isBufferOrArrayBuffer = Buffer.isBuffer(response.data) || response.data instanceof ArrayBuffer;
+  const actualByteLength = response.data ? (isBufferOrArrayBuffer ? response.data.byteLength : 'לא-Buffer/ArrayBuffer') : 'null';
+  
   console.log(`[DEBUG TTS] בפונקציה: אורך הבאפר בפועל = ${actualByteLength} בייטים.`);
 
-  if (!response.data || !(response.data instanceof ArrayBuffer) || response.data.byteLength < 1000) {
-    // ✅ שינוי הודעת השגיאה לכלול את האורך בפועל מהתנאי
-    throw new Error(`🔇 ElevenLabs החזיר Buffer קצר/ריק. אורך בפועל: ${actualByteLength} בייטים. הטקסט שהיה בעייתי: "${cleanText}". נסה טקסט אחר.`);
+  if (!response.data || !isBufferOrArrayBuffer || response.data.byteLength < 1000) {
+    throw new Error(`🔇 ElevenLabs החזיר Buffer קצר/ריק או לא תקין. אורך בפועל: ${actualByteLength} בייטים. הטקסט שהיה בעייתי: "${cleanText}". נסה טקסט אחר.`);
   }
 
-  const audioBuffer = Buffer.from(response.data);
+  const audioBuffer = Buffer.from(response.data); // המרה ל-Node.js Buffer במקרה שזה ArrayBuffer
 
   await registerTTSUsage(cleanText.length, 1);
 

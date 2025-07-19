@@ -1,5 +1,5 @@
 // 📁 handlers/podcastManager.js
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, entersState, StreamType } = require('@discordjs/voice'); // ✅ ייבוא StreamType
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, entersState, StreamType } = require('@discordjs/voice');
 const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs');
 const { log } = require('../utils/logger');
 const { Collection } = require('discord.js');
@@ -10,6 +10,7 @@ const utc = require('dayjs/plugin/utc');
 const timezone = require('dayjs/plugin/timezone');
 dayjs.extend(utc);
 dayjs.extend(timezone);
+const { Readable } = require('stream'); // ✅ ייבוא Readable
 
 // --- דגלי מצב גלובליים לפודקאסט ---
 let isPodcastActive = false;
@@ -117,23 +118,48 @@ function isBotPodcasting(guildId, channelId = null) {
     return isPodcastActive && connectionExists && (channelId === null || activePodcastChannelId === channelId);
 }
 
-async function handlePodcastTrigger(newState, client) {
-    log(`[DEBUG] handlePodcastTrigger triggered for user: ${newState.member.user.tag} (${newState.member.user.id}), channel: ${newState.channel?.name || 'none'}, oldChannel: ${newState.oldState?.channel?.name || 'none'}`);
+/**
+ * מטפל בלוגיקת הפעלת הפודקאסט (צליה) כאשר התנאים מתקיימים.
+ * @param {import('discord.js').VoiceState} oldState - מצב קולי ישן.
+ * @param {import('discord.js').VoiceState} newState - מצב קולי חדש.
+ * @param {import('discord.js').Client} client - אובייקט הקליינט.
+ */
+async function handlePodcastTrigger(oldState, newState, client) { // ✅ קבלת oldState ו-newState
+    const member = newState.member;
+
+    // ✅ פילטור לוגים: לוג רק אם יש שינוי ערוץ משמעותי
+    const joinedChannel = !oldState.channelId && newState.channelId;
+    const leftChannel = oldState.channelId && !newState.channelId;
+    const movedChannel = oldState.channelId && newState.channelId && oldState.channelId !== newState.channelId;
+    const onlyStateChange = oldState.channelId === newState.channelId; // כמו השתקה/ביטול השתקה
+
+    if (joinedChannel || leftChannel || movedChannel) {
+        log(`[DEBUG] handlePodcastTrigger triggered for user: ${member.user.tag} (${member.user.id}), channel: ${newState.channel?.name || 'none'}, oldChannel: ${oldState.channel?.name || 'none'}`);
+    } else if (onlyStateChange) {
+        // אין לוג דיבוג אם זה רק שינוי מצב (השתקה/ביטול השתקה), זה מיותר
+        // log(`[DEBUG] handlePodcastTrigger triggered for user: ${member.user.tag} (state change only).`);
+        return; // ✅ סיום אם זה רק שינוי מצב קולי (השתקה/ביטול השתקה)
+    } else {
+        log('[DEBUG] handlePodcastTrigger triggered for unknown voiceStateUpdate type. Returning.');
+        return;
+    }
+
 
     if (!podcastMonitoringEnabled) {
         log('[DEBUG] Podcast monitoring is NOT enabled. Returning.');
         return;
     }
-    if (newState.member.user.bot) {
+    if (member.user.bot) {
         log('[DEBUG] Triggered by a BOT. Returning.');
         return;
     }
     
     const newChannel = newState.channel;
-    const oldChannel = newState.oldState?.channel;
+    const oldChannel = oldState.channel;
     const memberTriggered = newState.member;
 
-    if (oldChannel && !newChannel && isBotPodcasting(oldChannel.guild.id, oldChannel.id)) {
+    // טיפול בניתוק פודקאסט אם משתתפים ירדו
+    if (leftChannel && oldChannel && isBotPodcasting(oldChannel.guild.id, oldChannel.id)) { // ✅ שימוש ב-leftChannel
         log(`[DEBUG] User left podcast channel: ${oldChannel.name}. Checking remaining members.`);
         const humanMembers = oldChannel.members.filter(m => !m.user.bot).size;
         if (humanMembers < 2) { 
@@ -144,7 +170,8 @@ async function handlePodcastTrigger(newState, client) {
         log(`[DEBUG] Podcast active, but enough members remain (${humanMembers}).`);
     }
 
-    if (newChannel && !oldChannel) {
+    // 🎯 טיפול בהצטרפות לערוץ וטריגר "צליה"
+    if (joinedChannel) { // ✅ שימוש ב-joinedChannel
         log(`[DEBUG] User joined channel: ${newChannel.name}.`);
 
         if (isPodcastActive) { 
@@ -191,7 +218,8 @@ async function handlePodcastTrigger(newState, client) {
                     if (line.text?.trim()) {
                         const audioBuffer = await synthesizeElevenTTS(line.text, line.speaker);
                         // ✅ תיקון קריטי: הגדר inputType: StreamType.Arbitrary כדי לטפל ב-MP3
-                        const resource = createAudioResource(audioBuffer, { inputType: StreamType.Arbitrary }); 
+                        // ✅ תיקון קריטי: וודא ש-audioBuffer נשלח כ-Readable Stream
+                        const resource = createAudioResource(Readable.from(audioBuffer), { inputType: StreamType.Arbitrary }); 
                         player.play(resource);
                         await entersState(player, AudioPlayerStatus.Playing, 5000); 
                         await entersState(player, AudioPlayerStatus.Idle, 15000); 
@@ -209,9 +237,15 @@ async function handlePodcastTrigger(newState, client) {
         } else {
             log(`[DEBUG] Member count (${memberCount}) or cooldown not met for roast trigger. Skipping.`);
         }
-    } else {
-        log('[DEBUG] Not a user joining event. Skipping podcast trigger.');
+    } else if (movedChannel) { // ✅ טיפול במקרה של מעבר ערוץ
+        log(`[DEBUG] User moved channels. Skipping podcast trigger (only for joins).`);
+        return;
+    } else if (oldChannel && !newChannel) { // ✅ טיפול במקרה של יציאה מהערוץ (לא טריגר צליה)
+         log(`[DEBUG] User left channel: ${oldChannel.name}. Not a roast trigger.`);
+         // עדיין צריך לטפל בלוגיקת ניתוק אם פודקאסט פעיל ואין מספיק משתמשים.
+         // הלוגיקה הקודמת כבר טיפלה בזה למעלה.
     }
+    // הערה: שינויי מצב כמו השתקה/ביטול השתקה כבר נבלמים בתחילת הפונקציה
 }
 
 async function stopPodcast(channelId) { 

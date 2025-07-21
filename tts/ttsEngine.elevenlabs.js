@@ -7,7 +7,7 @@ const ELEVENLABS_API_KEY = process.env.ELEVEN_API_KEY;
 const ELEVENLABS_TTS_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 
 const VOICE_MAP = {
-  shimon: 'TxGEqnHWrfWFTfGW9XjX',
+  shimon: 'YOq2y2Up4RgXP2HyXjE5',
   shirley: 'EXAVITQu4vr4xnSDxMaL'
 };
 
@@ -33,26 +33,24 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
 
   let response;
   try {
-    response = await axios.post(
-      `${ELEVENLABS_TTS_URL}/${voiceId}`,
-      {
-        text: cleanText,
-        model_id: DEFAULT_ELEVENLABS_MODEL,
-        voice_settings: {
-          stability: 0.75,
-          similarity_boost: 0.75
-        },
-      },
-      {
-        responseType: 'arraybuffer',
-        headers: {
-          'xi-api-key': ELEVENLABS_API_KEY,
-          // ✨ --- התיקון נמצא כאן ---
-          'Content-Type': 'application/json; charset=UTF-8',
-          'Accept': 'audio/mpeg'
-        }
+    const payload = {
+      text: cleanText,
+      model_id: DEFAULT_ELEVENLABS_MODEL,
+      // ✨ --- התיקון נמצא כאן: הסרנו את הבלוק הבעייתי ---
+      // voice_settings: {
+      //   stability: 0.75,
+      //   similarity_boost: 0.75
+      // },
+    };
+
+    response = await axios.post(`${ELEVENLABS_TTS_URL}/${voiceId}`, payload, {
+      responseType: 'arraybuffer',
+      headers: {
+        'xi-api-key': ELEVENLABS_API_KEY,
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Accept': 'audio/mpeg'
       }
-    );
+    });
   } catch (err) {
     const errorData = err.response?.data ? new TextDecoder().decode(err.response.data) : err.message;
     console.error('🛑 שגיאה בבקשת TTS מ־ElevenLabs:', errorData);

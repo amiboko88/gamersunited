@@ -7,12 +7,12 @@ const ELEVENLABS_API_KEY = process.env.ELEVEN_API_KEY;
 const ELEVENLABS_TTS_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 
 const VOICE_MAP = {
-  // --- הגדרות לצורך הבדיקה ---
-  shimon: 'EXAVITQu4vr4xnSDxMaL', // ID של הקול "Rachel"
+  // --- הקול האישי שלך ---
+  shimon: 'JhrOrwDuyO3vY5TquQhd', // ID של הקול "AMI"
   shirley: 'EXAVITQu4vr4xnSDxMaL'
 };
 
-// נשתמש במודל v2 היציב והרשמי, כי v3 הוא שם שיווקי לממשק כרגע
+// המודל הנכון והעדכני ביותר הזמין ב-API
 const DEFAULT_ELEVENLABS_MODEL = 'eleven_multilingual_v2';
 
 function removeNikud(text) {
@@ -35,10 +35,13 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
 
   let response;
   try {
-    // חוזרים לבקשה הכי פשוטה ובסיסית כדי למנוע בלבול
     const payload = {
       text: cleanText,
       model_id: DEFAULT_ELEVENLABS_MODEL,
+      // ✨ --- הגדרות V3 נקיות המבוססות על הממשק שלהם ---
+      voice_settings: {
+        stability: 0.7, // פרמטר זה כן קיים בממשק V3
+      },
     };
 
     response = await axios.post(`${ELEVENLABS_TTS_URL}/${voiceId}`, payload, {
@@ -69,13 +72,11 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
 // שאר הקובץ ללא שינוי
 async function getShortTTSByProfile(member) {
   const { getLineForUser } = require('../data/fifoLines');
-  const userId = member.id;
-  const displayName = member.displayName;
-  let text = getLineForUser(userId, displayName);
+  let text = getLineForUser(member.id, member.displayName);
   return await synthesizeElevenTTS(text, 'shimon');
 }
 
-async function canUserUseTTS(userId, limit = 5) { return true; }
+async function canUserUseTTS() { return true; }
 
 module.exports = {
   synthesizeElevenTTS,

@@ -29,7 +29,7 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
   const voiceId = getVoiceId(speaker);
   const cleanText = removeNikud(text).trim();
 
-  log(`🎙️ ElevenLabs TTS (${speaker}, Voice ID: ${voiceId}) – ${cleanText.length} תווים`);
+  log(`🎙️ ElevenLabs TTS (${speaker}, Voice ID: ${voiceId}) – "${cleanText}"`);
 
   let response;
   try {
@@ -47,7 +47,8 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
         responseType: 'arraybuffer',
         headers: {
           'xi-api-key': ELEVENLABS_API_KEY,
-          'Content-Type': 'application/json',
+          // ✨ --- התיקון נמצא כאן ---
+          'Content-Type': 'application/json; charset=UTF-8',
           'Accept': 'audio/mpeg'
         }
       }
@@ -58,7 +59,6 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
     throw new Error(`שגיאת API מול ElevenLabs (סטטוס ${err.response?.status || 'N/A'}): ${errorData}`);
   }
 
-  // --- בדיקת תקינות הקובץ ---
   if (!response.data || !Buffer.isBuffer(response.data) || response.data.length < 1024) {
     const errorMsg = `🔇 ElevenLabs החזיר קובץ שמע ריק או פגום (גודל: ${response.data?.length || 0} בתים).`;
     console.error(errorMsg);

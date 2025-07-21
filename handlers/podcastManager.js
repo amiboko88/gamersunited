@@ -6,13 +6,45 @@ const { log } = require('../utils/logger');
 const { Readable } = require('stream');
 const { Collection } = require('discord.js');
 const { sendStaffLog } = require('../utils/staffLogger');
+const { loadBotState, saveBotState } = require('../utils/botStateManager'); // ✨ ייבוא חסר
+const dayjs = require('dayjs'); // ✨ ייבוא חסר
+const utc = require('dayjs/plugin/utc'); // ✨ ייבוא חסר
+const timezone = require('dayjs/plugin/timezone'); // ✨ ייבוא חסר
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
 
 let isPodcastActive = false;
 let activePodcastChannelId = null;
+let podcastMonitoringEnabled = false; // ✨ הוספת משתנה גלובלי
+const PODCAST_STATE_KEY = 'podcastStatus'; // ✨ הוספת מפתח
 
 const MIN_MEMBERS_FOR_ROAST = 2;
 const ROAST_COOLDOWN_MS = 30 * 1000;
 const channelRoastCooldowns = new Map();
+
+// ✨ --- פונקציה ששוחזרה ---
+/**
+ * מאתחל את מצב הפודקאסט מטעינה שמורה ב-Firestore.
+ * קובע אם ניטור הפודקאסטים צריך להיות פעיל עם עליית הבוט.
+ */
+async function initializePodcastState() {
+    log('[PODCAST_STATE] מאתחל מצב פודקאסט...');
+    const savedState = await loadBotState(PODCAST_STATE_KEY);
+    
+    const jerusalemTime = dayjs().tz('Asia/Jerusalem');
+    const jerusalemHour = jerusalemTime.hour();
+    // שעות פעילות: מ-18:00 בערב עד 6:00 בבוקר
+    const isCurrentlyActiveHours = (jerusalemHour >= 18 || jerusalemHour < 6);
+
+    // קובע את המצב ההתחלתי על בסיס שעות הפעילות
+    podcastMonitoringEnabled = isCurrentlyActiveHours;
+    log(`[PODCAST_STATE] ניטור פודקאסטים הוגדר ל: ${podcastMonitoringEnabled} (מבוסס שעה).`);
+    
+    // שומר את המצב העדכני ב-Firestore
+    await saveBotState(PODCAST_STATE_KEY, { podcastMonitoringEnabled: podcastMonitoringEnabled });
+}
+
 
 function isBotPodcasting(guildId, channelId = null) {
     return isPodcastActive && (channelId === null || activePodcastChannelId === channelId);
@@ -54,7 +86,13 @@ async function stopPodcast(guildId) {
 }
 
 async function handlePodcastTrigger(newState) {
+    if (!podcastMonitoringEnabled) {
+        // אם הניטור כבוי, אל תעשה כלום
+        return;
+    }
+    
     if (!newState.channel || !newState.member) {
+        log('[PODCAST] בוטל: חסר מידע על הערוץ או המשתמש.');
         return;
     }
 
@@ -62,6 +100,7 @@ async function handlePodcastTrigger(newState) {
     const client = member.client;
 
     if (isBotPodcasting(channel.guild.id)) {
+        log(`[PODCAST] בוטל: הבוט כבר פעיל בערוץ אחר.`);
         return;
     }
 
@@ -97,8 +136,7 @@ async function handlePodcastTrigger(newState) {
             selfDeaf: false,
         });
 
-        // ממתין שהחיבור יהיה מוכן לפני שממשיך
-        await entersState(connection, VoiceConnectionStatus.Ready, 10000); // 10 שניות timeout
+        await entersState(connection, VoiceConnectionStatus.Ready, 10000);
         log(`[PODCAST] חיבור קולי נוצר בהצלחה.`);
 
         if (!client.voiceConnections) client.voiceConnections = new Collection();
@@ -118,10 +156,9 @@ async function handlePodcastTrigger(newState) {
                 
                 player.play(resource);
 
-                // ממתין לתחילת הניגון, ואז לסיומו
-                await entersState(player, AudioPlayerStatus.Playing, 5000); // 5 שניות timeout
+                await entersState(player, AudioPlayerStatus.Playing, 5000);
                 log(`[TTS] השמעה החלה...`);
-                await entersState(player, AudioPlayerStatus.Idle, 20000); // 20 שניות timeout
+                await entersState(player, AudioPlayerStatus.Idle, 20000);
                 log(`[TTS] השמעה הסתיימה.`);
             }
         }
@@ -132,14 +169,14 @@ async function handlePodcastTrigger(newState) {
         console.error('❌ שגיאה קריטית בתהליך הפודקאסט:', error);
         await sendStaffLog(client, '❌ שגיאת TTS בפודקאסט', `אירעה שגיאה: \`\`\`${error.message}\`\`\``, 0xFF0000);
     } finally {
-        // --- בלוק ההתאוששות ---
-        // קוד זה יפעל תמיד, גם אם הייתה שגיאה, ויבטיח שהבוט חוזר למצב תקין
         log(`[PODCAST] מבצע ניקוי ואיפוס מצב...`);
         await stopPodcast(channel.guild.id);
     }
 }
 
+// ✨ --- הוספת הפונקציה החסרה לייצוא ---
 module.exports = {
+    initializePodcastState,
     handlePodcastTrigger,
     isBotPodcasting
 };

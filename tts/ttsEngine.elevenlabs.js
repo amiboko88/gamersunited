@@ -7,10 +7,12 @@ const ELEVENLABS_API_KEY = process.env.ELEVEN_API_KEY;
 const ELEVENLABS_TTS_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 
 const VOICE_MAP = {
-  shimon: 'YOq2y2Up4RgXP2HyXjE5',
+  // --- הגדרות לצורך הבדיקה ---
+  shimon: 'EXAVITQu4vr4xnSDxMaL', // ID של הקול "Rachel"
   shirley: 'EXAVITQu4vr4xnSDxMaL'
 };
 
+// נשתמש במודל v2 היציב והרשמי, כי v3 הוא שם שיווקי לממשק כרגע
 const DEFAULT_ELEVENLABS_MODEL = 'eleven_multilingual_v2';
 
 function removeNikud(text) {
@@ -29,18 +31,14 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
   const voiceId = getVoiceId(speaker);
   const cleanText = removeNikud(text).trim();
 
-  log(`🎙️ ElevenLabs TTS (${speaker}, Voice ID: ${voiceId}) – "${cleanText}"`);
+  log(`🎙️ ElevenLabs TTS (${speaker}, Voice ID: ${voiceId}, Model: ${DEFAULT_ELEVENLABS_MODEL}) – "${cleanText}"`);
 
   let response;
   try {
+    // חוזרים לבקשה הכי פשוטה ובסיסית כדי למנוע בלבול
     const payload = {
       text: cleanText,
       model_id: DEFAULT_ELEVENLABS_MODEL,
-      // ✨ --- התיקון נמצא כאן: הסרנו את הבלוק הבעייתי ---
-      // voice_settings: {
-      //   stability: 0.75,
-      //   similarity_boost: 0.75
-      // },
     };
 
     response = await axios.post(`${ELEVENLABS_TTS_URL}/${voiceId}`, payload, {
@@ -68,7 +66,7 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
   return audioBuffer;
 }
 
-// שאר הפונקציות בקובץ נשארות ללא שינוי
+// שאר הקובץ ללא שינוי
 async function getShortTTSByProfile(member) {
   const { getLineForUser } = require('../data/fifoLines');
   const userId = member.id;
@@ -77,9 +75,7 @@ async function getShortTTSByProfile(member) {
   return await synthesizeElevenTTS(text, 'shimon');
 }
 
-async function canUserUseTTS(userId, limit = 5) {
-  return true;
-}
+async function canUserUseTTS(userId, limit = 5) { return true; }
 
 module.exports = {
   synthesizeElevenTTS,

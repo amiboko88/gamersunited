@@ -1,39 +1,35 @@
-// 📁 handlers/ttsEngine.elevenlabs.js
+// 📁 tts/ttsEngine.elevenlabs.js
 const axios = require('axios');
-const admin = require('firebase-admin'); 
 const { log } = require('../utils/logger');
-const { getLineForUser } = require('../data/fifoLines'); 
 const { registerTTSUsage } = require('./ttsQuotaManager.eleven');
 
-const ELEVENLABS_API_KEY = process.env.ELEVEN_API_KEY; 
+const ELEVENLABS_API_KEY = process.env.ELEVEN_API_KEY;
 const ELEVENLABS_TTS_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 
 const VOICE_MAP = {
-  shimon: 'TxGEqnHWrfWFTfGW9XjX', // Eli - קול גברי ישראלי - תומך Multi-Lingual
-  shirley: 'EXAVITQu4vr4xnSDxMaL' // Rachel - קול נשי - תומך Multi-Lingual
+  shimon: 'TxGEqnHWrfWFTfGW9XjX',
+  shirley: 'EXAVITQu4vr4xnSDxMaL'
 };
 
-const DEFAULT_ELEVENLABS_MODEL = 'eleven_multilingual_v2'; 
+const DEFAULT_ELEVENLABS_MODEL = 'eleven_multilingual_v2';
 
 function removeNikud(text) {
   return text.replace(/[\u0591-\u05BD\u05BF-\u05C2\u05C4-\u05C7\u05F3\u05F4]/g, '');
 }
 
 function getVoiceId(speaker = 'shimon') {
-  return VOICE_MAP[speaker] || VOICE_MAP['shimon']; 
+  return VOICE_MAP[speaker] || VOICE_MAP['shimon'];
 }
 
 async function synthesizeElevenTTS(text, speaker = 'shimon') {
   if (!ELEVENLABS_API_KEY) {
-    console.error('🛑 ELEVENLABS_API_KEY אינו מוגדר. לא ניתן לבצע TTS.');
     throw new Error('ElevenLabs API Key is not configured.');
   }
 
   const voiceId = getVoiceId(speaker);
-  const cleanText = removeNikud(text).trim(); 
+  const cleanText = removeNikud(text).trim();
 
-  log(`🎙️ ElevenLabs TTS (V3, ${speaker}, Voice ID: ${voiceId}) – ${cleanText.length} תווים`);
-  console.log(`[DEBUG TTS] הטקסט הנשלח ל-ElevenLabs (ללא ניקוד): "${cleanText}"`); 
+  log(`🎙️ ElevenLabs TTS (${speaker}, Voice ID: ${voiceId}) – ${cleanText.length} תווים`);
 
   let response;
   try {
@@ -41,60 +37,42 @@ async function synthesizeElevenTTS(text, speaker = 'shimon') {
       `${ELEVENLABS_TTS_URL}/${voiceId}`,
       {
         text: cleanText,
-        model_id: DEFAULT_ELEVENLABS_MODEL, 
+        model_id: DEFAULT_ELEVENLABS_MODEL,
         voice_settings: {
-          stability: 0.75, 
-          similarity_boost: 0.75 
+          stability: 0.75,
+          similarity_boost: 0.75
         },
       },
       {
-        responseType: 'arraybuffer', // axios אמור להחזיר ArrayBuffer או Buffer
+        responseType: 'arraybuffer',
         headers: {
           'xi-api-key': ELEVENLABS_API_KEY,
           'Content-Type': 'application/json',
-          'Accept': 'audio/mpeg' 
+          'Accept': 'audio/mpeg'
         }
       }
     );
   } catch (err) {
-    console.error('🛑 שגיאה בבקשת TTS מ־ElevenLabs:', err.message);
-    if (err.response) {
-      const errorData = err.response.data ? new TextDecoder().decode(err.response.data) : 'No data';
-      console.error('Response data from ElevenLabs:', errorData); 
-      console.error('Response status from ElevenLabs:', err.response.status);
-      console.error('Response headers from ElevenLabs:', err.response.headers);
-      
-      if (err.response.status === 429) { 
-        throw new Error(`🚫 ElevenLabs: חריגה ממגבלת קריאות (Rate Limit). נסה שוב מאוחר יותר.`);
-      } else if (err.response.status === 401 || err.response.status === 403) { 
-        throw new Error(`🔑 ElevenLabs: בעיית אימות API Key. וודא שהמפתח תקין.`);
-      } else if (err.response.status === 400 && errorData.includes('invalid_character')) {
-        throw new Error(`🆎 ElevenLabs: מכיל תו לא נתמך: "${cleanText}"`);
-      }
-      throw new Error(`שגיאת API מול ElevenLabs (סטטוס ${err.response.status}): ${errorData}`);
-    }
-    throw new Error(`שגיאת רשת מול ElevenLabs: ${err.message}`);
+    const errorData = err.response?.data ? new TextDecoder().decode(err.response.data) : err.message;
+    console.error('🛑 שגיאה בבקשת TTS מ־ElevenLabs:', errorData);
+    throw new Error(`שגיאת API מול ElevenLabs (סטטוס ${err.response?.status || 'N/A'}): ${errorData}`);
   }
 
-  // ✅ תיקון קריטי: וודא שהנתונים הם Buffer או ArrayBuffer, ובדוק אורך.
-  // axios עם responseType: 'arraybuffer' יכול להחזיר Buffer ב-Node.js
-  const isBufferOrArrayBuffer = Buffer.isBuffer(response.data) || response.data instanceof ArrayBuffer;
-  const actualByteLength = response.data ? (isBufferOrArrayBuffer ? response.data.byteLength : 'לא-Buffer/ArrayBuffer') : 'null';
-  
-  console.log(`[DEBUG TTS] בפונקציה: אורך הבאפר בפועל = ${actualByteLength} בייטים.`);
-
-  if (!response.data || !isBufferOrArrayBuffer || response.data.byteLength < 1000) {
-    throw new Error(`🔇 ElevenLabs החזיר Buffer קצר/ריק או לא תקין. אורך בפועל: ${actualByteLength} בייטים. הטקסט שהיה בעייתי: "${cleanText}". נסה טקסט אחר.`);
+  // --- בדיקת תקינות הקובץ ---
+  if (!response.data || !Buffer.isBuffer(response.data) || response.data.length < 1024) {
+    const errorMsg = `🔇 ElevenLabs החזיר קובץ שמע ריק או פגום (גודל: ${response.data?.length || 0} בתים).`;
+    console.error(errorMsg);
+    throw new Error(errorMsg);
   }
 
-  const audioBuffer = Buffer.from(response.data); // המרה ל-Node.js Buffer במקרה שזה ArrayBuffer
-
+  const audioBuffer = Buffer.from(response.data);
   await registerTTSUsage(cleanText.length, 1);
-
   return audioBuffer;
 }
 
+// שאר הפונקציות בקובץ נשארות ללא שינוי
 async function getShortTTSByProfile(member) {
+  const { getLineForUser } = require('../data/fifoLines');
   const userId = member.id;
   const displayName = member.displayName;
   let text = getLineForUser(userId, displayName);
@@ -106,8 +84,8 @@ async function canUserUseTTS(userId, limit = 5) {
 }
 
 module.exports = {
-  synthesizeElevenTTS, 
-  getShortTTSByProfile, 
+  synthesizeElevenTTS,
+  getShortTTSByProfile,
   getVoiceId,
   canUserUseTTS,
 };

@@ -81,9 +81,8 @@ async function sendWarzoneEmbed(client) {
 
     const embed = new EmbedBuilder()
       .setColor('#2F3136')
-      .setTitle('🎮 FIFO SQUAD כבר מחוברים!')
-      .setDescription(`🎲 המשחק הפעיל: **${getGameName(connected[0]?.presence)}**`)
-      .setFooter({ text: `שחקנים בערוץ: ${connected.length}` })
+      .setDescription(`🎲 : **${getGameName(connected[0]?.presence)}**`)
+      .setFooter({ text: ` ${connected.length} שחקנים בערוץ:` })
       .setTimestamp();
 
     if (file) embed.setImage('attachment://rotation.png');

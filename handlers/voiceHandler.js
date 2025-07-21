@@ -1,6 +1,7 @@
 // 📁 handlers/voiceHandler.js
 const fs = require('fs');
 const path = require('path');
+const { PermissionFlagsBits } = require('discord.js');
 const { updateVoiceActivity } = require('./mvpTracker');
 const {
   trackVoiceMinutes,
@@ -10,13 +11,14 @@ const {
 } = require('./statTracker');
 const db = require('../utils/firebase');
 const podcastManager = require('./podcastManager');
+const ttsTester = require('./ttsTester'); // נייבא את הבוחן החדש
 const { log } = require('../utils/logger');
 
 // הגדרות כלליות
-const FIFO_CHANNEL_ID = process.env.TTS_TEST_CHANNEL_ID; // ודא שזה ה-ID הנכון לערוץ ה-FIFO
+const FIFO_CHANNEL_ID = process.env.TTS_TEST_CHANNEL_ID; // ודא שזה ה-ID הנכון לערוץ ה-FIFO הראשי
 const FIFO_ROLE_NAME = 'FIFO';
 
-// מפות לניהול זמנים
+// מפה לניהול זמני כניסה
 const joinTimestamps = new Map();
 
 /**
@@ -38,12 +40,25 @@ async function handleVoiceStateUpdate(oldState, newState) {
     const guild = member.guild;
     const now = Date.now();
 
+    // --- 2. בדיקת ערוץ הטסטים של TTS (הלוגיקה החדשה) ---
+    // נבדוק אם משתמש מנהל הצטרף לערוץ הבדיקה
+    const joinedTestChannel = !oldChannel && newChannel && newChannel.id === ttsTester.TEST_CHANNEL_ID;
+    if (joinedTestChannel) {
+        if (member.permissions.has(PermissionFlagsBits.Administrator)) {
+            // אם כן, הפעל את הבדיקה ועצור את המשך ריצת הפונקציה
+            await ttsTester.runTTSTest(member);
+            return; 
+        }
+    }
+
+    // --- 3. המשך לוגיקה רגילה ---
+
     // התעלם מערוץ AFK
     if (newChannel?.id === guild.afkChannelId || oldChannel?.id === guild.afkChannelId) {
         return;
     }
     
-    // --- 2. ניהול תפקיד FIFO ---
+    // --- 4. ניהול תפקיד FIFO ---
     const fifoRole = guild.roles.cache.find(r => r.name === FIFO_ROLE_NAME);
     if (fifoRole && FIFO_CHANNEL_ID) {
         try {
@@ -63,7 +78,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
         }
     }
 
-    // --- 3. מעקב סטטיסטיקות (כניסה ויציאה) ---
+    // --- 5. מעקב סטטיסטיקות (כניסה ויציאה) ---
     const joined = !oldChannel && newChannel;
     const left = oldChannel && !newChannel;
 
@@ -77,7 +92,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
         const joinedAt = joinTimestamps.get(userId);
         if (joinedAt) {
             const durationMs = now - joinedAt;
-            // רק אם שהה יותר מדקה ולכל היותר 10 שעות (למניעת נתונים שגויים)
+            // רק אם שהה יותר מדקה ולכל היותר 10 שעות
             if (durationMs > 60000 && durationMs < 36000000) {
                 const durationMinutes = Math.round(durationMs / 60000);
 
@@ -93,10 +108,13 @@ async function handleVoiceStateUpdate(oldState, newState) {
         }
     }
 
-    // --- 4. הפעלת לוגיקת הפודקאסט/TTS ---
+    // --- 6. הפעלת לוגיקת הפודקאסט/TTS ---
     // העבר את האירוע למנהל הפודקאסט רק אם יש שינוי בערוץ
     if (oldChannel?.id !== newChannel?.id) {
-        await podcastManager.handlePodcastTrigger(newState);
+        // ודא שהערוץ החדש אינו ערוץ הטסטים לפני הפעלת הפודקאסט הרגיל
+        if (newChannel?.id !== ttsTester.TEST_CHANNEL_ID) {
+            await podcastManager.handlePodcastTrigger(newState);
+        }
     }
 }
 

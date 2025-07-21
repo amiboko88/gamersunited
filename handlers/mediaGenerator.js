@@ -27,7 +27,7 @@ async function generateProBanner(players) {
   ctx.font = '48px "NotoHebrew"';
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'right';
-  ctx.fillText('\u200F!חברי הצוות מחוברים כבר', WIDTH - 30, 60);
+  ctx.fillText('\u200Fחברי הצוות', WIDTH - 30, 60);
 
   // כותרת משנה - צבע צהוב מודגש יותר
   ctx.font = 'bold 42px Arial';

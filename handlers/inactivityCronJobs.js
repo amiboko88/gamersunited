@@ -1,15 +1,15 @@
 // 📁 handlers/inactivityCronJobs.js
 const { EmbedBuilder } = require('discord.js');
 const db = require('../utils/firebase');
-const { sendStaffLog } = require('../utils/staffLogger'); // ייבוא sendStaffLog מ-utils/staffLogger.js
+const { sendStaffLog } = require('../utils/staffLogger');
 
-// ✅ ייבוא הפונקציות הנחוצות למשימות ה-CRON בלבד
-const { createPaginatedFields } = require('../interactions/selectors/inactivitySelectMenuHandler'); // עדיין נחוץ לדוחות
-const { sendReminderDM } = require('../interactions/buttons/inactivityDmButtons'); // נחוץ לשליחת DMs בתזכורות
+// ייבוא הפונקציות הנחוצות
+const { createPaginatedFields } = require('../interactions/selectors/inactivitySelectMenuHandler');
+const { sendReminderDM } = require('../interactions/buttons/inactivityDmButtons');
 
-
-const INACTIVITY_DAYS = 7;
-let lastInactiveIds = []; // לניהול דוחות שוטפים
+const INACTIVITY_DAYS_FIRST_DM = 7;
+const INACTIVITY_DAYS_FINAL_DM = 30;
+let lastInactiveIds = []; // ✨ המשתנה חזר לשימוש
 
 /**
  * פונקציית עזר לעדכון סטטוס משתמש ב-Firebase.
@@ -36,10 +36,7 @@ async function runAutoTracking(client) {
       console.error('❌ GUILD_ID אינו מוגדר. לא ניתן להריץ runAutoTracking.');
       return;
   }
-  const guild = await client.guilds.fetch(guildId).catch(err => {
-      console.error(`❌ לא ניתן לאחזר שרת (ID: ${guildId}) עבור runAutoTracking: ${err.message}`);
-      return null;
-  });
+  const guild = await client.guilds.fetch(guildId).catch(() => null);
   if (!guild) return;
 
   const members = await guild.members.fetch();
@@ -58,7 +55,6 @@ async function runAutoTracking(client) {
     if (!member || member.user.bot || userId === client.user.id || ['left', 'kicked'].includes(d.statusStage)) {
         if (!member && !['left', 'kicked'].includes(d.statusStage)) {
             await updateMemberStatus(userId, { statusStage: 'left', leftAt: new Date().toISOString() });
-            await sendStaffLog(client, '🚪 משתמש עזב', `<@${userId}> עזב את השרת ונרשם כעזב במערכת.`, 0x808080);
         }
         continue;
     }
@@ -66,74 +62,60 @@ async function runAutoTracking(client) {
     let currentStatus = d.statusStage || 'joined';
     let newStatus = currentStatus;
 
-    if (days >= 30 && currentStatus !== 'final_warning_auto' && currentStatus !== 'final_warning') {
-        newStatus = 'final_warning_auto';
-    } else if (days >= 14 && currentStatus === 'dm_sent') {
+    if (days >= INACTIVITY_DAYS_FINAL_DM && ['dm_sent', 'waiting_dm', 'joined'].includes(currentStatus)) {
         newStatus = 'final_warning';
-    } else if (days >= INACTIVITY_DAYS && currentStatus === 'joined') {
+    } else if (days >= INACTIVITY_DAYS_FIRST_DM && currentStatus === 'joined') {
         newStatus = 'waiting_dm';
-    } else if (currentStatus === 'waiting_dm' && days < INACTIVITY_DAYS) {
-        newStatus = 'active';
     } else if (d.replied && currentStatus !== 'responded') {
         newStatus = 'responded';
-    } else if (!d.dmFailed && !d.replied && days < INACTIVITY_DAYS && currentStatus !== 'joined') {
+    } else if (days < INACTIVITY_DAYS_FIRST_DM && !['joined', 'responded'].includes(currentStatus)) {
         newStatus = 'active';
     }
-
 
     if (newStatus !== currentStatus) {
         await updateMemberStatus(userId, { statusStage: newStatus, statusUpdated: new Date().toISOString() });
         statusChanges.push(`• <@${userId}>: \`${currentStatus}\` ➡️ \`${newStatus}\``);
     }
 
-    if (days >= INACTIVITY_DAYS && !['left', 'kicked', 'responded', 'active'].includes(newStatus)) {
+    if (days >= INACTIVITY_DAYS_FIRST_DM && !['left', 'kicked', 'responded', 'active'].includes(newStatus)) {
         allInactive.push({ id: userId, days, tag: member.user.username, status: newStatus });
     }
   }
 
+  // שלח דוח על שינויי סטטוס אם היו כאלה
   if (statusChanges.length > 0) {
       const fields = createPaginatedFields('🔄 סיכום עדכוני סטטוס', statusChanges);
       await sendStaffLog(client, '📜 עדכון סטטוסים אוטומטי', `בוצעו ${statusChanges.length} עדכוני סטטוס.`, 0x3498db, fields);
   }
 
+  // ✨ --- החלק ששוחזר: דוח תקופתי על כל המשתמשים הלא פעילים ---
   const currentInactiveIds = allInactive.map(u => u.id).sort();
-  const changed = currentInactiveIds.length !== lastInactiveIds.length ||
-                  currentInactiveIds.some((id, i) => id !== lastInactiveIds[i]);
+  // בדוק אם רשימת המשתמשים הלא פעילים השתנתה מאז הפעם האחרונה
+  const hasChanged = currentInactiveIds.length !== lastInactiveIds.length ||
+                     currentInactiveIds.some((id, i) => id !== lastInactiveIds[i]);
 
-  if (changed) {
-    lastInactiveIds = currentInactiveIds;
+  if (hasChanged) {
+    lastInactiveIds = currentInactiveIds; // עדכן את ה"זיכרון" של הרשימה האחרונה
 
-    const group1 = allInactive.filter(u => u.days >= 7 && u.days <= 13);
-    const group2 = allInactive.filter(u => u.days >= 14 && u.days <= 20);
-    const group3 = allInactive.filter(u => u.days > 20);
+    const group1 = allInactive.filter(u => u.days >= 7 && u.days < 30);
+    const group2 = allInactive.filter(u => u.days >= 30);
 
-    const fields1 = createPaginatedFields('🕒 7–13 ימים', group1.map(u => `• <@${u.id}> – ${u.days} ימים (סטטוס: ${u.status})`));
-    const fields2 = createPaginatedFields('⏳ 14–20 ימים', group2.map(u => `• <@${u.id}> – ${u.days} ימים (סטטוס: ${u.status})`));
-    const fields3 = createPaginatedFields('🚨 21+ ימים', group3.map(u => `• <@${u.id}> – ${u.days} ימים (סטטוס: ${u.status})`));
+    const fields1 = createPaginatedFields('🕒 לא פעילים 7-29 ימים', group1.map(u => `• <@${u.id}> – ${u.days} ימים (סטטוס: ${u.status})`));
+    const fields2 = createPaginatedFields('🚨 לא פעילים 30+ ימים', group2.map(u => `• <@${u.id}> – ${u.days} ימים (סטטוס: ${u.status})`));
 
-    const allFields = [...fields1, ...fields2, ...fields3];
-
-    const reportTitle = allInactive.length > 0 ? '📢 דוח משתמשים לא פעילים' : '📢 דוח משתמשים לא פעילים (אין שינויים משמעותיים)';
-    const reportColor = allInactive.length > 0 ? 0xe67e22 : 0x00FF00;
-
-    await sendStaffLog(client, reportTitle, `סה"כ ${allInactive.length} משתמשים לא פעילים.`, reportColor, allFields);
+    const allFields = [...fields1, ...fields2];
+    
+    if (allInactive.length > 0) {
+        await sendStaffLog(client, '📢 דוח משתמשים לא פעילים', `זוהה שינוי ברשימה. סה"כ ${allInactive.length} משתמשים לא פעילים.`, 0xe67e22, allFields);
+    }
   }
 }
 
-/**
- * משימת CRON: שליחת תזכורות אוטומטיות למשתמשים לא פעילים.
- * @param {import('discord.js').Client} client - אובייקט הקליינט של הבוט.
- */
+// --- שאר הפונקציות נשארות ללא שינוי ---
 async function runScheduledReminders(client) {
   const guildId = process.env.GUILD_ID;
-  if (!guildId) {
-      console.error('❌ GUILD_ID אינו מוגדר. לא ניתן להריץ runScheduledReminders.');
-      return;
-  }
-  const guild = await client.guilds.fetch(guildId).catch(err => {
-      console.error(`❌ לא ניתן לאחזר שרת (ID: ${guildId}) עבור runScheduledReminders: ${err.message}`);
-      return null;
-  });
+  if (!guildId) return;
+  const guild = await client.guilds.fetch(guildId).catch(() => null);
   if (!guild) return;
 
   const members = await guild.members.fetch();
@@ -170,26 +152,14 @@ async function runScheduledReminders(client) {
       const fields = [];
       if (success.length > 0) fields.push(createPaginatedFields('✅ נשלחו בהצלחה', success)[0]);
       if (fails.length > 0) fields.push(createPaginatedFields('❌ נכשלו', fails)[0]);
-
       await sendStaffLog(client, '📤 סיכום שליחת תזכורות אוטומטי', `הושלם סבב אוטומטי.`, 0x00aaff, fields);
   }
 }
 
-
-/**
- * משימת CRON: שליחת דוח חודשי למנהלים על מועמדים להרחקה.
- * @param {import('discord.js').Client} client - אובייקט הקליינט של הבוט.
- */
 async function runMonthlyKickReport(client) {
     const guildId = process.env.GUILD_ID;
-    if (!guildId) {
-        console.error('❌ GUILD_ID אינו מוגדר. לא ניתן להריץ runMonthlyKickReport.');
-        return;
-    }
-    const guild = await client.guilds.fetch(guildId).catch(err => {
-        console.error(`❌ לא ניתן לאחזר שרת (ID: ${guildId}) עבור runMonthlyKickReport: ${err.message}`);
-        return null;
-    });
+    if (!guildId) return;
+    const guild = await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return;
 
     const allTracked = await db.collection('memberTracking').get();
@@ -215,12 +185,8 @@ async function runMonthlyKickReport(client) {
     );
 }
 
-// ✅ הסרת הגדרות customId ו-execute של אינטראקציות, שאינן שייכות לכאן.
-// הן שייכות ל-interactions/buttons/inactivityDmButtons.js
-
 module.exports = {
   runAutoTracking,
   runScheduledReminders,
   runMonthlyKickReport,
-  // ✅ אין צורך לייצא כאן sendReminderDM או פונקציות אינטראקציה
 };

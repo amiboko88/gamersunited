@@ -1,80 +1,112 @@
 // 📁 handlers/ttsTester.js
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState, AudioPlayerStatus, StreamType, VoiceConnectionStatus } = require('@discordjs/voice');
-const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs');
-const { getLineForUser } = require('../data/fifoLines');
-const { log } = require('../utils/logger');
-const { sendStaffLog } = require('../utils/staffLogger');
+// גרסה סופית: משתמשת במשתני סביבה ל-API ו-ID ערוץ קבוע.
+
+const { Events } = require('discord.js');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus } = require('@discordjs/voice');
+const { log } = require('../utils/logger'); // ודא שהנתיב ללוגר נכון
 const { Readable } = require('stream');
+const OpenAI = require('openai');
+const { TextToSpeechClient } = require('@google-cloud/text-to-speech');
+const path = require('path');
+const fs = require('fs');
 
+// --- הגדרות ומשתני סביבה ---
+
+// ID קבוע של ערוץ הבדיקה כפי שביקשת
 const TEST_CHANNEL_ID = '1396779274173943828';
-let isTestRunning = false;
 
-/**
- * מפעיל בדיקה מלאה של מערכת ה-TTS על משתמש בערוץ הבדיקות.
- * @param {import('discord.js').GuildMember} member - המשתמש שהפעיל את הבדיקה.
- */
-async function runTTSTest(member) {
-    if (isTestRunning) {
-        log('[TTS_TEST] בדיקה כבר רצה, מדלג על הפעלה כפולה.');
-        return;
-    }
+// הגדרות קבועות עבור הקולות
+const SHIMON_VOICE_OPENAI = 'onyx';
+const SHIMON_VOICE_GOOGLE = 'he-IL-Wavenet-C';
 
-    isTestRunning = true;
-    const { channel } = member.voice;
-    const client = member.client;
-    log(`[TTS_TEST] התחלת בדיקת TTS עבור ${member.displayName} בערוץ ${channel.name}`);
-    await sendStaffLog(client, '🧪 התחלת בדיקת TTS', `הופעלה בדיקה ידנית על ידי <@${member.id}>.`, 0x3498db);
+// --- אתחול הלקוחות של שירותי ה-API ---
 
-    let connection;
-    try {
-        // 1. התחברות לערוץ
-        connection = joinVoiceChannel({
-            channelId: channel.id,
-            guildId: channel.guild.id,
-            adapterCreator: channel.guild.voiceAdapterCreator,
-            selfDeaf: false,
-        });
-        await entersState(connection, VoiceConnectionStatus.Ready, 10000);
-        log('[TTS_TEST] התחברות לערוץ הצליחה.');
+// OpenAI Client - קורא את המפתח מ-process.env.OPENAI_API_KEY
+const openai = new OpenAI(); 
 
-        // 2. בחירת טקסט וקריאה ל-ElevenLabs
-        const textToSpeak = getLineForUser(member.id, member.displayName);
-        log(`[TTS_TEST] טקסט לבדיקה: "${textToSpeak}"`);
-        const audioBuffer = await synthesizeElevenTTS(textToSpeak, 'shimon');
-        log('[TTS_TEST] קובץ שמע נוצר בהצלחה מ-ElevenLabs.');
+// Google TTS Client - קורא את הנתיב לקובץ ההרשאות מ-process.env.GOOGLE_APPLICATION_CREDENTIALS
+let googleTtsClient;
+const googleCredentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || path.join(__dirname, '..', 'google-credentials.json');
 
-        // 3. ניגון השמע
-        const player = createAudioPlayer();
-        connection.subscribe(player);
-        const resource = createAudioResource(Readable.from(audioBuffer), { inputType: StreamType.Arbitrary });
-        player.play(resource);
-        
-        await entersState(player, AudioPlayerStatus.Playing, 5000);
-        log('[TTS_TEST] ניגון השמע החל.');
-        await entersState(player, AudioPlayerStatus.Idle, 20000);
-        log('[TTS_TEST] ניגון השמע הסתיים.');
+if (fs.existsSync(googleCredentialsPath)) {
+    googleTtsClient = new TextToSpeechClient({ keyFilename: googleCredentialsPath });
+    log.info('[TTS_TESTER] Google TTS client initialized successfully.');
+} else {
+    log.warn(`[TTS_TESTER] Google credentials file not found at: ${googleCredentialsPath}. Google TTS will be disabled for testing.`);
+}
 
-        await sendStaffLog(client, '✅ בדיקת TTS הסתיימה בהצלחה', `הבדיקה שהופעלה על ידי <@${member.id}> עברה בהצלחה.`, 0x2ecc71);
+// --- לוגיקת הבוחן ---
 
-    } catch (error) {
-        console.error('❌ שגיאה קריטית בבדיקת TTS:', error);
-        await sendStaffLog(client, '❌ בדיקת TTS נכשלה', `אירעה שגיאה בבדיקה: \`\`\`${error.message}\`\`\``, 0xe74c3c);
-    } finally {
-        // 4. ניתוק וניקוי
-        if (connection) {
-            try {
-                connection.destroy();
-                log('[TTS_TEST] החיבור הקולי נותק.');
-            } catch (e) {
-                console.error('[TTS_TEST] שגיאה בניתוק החיבור:', e.message);
-            }
-        }
-        isTestRunning = false;
-        log('[TTS_TEST] תהליך הבדיקה הסתיים.');
-    }
+let nextEngine = 'openai'; 
+
+async function generateOpenAIVoice(text) {
+    log.info(`[TTS_TESTER] Generating OpenAI TTS...`);
+    const mp3 = await openai.audio.speech.create({
+        model: 'tts-1-hd',
+        voice: SHIMON_VOICE_OPENAI,
+        input: text,
+    });
+    return Buffer.from(await mp3.arrayBuffer());
+}
+
+async function generateGoogleVoice(text) {
+    if (!googleTtsClient) throw new Error('Google TTS client not initialized.');
+    log.info(`[TTS_TESTER] Generating Google TTS...`);
+    const request = {
+        input: { text },
+        voice: { languageCode: 'he-IL', name: SHIMON_VOICE_GOOGLE },
+        audioConfig: { audioEncoding: 'MP3' },
+    };
+    const [response] = await googleTtsClient.synthesizeSpeech(request);
+    return response.audioContent;
 }
 
 module.exports = {
-    runTTSTest,
-    TEST_CHANNEL_ID
+  name: Events.VoiceStateUpdate,
+  async execute(oldState, newState) {
+    if (newState.channelId === TEST_CHANNEL_ID && oldState.channelId !== TEST_CHANNEL_ID) {
+        const member = newState.member;
+        let engineToUse = nextEngine;
+        
+        nextEngine = (engineToUse === 'openai') ? 'google' : 'openai';
+        
+        if (engineToUse === 'google' && !googleTtsClient) {
+            log.warn('[TTS_TESTER] Skipping Google TTS test (client not configured). Falling back to OpenAI.');
+            engineToUse = 'openai';
+            nextEngine = 'google';
+        }
+
+        log.info(`[TTS_TESTER] User ${member.displayName} joined. Testing with [${engineToUse.toUpperCase()}]`);
+
+        const connection = joinVoiceChannel({
+            channelId: newState.channelId,
+            guildId: newState.guild.id,
+            adapterCreator: newState.guild.voiceAdapterCreator,
+        });
+
+        try {
+            const textToSpeak = `היי ${member.displayName}, שמעון בודק את מנוע הקול של ${engineToUse}.`;
+            const audioBuffer = (engineToUse === 'google')
+                ? await generateGoogleVoice(textToSpeak)
+                : await generateOpenAIVoice(textToSpeak);
+
+            const audioResource = createAudioResource(Readable.from(audioBuffer));
+            const player = createAudioPlayer();
+            connection.subscribe(player);
+            player.play(audioResource);
+
+            player.on(AudioPlayerStatus.Idle, () => {
+                if (connection.state.status !== VoiceConnectionStatus.Destroyed) connection.destroy();
+            });
+            player.on('error', error => {
+                log.error(`[TTS_TESTER] Audio player error:`, error);
+                if (connection.state.status !== VoiceConnectionStatus.Destroyed) connection.destroy();
+            });
+
+        } catch (error) {
+            log.error(`[TTS_TESTER] Failed to process TTS with ${engineToUse}:`, error);
+            if (connection.state.status !== VoiceConnectionStatus.Destroyed) connection.destroy();
+        }
+    }
+  },
 };

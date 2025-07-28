@@ -6,43 +6,43 @@ const { log } = require('../utils/logger');
 const { Readable } = require('stream');
 const { Collection } = require('discord.js');
 const { sendStaffLog } = require('../utils/staffLogger');
-const { loadBotState, saveBotState } = require('../utils/botStateManager'); // ✨ ייבוא חסר
-const dayjs = require('dayjs'); // ✨ ייבוא חסר
-const utc = require('dayjs/plugin/utc'); // ✨ ייבוא חסר
-const timezone = require('dayjs/plugin/timezone'); // ✨ ייבוא חסר
+const { loadBotState, saveBotState } = require('../utils/botStateManager');
+const dayjs = require('dayjs');
+const utc = require('dayjs/plugin/utc');
+const timezone = require('dayjs/plugin/timezone');
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-
 let isPodcastActive = false;
 let activePodcastChannelId = null;
-let podcastMonitoringEnabled = false; // ✨ הוספת משתנה גלובלי
-const PODCAST_STATE_KEY = 'podcastStatus'; // ✨ הוספת מפתח
+let podcastMonitoringEnabled = false;
+const PODCAST_STATE_KEY = 'podcastStatus';
 
-const MIN_MEMBERS_FOR_ROAST = 2;
+const MIN_MEMBERS_FOR_ROAST = 4;
 const ROAST_COOLDOWN_MS = 30 * 1000;
 const channelRoastCooldowns = new Map();
 
-// ✨ --- פונקציה ששוחזרה ---
 /**
- * מאתחל את מצב הפודקאסט מטעינה שמורה ב-Firestore.
- * קובע אם ניטור הפודקאסטים צריך להיות פעיל עם עליית הבוט.
+ * ✨ --- פונקציה חדשה ומתוקנת ---
+ * קובעת אם ניטור הפודקאסטים פעיל ושומרת את המצב.
+ * @param {boolean} isEnabled - true להפעלה, false לכיבוי.
  */
+async function setPodcastMonitoring(isEnabled) {
+    podcastMonitoringEnabled = isEnabled;
+    log(`[PODCAST_STATE] ניטור הפודקאסטים הוגדר ל: ${podcastMonitoringEnabled}`);
+    await saveBotState(PODCAST_STATE_KEY, { podcastMonitoringEnabled });
+}
+
+
 async function initializePodcastState() {
     log('[PODCAST_STATE] מאתחל מצב פודקאסט...');
     const savedState = await loadBotState(PODCAST_STATE_KEY);
     
     const jerusalemTime = dayjs().tz('Asia/Jerusalem');
     const jerusalemHour = jerusalemTime.hour();
-    // שעות פעילות: מ-18:00 בערב עד 6:00 בבוקר
     const isCurrentlyActiveHours = (jerusalemHour >= 18 || jerusalemHour < 6);
 
-    // קובע את המצב ההתחלתי על בסיס שעות הפעילות
-    podcastMonitoringEnabled = isCurrentlyActiveHours;
-    log(`[PODCAST_STATE] ניטור פודקאסטים הוגדר ל: ${podcastMonitoringEnabled} (מבוסס שעה).`);
-    
-    // שומר את המצב העדכני ב-Firestore
-    await saveBotState(PODCAST_STATE_KEY, { podcastMonitoringEnabled: podcastMonitoringEnabled });
+    await setPodcastMonitoring(isCurrentlyActiveHours);
 }
 
 
@@ -87,7 +87,6 @@ async function stopPodcast(guildId) {
 
 async function handlePodcastTrigger(newState) {
     if (!podcastMonitoringEnabled) {
-        // אם הניטור כבוי, אל תעשה כלום
         return;
     }
     
@@ -174,9 +173,9 @@ async function handlePodcastTrigger(newState) {
     }
 }
 
-// ✨ --- הוספת הפונקציה החסרה לייצוא ---
 module.exports = {
     initializePodcastState,
     handlePodcastTrigger,
-    isBotPodcasting
+    isBotPodcasting,
+    setPodcastMonitoring, // ✨ הוספת הפונקציה לייצוא
 };

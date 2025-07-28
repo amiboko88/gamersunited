@@ -25,71 +25,89 @@ const { sendWarzoneEmbed } = require('./fifoWarzoneAnnouncer');
 // ✅ ייבוא מודול ה-podcastManager
 const podcastManager = require('./podcastManager');
 
-/**
- * מאתחל ומגדיר את כל משימות ה-Cron של הבוט.
- * פונקציה זו נקראת פעם אחת בעת עליית הבוט.
- * @param {import('discord.js').Client} client - אובייקט הקליינט של הבוט.
- */
+let cronJobs = [];
+
+function stopCronJobs() {
+    cronJobs.forEach(job => job.stop());
+    cronJobs = [];
+    console.log('[CRON] כל משימות התזמון הופסקו.');
+}
+
 function initializeCronJobs(client) {
+    stopCronJobs();
     console.log('[CRON] מאתחל את כל משימות התזמון המרכזיות...');
 
-    // ✅ קריאה לפונקציית האתחול של מצב הפודקאסט מ-podcastManager.js
-    // זה מבטיח שמצב הפודקאסט נטען מ-Firestore מיד עם עליית הבוט.
-    podcastManager.initializePodcastState();
-
     const tasks = [
-        // משימות כלליות
-        { name: 'החלפת נוכחות הבוט', schedule: '*/5 * * * *', func: rotatePresence, quiet: true, args: [client] },
-        { name: 'ניקוי חיבורים קוליים ישנים', schedule: '* * * * *', func: cleanupIdleConnections, quiet: true, args: [client] },
-        { name: 'ניקוי כפתורי FIFO ישנים', schedule: '*/10 * * * *', func: cleanupOldFifoMessages, args: [client] },
-        { name: 'ניקוי ערוצי Team ריקים', schedule: '0 4 * * *', func: cleanupEmptyChannels, args: [client] },
-        { name: 'סריקת נוכחות תקופתית', schedule: '*/5 * * * *', func: periodicPresenceCheck, quiet: true, args: [client] },
-        { name: 'עדכון ערוץ "In Voice"', schedule: '* * * * *', func: updateDisplayChannel, quiet: true, args: [client] },
-        { name: 'בדיקת קבוצות פעילות', schedule: '* * * * *', func: checkActiveGroups, quiet: true, args: [client] },
-        { name: 'בדיקת DM אימות ממתינים', schedule: '*/10 * * * *', func: checkPendingDms, args: [client] },
+        // משימות שרצות כל דקה
+        { name: 'ניקוי ערוצים ריקים', schedule: '* * * * *', func: cleanupEmptyChannels, args: [client] },
+        { name: 'מעקב קבוצות פעילות', schedule: '* * * * *', func: checkActiveGroups, args: [client] },
+        { name: 'בדיקת תגובות MVP', schedule: '* * * * *', func: checkMvpReactions, args: [client] },
+        { name: 'ניקוי חיבורי קול ישנים', schedule: '* * * * *', func: cleanupIdleConnections, args: [] },
+        { name: 'ניקוי הודעות פיפו ישנות', schedule: '* * * * *', func: cleanupOldFifoMessages, args: [client] },
+        
+        // משימות שרצות כל 5 דקות
+        { name: 'עדכון ערוץ סטטיסטיקות', schedule: '*/5 * * * *', func: updateDisplayChannel, args: [client] },
+        
+        // משימות שרצות כל 10 דקות
+        { name: 'בדיקת נוכחות תקופתית', schedule: '*/10 * * * *', func: periodicPresenceCheck, args: [client] },
+        { name: 'בדיקת הודעות אימות ממתינות', schedule: '*/10 * * * *', func: checkPendingDms, args: [client] },
 
-        // משימות ניהול משתמשים
-        { name: 'עדכון סטטוס אי-פעילות אוטומטי', schedule: '*/30 * * * *', func: runAutoTracking, args: [client] },
-        { name: 'שליחת תזכורות אי-פעילות אוטומטית', schedule: '0 8 * * *', func: runScheduledReminders, timezone: 'Asia/Jerusalem', args: [client] },
-        { name: 'שליחת דוח הרחקה חודשי', schedule: '0 10 1 * *', func: runMonthlyKickReport, timezone: 'Asia/Jerusalem', args: [client] },
+        // משימות שרצות כל 15 דקות
+        { name: 'החלפת סטטוס הבוט', schedule: '*/15 * * * *', func: rotatePresence, args: [client], runOnInit: true },
 
-        // משימות ימי הולדת
-        { name: 'מעקב אחר ימי הולדת של היום', schedule: '*/30 * * * *', func: checkBirthdays, args: [client] },
-        { name: 'שליחת ברכות יום הולדת בדיסקורד', schedule: '0 9 * * *', func: sendBirthdayMessage, timezone: 'Asia/Jerusalem', args: [client] },
-        { name: 'תזכורת יום הולדת שבועית', schedule: '0 20 * * 6', func: sendWeeklyReminder, timezone: 'Asia/Jerusalem', args: [client] },
-        { name: 'שליחת ברכות יום הולדת לטלגרם', schedule: '5 9 * * *', func: sendTelegramBirthdays, timezone: 'Asia/Jerusalem', args: [client] },
+        // משימות שרצות כל 30 דקות
+        { name: 'סריקת אי-פעילות אוטומטית', schedule: '*/30 * * * *', func: runAutoTracking, args: [client], runOnInit: true },
+        
+        // משימות יומיות
+        { name: 'בדיקת ימי הולדת', schedule: '1 0 * * *', func: checkBirthdays, args: [client], timezone: 'Asia/Jerusalem' },
+        { name: 'שליחת ברכות יום הולדת בטלגרם', schedule: '2 0 * * *', func: sendTelegramBirthdays, args: [], timezone: 'Asia/Jerusalem' },
+        { name: 'שליחת ברכות יום הולדת בדיסקורד', schedule: '3 0 * * *', func: sendBirthdayMessage, args: [client], timezone: 'Asia/Jerusalem' },
+        { name: 'שליחת התראות אי-פעילות', schedule: '0 10,18 * * *', func: runScheduledReminders, args: [client], timezone: 'Asia/Jerusalem' },
 
-        // משימות MVP וקהילה
-        { name: 'בדיקה והכרזת MVP', schedule: '* * * * *', func: checkMVPStatusAndRun, quiet: true, args: [client, client.db] },
-        { name: 'בדיקת ריאקשנים ל-MVP', schedule: '* * * * *', func: checkMvpReactions, quiet: true, args: [client, client.db] },
-        { name: 'עדכון Leaderboard שבועי', schedule: '0 21 * * 6', func: updateWeeklyLeaderboard, timezone: 'Asia/Jerusalem', args: [client] },
-        { name: 'הכרזת Warzone', schedule: '0 21-23,0,1 * * 0-4,6', func: sendWarzoneEmbed, timezone: 'Asia/Jerusalem', args: [client] },
+        // משימות שבועיות
+        { name: 'בדיקת MVP שבועי', schedule: '0 19 * * 0', func: checkMVPStatusAndRun, args: [client], timezone: 'Asia/Jerusalem' },
+        { name: 'עדכון Leaderboard שבועי', schedule: '0 20 * * 0', func: updateWeeklyLeaderboard, args: [client], timezone: 'Asia/Jerusalem' },
+        { name: 'תזכורת יום הולדת שבועית', schedule: '0 12 * * 1', func: sendWeeklyReminder, args: [client], timezone: 'Asia/Jerusalem' },
+        
+        // משימות חודשיות
+        { name: 'דוח הרחקה חודשי', schedule: '0 12 1 * *', func: runMonthlyKickReport, args: [client], timezone: 'Asia/Jerusalem' },
+        
+        // משימות ייעודיות
+        { name: 'הכרזת Warzone', schedule: '0 21 * * 3,4,6,0', func: sendWarzoneEmbed, args: [client], timezone: 'Asia/Jerusalem' },
 
-        // ✅ משימות תזמון לפודקאסט
-        { name: 'הפעלת ניטור פודקאסטים (שעות פעילות)', schedule: '0 18 * * *', func: () => podcastManager.setPodcastMonitoring(true), timezone: 'Asia/Jerusalem', args: [] },
-        { name: 'כיבוי ניטור פודקאסטים (סיום שעות פעילות)', schedule: '0 6 * * *', func: () => podcastManager.setPodcastMonitoring(false), timezone: 'Asia/Jerusalem', args: [] },
+        // משימות תזמון לפודקאסט
+        { name: 'הפעלת ניטור פודקאסטים (שעות פעילות)', schedule: '0 18 * * *', func: () => podcastManager.setPodcastMonitoring(true), timezone: 'Asia/Jerusalem' },
+        { name: 'כיבוי ניטור פודקאסטים (סיום שעות פעילות)', schedule: '0 6 * * *', func: () => podcastManager.setPodcastMonitoring(false), timezone: 'Asia/Jerusalem' },
     ];
 
     tasks.forEach(task => {
-        // וודא ש-Cron schedule תקין.
         if (!cron.validate(task.schedule)) {
             console.error(`[CRON] ❌ לוח זמנים לא תקין עבור "${task.name}": ${task.schedule}`);
             return;
         }
-        // תזמן את המשימה.
-        cron.schedule(task.schedule, async () => {
-            if (!task.quiet) { console.log(`[CRON] ▶️  מריץ משימה: ${task.name}`); }
+
+        const job = cron.schedule(task.schedule, async () => {
+            console.log(`[CRON] ▶️  מריץ משימה: ${task.name}`);
             try {
-                // הפעל את הפונקציה של המשימה עם הארגומנטים המתאימים.
-                await task.func(...(task.args || [client]));
+                await task.func(...(task.args || []));
             } catch (error) {
-                // טיפול בשגיאות ושליחת לוג לצוות במקרה של כשל במשימת Cron.
                 console.error(`[CRON] ❌ שגיאה במשימה "${task.name}":`, error);
-                await sendStaffLog(client, `❌ Cron Job: כשל במשימה "${task.name}"`, `אירעה שגיאה: \`\`\`${error.message}\`\`\``, 0xFF0000);
+                sendStaffLog(client, `❌ שגיאת Cron`, `אירעה שגיאה במשימה **${task.name}**:\n\`\`\`${error.message}\`\`\``, 0xff0000);
             }
-        }, { timezone: task.timezone });
-        console.log(`[CRON] ✔️ משימה "${task.name}" מתוזמנת ל- "${task.schedule}"`);
+        }, {
+            timezone: task.timezone || "Asia/Jerusalem"
+        });
+
+        if (task.runOnInit) {
+            console.log(`[CRON] ▶️  מריץ משימת אתחול מיידית: ${task.name}`);
+            task.func(...(task.args || [])).catch(e => console.error(`[CRON] ❌ שגיאה בהרצה ראשונית של "${task.name}":`, e));
+        }
+        
+        cronJobs.push(job);
     });
+
+    console.log(`[CRON] ✅ ${cronJobs.length} משימות תזומנו בהצלחה.`);
+    podcastManager.initializePodcastState();
 }
 
-module.exports = { initializeCronJobs };
+module.exports = { initializeCronJobs, stopCronJobs };

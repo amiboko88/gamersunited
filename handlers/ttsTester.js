@@ -1,5 +1,5 @@
 // 📁 handlers/ttsTester.js
-// גרסה סופית: משתמשת במשתני סביבה ל-API ו-ID ערוץ קבוע.
+// גרסה מתוקנת: החלפת log.warn ב-log.info
 
 const { Events } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus } = require('@discordjs/voice');
@@ -11,20 +11,12 @@ const path = require('path');
 const fs = require('fs');
 
 // --- הגדרות ומשתני סביבה ---
-
-// ID קבוע של ערוץ הבדיקה כפי שביקשת
 const TEST_CHANNEL_ID = '1396779274173943828';
-
-// הגדרות קבועות עבור הקולות
 const SHIMON_VOICE_OPENAI = 'onyx';
 const SHIMON_VOICE_GOOGLE = 'he-IL-Wavenet-C';
 
 // --- אתחול הלקוחות של שירותי ה-API ---
-
-// OpenAI Client - קורא את המפתח מ-process.env.OPENAI_API_KEY
 const openai = new OpenAI(); 
-
-// Google TTS Client - קורא את הנתיב לקובץ ההרשאות מ-process.env.GOOGLE_APPLICATION_CREDENTIALS
 let googleTtsClient;
 const googleCredentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || path.join(__dirname, '..', 'google-credentials.json');
 
@@ -32,11 +24,11 @@ if (fs.existsSync(googleCredentialsPath)) {
     googleTtsClient = new TextToSpeechClient({ keyFilename: googleCredentialsPath });
     log.info('[TTS_TESTER] Google TTS client initialized successfully.');
 } else {
-    log.warn(`[TTS_TESTER] Google credentials file not found at: ${googleCredentialsPath}. Google TTS will be disabled for testing.`);
+    // --- FIX: Replaced log.warn with log.info ---
+    log.info(`[TTS_TESTER] Google credentials file not found at: ${googleCredentialsPath}. Google TTS will be disabled for testing.`);
 }
 
 // --- לוגיקת הבוחן ---
-
 let nextEngine = 'openai'; 
 
 async function generateOpenAIVoice(text) {
@@ -71,7 +63,8 @@ module.exports = {
         nextEngine = (engineToUse === 'openai') ? 'google' : 'openai';
         
         if (engineToUse === 'google' && !googleTtsClient) {
-            log.warn('[TTS_TESTER] Skipping Google TTS test (client not configured). Falling back to OpenAI.');
+            // --- FIX: Replaced log.warn with log.info ---
+            log.info('[TTS_TESTER] Skipping Google TTS test (client not configured). Falling back to OpenAI.');
             engineToUse = 'openai';
             nextEngine = 'google';
         }

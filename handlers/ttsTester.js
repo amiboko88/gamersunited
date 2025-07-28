@@ -1,9 +1,9 @@
 // 📁 handlers/ttsTester.js
-// גרסה מתוקנת: החלפת log.warn ב-log.info
+// גרסה סופית ומתוקנת - שימוש נכון בלוגר לפי מבנה הפרויקט
 
 const { Events } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus } = require('@discordjs/voice');
-const { log } = require('../utils/logger'); // ודא שהנתיב ללוגר נכון
+const { log } = require('../utils/logger');
 const { Readable } = require('stream');
 const OpenAI = require('openai');
 const { TextToSpeechClient } = require('@google-cloud/text-to-speech');
@@ -22,17 +22,16 @@ const googleCredentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || path
 
 if (fs.existsSync(googleCredentialsPath)) {
     googleTtsClient = new TextToSpeechClient({ keyFilename: googleCredentialsPath });
-    log.info('[TTS_TESTER] Google TTS client initialized successfully.');
+    log('[TTS_TESTER] Google TTS client initialized successfully.'); // FIX
 } else {
-    // --- FIX: Replaced log.warn with log.info ---
-    log.info(`[TTS_TESTER] Google credentials file not found at: ${googleCredentialsPath}. Google TTS will be disabled for testing.`);
+    log(`[TTS_TESTER] Google credentials file not found at: ${googleCredentialsPath}. Google TTS will be disabled for testing.`); // FIX
 }
 
 // --- לוגיקת הבוחן ---
 let nextEngine = 'openai'; 
 
 async function generateOpenAIVoice(text) {
-    log.info(`[TTS_TESTER] Generating OpenAI TTS...`);
+    log(`[TTS_TESTER] Generating OpenAI TTS...`); // FIX
     const mp3 = await openai.audio.speech.create({
         model: 'tts-1-hd',
         voice: SHIMON_VOICE_OPENAI,
@@ -43,7 +42,7 @@ async function generateOpenAIVoice(text) {
 
 async function generateGoogleVoice(text) {
     if (!googleTtsClient) throw new Error('Google TTS client not initialized.');
-    log.info(`[TTS_TESTER] Generating Google TTS...`);
+    log(`[TTS_TESTER] Generating Google TTS...`); // FIX
     const request = {
         input: { text },
         voice: { languageCode: 'he-IL', name: SHIMON_VOICE_GOOGLE },
@@ -63,13 +62,12 @@ module.exports = {
         nextEngine = (engineToUse === 'openai') ? 'google' : 'openai';
         
         if (engineToUse === 'google' && !googleTtsClient) {
-            // --- FIX: Replaced log.warn with log.info ---
-            log.info('[TTS_TESTER] Skipping Google TTS test (client not configured). Falling back to OpenAI.');
+            log('[TTS_TESTER] Skipping Google TTS test (client not configured). Falling back to OpenAI.'); // FIX
             engineToUse = 'openai';
             nextEngine = 'google';
         }
 
-        log.info(`[TTS_TESTER] User ${member.displayName} joined. Testing with [${engineToUse.toUpperCase()}]`);
+        log(`[TTS_TESTER] User ${member.displayName} joined. Testing with [${engineToUse.toUpperCase()}]`); // FIX
 
         const connection = joinVoiceChannel({
             channelId: newState.channelId,

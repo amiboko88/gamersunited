@@ -100,7 +100,11 @@ function initializeCronJobs(client) {
 
         if (task.runOnInit) {
             console.log(`[CRON] ▶️  מריץ משימת אתחול מיידית: ${task.name}`);
-            task.func(...(task.args || [])).catch(e => console.error(`[CRON] ❌ שגיאה בהרצה ראשונית של "${task.name}":`, e));
+            // --- התיקון נמצא כאן ---
+            const initialRunPromise = task.func(...(task.args || []));
+            if (initialRunPromise && typeof initialRunPromise.catch === 'function') {
+                initialRunPromise.catch(e => console.error(`[CRON] ❌ שגיאה בהרצה ראשונית של "${task.name}":`, e));
+            }
         }
         
         cronJobs.push(job);

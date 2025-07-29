@@ -1,5 +1,5 @@
 // 📁 handlers/ttsTester.js
-// ✅ גרסה סופית - מותאמת באופן מלא לקריאה מ-voiceHandler.js
+// ✅ גרסה משודרגת עם בחירה אקראית של קולות וטקסטים
 
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, entersState } = require('@discordjs/voice');
 const { log } = require('../utils/logger');
@@ -7,10 +7,29 @@ const { Readable } = require('stream');
 const OpenAI = require('openai');
 const { TextToSpeechClient } = require('@google-cloud/text-to-speech');
 
+// --- מאגרי מידע לבדיקות אקראיות ---
+
+// מאגר הקולות של OpenAI
+const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+
+// מאגר הקולות האיכותיים (WaveNet) של גוגל לעברית
+const GOOGLE_HE_VOICES = ['he-IL-Wavenet-A', 'he-IL-Wavenet-B', 'he-IL-Wavenet-C', 'he-IL-Wavenet-D'];
+
+// מאגר טקסטים לבדיקה
+const TEST_PHRASES = [
+    'יאללה, איזה באסה',
+    'פאק, זה לא עובד',
+    'ג\'יזס, תתחבר כבר',
+    'בדיקה, אחת שתיים שלוש',
+    'שמעון מבצע בדיקת מערכות קול',
+    'האם שומעים אותי היטב?',
+    'טוב, בוא נראה איך זה נשמע',
+    'זה מבחן קול עבור שמעון הבוט',
+    'לעזאזל, הפינג גבוה היום'
+];
+
 // --- הגדרות ומשתני סביבה ---
 const TEST_CHANNEL_ID = '1396779274173943828';
-const SHIMON_VOICE_OPENAI = 'onyx';
-const SHIMON_VOICE_GOOGLE = 'he-IL-Wavenet-C';
 
 // --- אתחול הלקוחות של שירותי ה-API ---
 const openai = new OpenAI(); 
@@ -28,44 +47,46 @@ if (googleCredentialsJson) {
 }
 
 // --- משתני עזר ---
-let nextEngine = 'openai';
 let isTestRunning = false;
 
-// --- פונקציות עזר לייצור קול ---
-async function generateOpenAIVoice(text) {
-    const mp3 = await openai.audio.speech.create({ model: 'tts-1-hd', voice: SHIMON_VOICE_OPENAI, input: text });
+// --- פונקציות עזר לייצור קול (מעודכנות לקבל קול דינמי) ---
+async function generateOpenAIVoice(text, voice) {
+    const mp3 = await openai.audio.speech.create({ model: 'tts-1-hd', voice: voice, input: text });
     return Buffer.from(await mp3.arrayBuffer());
 }
 
-async function generateGoogleVoice(text) {
+async function generateGoogleVoice(text, voice) {
     if (!googleTtsClient) throw new Error('Google TTS client is not initialized.');
     const [response] = await googleTtsClient.synthesizeSpeech({
-        input: { text }, voice: { languageCode: 'he-IL', name: SHIMON_VOICE_GOOGLE }, audioConfig: { audioEncoding: 'MP3' },
+        input: { text }, voice: { languageCode: 'he-IL', name: voice }, audioConfig: { audioEncoding: 'MP3' },
     });
     return response.audioContent;
 }
 
-
-// --- ✨ הפונקציה המרכזית שה-voiceHandler קורא לה ---
+// --- הפונקציה המרכזית שה-voiceHandler קורא לה ---
 async function runTTSTest(member) {
-    if (isTestRunning) {
-        log('[TTS_TESTER] בדיקה כבר רצה, מדלג על הפעלה כפולה.');
+    if (isTestRunning) return;
+    isTestRunning = true;
+    
+    log(`[TTS_TESTER] ➡️  התחלת בדיקת TTS עבור ${member.displayName}`);
+    
+    // בחירה אקראית של מנוע
+    const engineToUse = Math.random() < 0.5 ? 'openai' : 'google';
+
+    if (engineToUse === 'google' && !googleTtsClient) {
+        log('[TTS_TESTER] ⚠️ מנוע גוגל לא זמין, מדלג על הבדיקה.');
+        isTestRunning = false;
         return;
     }
 
-    isTestRunning = true;
-    log(`[TTS_TESTER] ➡️  התחלת בדיקת TTS עבור ${member.displayName}`);
+    // בחירה אקראית של קול וטקסט
+    const voiceToUse = engineToUse === 'openai' 
+        ? OPENAI_VOICES[Math.floor(Math.random() * OPENAI_VOICES.length)]
+        : GOOGLE_HE_VOICES[Math.floor(Math.random() * GOOGLE_HE_VOICES.length)];
     
-    let engineToUse = nextEngine;
-    nextEngine = (engineToUse === 'openai') ? 'google' : 'openai';
-    
-    if (engineToUse === 'google' && !googleTtsClient) {
-        log('[TTS_TESTER] ⚠️ מנוע גוגל לא זמין, עובר ל-OpenAI.');
-        engineToUse = 'openai'; 
-        nextEngine = 'google';
-    }
+    const textToSpeak = TEST_PHRASES[Math.floor(Math.random() * TEST_PHRASES.length)];
 
-    log(`[TTS_TESTER] נבחר מנוע: [${engineToUse.toUpperCase()}]`);
+    log(`[TTS_TESTER] Running test with: | Engine: ${engineToUse.toUpperCase()} | Voice: ${voiceToUse} | Text: "${textToSpeak}"`);
 
     let connection;
     try {
@@ -73,8 +94,9 @@ async function runTTSTest(member) {
             channelId: member.voice.channelId, guildId: member.guild.id, adapterCreator: member.guild.voiceAdapterCreator,
         });
 
-        const textToSpeak = `היי ${member.displayName}, שמעון בודק את מנוע הקול של ${engineToUse}.`;
-        const audioBuffer = await (engineToUse === 'google' ? generateGoogleVoice(textToSpeak) : generateOpenAIVoice(textToSpeak));
+        const audioBuffer = await (engineToUse === 'google' 
+            ? generateGoogleVoice(textToSpeak, voiceToUse) 
+            : generateOpenAIVoice(textToSpeak, voiceToUse));
         
         const player = createAudioPlayer();
         const resource = createAudioResource(Readable.from(audioBuffer));
@@ -82,10 +104,7 @@ async function runTTSTest(member) {
         player.play(resource);
 
         await entersState(player, AudioPlayerStatus.Playing, 5_000);
-        log('[TTS_TESTER] ✅ הניגון התחיל.');
-
         await entersState(player, AudioPlayerStatus.Idle, 30_000);
-        log('[TTS_TESTER] ✅ הניגון הסתיים.');
         
     } catch (error) {
         log.error(`[TTS_TESTER] ❌ שגיאה קריטית בתהליך הבדיקה:`, error);
@@ -94,11 +113,9 @@ async function runTTSTest(member) {
             connection.destroy();
         }
         isTestRunning = false;
-        log('[TTS_TESTER] ⏹️  תהליך הבדיקה הסתיים.');
     }
 }
 
-// --- ייצוא המודול ---
 module.exports = {
     runTTSTest,
     TEST_CHANNEL_ID

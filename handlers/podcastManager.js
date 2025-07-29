@@ -1,7 +1,7 @@
 // 📁 handlers/podcastManager.js
 
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState, AudioPlayerStatus, StreamType, VoiceConnectionStatus } = require('@discordjs/voice');
-const { synthesizeTTS } = require('../tts/ttsEngine.elevenlabs.js'); // קורא למנוע גוגל החדש
+const { synthesizeTTS } = require('../tts/ttsEngine.elevenlabs.js');
 const { getScriptByUserId } = require('../data/fifoLines.js');
 const { log } = require('../utils/logger.js');
 const { Readable } = require('stream');
@@ -10,15 +10,16 @@ const { sendStaffLog } = require('../utils/staffLogger.js');
 const { loadBotState, saveBotState } = require('../utils/botStateManager.js');
 const dayjs = require('dayjs');
 
-// --- כל המשתנים הגלובליים המקוריים שלך ---
-let isPodcastActive = false;
+// --- התיקון נמצא כאן ---
+// שיניתי את שם המשתנה כדי למנוע התנגשות עם הפונקציה
+let activePodcastState = false; 
 let activePodcastChannelId = null;
 let podcastMonitoringEnabled = false;
-const MIN_MEMBERS_FOR_ROAST = 4; // תנאי 4 המשתמשים שלך
-const ROAST_COOLDOWN_MS = 30 * 1000; // 30 שניות Cooldown
-const channelRoastCooldowns = new Map();
+// ------------------------
 
-// --- כל הפונקציות המקוריות שלך נשמרו ---
+const MIN_MEMBERS_FOR_ROAST = 4;
+const ROAST_COOLDOWN_MS = 30 * 1000;
+const channelRoastCooldowns = new Map();
 
 function setPodcastMonitoring(isEnabled) {
     podcastMonitoringEnabled = isEnabled;
@@ -33,32 +34,34 @@ async function initializePodcastState() {
     if (state && typeof state.podcastMonitoringEnabled === 'boolean') {
         podcastMonitoringEnabled = state.podcastMonitoringEnabled;
     } else {
-        podcastMonitoringEnabled = false; // ברירת מחדל
+        podcastMonitoringEnabled = false;
     }
     log(`[PODCAST_STATE] ניטור פודקאסטים טעון, המצב הוא: ${podcastMonitoringEnabled}`);
 }
 
-function isPodcastActive() { return isPodcastActive; }
+// --- התיקון נמצא כאן ---
+// הפונקציה מחזירה את המשתנה עם השם החדש
+function isPodcastActive() { 
+    return activePodcastState; 
+}
+// ------------------------
 
 function resetPodcast(client) {
-    // שימוש ב-client כדי לוודא ניתוק תקין
     if (activePodcastChannelId && client) {
         const guildId = client.channels.cache.get(activePodcastChannelId)?.guild.id;
         if(guildId) {
             const connection = client.voice.adapters.get(guildId);
             if (connection) {
                 connection.destroy();
-                log('[PODCAST] חיבור קולי אופס ונותק.');
             }
         }
     }
-    isPodcastActive = false;
+    activePodcastState = false; // מאפס את המשתנה הנכון
     activePodcastChannelId = null;
     log('[PODCAST] מצב הפודקאסט אופס לחלוטין.');
     return Promise.resolve();
 }
 
-// --- פונקציית הטריגר המרכזית, נאמנה למקור ---
 async function handleVoiceStateUpdate(oldState, newState) {
     const member = newState.member;
     const channel = newState.channel;
@@ -66,7 +69,6 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
     if (!podcastMonitoringEnabled || !channel || !member || member.user.bot) return;
 
-    // שימוש ב-dayjs וב-Map לניהול Cooldown
     const now = dayjs();
     const lastRoast = channelRoastCooldowns.get(channel.id);
     if (lastRoast && now.diff(lastRoast, 'millisecond') < ROAST_COOLDOWN_MS) {
@@ -78,20 +80,17 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
     channelRoastCooldowns.set(channel.id, now);
     log(`[PODCAST] מפעיל "צלייה" בערוץ ${channel.name} עם ${membersInChannel.size} משתמשים.`);
-    
-    // שימוש ב-sendStaffLog לדיווח
     sendStaffLog(client, `🎙️ פודקאסט התחיל`, `התחיל פודקאסט בערוץ **${channel.name}** עם **${membersInChannel.size}** משתתפים.`);
 
     let connection;
     try {
-        isPodcastActive = true;
+        activePodcastState = true; // מעדכן את המשתנה הנכון
         activePodcastChannelId = channel.id;
 
         const roastScript = await getScriptByUserId(member.id, membersInChannel, member.displayName);
 
         if (!roastScript || roastScript.length === 0) {
-            log('[PODCAST] לא נוצר סקריפט.');
-            isPodcastActive = false;
+            activePodcastState = false;
             activePodcastChannelId = null;
             return;
         }
@@ -102,7 +101,6 @@ async function handleVoiceStateUpdate(oldState, newState) {
             adapterCreator: channel.guild.voiceAdapterCreator,
         });
 
-        // שימוש ב-VoiceConnectionStatus לבדיקת חיבור
         await entersState(connection, VoiceConnectionStatus.Ready, 5000);
 
         const player = createAudioPlayer();
@@ -128,14 +126,11 @@ async function handleVoiceStateUpdate(oldState, newState) {
                 await entersState(player, AudioPlayerStatus.Idle, 30000);
             }
         }
-
-        log(`[PODCAST] "צלייה" הסתיימה בהצלחה.`);
-
     } catch (error) {
         log.error('❌ שגיאה קריטית בתהליך הפודקאסט:', error);
         sendStaffLog(client, `🔴 שגיאת פודקאסט`, `אירעה שגיאה:\n\`\`\`${error.message}\`\`\``);
     } finally {
-        isPodcastActive = false;
+        activePodcastState = false; // מאפס את המשתנה הנכון
         activePodcastChannelId = null;
         if (connection && connection.state.status !== VoiceConnectionStatus.Destroyed) {
             connection.destroy();

@@ -1,21 +1,15 @@
-// 📁 handlers/tts/ttsQuotaManager.eleven.js (עכשיו מנהל מכסות גוגל)
+// 📁 tts/ttsQuotaManager.eleven.js
 
-const db = require('../../utils/firebase');
-const { log } = require('../../utils/logger');
+const db = require('../utils/firebase.js');
+const { log } = require('../utils/logger.js');
 
-const USAGE_COLLECTION = 'googleTtsUsage'; // קולקציה חדשה לדוחות נקיים
+const USAGE_COLLECTION = 'googleTtsUsage';
 
 /**
- * רושם שימוש ב-TTS ב-Firestore.
- * @param {number} characterCount - מספר התווים שנוצלו.
- * @param {string} userId - ID המשתמש שהפעיל את ה-TTS.
- * @param {string} username - שם המשתמש.
- * @param {string} engine - שם המנוע (למשל, 'Google').
- * @param {string} voiceProfile - שם פרופิล הדיבור שנוצל.
+ * רושם שימוש בודד ב-TTS ב-Firestore.
  */
 async function registerTTSUsage(characterCount, userId, username, engine, voiceProfile) {
-    if (characterCount === 0) return;
-
+    if (characterCount <= 0) return;
     try {
         const usageData = {
             userId,
@@ -26,19 +20,27 @@ async function registerTTSUsage(characterCount, userId, username, engine, voiceP
             timestamp: new Date(),
         };
         await db.collection(USAGE_COLLECTION).add(usageData);
-        log(`[QUOTA] נרשם שימוש של ${characterCount} תווים עבור ${username}.`);
     } catch (error) {
         log.error('❌ [QUOTA] שגיאה ברישום שימוש ב-TTS:', error);
     }
 }
 
-// פונקציית בדיקת המכסה נשארת כדמה, כיוון שההגבלה היא ב-Google Console
-async function checkQuota() {
-    return { canUse: true };
+/**
+ * שולף את כל נתוני השימוש הגולמיים עבור פקודת הסלאש.
+ */
+async function getTTSUsageData() {
+    try {
+        const snapshot = await db.collection(USAGE_COLLECTION).get();
+        if (snapshot.empty) return [];
+        return snapshot.docs.map(doc => doc.data());
+    } catch (error) {
+        log.error('❌ [QUOTA] שגיאה בשליפת נתוני שימוש:', error);
+        return null;
+    }
 }
 
 module.exports = {
     registerTTSUsage,
-    checkQuota,
-    USAGE_COLLECTION, // נייצא את שם הקולקציה כדי שפקודת הסלאש תשתמש בו
+    getTTSUsageData,
+    USAGE_COLLECTION, // מיוצא כדי למנוע כפילויות של שם הקולקציה
 };

@@ -1,47 +1,82 @@
-// 📁 commands/tts.js - פקודת Slash לדוח שימוש ב-TTS (למנהלים בלבד)
-const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { getTTSQuotaReport } = require('../tts/ttsQuotaManager.eleven'); // ייבוא פונקציית הדוח
+// 📁 commands/tts.js (עם הנתיב המתוקן)
+
+const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const db = require('../utils/firebase');
+// --- ✨ התיקון נמצא כאן ---
+const { USAGE_COLLECTION } = require('../handlers/tts/ttsQuotaManager.eleven.js');
+const { log } = require('../utils/logger');
 
 module.exports = {
-  data: new SlashCommandBuilder()
-    .setName('תווים')
-    .setDescription('📊 הצג דוח שימוש ב־ElevenLabs TTS (למנהלים בלבד)')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator), // רק מנהלים יכולים להשתמש
+    data: new SlashCommandBuilder()
+        .setName('תווים')
+        .setDescription('📊 מציג דוח שימוש במנוע ה-TTS של גוגל.')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-  async execute(interaction) {
-    // שלח deferReply מיד כדי שהבוט יגיב בזמן
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    async execute(interaction) {
+        await interaction.deferReply();
+        log(`[SLASH] התקבלה בקשה לדוח תווים מ-${interaction.user.tag}.`);
 
-    try {
-      const report = await getTTSQuotaReport();
+        try {
+            const now = new Date();
+            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-      if (!report) {
-        return interaction.editReply({
-          content: '❌ שגיאה בשליפת דוח השימוש ב־TTS. ראה לוגים.',
-          flags: MessageFlags.Ephemeral
-        });
-      }
+            // --- שימוש בנתיב הנכון לקולקציה ---
+            const snapshot = await db.collection(USAGE_COLLECTION).get();
+            if (snapshot.empty) {
+                return interaction.editReply('לא נמצאו נתוני שימוש.');
+            }
 
-      const embed = new EmbedBuilder()
-        .setTitle('📊 דוח שימוש ב־ElevenLabs TTS')
-        .setDescription('מצב שימוש במכסות הקול של שמעון.')
-        .setColor('#800080') // צבע סגול
-        .addFields(
-          { name: 'תווים יומיים', value: `שימוש: \`${report.dailyCharacters.used}\` / \`${report.dailyCharacters.limit}\`\nסטטוס: ${report.dailyCharacters.status}`, inline: false },
-          { name: 'קריאות יומיות', value: `שימוש: \`${report.dailyCalls.used}\` / \`${report.dailyCalls.limit}\`\nסטטוס: ${report.dailyCalls.status}`, inline: false },
-          { name: 'תווים חודשיים', value: `שימוש: \`${report.monthlyCharacters.used}\` / \`${report.monthlyCharacters.limit}\`\nסטטוס: ${report.monthlyCharacters.status}`, inline: false }
-        )
-        .setFooter({ text: 'Shimon BOT - ניהול TTS' })
-        .setTimestamp();
+            let totalCharsAllTime = 0;
+            let totalCharsMonth = 0;
+            let totalCharsToday = 0;
+            const userUsage = {};
+            const profileUsage = {};
 
-      await interaction.editReply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+            snapshot.docs.forEach(doc => {
+                const data = doc.data();
+                const timestamp = data.timestamp.toDate();
 
-    } catch (error) {
-      console.error('❌ שגיאה בפקודה /tts:', error);
-      await interaction.editReply({
-        content: '❌ אירעה שגיאה בביצוע הפקודה. בדוק לוגים.',
-        flags: MessageFlags.Ephemeral
-      });
+                totalCharsAllTime += data.characterCount;
+
+                if (timestamp >= startOfMonth) totalCharsMonth += data.characterCount;
+                if (timestamp >= startOfDay) totalCharsToday += data.characterCount;
+                
+                userUsage[data.username] = (userUsage[data.username] || 0) + data.characterCount;
+                profileUsage[data.voiceProfile] = (profileUsage[data.voiceProfile] || 0) + 1;
+            });
+            
+            const topUsers = Object.entries(userUsage)
+                .sort(([, a], [, b]) => b - a)
+                .slice(0, 5)
+                .map(([name, count], i) => `**${i + 1}.** ${name}: \`${count.toLocaleString()}\` תווים`)
+                .join('\n') || 'אין נתונים';
+
+            const topProfiles = Object.entries(profileUsage)
+                .sort(([, a], [, b]) => b - a)
+                .slice(0, 3)
+                .map(([name, count]) => `**-** \`${name}\`: ${count} שימושים`)
+                .join('\n') || 'אין נתונים';
+
+            const embed = new EmbedBuilder()
+                .setColor('#4285F4')
+                .setTitle('📊 דוח שימוש במנוע Google TTS')
+                .setThumbnail('https://i.imgur.com/P4Un12C.png')
+                .addFields(
+                    { name: '📈 סה"כ שימוש (כל הזמנים)', value: `\`${totalCharsAllTime.toLocaleString()}\` תווים`, inline: false },
+                    { name: '📅 שימוש החודש', value: `\`${totalCharsMonth.toLocaleString()}\` תווים`, inline: true },
+                    { name: '☀️ שימוש היום', value: `\`${totalCharsToday.toLocaleString()}\` תווים`, inline: true },
+                    { name: '👥 חמשת המשתמשים המובילים', value: topUsers, inline: false },
+                    { name: '🎤 הפרופילים הפופולריים', value: topProfiles, inline: false }
+                )
+                .setFooter({ text: 'הנתונים מתעדכנים בזמן אמת' })
+                .setTimestamp();
+
+            await interaction.editReply({ embeds: [embed] });
+
+        } catch (error) {
+            log.error('❌ שגיאה ביצירת דוח תווים:', error);
+            await interaction.editReply('אירעה שגיאה בעת שליפת הנתונים.');
+        }
     }
-  }
 };

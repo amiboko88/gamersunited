@@ -1,109 +1,44 @@
-// 📁 tts/ttsQuotaManager.eleven.js – נותר כפי שהוא (נראה תקין)
-const admin = require('firebase-admin');
+// 📁 handlers/tts/ttsQuotaManager.eleven.js (עכשיו מנהל מכסות גוגל)
 
-const DAILY_CHAR_LIMIT = 15000;
-const DAILY_CALL_LIMIT = 30;
-const MONTHLY_CHAR_LIMIT = 500000;
-const COLLECTION_NAME = 'elevenTtsUsage';
+const db = require('../../utils/firebase');
+const { log } = require('../../utils/logger');
 
-function getDateKey() {
-  return new Date().toISOString().split('T')[0];
+const USAGE_COLLECTION = 'googleTtsUsage'; // קולקציה חדשה לדוחות נקיים
+
+/**
+ * רושם שימוש ב-TTS ב-Firestore.
+ * @param {number} characterCount - מספר התווים שנוצלו.
+ * @param {string} userId - ID המשתמש שהפעיל את ה-TTS.
+ * @param {string} username - שם המשתמש.
+ * @param {string} engine - שם המנוע (למשל, 'Google').
+ * @param {string} voiceProfile - שם פרופิล הדיבור שנוצל.
+ */
+async function registerTTSUsage(characterCount, userId, username, engine, voiceProfile) {
+    if (characterCount === 0) return;
+
+    try {
+        const usageData = {
+            userId,
+            username,
+            characterCount,
+            engine,
+            voiceProfile,
+            timestamp: new Date(),
+        };
+        await db.collection(USAGE_COLLECTION).add(usageData);
+        log(`[QUOTA] נרשם שימוש של ${characterCount} תווים עבור ${username}.`);
+    } catch (error) {
+        log.error('❌ [QUOTA] שגיאה ברישום שימוש ב-TTS:', error);
+    }
 }
 
-function getMonthKey() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-}
-
-async function getTTSQuotaReport() {
-  try {
-    // ✅ גישה ל-Firestore דרך admin.firestore() כאן היא תקינה
-    const db = admin.firestore();
-    const dateKey = getDateKey();
-    const monthKey = getMonthKey();
-
-    const dailyRef = db.collection(COLLECTION_NAME).doc(`daily-${dateKey}`);
-    const monthlyRef = db.collection(COLLECTION_NAME).doc(`monthly-${monthKey}`);
-
-    const [dailySnap, monthlySnap] = await Promise.all([
-      dailyRef.get(),
-      monthlyRef.get()
-    ]);
-
-    const daily = dailySnap.exists ? dailySnap.data() : {};
-    const monthly = monthlySnap.exists ? monthlySnap.data() : {};
-
-    const dailyCharacters = typeof daily.totalCharacters === 'number' ? daily.totalCharacters : 0;
-    const dailyCalls = typeof daily.totalCalls === 'number' ? daily.totalCalls : 0;
-    const monthlyCharacters = typeof monthly.totalCharacters === 'number' ? monthly.totalCharacters : 0;
-
-    const getStatus = (used, limit) => {
-      if (used >= limit) return '🔴 המגבלה נוצלה במלואה';
-      if (used >= limit * 0.9) return '🟠 קרוב למגבלה';
-      return '🟢 תקין';
-    };
-
-    return {
-      dailyCharacters: {
-        used: dailyCharacters,
-        limit: DAILY_CHAR_LIMIT,
-        status: getStatus(dailyCharacters, DAILY_CHAR_LIMIT)
-      },
-      dailyCalls: {
-        used: dailyCalls,
-        limit: DAILY_CALL_LIMIT,
-        status: getStatus(dailyCalls, DAILY_CALL_LIMIT)
-      },
-      monthlyCharacters: {
-        used: monthlyCharacters,
-        limit: MONTHLY_CHAR_LIMIT,
-        status: getStatus(monthlyCharacters, MONTHLY_CHAR_LIMIT)
-      }
-    };
-  } catch (err) {
-    console.error('❌ שגיאה ב־getTTSQuotaReport:', err);
-    return null;
-  }
-}
-
-async function shouldUseFallback() {
-  const report = await getTTSQuotaReport();
-  if (!report) return true; // אם יש שגיאה, נניח שימוש ב-fallback
-
-  const nearingLimit = report.dailyCharacters.used >= report.dailyCharacters.limit * 0.9 ||
-                       report.monthlyCharacters.used >= report.monthlyCharacters.limit * 0.9 ||
-                       report.dailyCalls.used >= report.dailyCalls.limit * 0.9;
-  return nearingLimit;
-}
-
-async function registerTTSUsage(chars = 0, calls = 1) {
-  try {
-    // ✅ גישה ל-Firestore דרך admin.firestore() כאן היא תקינה
-    const db = admin.firestore();
-    const dateKey = getDateKey();
-    const monthKey = getMonthKey();
-
-    const dailyRef = db.collection(COLLECTION_NAME).doc(`daily-${dateKey}`);
-    const monthlyRef = db.collection(COLLECTION_NAME).doc(`monthly-${monthKey}`);
-
-    await Promise.all([
-      dailyRef.set({
-        totalCharacters: admin.firestore.FieldValue.increment(chars),
-        totalCalls: admin.firestore.FieldValue.increment(calls),
-        lastUpdated: new Date().toISOString()
-      }, { merge: true }),
-      monthlyRef.set({
-        totalCharacters: admin.firestore.FieldValue.increment(chars),
-        lastUpdated: new Date().toISOString()
-      }, { merge: true })
-    ]);
-  } catch (e) {
-    console.error('❌ שגיאה ברישום שימוש TTS:', e.message);
-  }
+// פונקציית בדיקת המכסה נשארת כדמה, כיוון שההגבלה היא ב-Google Console
+async function checkQuota() {
+    return { canUse: true };
 }
 
 module.exports = {
-  getTTSQuotaReport,
-  shouldUseFallback,
-  registerTTSUsage
+    registerTTSUsage,
+    checkQuota,
+    USAGE_COLLECTION, // נייצא את שם הקולקציה כדי שפקודת הסלאש תשתמש בו
 };

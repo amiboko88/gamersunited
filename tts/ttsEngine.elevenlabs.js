@@ -1,86 +1,89 @@
-// 📁 tts/ttsEngine.elevenlabs.js
-const axios = require('axios');
-const { log } = require('../utils/logger');
-const { registerTTSUsage } = require('./ttsQuotaManager.eleven');
+// 📁 handlers/tts/ttsEngine.elevenlabs.js (עכשיו מנוע גוגל)
 
-const ELEVENLABS_API_KEY = process.env.ELEVEN_API_KEY;
-const ELEVENLABS_TTS_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
+const { TextToSpeechClient } = require('@google-cloud/text-to-speech');
+const { log } = require('../../utils/logger');
 
-const VOICE_MAP = {
-  // --- הקול האישי שלך ---
-  shimon: 'JhrOrwDuyO3vY5TquQhd', // ID של הקול "AMI"
-  shirley: 'EXAVITQu4vr4xnSDxMaL'
+let googleTtsClient;
+const googleCredentialsJson = process.env.GOOGLE_CREDENTIALS_JSON;
+
+if (googleCredentialsJson) {
+    try {
+        const credentials = JSON.parse(googleCredentialsJson);
+        googleTtsClient = new TextToSpeechClient({ credentials });
+        log('🔊 [Google TTS Engine] הלקוח של גוגל אותחל בהצלחה.');
+    } catch (error) {
+        log.error('❌ [Google TTS Engine] שגיאה בפענוח GOOGLE_CREDENTIALS_JSON.', error);
+    }
+} else {
+    log('⚠️ [Google TTS Engine] משתנה הסביבה GOOGLE_CREDENTIALS_JSON לא נמצא.');
+}
+
+// --- פרופילי דיבור (SSML) ---
+const SPEECH_PROFILES = {
+    // פרופילים עבור שמעון (קול גברי)
+    shimon_calm: { voice: { languageCode: 'he-IL', name: 'he-IL-Wavenet-C' }, audioConfig: { speakingRate: 1.0, pitch: 0.0 } },
+    shimon_energetic: { voice: { languageCode: 'he-IL', name: 'he-IL-Wavenet-C' }, audioConfig: { speakingRate: 1.1, pitch: 1.2 } },
+    shimon_serious: { voice: { languageCode: 'he-IL', name: 'he-IL-Wavenet-D' }, audioConfig: { speakingRate: 0.95, pitch: -1.0 } },
+    
+    // פרופילים עבור שירלי (קול נשי)
+    shirly_calm: { voice: { languageCode: 'he-IL', name: 'he-IL-Wavenet-A' }, audioConfig: { speakingRate: 1.0, pitch: 0.0 } },
+    shirly_happy: { voice: { languageCode: 'he-IL', name: 'he-IL-Wavenet-A' }, audioConfig: { speakingRate: 1.05, pitch: 1.4 } },
+    shirly_dramatic: { voice: { languageCode: 'he-IL', name: 'he-IL-Wavenet-B' }, audioConfig: { speakingRate: 0.9, pitch: -0.5 } },
 };
 
-// המודל הנכון והעדכני ביותר הזמין ב-API
-const DEFAULT_ELEVENLABS_MODEL = 'eleven_multilingual_v2';
+/**
+ * הפונקציה המרכזית להפקת קול באמצעות Google TTS עם יכולות מתקדמות.
+ * @param {string} text - הטקסט להקראה.
+ * @param {string} profileName - שם הפרופיל לשימוש (למשל, 'shimon_energetic').
+ * @returns {Promise<Buffer>} - באפר של קובץ השמע.
+ */
+async function synthesizeGoogleTTS(text, profileName = 'shimon_calm') {
+    if (!googleTtsClient) throw new Error('הלקוח של Google TTS לא אותחל.');
 
-function removeNikud(text) {
-  return text.replace(/[\u0591-\u05BD\u05BF-\u05C2\u05C4-\u05C7\u05F3\u05F4]/g, '');
-}
+    const profile = SPEECH_PROFILES[profileName] || SPEECH_PROFILES.shimon_calm;
+    const cleanText = text.replace(/[*_~`]/g, '');
 
-function getVoiceId(speaker = 'shimon') {
-  return VOICE_MAP[speaker] || VOICE_MAP['shimon'];
-}
-
-async function synthesizeElevenTTS(text, speaker = 'shimon') {
-  if (!ELEVENLABS_API_KEY) {
-    throw new Error('ElevenLabs API Key is not configured.');
-  }
-
-  const voiceId = getVoiceId(speaker);
-  const cleanText = removeNikud(text).trim();
-
-  log(`🎙️ ElevenLabs TTS (${speaker}, Voice ID: ${voiceId}, Model: ${DEFAULT_ELEVENLABS_MODEL}) – "${cleanText}"`);
-
-  let response;
-  try {
-    const payload = {
-      text: cleanText,
-      model_id: DEFAULT_ELEVENLABS_MODEL,
-      // ✨ --- הגדרות V3 נקיות המבוססות על הממשק שלהם ---
-      voice_settings: {
-        stability: 0.7, // פרמטר זה כן קיים בממשק V3
-      },
+    // המרה ל-SSML לשליטה מלאה: הוספת פאוזות טבעיות והדגשת מילים בסיסית
+    const ssmlText = `<speak>${cleanText
+        .replace(/\?/g, '?<break time="600ms"/>')
+        .replace(/\./g, '.<break time="500ms"/>')
+        .replace(/,/g, ',<break time="300ms"/>')
+    }</speak>`;
+    
+    const request = {
+        input: { ssml: ssmlText },
+        voice: profile.voice,
+        audioConfig: { ...profile.audioConfig, audioEncoding: 'MP3' },
     };
 
-    response = await axios.post(`${ELEVENLABS_TTS_URL}/${voiceId}`, payload, {
-      responseType: 'arraybuffer',
-      headers: {
-        'xi-api-key': ELEVENLABS_API_KEY,
-        'Content-Type': 'application/json; charset=UTF-8',
-        'Accept': 'audio/mpeg'
-      }
-    });
-  } catch (err) {
-    const errorData = err.response?.data ? new TextDecoder().decode(err.response.data) : err.message;
-    console.error('🛑 שגיאה בבקשת TTS מ־ElevenLabs:', errorData);
-    throw new Error(`שגיאת API מול ElevenLabs (סטטוס ${err.response?.status || 'N/A'}): ${errorData}`);
-  }
-
-  if (!response.data || !Buffer.isBuffer(response.data) || response.data.length < 1024) {
-    const errorMsg = `🔇 ElevenLabs החזיר קובץ שמע ריק או פגום (גודל: ${response.data?.length || 0} בתים).`;
-    console.error(errorMsg);
-    throw new Error(errorMsg);
-  }
-
-  const audioBuffer = Buffer.from(response.data);
-  await registerTTSUsage(cleanText.length, 1);
-  return audioBuffer;
+    log(`🎙️ [Google TTS] מפיק קול | פרופיל: ${profileName} | טקסט: "${cleanText}"`);
+    
+    try {
+        const [response] = await googleTtsClient.synthesizeSpeech(request);
+        return response.audioContent;
+    } catch (error) {
+        log.error(`❌ [Google TTS] שגיאה בבקשה ל-API של גוגל:`, error);
+        throw error;
+    }
 }
 
-// שאר הקובץ ללא שינוי
+// --- פונקציות תאימות למבנה הקוד הקיים ---
 async function getShortTTSByProfile(member) {
-  const { getLineForUser } = require('../data/fifoLines');
-  let text = getLineForUser(member.id, member.displayName);
-  return await synthesizeElevenTTS(text, 'shimon');
+    const { getLineForUser } = require('../data/fifoLines');
+    const text = getLineForUser(member.id, member.displayName);
+    const profiles = ['shimon_calm', 'shimon_energetic', 'shimon_serious'];
+    const randomProfile = profiles[Math.floor(Math.random() * profiles.length)];
+    return await synthesizeGoogleTTS(text, randomProfile);
 }
 
-async function canUserUseTTS() { return true; }
+// פונקציה זו נשארת לצורך תאימות, תמיד מחזירה true
+async function canUserUseTTS() {
+    return true;
+}
 
+// ייצוא הפונקציות עם שמות גנריים כדי להקל על המעבר
 module.exports = {
-  synthesizeElevenTTS,
-  getShortTTSByProfile,
-  getVoiceId,
-  canUserUseTTS,
+    synthesizeTTS: synthesizeGoogleTTS,
+    getShortTTSByProfile,
+    canUserUseTTS,
 };

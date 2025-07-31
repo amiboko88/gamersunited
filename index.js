@@ -1,7 +1,8 @@
 // 📁 index.js
 const fs = require('fs');
 const path = require('path');
-const { Client, GatewayIntentBits, Collection, Partials, REST, Routes } = require('discord.js');
+// --- ✅ התיקון השני נמצא כאן: הוספנו את MessageFlags לייבוא ---
+const { Client, GatewayIntentBits, Collection, Partials, REST, Routes, MessageFlags } = require('discord.js');
 
 // --- UTILS & TELEGRAM ---
 const db = require('./utils/firebase');
@@ -9,42 +10,41 @@ require("./telegram/shimonTelegram");
 
 // --- CLIENT SETUP ---
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.GuildVoiceStates, // חשוב לניטור ערוצי קול
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.DirectMessages
-  ],
-  partials: [Partials.Channel, Partials.Message, Partials.User]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.DirectMessages
+    ],
+    partials: [Partials.Channel, Partials.Message, Partials.User]
 });
 
 client.db = db;
-global.client = client; 
+global.client = client;
 
 // --- DYNAMIC HANDLER LOADING ---
 client.commands = new Collection();
 client.interactions = new Collection();
-client.dynamicInteractionHandlers = []; 
+client.dynamicInteractionHandlers = [];
 
-// ✅ קריטי: אתחול הקולקציות לניהול חיבורי קול ונגני אודיו
-client.voiceConnections = new Collection(); 
-client.audioPlayers = new Collection();     
+client.voiceConnections = new Collection();
+client.audioPlayers = new Collection();
 
 // Load Slash Commands
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 for (const file of commandFiles) {
-  try {
-    const command = require(path.join(commandsPath, file));
-    if (command?.data?.name) {
-      client.commands.set(command.data.name, command);
+    try {
+        const command = require(path.join(commandsPath, file));
+        if (command?.data?.name) {
+            client.commands.set(command.data.name, command);
+        }
+    } catch(err) {
+        console.warn(`⚠️ שגיאה בטעינת פקודה ${file}: ${err.message}`);
     }
-  } catch(err) {
-      console.warn(`⚠️ שגיאה בטעינת פקודה ${file}: ${err.message}`);
-  }
 }
 
 // Improved Interaction Loader - Recursive and Safe
@@ -65,7 +65,7 @@ if (fs.existsSync(interactionsPath)) {
                         client.dynamicInteractionHandlers.push(handler);
                     }
                 } catch(err) {
-                     console.warn(`⚠️ שגיאה בטעינת אינטראקציה ${item.name}: ${err.message}`);
+                    console.warn(`⚠️ שגיאה בטעינת אינטראקציה ${item.name}: ${err.message}`);
                 }
             }
         }
@@ -79,47 +79,48 @@ if (fs.existsSync(interactionsPath)) {
 (async () => {
     const slashCommands = Array.from(client.commands.values()).map(cmd => cmd.data.toJSON());
     try {
-      const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-      console.log(`📦 רושם ${slashCommands.length} Slash Commands...`);
-      await rest.put(
-        Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
-        { body: slashCommands },
-      );
-      console.log(`✅ Slash Commands נרשמו בהצלחה לשרת!`);
+        const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+        console.log(`📦 רושם ${slashCommands.length} Slash Commands...`);
+        await rest.put(
+            Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+            { body: slashCommands },
+        );
+        console.log(`✅ Slash Commands נרשמו בהצלחה לשרת!`);
     } catch (err) {
-      console.error('❌ שגיאה ברישום Slash Commands:', err);
+        console.error('❌ שגיאה ברישום Slash Commands:', err);
     }
 })();
 
 // --- BOT READY EVENT ---
 client.once('ready', async () => {
-  console.log(`⚡️ Shimon is READY! Logged in as ${client.user.tag}`);
-  try {
-    const { initializeCronJobs } = require('./handlers/botLifecycle');
-    const { initializeMvpReactionListener } = require('./handlers/mvpReactions');
-    const { hardSyncPresenceOnReady } = require('./handlers/presenceTracker');
-    const { setupVerificationMessage } = require('./handlers/verificationButton');
-    const setupWelcomeImage = require('./handlers/welcomeImage');
+    console.log(`⚡️ Shimon is READY! Logged in as ${client.user.tag}`);
+    try {
+        const { initializeCronJobs } = require('./handlers/botLifecycle');
+        const { initializeMvpReactionListener } = require('./handlers/mvpReactions');
+        const { hardSyncPresenceOnReady } = require('./handlers/presenceTracker');
+        const { setupVerificationMessage } = require('./handlers/verificationButton');
+        const setupWelcomeImage = require('./handlers/welcomeImage');
 
-    await hardSyncPresenceOnReady(client);
-    await setupVerificationMessage(client);
-    initializeMvpReactionListener(client);
-    initializeCronJobs(client); // יפעיל את ה-cron jobs של הפודקאסט
-    setupWelcomeImage(client);
+        await hardSyncPresenceOnReady(client);
+        await setupVerificationMessage(client);
+        initializeMvpReactionListener(client);
+        initializeCronJobs(client);
+        setupWelcomeImage(client);
 
-    console.log("✅ All systems initialized successfully.");
-  } catch (err) {
-    console.error('❌ Critical error during client.ready initialization:', err);
-  }
+        console.log("✅ All systems initialized successfully.");
+    } catch (err) {
+        console.error('❌ Critical error during client.ready initialization:', err);
+    }
 });
 
 // --- MAIN INTERACTION ROUTER ---
-const podcastManager = require('./handlers/podcastManager'); 
+const podcastManager = require('./handlers/podcastManager');
 
 client.on('interactionCreate', async interaction => {
     try {
         if (interaction.isCommand() && interaction.guildId) { 
-            if (podcastManager.isBotPodcasting(interaction.guildId, interaction.channelId)) {
+            // --- ✅ התיקון הראשון נמצא כאן: שימוש בשם הפונקציה הנכון ---
+            if (podcastManager.isPodcastActive(interaction.guildId, interaction.channelId)) {
                 const commandName = interaction.commandName;
                 if (podcastManager.restrictedCommands.includes(commandName)) {
                     return interaction.reply({ content: 'שמעון עסוק כרגע בפודקאסט ולא ניתן להפריע לו!', ephemeral: true });
@@ -186,17 +187,17 @@ client.on('guildMemberAdd', async member => {
 });
 
 client.on('guildMemberRemove', async member => {
-  await db.collection('memberTracking').doc(member.id).set({ status: 'left', leftAt: new Date().toISOString() }, { merge: true });
+    await db.collection('memberTracking').doc(member.id).set({ status: 'left', leftAt: new Date().toISOString() }, { merge: true });
 });
 
-client.on('voiceStateUpdate', handleVoiceStateUpdate); 
+client.on('voiceStateUpdate', handleVoiceStateUpdate);
 client.on('presenceUpdate', (oldPresence, newPresence) => trackGamePresence(newPresence));
 client.on('messageCreate', async message => {
-  if (message.author.bot) return;
-  await statTracker.trackMessage(message);
-  await handleXPMessage(message);
-  await handleSpam(message);
-  await smartChat(message);
+    if (message.author.bot) return;
+    await statTracker.trackMessage(message);
+    await handleXPMessage(message);
+    await handleSpam(message);
+    await smartChat(message);
 });
 
 

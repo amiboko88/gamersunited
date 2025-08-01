@@ -4,18 +4,18 @@ const path = require('path');
 const { PermissionFlagsBits } = require('discord.js');
 const { updateVoiceActivity } = require('./mvpTracker');
 const {
-  trackVoiceMinutes,
-  trackJoinCount,
-  trackJoinDuration,
-  trackActiveHour
+    trackVoiceMinutes,
+    trackJoinCount,
+    trackJoinDuration,
+    trackActiveHour
 } = require('./statTracker');
 const db = require('../utils/firebase');
 const podcastManager = require('./podcastManager');
-const ttsTester = require('./ttsTester'); // נייבא את הבוחן החדש
+const ttsTester = require('../tts/ttsTester'); // נתיב מתוקן
 const { log } = require('../utils/logger');
 
 // הגדרות כלליות
-const FIFO_CHANNEL_ID = process.env.TTS_TEST_CHANNEL_ID; // ודא שזה ה-ID הנכון לערוץ ה-FIFO הראשי
+const FIFO_CHANNEL_ID = process.env.FIFO_CHANNEL_ID; // שימוש בשם הנכון מהקוד שלך
 const FIFO_ROLE_NAME = 'FIFO';
 
 // מפה לניהול זמני כניסה
@@ -40,12 +40,10 @@ async function handleVoiceStateUpdate(oldState, newState) {
     const guild = member.guild;
     const now = Date.now();
 
-    // --- 2. בדיקת ערוץ הטסטים של TTS (הלוגיקה החדשה) ---
-    // נבדוק אם משתמש מנהל הצטרף לערוץ הבדיקה
-    const joinedTestChannel = !oldChannel && newChannel && newChannel.id === ttsTester.TEST_CHANNEL_ID;
+    // --- 2. בדיקת ערוץ הטסטים של TTS ---
+    const joinedTestChannel = newChannel && newChannel.id === ttsTester.TEST_CHANNEL_ID;
     if (joinedTestChannel) {
         if (member.permissions.has(PermissionFlagsBits.Administrator)) {
-            // אם כן, הפעל את הבדיקה ועצור את המשך ריצת הפונקציה
             await ttsTester.runTTSTest(member);
             return; 
         }
@@ -63,12 +61,10 @@ async function handleVoiceStateUpdate(oldState, newState) {
     if (fifoRole && FIFO_CHANNEL_ID) {
         try {
             const hasRole = member.roles.cache.has(fifoRole.id);
-            // משתמש הצטרף לערוץ ה-FIFO ואין לו את התפקיד
             if (newChannel?.id === FIFO_CHANNEL_ID && !hasRole) {
                 await member.roles.add(fifoRole);
                 log(`[ROLE] תפקיד FIFO הוסף ל-${member.displayName}`);
             }
-            // משתמש עזב את ערוץ ה-FIFO ויש לו את התפקיד
             if (oldChannel?.id === FIFO_CHANNEL_ID && newChannel?.id !== FIFO_CHANNEL_ID && hasRole) {
                 await member.roles.remove(fifoRole);
                 log(`[ROLE] תפקיד FIFO הוסר מ-${member.displayName}`);
@@ -92,10 +88,8 @@ async function handleVoiceStateUpdate(oldState, newState) {
         const joinedAt = joinTimestamps.get(userId);
         if (joinedAt) {
             const durationMs = now - joinedAt;
-            // רק אם שהה יותר מדקה ולכל היותר 10 שעות
             if (durationMs > 60000 && durationMs < 36000000) {
                 const durationMinutes = Math.round(durationMs / 60000);
-
                 log(`[STATS] משתמש ${member.displayName} צבר ${durationMinutes} דקות שיחה.`);
                 await updateVoiceActivity(userId, durationMinutes, db);
                 await trackVoiceMinutes(userId, durationMinutes);
@@ -109,11 +103,11 @@ async function handleVoiceStateUpdate(oldState, newState) {
     }
 
     // --- 6. הפעלת לוגיקת הפודקאסט/TTS ---
-    // העבר את האירוע למנהל הפודקאסט רק אם יש שינוי בערוץ
     if (oldChannel?.id !== newChannel?.id) {
-        // ודא שהערוץ החדש אינו ערוץ הטסטים לפני הפעלת הפודקאסט הרגיל
         if (newChannel?.id !== ttsTester.TEST_CHANNEL_ID) {
-            await podcastManager.handlePodcastTrigger(newState);
+            // --- ✅ התיקון היחיד נמצא כאן ---
+            // שימוש בשם הפונקציה הנכון שמיובא מ-podcastManager
+            await podcastManager.handleVoiceStateUpdate(oldState, newState);
         }
     }
 }

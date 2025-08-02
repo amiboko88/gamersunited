@@ -74,8 +74,6 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
     channelRoastCooldowns.set(channel.id, now);
     log(`[PODCAST] מפעיל "צלייה" בערוץ ${channel.name} עם ${membersInChannel.size} משתמשים.`);
-    
-    // --- ✅ תיקון ראשון: הוספת פרמטר צבע תקין (ירוק) ---
     sendStaffLog(client, `🎙️ פודקאסט התחיל`, `התחיל פודקאסט בערוץ **${channel.name}** עם **${membersInChannel.size}** משתתפים.`, 0x2ecc71);
 
     let connection;
@@ -83,13 +81,19 @@ async function handleVoiceStateUpdate(oldState, newState) {
         activePodcastState = true;
         activePodcastChannelId = channel.id;
 
-        const roastScript = await getScriptByUserId(member.id, membersInChannel, member.displayName);
+        // --- ✅ התיקון נמצא כאן ---
+        const scriptResult = await getScriptByUserId(member.id, membersInChannel, member.displayName);
 
-        if (!roastScript || roastScript.length === 0) {
+        // בדיקה מחמירה יותר שמוודאת שהסקריפט הוא מערך תקין
+        if (!scriptResult || !Array.isArray(scriptResult.script) || scriptResult.script.length === 0) {
+            log('[PODCAST] לא נוצר סקריפט או שהסקריפט שהתקבל ריק.');
             activePodcastState = false;
             activePodcastChannelId = null;
             return;
         }
+        
+        const roastScript = scriptResult.script; // חילוץ המערך הנכון מהאובייקט
+        // ------------------------
 
         connection = joinVoiceChannel({
             channelId: channel.id,
@@ -102,7 +106,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
         const player = createAudioPlayer();
         connection.subscribe(player);
 
-        for (const line of roastScript) {
+        for (const line of roastScript) { // הלולאה עכשיו תעבוד על המערך הנכון
             if (line.text && line.text.trim()) {
                 let profile;
                 if (line.speaker === 'שמעון') {
@@ -123,9 +127,8 @@ async function handleVoiceStateUpdate(oldState, newState) {
             }
         }
     } catch (error) {
-        // --- ✅ תיקון שני: שימוש ב-console.error במקום log.error ---
         console.error('❌ שגיאה קריטית בתהליך הפודקאסט:', error);
-        sendStaffLog(client, `🔴 שגיאת פודקאסט`, `אירעה שגיאה:\n\`\`\`${error.message}\`\`\``, 0xe74c3c); // צבע אדום
+        sendStaffLog(client, `🔴 שגיאת פודקאסט`, `אירעה שגיאה:\n\`\`\`${error.message}\`\`\``, 0xe74c3c);
     } finally {
         activePodcastState = false;
         activePodcastChannelId = null;

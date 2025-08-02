@@ -10,12 +10,9 @@ const { sendStaffLog } = require('../utils/staffLogger.js');
 const { loadBotState, saveBotState } = require('../utils/botStateManager.js');
 const dayjs = require('dayjs');
 
-// --- התיקון נמצא כאן ---
-// שיניתי את שם המשתנה כדי למנוע התנגשות עם הפונקציה
 let activePodcastState = false; 
 let activePodcastChannelId = null;
 let podcastMonitoringEnabled = false;
-// ------------------------
 
 const MIN_MEMBERS_FOR_ROAST = 4;
 const ROAST_COOLDOWN_MS = 30 * 1000;
@@ -39,12 +36,9 @@ async function initializePodcastState() {
     log(`[PODCAST_STATE] ניטור פודקאסטים טעון, המצב הוא: ${podcastMonitoringEnabled}`);
 }
 
-// --- התיקון נמצא כאן ---
-// הפונקציה מחזירה את המשתנה עם השם החדש
 function isPodcastActive() { 
     return activePodcastState; 
 }
-// ------------------------
 
 function resetPodcast(client) {
     if (activePodcastChannelId && client) {
@@ -56,7 +50,7 @@ function resetPodcast(client) {
             }
         }
     }
-    activePodcastState = false; // מאפס את המשתנה הנכון
+    activePodcastState = false;
     activePodcastChannelId = null;
     log('[PODCAST] מצב הפודקאסט אופס לחלוטין.');
     return Promise.resolve();
@@ -80,11 +74,13 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
     channelRoastCooldowns.set(channel.id, now);
     log(`[PODCAST] מפעיל "צלייה" בערוץ ${channel.name} עם ${membersInChannel.size} משתמשים.`);
-    sendStaffLog(client, `🎙️ פודקאסט התחיל`, `התחיל פודקאסט בערוץ **${channel.name}** עם **${membersInChannel.size}** משתתפים.`);
+    
+    // --- ✅ תיקון ראשון: הוספת פרמטר צבע תקין (ירוק) ---
+    sendStaffLog(client, `🎙️ פודקאסט התחיל`, `התחיל פודקאסט בערוץ **${channel.name}** עם **${membersInChannel.size}** משתתפים.`, 0x2ecc71);
 
     let connection;
     try {
-        activePodcastState = true; // מעדכן את המשתנה הנכון
+        activePodcastState = true;
         activePodcastChannelId = channel.id;
 
         const roastScript = await getScriptByUserId(member.id, membersInChannel, member.displayName);
@@ -127,10 +123,11 @@ async function handleVoiceStateUpdate(oldState, newState) {
             }
         }
     } catch (error) {
-        log.error('❌ שגיאה קריטית בתהליך הפודקאסט:', error);
-        sendStaffLog(client, `🔴 שגיאת פודקאסט`, `אירעה שגיאה:\n\`\`\`${error.message}\`\`\``);
+        // --- ✅ תיקון שני: שימוש ב-console.error במקום log.error ---
+        console.error('❌ שגיאה קריטית בתהליך הפודקאסט:', error);
+        sendStaffLog(client, `🔴 שגיאת פודקאסט`, `אירעה שגיאה:\n\`\`\`${error.message}\`\`\``, 0xe74c3c); // צבע אדום
     } finally {
-        activePodcastState = false; // מאפס את המשתנה הנכון
+        activePodcastState = false;
         activePodcastChannelId = null;
         if (connection && connection.state.status !== VoiceConnectionStatus.Destroyed) {
             connection.destroy();

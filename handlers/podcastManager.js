@@ -81,10 +81,8 @@ async function handleVoiceStateUpdate(oldState, newState) {
         activePodcastState = true;
         activePodcastChannelId = channel.id;
 
-        // --- ✅ התיקון נמצא כאן ---
         const scriptResult = await getScriptByUserId(member.id, membersInChannel, member.displayName);
 
-        // בדיקה מחמירה יותר שמוודאת שהסקריפט הוא מערך תקין
         if (!scriptResult || !Array.isArray(scriptResult.script) || scriptResult.script.length === 0) {
             log('[PODCAST] לא נוצר סקריפט או שהסקריפט שהתקבל ריק.');
             activePodcastState = false;
@@ -92,8 +90,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
             return;
         }
         
-        const roastScript = scriptResult.script; // חילוץ המערך הנכון מהאובייקט
-        // ------------------------
+        const roastScript = scriptResult.script;
 
         connection = joinVoiceChannel({
             channelId: channel.id,
@@ -106,7 +103,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
         const player = createAudioPlayer();
         connection.subscribe(player);
 
-        for (const line of roastScript) { // הלולאה עכשיו תעבוד על המערך הנכון
+        for (const line of roastScript) {
             if (line.text && line.text.trim()) {
                 let profile;
                 if (line.speaker === 'שמעון') {

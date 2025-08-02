@@ -289,13 +289,41 @@ function getLineForUser(userId, displayName = '') {
 
 // ⏬ פונקציה שמחזירה תסריט לפי userId - משמשת בתוך buildDynamicPodcastScript
 // ✅ מעודכן: קודם כל מחפש ב-personalPodcastScripts
-function getScriptByUserId(userId) {
-  const personalScripts = personalPodcastScripts[userId]; // קבל את הסקריפטים האישיים למשתמש זה
-  if (personalScripts && personalScripts.length > 0) {
-    return personalScripts[Math.floor(Math.random() * personalScripts.length)]; // החזר סקריפט רנדומלי מתוך האישיים
-  }
-  // אם אין סקריפטים אישיים, חזור לסקריפטים הכלליים
-  return fallbackScripts[Math.floor(Math.random() * fallbackScripts.length)];
+function getScriptByUserId(triggeringUserId, membersInChannel, triggeringUsername) {
+    const otherMembers = membersInChannel.filter(m => m.id !== triggeringUserId);
+
+    // --- ✅ התיקונים המרכזיים נמצאים כאן ---
+
+    // 1. שימוש ב- .size במקום .length לבדיקת כמות נכונה
+    if (otherMembers.size < 3) {
+        return { script: [], participants: [] }; // החזרת מבנה תקין אך ריק
+    }
+
+    const profile = getRandomProfile();
+    const script = [];
+    
+    const roastVictim = membersInChannel.get(triggeringUserId);
+    if (!roastVictim) return { script: [], participants: [] }; // 2. הוספת בדיקת הגנה
+
+    // 3. הוספת הגנות לבחירת משתתפים אקראיים
+    let randomPerson1 = getRandomMember(otherMembers, [roastVictim.id]);
+    let randomPerson2 = getRandomMember(otherMembers, [roastVictim.id, randomPerson1?.id].filter(Boolean));
+
+    if (!randomPerson1) randomPerson1 = roastVictim; // גיבוי למקרה שלא נמצא משתתף
+    if (!randomPerson2) randomPerson2 = randomPerson1;
+
+    // ------------------------------------
+
+    for (const line of profile.lines) {
+        let processedLine = line.text
+            .replace(/{roast_victim}/g, roastVictim.displayName)
+            .replace(/{random_person_1}/g, randomPerson1.displayName)
+            .replace(/{random_person_2}/g, randomPerson2.displayName);
+        
+        script.push({ speaker: line.speaker, text: processedLine });
+    }
+
+    return { script: script, participants: Array.from(membersInChannel.values()) };
 }
 
 /**

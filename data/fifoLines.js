@@ -1,7 +1,4 @@
-// 📁 fifoLines.js – מאגר משפטים מותאמים אישית לפי שמות (מעודכן לכלול personalPodcastScripts)
-const { playerProfiles } = require('./profiles'); // ייבוא הפרופילים
 
-// ✅ זהו המאגר של הסקריפטים האישיים כפי שסיפקת כרגע
 const personalPodcastScripts = {
 "420939460725964801": [
   { shimon: "יוֹגִי שׁוּב פֹּה? הָאִינְטֶרְנֵט רָעַד.", shirley: "הוּא חָזַר? לֹא הִסְפִּיק לוֹ הַפְּדִיחוֹת מֵאֶתְמוֹל?", punch: "בָּרוּךְ הַבָּא יוֹגִי. רַק תְּנַסֶּה לֹא לָמוּת לִפְנֵי שֶׁתִּדְרֹךְ." },
@@ -274,47 +271,62 @@ const fallbackScripts = [
   
 ];
 
-// 🧠 פונקציית שורת פתיחה לפי פרופיל FIFO (ל-TTS רגיל, כמו ב-getShortTTSByProfile)
-function getLineForUser(userId, displayName = '') {
-  const profileLines = playerProfiles[userId];
-  if (Array.isArray(profileLines) && profileLines.length > 0) {
-    const randomIndex = Math.floor(Math.random() * profileLines.length);
-    return profileLines[randomIndex];
-  }
+const { playerProfiles } = require('./profiles'); // ייבוא הפרופילים
 
-  const defaultLines = playerProfiles['default'] || [];
-  const fallback = defaultLines[Math.floor(Math.random() * defaultLines.length)];
-  return fallback.replace('כֻּלָּם', displayName || 'כֻּלָּם');
+
+function getRandomMember(members, excludeIds = []) {
+    const membersArray = Array.from(members.values());
+    const filteredMembers = membersArray.filter(m => !excludeIds.includes(m.id));
+    if (filteredMembers.length === 0) return null;
+    const randomIndex = Math.floor(Math.random() * filteredMembers.length);
+    return filteredMembers[randomIndex];
 }
 
-// ⏬ פונקציה שמחזירה תסריט לפי userId - משמשת בתוך buildDynamicPodcastScript
-// ✅ מעודכן: קודם כל מחפש ב-personalPodcastScripts
+// --- ✅ התיקון השני: הפונקציה החסרה הוחזרה למקומה ---
+/**
+ * בוחר פרופיל "צלייה" אקראי מכל המאגרים.
+ * @returns {object}
+ */
+function getRandomProfile() {
+    const allProfiles = Object.values(personalPodcastScripts).flat().concat(fallbackScripts);
+    if (allProfiles.length === 0) {
+        return { shimon: "טוב, אין לי מה להגיד.", shirley: "גם לי לא.", punch: "נגמרו לי הבדיחות." };
+    }
+    const randomIndex = Math.floor(Math.random() * allProfiles.length);
+    return allProfiles[randomIndex];
+}
+// ----------------------------------------------------
+
 function getScriptByUserId(triggeringUserId, membersInChannel, triggeringUsername) {
     const otherMembers = membersInChannel.filter(m => m.id !== triggeringUserId);
 
-    // --- ✅ התיקונים המרכזיים נמצאים כאן ---
-
-    // 1. שימוש ב- .size במקום .length לבדיקת כמות נכונה
-    if (otherMembers.size < 3) {
-        return { script: [], participants: [] }; // החזרת מבנה תקין אך ריק
+    if (otherMembers.size < 3) { // שימוש ב-size, כפי שתוקן קודם
+        return { script: [], participants: [] }; 
     }
 
-    const profile = getRandomProfile();
+    const profile = getRandomProfile(); // קריאה לפונקציה שהוחזרה
     const script = [];
     
     const roastVictim = membersInChannel.get(triggeringUserId);
-    if (!roastVictim) return { script: [], participants: [] }; // 2. הוספת בדיקת הגנה
+    if (!roastVictim) return { script: [], participants: [] }; 
 
-    // 3. הוספת הגנות לבחירת משתתפים אקראיים
     let randomPerson1 = getRandomMember(otherMembers, [roastVictim.id]);
     let randomPerson2 = getRandomMember(otherMembers, [roastVictim.id, randomPerson1?.id].filter(Boolean));
 
-    if (!randomPerson1) randomPerson1 = roastVictim; // גיבוי למקרה שלא נמצא משתתף
+    if (!randomPerson1) randomPerson1 = roastVictim;
     if (!randomPerson2) randomPerson2 = randomPerson1;
+    
+    const lineTemplate = profile.shimon || "שמעון פותח את הפה על {roast_victim}";
+    const responseTemplate = profile.shirley || "שירלי לא נשארת חייבת ל{random_person_1}";
+    const punchTemplate = profile.punch || "ושמעון סוגר עניין עם פאנצ' על {random_person_2}";
 
-    // ------------------------------------
+    const finalScriptLines = [
+        { speaker: 'שמעון', text: lineTemplate },
+        { speaker: 'שירלי', text: responseTemplate },
+        { speaker: 'שמעון', text: punchTemplate }
+    ];
 
-    for (const line of profile.lines) {
+    for (const line of finalScriptLines) {
         let processedLine = line.text
             .replace(/{roast_victim}/g, roastVictim.displayName)
             .replace(/{random_person_1}/g, randomPerson1.displayName)
@@ -326,21 +338,31 @@ function getScriptByUserId(triggeringUserId, membersInChannel, triggeringUsernam
     return { script: script, participants: Array.from(membersInChannel.values()) };
 }
 
-/**
- * האם המשתמש הזה נדיר (מעט פודקאסטים)
- * נשתמש בזה כדי להעדיף אותו בעת בחירת fallback או לוגיקת חשיפה
- */
-function isRareUser(userId, userStats) {
-  if (!userStats) return false;
-  const { podcastAppearances = 0 } = userStats;
-  return podcastAppearances < 3;
+function getLineForUser(userId, displayName = '') {
+    const profileLines = playerProfiles[userId];
+    if (Array.isArray(profileLines) && profileLines.length > 0) {
+        const randomIndex = Math.floor(Math.random() * profileLines.length);
+        return profileLines[randomIndex];
+    }
+
+    const defaultLines = playerProfiles['default'] || [];
+    if (defaultLines.length === 0) return `היי ${displayName}, מה שלומך?`;
+    
+    const fallback = defaultLines[Math.floor(Math.random() * defaultLines.length)];
+    return fallback.replace('כֻּלָּם', displayName || 'כֻּלָּם');
 }
 
+function isRareUser(userId, userStats) {
+    if (!userStats) return false;
+    const { podcastAppearances = 0 } = userStats;
+    return podcastAppearances < 3;
+}
 
+// ✅ שמירה על כל הייצואים המקוריים שלך
 module.exports = {
-  getLineForUser,
-  getScriptByUserId,
-  fallbackScripts, // עדיין מייצא את זה למטרות גיבוי/שימוש אחר
-  personalPodcastScripts, // מייצא גם את זה אם יש צורך בגישה ישירה
-  isRareUser,
+    getLineForUser,
+    getScriptByUserId,
+    fallbackScripts, 
+    personalPodcastScripts, 
+    isRareUser,
 };

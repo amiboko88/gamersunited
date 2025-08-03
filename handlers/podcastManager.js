@@ -100,6 +100,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
         await entersState(connection, VoiceConnectionStatus.Ready, 5000);
 
+        // --- ✅ שימוש ב-createAudioPlayer ---
         const player = createAudioPlayer();
         connection.subscribe(player);
 
@@ -115,10 +116,13 @@ async function handleVoiceStateUpdate(oldState, newState) {
                 }
 
                 const audioBuffer = await synthesizeTTS(line.text, profile, member);
+                
+                // --- ✅ שימוש ב-createAudioResource ו-StreamType ---
                 const resource = createAudioResource(Readable.from(audioBuffer), { inputType: StreamType.Arbitrary });
                 
                 player.play(resource);
 
+                // --- ✅ שימוש ב-AudioPlayerStatus ---
                 await entersState(player, AudioPlayerStatus.Playing, 5000);
                 await entersState(player, AudioPlayerStatus.Idle, 30000);
             }

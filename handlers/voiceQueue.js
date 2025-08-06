@@ -1,92 +1,129 @@
 // 📁 handlers/voiceQueue.js
-
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState, AudioPlayerStatus, VoiceConnectionStatus } = require('@discordjs/voice');
-const { log } = require('../utils/logger');
+const {
+    joinVoiceChannel,
+    createAudioPlayer,
+    createAudioResource,
+    entersState,
+    AudioPlayerStatus,
+    VoiceConnectionStatus
+} = require('@discordjs/voice');
+const logger = require('../utils/logger');
 const { Readable } = require('stream');
 
+// המפה שומרת את כל התורים הפעילים, מפתח אחד לכל שרת
 const queues = new Map();
 
-// פונקציה זו נשארה כמעט זהה, רק מוודאת שהיא יוצרת נגן
+/**
+ * אחראי על קבלת/יצירת התור עבור שרת.
+ * @param {string} guildId
+ * @returns {object}
+ */
 function getQueue(guildId) {
     if (!queues.has(guildId)) {
-        queues.set(guildId, {
+        // יצירת מבנה תור חדש עם כל מה שצריך
+        const queueConstruct = {
             queue: [],
-            isPlaying: false,
             connection: null,
-            player: createAudioPlayer() // יצירת נגן פעם אחת לכל שרת
-        });
+            player: createAudioPlayer(), // נגן אחד בלבד לכל התור
+            isPlaying: false,
+            channelId: null,
+            client: null,
+        };
+        queues.set(guildId, queueConstruct);
     }
     return queues.get(guildId);
 }
 
-// פונקציה זו נשארה זהה, רק מקבלת client כדי ליצור חיבור אם צריך
-async function addToQueue(guildId, channelId, audioBuffer, client) {
+/**
+ * מוסיף פריט אודיו לתור של שרת ומפעיל את הנגן אם הוא לא פעיל.
+ * @param {string} guildId
+ * @param {string} channelId
+ * @param {Buffer} audioBuffer
+ * @param {import('discord.js').Client} client
+ */
+function addToQueue(guildId, channelId, audioBuffer, client) {
     const serverQueue = getQueue(guildId);
-    serverQueue.channelId = channelId;
-    serverQueue.client = client; // שומרים את ה-client
     serverQueue.queue.push(audioBuffer);
-    
+    // שומר את הפרטים החשובים לחיבור במידת הצורך
+    serverQueue.channelId = channelId;
+    serverQueue.client = client;
+
     if (!serverQueue.isPlaying) {
         playNextInQueue(guildId);
     }
 }
 
-// כאן השדרוג המרכזי - לוגיקה יציבה יותר
+/**
+ * הפונקציה המרכזית שמנהלת את ניגון התור.
+ * היא מפעילה את עצמה רקורסיבית בסיום כל ניגון.
+ * @param {string} guildId
+ */
 async function playNextInQueue(guildId) {
-    const serverQueue = getQueue(guildId);
+    const serverQueue = queues.get(guildId);
+    if (!serverQueue) return; // הגנה במקרה שהתור נמחק
+
+    // אם התור ריק, סיים את העבודה ונקה הכל
     if (serverQueue.queue.length === 0) {
+        logger.info(`[QUEUE] התור הסתיים. מתנתק מערוץ הקול בשרת ${guildId}.`);
         if (serverQueue.connection) {
             serverQueue.connection.destroy();
-            queues.delete(guildId);
-            log('[QUEUE] התור ריק והחיבור נסגר.');
         }
+        queues.delete(guildId); // מחיקת התור מהזיכרון
         return;
     }
 
+    // אם כבר משהו מתנגן, אל תפריע
     if (serverQueue.isPlaying) return;
 
     serverQueue.isPlaying = true;
-    const audioBuffer = serverQueue.queue.shift();
-    
+    const audioBuffer = serverQueue.queue.shift(); // לוקח את הפריט הבא
+
     try {
-        // יוצר חיבור רק אם הוא לא קיים או נהרס
+        // התחברות לערוץ רק אם אין חיבור פעיל
         if (!serverQueue.connection || serverQueue.connection.state.status === VoiceConnectionStatus.Destroyed) {
+            logger.info(`[QUEUE] יוצר חיבור קולי חדש בשרת ${guildId}.`);
             const guild = await serverQueue.client.guilds.fetch(guildId);
+            const channel = await guild.channels.fetch(serverQueue.channelId);
+
             serverQueue.connection = joinVoiceChannel({
-                channelId: serverQueue.channelId,
+                channelId: channel.id,
                 guildId: guild.id,
                 adapterCreator: guild.voiceAdapterCreator,
             });
+
+            // הרשמה לאירועי ניתוק כדי לנקות את התור במקרה של תקלה
+            serverQueue.connection.on(VoiceConnectionStatus.Disconnected, async () => {
+                try {
+                    await Promise.race([
+                        entersState(serverQueue.connection, VoiceConnectionStatus.Signalling, 5_000),
+                        entersState(serverQueue.connection, VoiceConnectionStatus.Connecting, 5_000),
+                    ]);
+                    // התחבר מחדש
+                } catch (error) {
+                    logger.warn(`[QUEUE] החיבור נותק ולא הצליח להתחבר מחדש בשרת ${guildId}. מנקה את התור.`);
+                    if(serverQueue.connection) serverQueue.connection.destroy();
+                    queues.delete(guildId);
+                }
+            });
+
             serverQueue.connection.subscribe(serverQueue.player);
-            await entersState(serverQueue.connection, VoiceConnectionStatus.Ready, 5000);
         }
-        
+
         const resource = createAudioResource(Readable.from(audioBuffer));
         serverQueue.player.play(resource);
 
-        await entersState(serverQueue.player, AudioPlayerStatus.Playing, 5000);
-        await entersState(serverQueue.player, AudioPlayerStatus.Idle, 120_000); // Timeout of 2 minutes per clip
+        // ממתין לסיום הניגון
+        await entersState(serverQueue.player, AudioPlayerStatus.Idle, 2 * 60 * 1000); // Timeout של 2 דקות
 
     } catch (error) {
-        log.error('❌ [QUEUE] שגיאה בניגון שמע מהתור:', error);
-        if (serverQueue.connection) serverQueue.connection.destroy();
-        queues.delete(guildId);
+        logger.error(`❌ [QUEUE] שגיאה קריטית בניגון מהתור בשרת ${guildId}.`, error);
     } finally {
         serverQueue.isPlaying = false;
-        // ממשיך לקטע הבא בתור או מסיים
-        playNextInQueue(guildId); 
+        // קורא לעצמו כדי לנגן את הפריט הבא או לסיים
+        playNextInQueue(guildId);
     }
 }
 
-// כל שאר הפונקציות המקוריות שלך, כמו cleanupIdleConnections, נשארות כאן
-function cleanupIdleConnections() {
-    // לדוגמה, אם הייתה לך פונקציה כזו, היא הייתה נשארת כאן ללא שינוי
-    // log('[QUEUE] מבצע ניקוי חיבורים ישנים...');
-}
-
-
-module.exports = { 
-    addToQueue, 
-    playNextInQueue,
-    cleanupIdleConnections // מוודא שכל הפונקציות מיוצאות
+module.exports = {
+    addToQueue
 };

@@ -1,8 +1,7 @@
 // 📁 managers/podcastManager.js
-const logger = require('../utils/logger');
+const { log } = require('../utils/logger'); // ✅ [תיקון] שימוש בלוגר הנכון
 const ttsEngine = require('../tts/ttsEngine.elevenlabs.js');
 const profiles = require('../data/profiles.js');
-// const fifoLines = require('../data/fifoLines.js'); // ✅ הוסר כפי שביקשת
 const voiceQueue = require('./voiceQueue.js');
 
 // --- הגדרות הפודקאסט ---
@@ -14,6 +13,18 @@ const PODCAST_COOLDOWN = 1 * 60 * 1000;
 let isPodcastActive = false;
 let podcastCooldown = false;
 const spokenUsers = new Set();
+
+// --- ✅ [תיקון] הוספת פונקציית האתחול החסרה ---
+/**
+ * מאתחל את מצב הפודקאסט. נקרא על ידי botLifecycle.js.
+ */
+function initializePodcastState() {
+    isPodcastActive = false;
+    podcastCooldown = false;
+    spokenUsers.clear();
+    log('[PODCAST] מנהל הפודקאסט אותחל בהצלחה.');
+}
+// ---------------------------------------------
 
 /**
  * נקודת הכניסה הראשית מ-voiceHandler.js.
@@ -28,13 +39,13 @@ async function handleVoiceStateUpdate(oldState, newState) {
     if (oldChannel?.id === FIFO_CHANNEL_ID) {
         const membersInOldChannel = oldChannel.members.filter(m => !m.user.bot);
         if (membersInOldChannel.size < MIN_USERS_FOR_PODCAST && isPodcastActive) {
-            logger.info(`מספר המשתמשים ירד מתחת ל-${MIN_USERS_FOR_PODCAST}. מפסיק את הפודקאסט.`);
+            log(`[PODCAST] מספר המשתמשים ירד מתחת ל-${MIN_USERS_FOR_PODCAST}. מפסיק את הפודקאסט.`);
             isPodcastActive = false;
             spokenUsers.clear();
             podcastCooldown = true;
             setTimeout(() => {
                 podcastCooldown = false;
-                logger.info('תקופת הצינון של הפודקאסט הסתיימה.');
+                log('[PODCAST] תקופת הצינון של הפודקאסט הסתיימה.');
             }, PODCAST_COOLDOWN);
         }
     }
@@ -48,21 +59,20 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
         if (shouldStart || shouldAnnounce) {
             if (shouldStart) {
-                logger.info(`זוהתה כניסה לערוץ. ${memberCount} משתמשים נוכחים. מתחיל את הפודקאסט.`);
+                log(`[PODCAST] זוהתה כניסה לערוץ. ${memberCount} משתמשים נוכחים. מתחיל את הפודקאסט.`);
                 isPodcastActive = true;
             } else {
-                logger.info(`משתמש חדש, ${newState.member.displayName}, הצטרף בזמן פודקאסט פעיל.`);
+                log(`[PODCAST] משתמש חדש, ${newState.member.displayName}, הצטרף בזמן פודקאסט פעיל.`);
             }
-            
+
             spokenUsers.add(newState.member.id);
-            // ✅ [שדרוג] קריאה לפונקציית הבמאי החדשה
             await playPersonalPodcast(newChannel, newState.member, client);
         }
     }
 }
 
 /**
- * ✅ [שדרוג] "הבמאי": בונה ומפעיל פודקאסט אישי קצר.
+ * "הבמאי": בונה ומפעיל פודקאסט אישי קצר.
  */
 async function playPersonalPodcast(channel, member, client) {
     const userId = member.id;
@@ -70,60 +80,41 @@ async function playPersonalPodcast(channel, member, client) {
     const userProfileLines = profiles.playerProfiles[userId];
     let script = [];
 
-    // --- בניית התסריט ---
     if (Array.isArray(userProfileLines) && userProfileLines.length > 0) {
-        // מקרה 1: למשתמש יש פרופיל אישי
-        logger.info(`נמצא פרופיל למשתמש ${userName}. בונה תסריט אישי...`);
-        
-        // מערבב את המשפטים כדי לקבל תוצאה שונה כל פעם
+        log(`[PODCAST] נמצא פרופיל למשתמש ${userName}. בונה תסריט אישי...`);
         const shuffledLines = [...userProfileLines].sort(() => 0.5 - Math.random());
-        
-        // לוקח עד 3 משפטים ליצירת שיחה קצרה
         const selectedLines = shuffledLines.slice(0, 3);
-
-        // מחלק את התפקידים בין שמעון לשירלי
         script.push({ speaker: 'shimon', text: selectedLines[0] });
-        if (selectedLines[1]) {
-            script.push({ speaker: 'shirly', text: selectedLines[1] });
-        }
-        if (selectedLines[2]) {
-            // שמעון נותן את הפאנץ'
-            script.push({ speaker: 'shimon', text: selectedLines[2] });
-        }
-
+        if (selectedLines[1]) script.push({ speaker: 'shirly', text: selectedLines[1] });
+        if (selectedLines[2]) script.push({ speaker: 'shimon', text: selectedLines[2] });
     } else {
-        // מקרה 2: משתמש חדש, יוצר תסריט גיבוי קצר
-        logger.info(`לא נמצא פרופיל למשתמש ${userName}. יוצר תסריט גיבוי.`);
+        log(`[PODCAST] לא נמצא פרופיל למשתמש ${userName}. יוצר תסריט גיבוי.`);
         script = [
             { speaker: 'shimon', text: `תראי שירלי, יש לנו אורח חדש, ${userName}.` },
             { speaker: 'shirly', text: `נחמד, בוא נראה אם הוא ישרוד יותר מהקודם.` }
         ];
     }
-    
+
     if (script.length === 0) {
-        logger.warn('לא נוצר תסריט. מדלג על הניגון.');
+        log('[PODCAST] אזהרה: לא נוצר תסריט. מדלג על הניגון.');
         return;
     }
 
-    logger.info(`התסריט שנוצר: \n${script.map(line => `${line.speaker}: ${line.text}`).join('\n')}`);
+    log(`[PODCAST] התסריט שנוצר: \n${script.map(line => `${line.speaker}: ${line.text}`).join('\n')}`);
 
     try {
-        // --- הפקה והעברה לשידור ---
-        // 1. יוצר את כל קטעי האודיו של השיחה
         const audioBuffers = await ttsEngine.synthesizeConversation(script, member);
-        
-        // 2. מעביר כל קטע שמע לתור הניגון, אחד אחרי השני
-        logger.info(`מעביר ${audioBuffers.length} קטעי שמע למנהל התורים.`);
+        log(`[PODCAST] מעביר ${audioBuffers.length} קטעי שמע למנהל התורים.`);
         for (const buffer of audioBuffers) {
             voiceQueue.addToQueue(channel.guild.id, channel.id, buffer, client);
         }
-
     } catch (error) {
-        logger.error('שגיאה בהפקת או העברת הפודקאסט למנהל התורים:', error);
+        log('❌ [PODCAST] שגיאה בהפקת או העברת הפודקאסט למנהל התורים:', error);
     }
 }
 
-// המודול מייצא רק את נקודת הכניסה הראשית
+// --- ✅ [תיקון] הוספת הפונקציה החסרה לייצוא ---
 module.exports = {
-    handleVoiceStateUpdate
+    handleVoiceStateUpdate,
+    initializePodcastState // הפונקציה זמינה כעת עבור botLifecycle
 };

@@ -1,7 +1,6 @@
 // 📁 index.js
 const fs = require('fs');
 const path = require('path');
-// --- ✅ התיקון השני נמצא כאן: הוספנו את MessageFlags לייבוא ---
 const { Client, GatewayIntentBits, Collection, Partials, REST, Routes, MessageFlags } = require('discord.js');
 
 // --- UTILS & TELEGRAM ---
@@ -29,7 +28,6 @@ global.client = client;
 client.commands = new Collection();
 client.interactions = new Collection();
 client.dynamicInteractionHandlers = [];
-
 client.voiceConnections = new Collection();
 client.audioPlayers = new Collection();
 
@@ -47,7 +45,7 @@ for (const file of commandFiles) {
     }
 }
 
-// Improved Interaction Loader - Recursive and Safe
+// Improved Interaction Loader
 const interactionsPath = path.join(__dirname, 'interactions');
 if (fs.existsSync(interactionsPath)) {
     const loadHandlers = (dir) => {
@@ -73,7 +71,6 @@ if (fs.existsSync(interactionsPath)) {
     loadHandlers(interactionsPath);
     console.log(`💡 נטענו ${client.interactions.size} אינטראקציות סטטיות ו-${client.dynamicInteractionHandlers.length} דינאמיות.`);
 }
-
 
 // --- SLASH COMMAND REGISTRATION ---
 (async () => {
@@ -118,9 +115,10 @@ const podcastManager = require('./handlers/podcastManager');
 
 client.on('interactionCreate', async interaction => {
     try {
-        if (interaction.isCommand() && interaction.guildId) { 
-            // --- ✅ התיקון הראשון נמצא כאן: שימוש בשם הפונקציה הנכון ---
-            if (podcastManager.isPodcastActive(interaction.guildId, interaction.channelId)) {
+        if (interaction.isCommand() && interaction.guildId) {
+            // --- ✅ [תיקון] שימוש בפונקציה הנכונה לבדיקת סטטוס הפודקאסט ---
+            if (podcastManager.getPodcastStatus()) {
+            // -----------------------------------------------------------------
                 const commandName = interaction.commandName;
                 if (podcastManager.restrictedCommands.includes(commandName)) {
                     return interaction.reply({ content: 'שמעון עסוק כרגע בפודקאסט ולא ניתן להפריע לו!', ephemeral: true });
@@ -163,7 +161,6 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-
 // --- OTHER REAL-TIME EVENT LISTENERS ---
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const { trackGamePresence } = require('./handlers/presenceTracker');
@@ -199,7 +196,6 @@ client.on('messageCreate', async message => {
     await handleSpam(message);
     await smartChat(message);
 });
-
 
 // --- BOT LOGIN ---
 client.login(process.env.DISCORD_TOKEN);

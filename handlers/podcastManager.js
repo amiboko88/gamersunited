@@ -1,5 +1,5 @@
 // 📁 managers/podcastManager.js
-const { log } = require('../utils/logger'); // ✅ [תיקון] שימוש בלוגר הנכון
+const { log } = require('../utils/logger');
 const ttsEngine = require('../tts/ttsEngine.elevenlabs.js');
 const profiles = require('../data/profiles.js');
 const voiceQueue = require('./voiceQueue.js');
@@ -8,21 +8,31 @@ const voiceQueue = require('./voiceQueue.js');
 const FIFO_CHANNEL_ID = '1142436125354958938';
 const MIN_USERS_FOR_PODCAST = 4;
 const PODCAST_COOLDOWN = 1 * 60 * 1000;
+// ✅ [תיקון] הוספת רשימת פקודות לחסימה בזמן פודקאסט
+const restrictedCommands = ['soundboard', 'song'];
 
 // --- משתני ניהול מצב ---
 let isPodcastActive = false;
 let podcastCooldown = false;
 const spokenUsers = new Set();
 
-// --- ✅ [תיקון] הוספת פונקציית האתחול החסרה ---
 /**
- * מאתחל את מצב הפודקאסט. נקרא על ידי botLifecycle.js.
+ * מאתחל את מצב הפודקאסט.
  */
 function initializePodcastState() {
     isPodcastActive = false;
     podcastCooldown = false;
     spokenUsers.clear();
     log('[PODCAST] מנהל הפודקאסט אותחל בהצלחה.');
+}
+
+// --- ✅ [תיקון] הוספת פונקציה לבדיקת סטטוס ---
+/**
+ * מחזיר אם הפודקאסט פעיל כרגע.
+ * @returns {boolean}
+ */
+function getPodcastStatus() {
+    return isPodcastActive;
 }
 // ---------------------------------------------
 
@@ -64,7 +74,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
             } else {
                 log(`[PODCAST] משתמש חדש, ${newState.member.displayName}, הצטרף בזמן פודקאסט פעיל.`);
             }
-
+            
             spokenUsers.add(newState.member.id);
             await playPersonalPodcast(newChannel, newState.member, client);
         }
@@ -75,6 +85,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
  * "הבמאי": בונה ומפעיל פודקאסט אישי קצר.
  */
 async function playPersonalPodcast(channel, member, client) {
+    // ... (הלוגיקה של הפונקציה נשארת זהה)
     const userId = member.id;
     const userName = member.displayName;
     const userProfileLines = profiles.playerProfiles[userId];
@@ -94,14 +105,13 @@ async function playPersonalPodcast(channel, member, client) {
             { speaker: 'shirly', text: `נחמד, בוא נראה אם הוא ישרוד יותר מהקודם.` }
         ];
     }
-
+    
     if (script.length === 0) {
         log('[PODCAST] אזהרה: לא נוצר תסריט. מדלג על הניגון.');
         return;
     }
 
     log(`[PODCAST] התסריט שנוצר: \n${script.map(line => `${line.speaker}: ${line.text}`).join('\n')}`);
-
     try {
         const audioBuffers = await ttsEngine.synthesizeConversation(script, member);
         log(`[PODCAST] מעביר ${audioBuffers.length} קטעי שמע למנהל התורים.`);
@@ -113,8 +123,10 @@ async function playPersonalPodcast(channel, member, client) {
     }
 }
 
-// --- ✅ [תיקון] הוספת הפונקציה החסרה לייצוא ---
+// --- ✅ [תיקון] עדכון הייצוא של המודול ---
 module.exports = {
     handleVoiceStateUpdate,
-    initializePodcastState // הפונקציה זמינה כעת עבור botLifecycle
+    initializePodcastState,
+    getPodcastStatus, // הפונקציה זמינה כעת עבור index.js
+    restrictedCommands  // הרשימה זמינה כעת עבור index.js
 };

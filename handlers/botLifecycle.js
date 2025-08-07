@@ -12,17 +12,14 @@ const { checkMvpReactions } = require('./mvpReactions');
 const { checkMVPStatusAndRun } = require('./mvpTracker');
 const { rotatePresence } = require('./presenceRotator');
 const { periodicPresenceCheck } = require('./presenceTracker');
-const { updateDisplayChannel } = require('./statsUpdater');
 const { checkPendingDms } = require('./verificationButton');
 const { cleanupIdleConnections } = require('./voiceQueue');
 const { sendBirthdayMessages: sendTelegramBirthdays } = require('../telegram/birthdayNotifierTelegram');
 const { cleanupOldFifoMessages } = require('../utils/fifoMemory');
-
 const { runAutoTracking, runScheduledReminders, runMonthlyKickReport } = require('./inactivityCronJobs');
 const { updateWeeklyLeaderboard } = require('./leaderboardUpdater');
 const { sendWarzoneEmbed } = require('./fifoWarzoneAnnouncer');
 
-// ✅ ייבוא מודול ה-podcastManager
 const podcastManager = require('./podcastManager');
 
 let cronJobs = [];
@@ -44,9 +41,6 @@ function initializeCronJobs(client) {
         { name: 'בדיקת תגובות MVP', schedule: '* * * * *', func: checkMvpReactions, args: [client] },
         { name: 'ניקוי חיבורי קול ישנים', schedule: '* * * * *', func: cleanupIdleConnections, args: [] },
         { name: 'ניקוי הודעות פיפו ישנות', schedule: '* * * * *', func: cleanupOldFifoMessages, args: [client] },
-        
-        // משימות שרצות כל 5 דקות
-        { name: 'עדכון ערוץ סטטיסטיקות', schedule: '*/5 * * * *', func: updateDisplayChannel, args: [client] },
         
         // משימות שרצות כל 10 דקות
         { name: 'בדיקת נוכחות תקופתית', schedule: '*/10 * * * *', func: periodicPresenceCheck, args: [client] },
@@ -75,9 +69,7 @@ function initializeCronJobs(client) {
         // משימות ייעודיות
         { name: 'הכרזת Warzone', schedule: '0 21 * * 3,4,6,0', func: sendWarzoneEmbed, args: [client], timezone: 'Asia/Jerusalem' },
 
-        // משימות תזמון לפודקאסט
-        { name: 'הפעלת ניטור פודקאסטים (שעות פעילות)', schedule: '0 18 * * *', func: () => podcastManager.setPodcastMonitoring(true), timezone: 'Asia/Jerusalem' },
-        { name: 'כיבוי ניטור פודקאסטים (סיום שעות פעילות)', schedule: '0 6 * * *', func: () => podcastManager.setPodcastMonitoring(false), timezone: 'Asia/Jerusalem' },
+        // --- ✅ [תיקון] הוסרו שתי משימות הפודקאסט הלא רלוונטיות ---
     ];
 
     tasks.forEach(task => {
@@ -100,7 +92,6 @@ function initializeCronJobs(client) {
 
         if (task.runOnInit) {
             console.log(`[CRON] ▶️  מריץ משימת אתחול מיידית: ${task.name}`);
-            // --- התיקון נמצא כאן ---
             const initialRunPromise = task.func(...(task.args || []));
             if (initialRunPromise && typeof initialRunPromise.catch === 'function') {
                 initialRunPromise.catch(e => console.error(`[CRON] ❌ שגיאה בהרצה ראשונית של "${task.name}":`, e));

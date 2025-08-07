@@ -7,7 +7,7 @@ const {
     AudioPlayerStatus,
     VoiceConnectionStatus
 } = require('@discordjs/voice');
-const { log } = require('../utils/logger'); // ✅ [תיקון] שימוש בלוגר הנכון
+const { log } = require('../utils/logger');
 const { Readable } = require('stream');
 
 const queues = new Map();
@@ -99,9 +99,12 @@ async function playNextInQueue(guildId) {
     }
 }
 
+/**
+ * פונקציה שנקראת על ידי ה-CRON כדי לנקות חיבורים לא פעילים.
+ */
 function cleanupIdleConnections() {
     const now = Date.now();
-    log('[CRON] מבצע בדיקת חיבורי קול לא פעילים...');
+    // --- ✅ [תיקון] הוסרה שורת הלוג הרועשת ---
     for (const [guildId, serverQueue] of queues.entries()) {
         const idleTime = now - serverQueue.lastActivity;
         if (!serverQueue.isPlaying && serverQueue.queue.length === 0 && idleTime > IDLE_TIMEOUT_MINUTES * 60 * 1000) {

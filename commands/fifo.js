@@ -1,164 +1,154 @@
 // 📁 commands/fifo.js
-const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
-
-const { createGroupsAndChannels } = require('../utils/squadBuilder');
+// --- ✅ [תיקון] הסרת ייבוא מיותר ---
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { createGroupsAndChannels, cleanupFifo, buildTeamMessage } = require('../utils/squadBuilder');
 const { log } = require('../utils/logger');
 const { startGroupTracking } = require('../handlers/groupTracker');
-const { resetReplayVotes, registerTeam } = require('../utils/replayManager');
-const { playTTSInVoiceChannel } = require('../utils/ttsQuickPlay'); // ✅ זהו המקור היחיד לפונקציה זו
-// const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs'); // ❌ שורה זו מבוטלת/נמחקת - היא לא משמשת כאן ישירות
+// --- ✅ [תיקון] הסרת התלות ב-'teams' ---
+const { resetReplayVotes, registerTeam, addResetVote, hasEnoughVotesToReset } = require('../utils/replayManager');
+const { playTTSInVoiceChannel } = require('../utils/ttsQuickPlay');
 const { deletePreviousFifoMessages, setFifoMessages } = require('../utils/fifoMemory');
 
-const TEAM_COLORS = ['🟦', '🟥', '🟩', '🟨', '🟪', '⬛'];
-const PUBLIC_CHANNEL_ID = '1372283521447497759'; // 🔁 עדכן לפי ערוץ הפיפו הציבורי שלך
+const TEAM_COLORS = ['#3498DB', '#E74C3C', '#2ECC71', '#F1C40F', '#9B59B6', '#34495E'];
+const PUBLIC_CHANNEL_ID = '1372283521447497759';
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('פיפו')
     .setDescription('מחלק את המשתמשים בקול לקבוצות לפי כמות מבוקשת')
     .addIntegerOption(opt =>
-      opt.setName('כמות').setDescription('כמה שחקנים בקבוצה (2, 3 או 4)').setRequired(true)
-    )
-    .setDefaultMemberPermissions(PermissionFlagsBits.Connect),
+      opt.setName('כמות').setDescription('כמה שחקנים בקבוצה (2, 3, 4...)').setRequired(true)
+    ),
 
   async execute(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    await deletePreviousFifoMessages(interaction.guild.id);
+
+    const groupSize = interaction.options.getInteger('כמות');
+    const member = interaction.member;
+    const voiceChannel = member.voice.channel;
+    const publicChannel = interaction.guild.channels.cache.get(PUBLIC_CHANNEL_ID);
+
+    if (!voiceChannel) return interaction.editReply('אתה צריך להיות בערוץ קולי כדי להשתמש בפקודה.');
+    if (!publicChannel) return interaction.editReply('לא נמצא ערוץ טקסט ציבורי להצגת התוצאות.');
+    
+    const members = voiceChannel.members.filter(m => !m.user.bot);
+    if (members.size < groupSize) return interaction.editReply(`אין מספיק שחקנים לחלוקה לקבוצות של ${groupSize}.`);
+
+    const fifoMessages = [];
+    const teamData = []; // ✅ מקור האמת היחיד לכל המידע על הקבוצות
+
     try {
-      resetReplayVotes();
-      await deletePreviousFifoMessages(interaction.guild.id);
-      const fifoMessages = [];
-
-      const groupSize = interaction.options.getInteger('כמות');
-      const validSizes = [2, 3, 4];
-      if (!validSizes.includes(groupSize)) {
-        return await interaction.reply({ content: '🤨 רק 2, 3 או 4 מותרים.', flags: MessageFlags.Ephemeral });
-      }
-
-      const voiceChannel = interaction.member.voice.channel;
-      if (!voiceChannel || voiceChannel.parentId !== process.env.FIFO_CATEGORY_ID) {
-        return await interaction.reply({ content: '⛔ אתה חייב להיות בחדר בתוך קטגוריית וורזון פיפו.', flags: MessageFlags.Ephemeral });
-      }
-
-      const role = interaction.guild.roles.cache.find(r => r.name === 'FIFO');
-      if (!interaction.member.roles.cache.has(role?.id)) {
-        return await interaction.reply({ content: '🚫 אתה צריך תפקיד FIFO כדי להריץ את הפקודה.', flags: MessageFlags.Ephemeral });
-      }
-
-      const members = voiceChannel.members.filter(m => !m.user.bot);
-      if (members.size < 2) {
-        return await interaction.reply({ content: '🤏 צריך לפחות שני שחקנים.', flags: MessageFlags.Ephemeral });
-      }
-
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-      const { groups, waiting, channels } = await createGroupsAndChannels({
+      const { channels, squads, waiting } = await createGroupsAndChannels({
         interaction,
         members: [...members.values()],
         groupSize,
-        categoryId: process.env.FIFO_CATEGORY_ID,
-        openChannels: true
+        categoryId: voiceChannel.parentId
       });
 
-      const publicChannel = await interaction.guild.channels.fetch(PUBLIC_CHANNEL_ID).catch(() => null);
-      if (publicChannel?.isTextBased()) {
-        for (let i = 0; i < groups.length; i++) {
-          const group = groups[i];
-          const teamName = `TEAM ${String.fromCharCode(65 + i)}`;
-          const names = group.map(m => m.displayName).join(', ');
-          const icon = TEAM_COLORS[i] || '🎯';
+      let groupSummary = '';
+      for (let i = 0; i < squads.length; i++) {
+        const squad = squads[i];
+        const teamName = `TEAM ${String.fromCharCode(65 + i)}`;
+        const color = TEAM_COLORS[i % TEAM_COLORS.length];
+        
+        groupSummary += `${color} **${teamName}**: ${squad.map(m => `<@${m.id}>`).join(', ')}\n`;
+        
+        const teamMessagePayload = buildTeamMessage(teamName, squad, i);
+        const teamMsg = await channels[i].send(teamMessagePayload);
+        
+        // שמירת כל המידע במקום אחד
+        teamData.push({ name: teamName, channel: channels[i], message: teamMsg, members: squad });
 
-          const embed = new EmbedBuilder()
-            .setTitle(`${icon} ${teamName}`)
-            .setDescription(`**שחקנים:**\n${names}`)
-            .setColor(0x00AEFF)
-            .setTimestamp();
-
-          const button = new ButtonBuilder()
-            .setCustomId(`replay_${teamName.replace(' ', '_')}`)
-            .setLabel('🔄 איפוס קבוצה')
-            .setStyle(ButtonStyle.Secondary);
-
-          const row = new ActionRowBuilder().addComponents(button);
-          const msg = await publicChannel.send({ embeds: [embed], components: [row] });
-          fifoMessages.push(msg);
-
-          if (channels[i]) {
-            const userIds = group.map(m => m.id);
-            startGroupTracking(channels[i], userIds, teamName);
-            registerTeam(teamName, userIds);
-
-            try {
-              // השתק את המשתמשים לפני ההודעה
-              for (const member of group) {
-                if (member.voice.channel) await member.voice.setMute(true, 'שמעון משתיק לפני הודעה');
-              }
-              
-              // השמעת המשפטים בנפרד (שמעון)
-              const intro = `שלום ל־${teamName}... שמעון איתכם.`;
-              const nameList = `נראה לי שפה יש לנו את: ${group.map(m => m.displayName).join(', ')}`;
-              const roast = 'טוב, עם ההרכב הזה אני לא מצפה לכלום. בהצלחה עם ריספawns 🎮';
-
-              await playTTSInVoiceChannel(channels[i], intro, 'shimon');
-              await playTTSInVoiceChannel(channels[i], nameList, 'shimon');
-              await playTTSInVoiceChannel(channels[i], roast, 'shimon');
-
-              // המתן מעט לאחר ה-TTS ואז בטל השתקה
-              await new Promise(resolve => setTimeout(resolve, 2000)); // המתן 2 שניות לאחר ה-TTS
-              for (const member of group) {
-                if (member.voice.channel) await member.voice.setMute(false, 'שמעון סיים לדבר');
-              }
-            } catch (err) {
-              console.error(`❌ שגיאה בברכת שמעון לקבוצה ${teamName}:`, err.message);
-            }
-          }
+        startGroupTracking(channels[i], squad.map(m => m.id), teamName);
+        registerTeam(teamName, squad.map(m => ({ id: m.id, name: m.displayName })));
+        
+        try {
+          await playTTSInVoiceChannel(channels[i], `קבוצה ${teamName}`);
+          await new Promise(resolve => setTimeout(resolve, 500));
+          await playTTSInVoiceChannel(channels[i], squad.map(m => m.displayName).join(', '));
+        } catch (ttsError) {
+          log(`⚠️ שגיאה בהכרזת קבוצה ${teamName}, ממשיך הלאה...`, ttsError);
         }
       }
 
-      const groupSummary = groups
-        .map((group, i) => `**TEAM ${String.fromCharCode(65 + i)}**: ${group.map(m => m.displayName).join(', ')}`)
-        .join('\n');
+      await resetReplayVotes();
+      
+      let waitingText = waiting.length > 0 ? `\n**⚪ ממתינים:** ${waiting.map(m => `<@${m.id}>`).join(', ')}` : '';
 
-      const waitingText = waiting.length
-        ? `\n⏳ ממתינים: ${waiting.map(m => m.displayName).join(', ')}`
-        : '';
-
-      await interaction.editReply({
-        content: `✅ החלוקה בוצעה:\n${groupSummary}${waitingText}`
-      });
-
-      const resetButton = new ButtonBuilder()
-        .setCustomId(`reset_all_${interaction.user.id}`)
-        .setLabel('🚨 אפס הכל')
-        .setStyle(ButtonStyle.Danger);
-
+      const publicMsg = await publicChannel.send(`## חלוקת FIFO בוצעה!\n${groupSummary}${waitingText}`);
+      fifoMessages.push(publicMsg);
+      
+      const resetButton = new ButtonBuilder().setCustomId(`reset_all_${interaction.user.id}`).setLabel('🚨 אפס הכל').setStyle(ButtonStyle.Danger);
       const resetRow = new ActionRowBuilder().addComponents(resetButton);
-
-      const resetMsg = await publicChannel.send({
-        content: `📛 **רק <@${interaction.user.id}> יכול לאפס את כל הקבוצות.**\n⌛ הכפתור יוסר בעוד 5 דקות.`,
-        components: [resetRow]
-      });
+      const resetMsg = await publicChannel.send({ content: `📛 **רק <@${interaction.user.id}> יכול לאפס את כל הקבוצות.**`, components: [resetRow] });
 
       fifoMessages.push(resetMsg);
       setFifoMessages(interaction.guild.id, fifoMessages);
+      await interaction.editReply({ content: `✅ החלוקה בוצעה! בדוק את ערוץ ${publicChannel.toString()}` });
+      
+      const allMessages = teamData.map(td => td.message).concat(resetMsg);
+      const collector = publicChannel.createMessageComponentCollector({
+        filter: i => i.customId.startsWith('reset_'),
+        time: 30 * 60 * 1000
+      });
 
-      setTimeout(async () => {
-        try {
-          await resetMsg.delete();
-          console.log('🗑️ הודעת האיפוס הכללי נמחקה.');
-        } catch (err) {
-          console.warn('⚠️ לא ניתן היה למחוק את הודעת האיפוס:', err.message);
+      collector.on('collect', async i => {
+        if (i.customId.startsWith('reset_all_')) {
+          if (i.user.id !== interaction.user.id) {
+            return i.reply({ content: 'רק מי שיצר את הפיפו יכול לאפס.', ephemeral: true });
+          }
+          await i.deferUpdate();
+          log(`🚨 ${i.user.tag} לחץ על איפוס כללי`);
+          await cleanupFifo(interaction, voiceChannel);
+          await deletePreviousFifoMessages(interaction.guild.id);
+          collector.stop('manual_reset');
+          return;
         }
-      }, 5 * 60 * 1000);
+
+        if (i.customId.startsWith('reset_team_')) {
+          const teamName = i.customId.replace('reset_team_', '');
+          const voterTeam = teamData.find(td => td.name === teamName);
+          if (!voterTeam || !voterTeam.members.some(m => m.id === i.user.id)) {
+              return i.reply({ content: 'אינך חבר בקבוצה זו.', ephemeral: true });
+          }
+
+          const voteAdded = addResetVote(i.user.id, teamName);
+          if (!voteAdded) {
+            return i.reply({ content: 'כבר הצבעת לאיפוס.', ephemeral: true });
+          }
+
+          if (hasEnoughVotesToReset(teamName)) {
+            await i.reply({ content: `**${teamName}** אישרה איפוס! מעביר אתכם בחזרה...`, ephemeral: false });
+            
+            for (const member of voterTeam.members) {
+                await member.voice.setChannel(voiceChannel).catch(()=>{});
+            }
+            
+            // ✅ [תיקון] מציאת הקבוצה היריבה מתוך מקור האמת היחיד
+            const opponentTeam = teamData.find(td => td.name !== teamName);
+            if (opponentTeam) {
+                await playTTSInVoiceChannel(opponentTeam.channel, `קבוצת ${teamName} התפרקה. אתם יכולים לחזור לערוץ הראשי.`);
+            }
+          } else {
+            const teamSize = voterTeam.members.length;
+            const currentVotes = votes.get(teamName)?.size || 0;
+            await i.reply({ content: `הצבעתך לאיפוס התקבלה! (${currentVotes}/${teamSize})`, ephemeral: true });
+          }
+        }
+      });
+
+      collector.on('end', async (collected, reason) => {
+          await deletePreviousFifoMessages(interaction.guild.id);
+          if (reason !== 'manual_reset') {
+            await cleanupFifo(interaction);
+          }
+      });
 
       log(`📊 ${interaction.user.tag} הריץ /פיפו עם ${members.size} שחקנים (גודל קבוצה: ${groupSize})`);
     } catch (err) {
-      console.error('❌ שגיאה בפיפו:', err);
-      log(`❌ שגיאה ב־/פיפו ע״י ${interaction.user.tag}:\n\`\`\`${err.message || err}\`\`\``);
-
-      if (!interaction.deferred && !interaction.replied) {
-        await interaction.reply({ content: '❌ תקלה כללית. נסה שוב.', flags: MessageFlags.Ephemeral });
-      } else {
-        await interaction.editReply({ content: '❌ משהו השתבש. נסה שוב.' });
-      }
+      log('❌ שגיאה בפקודת /פיפו:', err);
+      await interaction.editReply('אירעה שגיאה קריטית בעת חלוקת הקבוצות.');
     }
   }
 };

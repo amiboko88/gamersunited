@@ -1,50 +1,35 @@
-// 📁 utils/ttsQuickPlay.js – גרסה מעודכנת ל־ElevenLabs בלבד
-const {
-  joinVoiceChannel,
-  createAudioPlayer,
-  createAudioResource,
-  entersState,
-  AudioPlayerStatus,
-  VoiceConnectionStatus
-} = require('@discordjs/voice');
-const fs = require('fs');
-const path = require('path');
-const { v4: uuidv4 } = require('uuid');
-const { synthesizeElevenTTS } = require('../tts/ttsEngine.elevenlabs');
+// 📁 utils/ttsQuickPlay.js
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState, AudioPlayerStatus, VoiceConnectionStatus } = require('@discordjs/voice');
+const { log } = require('../utils/logger');
+const { Readable } = require('stream');
+const { synthesizeTTS } = require('../tts/ttsEngine.elevenlabs.js'); // שימוש במנוע החדש
 
-async function playTTSInVoiceChannel(channel, text, voice = 'shimon') {
-  if (!channel || !channel.joinable) return;
-
+async function playTTSInVoiceChannel(channel, text) {
+  if (!channel || !channel.joinable) {
+    log(`⚠️ ניסיון להשמיע TTS בערוץ לא תקין: ${channel?.name}`);
+    return;
+  }
+  let connection;
   try {
-    const fileName = `tts_${uuidv4()}.mp3`;
-    const filePath = path.join(__dirname, '..', 'temp', fileName);
-
-    const buffer = await synthesizeElevenTTS(text, voice);
-    fs.writeFileSync(filePath, buffer);
-
-    const connection = joinVoiceChannel({
+    const audioBuffer = await synthesizeTTS(text, 'shimon_energetic'); // קריאה לפונקציה החדשה
+    if (!audioBuffer) throw new Error('Audio buffer is empty');
+    connection = joinVoiceChannel({
       channelId: channel.id,
       guildId: channel.guild.id,
       adapterCreator: channel.guild.voiceAdapterCreator
     });
-
     await entersState(connection, VoiceConnectionStatus.Ready, 5_000);
-
-    const resource = createAudioResource(filePath);
+    const resource = createAudioResource(Readable.from(audioBuffer));
     const player = createAudioPlayer();
-
     connection.subscribe(player);
     player.play(resource);
-
     await entersState(player, AudioPlayerStatus.Idle, 15_000);
-
-    connection.destroy();
-    fs.unlink(filePath, () => null);
-  } catch (err) {
-    console.error('❌ שגיאה בהשמעת TTS:', err);
+  } catch (error) {
+    log(`❌ שגיאה בהשמעת TTS מהיר:`, error);
+  } finally {
+    if (connection && connection.state.status !== VoiceConnectionStatus.Destroyed) {
+      connection.destroy();
+    }
   }
 }
-
-module.exports = {
-  playTTSInVoiceChannel
-};
+module.exports = { playTTSInVoiceChannel };

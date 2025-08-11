@@ -1,95 +1,63 @@
-// 📁 utils/replayManager.js – ניהול חכם של הצבעות Replay עם מעקב שחקנים
-const activeGroups = new Map();
-const replayVotes = new Map();
-/*
-  מבנה:
-  {
-    'TEAM A': {
-      members: ['user1', 'user2', 'user3'],
-      voted: Set('user2', 'user3')
-    }
-  }
-*/
+// 📁 utils/replayManager.js
+const { log } = require('./logger');
+
+const teams = new Map();
+const votes = new Map(); // מפה לאחסון הצבעות האיפוס
 
 /**
- * רישום שחקני קבוצה בעת יצירתה
- * @param {string} teamName
- * @param {string[]} userIds
+ * רושם קבוצה חדשה במערכת.
  */
-function registerTeam(teamName, userIds) {
-  replayVotes.set(teamName, {
-    members: userIds,
-    voted: new Set()
-  });
+function registerTeam(teamName, members) {
+    teams.set(teamName, { members, size: members.length });
+    votes.set(teamName, new Set()); // אתחול מאגר הצבעות ריק
+    log(`[VOTE] קבוצה ${teamName} נרשמה להצבעת איפוס.`);
 }
 
 /**
- * רישום הצבעת Replay של שחקן בקבוצה
- * @param {string} teamName
+ * ✅ [שדרוג] מוסיף הצבעה לאיפוס עבור משתמש בקבוצה.
  * @param {string} userId
- * @returns {object} מידע על מצב ההצבעות
+ * @param {string} teamName
+ * @returns {boolean} - מחזיר true אם ההצבעה חדשה, false אם המשתמש כבר הצביע
  */
-function registerReplayVote(teamName, userId) {
-  const team = replayVotes.get(teamName);
-  if (!team) return null;
+function addResetVote(userId, teamName) {
+    if (!votes.has(teamName)) return false;
 
-  team.voted.add(userId);
-
-  const total = team.members.length;
-  const voted = team.voted.size;
-  const allVoted = voted >= total;
-  const someVoted = voted > 0;
-
-  return {
-    teamName,
-    total,
-    voted,
-    allVoted,
-    someVoted,
-    remaining: total - voted,
-    missing: team.members.filter(id => !team.voted.has(id))
-  };
+    const teamVotes = votes.get(teamName);
+    if (teamVotes.has(userId)) {
+        return false; // כבר הצביע
+    }
+    
+    teamVotes.add(userId);
+    return true;
 }
 
 /**
- * מחזיר true אם יש הצבעות בקבוצה
+ * ✅ [שדרוג] בודק אם קבוצה הגיעה למספר ההצבעות הדרוש לאיפוס.
  * @param {string} teamName
  * @returns {boolean}
  */
-function hasReplayVotes(teamName) {
-  const team = replayVotes.get(teamName);
-  return team && team.voted.size > 0;
+function hasEnoughVotesToReset(teamName) {
+    const team = teams.get(teamName);
+    const teamVotes = votes.get(teamName);
+
+    if (!team || !teamVotes) return false;
+
+    return teamVotes.size >= team.size;
 }
 
 /**
- * החזרת כל הקבוצות עם מידע מלא
- */
-function getAllReplayStates() {
-  const result = [];
-  for (const [teamName, data] of replayVotes.entries()) {
-    result.push({
-      teamName,
-      members: data.members,
-      voted: [...data.voted],
-      total: data.members.length
-    });
-  }
-  return result;
-}
-
-/**
- * איפוס כל ההצבעות והקבוצות
+ * מאפס את כל נתוני ההצבעות והקבוצות.
  */
 function resetReplayVotes() {
-  replayVotes.clear();
+    teams.clear();
+    votes.clear();
+    log('[VOTE] כל נתוני ההצבעות אופסו.');
 }
 
 module.exports = {
-  
-  registerTeam,
-  registerReplayVote,
-  hasReplayVotes,
-  getAllReplayStates,
-  resetReplayVotes,
-  activeGroups
+    registerTeam,
+    addResetVote,
+    hasEnoughVotesToReset,
+    resetReplayVotes,
+    teams // ייצוא המפה כדי שנוכל למצוא את הקבוצה היריבה
 };

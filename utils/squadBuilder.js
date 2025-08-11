@@ -1,87 +1,116 @@
-// 📁 utils/squadBuilder.js – יצירת קבוצות FIFO עם שמות בכותרת וללא נעילה
+// 📁 utils/squadBuilder.js
+const { ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { log } = require('./logger');
 
-const { ChannelType, MessageFlags } = require('discord.js');
+const createdChannels = new Map(); // מפה לשמירת הערוצים שנוצרו
 
-function buildSquads(members, squadSize) {
-  const players = [...members];
-  shuffle(players);
-
-  const squads = [];
-  const waiting = [];
-
-  while (players.length >= squadSize) {
-    squads.push(players.splice(0, squadSize));
-  }
-
-  if (players.length > 0) {
-    if (squadSize === 4 && players.length === 3) {
-      squads.push(players.splice(0, 3));
-    } else if (squadSize >= 3 && players.length === 2) {
-      squads.push(players.splice(0, 2));
-    } else {
-      waiting.push(...players.splice(0));
-    }
-  }
-
-  return { squads, waiting };
+/**
+ * מחזיר את רשימת הערוצים שנוצרו על ידי הפקודה האחרונה.
+ * @returns {Map<string, import('discord.js').VoiceChannel>}
+ */
+function getCreatedChannels() {
+    return createdChannels;
 }
 
-function shuffle(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
+/**
+ * יוצר קבוצות וערוצים קוליים.
+ */
+async function createGroupsAndChannels({ interaction, members, groupSize, categoryId }) {
+    await cleanupFifo(interaction); // ניקוי מקדים של ערוצים ישנים
+
+    const shuffledMembers = [...members].sort(() => 0.5 - Math.random());
+    const numGroups = Math.floor(shuffledMembers.length / groupSize);
+    const squads = [];
+    const channels = [];
+    const waiting = shuffledMembers.slice(numGroups * groupSize);
+
+    for (let i = 0; i < numGroups; i++) {
+        const squad = shuffledMembers.slice(i * groupSize, (i + 1) * groupSize);
+        squads.push(squad);
+    }
+
+    for (let i = 0; i < squads.length; i++) {
+        const teamName = `TEAM ${String.fromCharCode(65 + i)}`;
+        try {
+            const channel = await interaction.guild.channels.create({
+                name: teamName,
+                type: ChannelType.GuildVoice,
+                parent: categoryId,
+                userLimit: groupSize,
+            });
+            channels.push(channel);
+            createdChannels.set(channel.id, channel); // שמירת הערוץ שנוצר
+
+            for (const member of squads[i]) {
+                await member.voice.setChannel(channel).catch(err => {
+                    log(`⚠️ לא ניתן היה להעביר את ${member.displayName}: ${err.message}`);
+                });
+            }
+            log(`✅ נוצר ערוץ ${teamName} והועברו אליו ${squads[i].length} חברים.`);
+        } catch (error) {
+            log(`❌ שגיאה ביצירת ערוץ או העברת חברים עבור ${teamName}:`, error);
+            throw new Error('Failed to create team channels.');
+        }
+    }
+
+    return { channels, squads, waiting };
 }
 
-async function createGroupsAndChannels({ interaction, members, groupSize, categoryId, openChannels = false }) {
-  const { squads, waiting } = buildSquads(members, groupSize);
-  const channels = [];
+/**
+ * מנקה את כל ערוצי הפיפו שנוצרו.
+ */
+async function cleanupFifo(interaction, originalVoiceChannel = null) {
+    log('🧼 מתחיל תהליך ניקוי פיפו...');
+    const channelsToDelete = getCreatedChannels();
 
-  for (let i = 0; i < squads.length; i++) {
-    const squad = squads[i];
-    const baseName = `TEAM ${String.fromCharCode(65 + i)}`;
-    const displayNames = squad.map(m => m.displayName).join(', ');
-    let name = baseName; // 🔒 שמות פשוטים בלבד
-
-    // חיתוך אם ארוך מדי (מקסימום 100 תווים)
-    if (name.length > 100) {
-      const trimmed = displayNames.slice(0, 100 - baseName.length - 4);
-      name = `${baseName} | ${trimmed}...`;
+    for (const [channelId, channel] of channelsToDelete) {
+        try {
+            // העבר חזרה לערוץ המקורי אם הוא קיים
+            if (originalVoiceChannel) {
+                for (const member of channel.members.values()) {
+                    await member.voice.setChannel(originalVoiceChannel).catch(() => {});
+                }
+            }
+            await channel.delete('איפוס פיפו');
+            log(`🗑️ נמחק ערוץ פיפו: ${channel.name}`);
+        } catch (error) {
+            log(`⚠️ שגיאה במחיקת ערוץ פיפו ${channel.name}: ${error.message}`);
+        }
     }
+    createdChannels.clear(); // איפוס המפה
+}
 
-    const options = {
-      name,
-      type: ChannelType.GuildVoice,
-      parent: categoryId
-    };
+/**
+ * ✅ [שדרוג] בונה הודעה מעוצבת וכפתור איפוס עבור כל קבוצה.
+ * @param {string} teamName - e.g., "TEAM A"
+ * @param {import('discord.js').GuildMember[]} squadMembers
+ * @param {number} teamIndex
+ * @returns {{embeds: EmbedBuilder[], components: ActionRowBuilder[]}}
+ */
+function buildTeamMessage(teamName, squadMembers, teamIndex) {
+    const TEAM_COLORS = ['#3498DB', '#E74C3C', '#2ECC71', '#F1C40F', '#9B59B6', '#34495E'];
 
-    // 🛡️ אם לא מבקשים פתיחה – יוצרים הגבלות גישה
-    if (!openChannels) {
-      options.permissionOverwrites = [
-        {
-          id: interaction.guild.roles.everyone.id,
-          deny: ['Connect']
-        },
-        ...squad.map(member => ({
-          id: member.id,
-          allow: ['Connect']
-        }))
-      ];
-    }
+    const embed = new EmbedBuilder()
+        .setColor(TEAM_COLORS[teamIndex % TEAM_COLORS.length])
+        .setTitle(`\\[ ${teamName} \\] - בהצלחה בקרב!`)
+        .setDescription('**חברי הקבוצה:**\n' + squadMembers.map(m => `> <:dott:1140333334958129283> <@${m.id}>`).join('\n'))
+        .setThumbnail('https://i.imgur.com/gJ4d1t1.png')
+        .setFooter({ text: 'לחצו על הכפתור כדי להצביע לאיפוס הקבוצה.' });
 
-    const channel = await interaction.guild.channels.create(options);
+    const resetButton = new ButtonBuilder()
+        .setCustomId(`reset_team_${teamName}`)
+        .setLabel('איפוס קבוצתי')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('🔄');
 
-    for (const member of squad) {
-      await member.voice.setChannel(channel).catch(() => {});
-    }
+    const row = new ActionRowBuilder().addComponents(resetButton);
 
-    channels.push(channel);
-  }
-
-  return { groups: squads, waiting, channels };
+    return { embeds: [embed], components: [row] };
 }
 
 module.exports = {
-  buildSquads,
-  createGroupsAndChannels
+    createGroupsAndChannels,
+    cleanupFifo,
+    getCreatedChannels,
+    buildTeamMessage // ✅ ייצוא הפונקציה החדשה
 };

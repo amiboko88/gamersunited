@@ -8,7 +8,6 @@ const { sendBirthdayMessage } = require('./birthdayCongratulator');
 const { checkBirthdays } = require('./birthdayTracker');
 const { cleanupEmptyChannels } = require('./channelCleaner');
 const { checkActiveGroups } = require('./groupTracker');
-const { checkMvpReactions } = require('./mvpReactions');
 const { checkMVPStatusAndRun } = require('./mvpTracker');
 const { rotatePresence } = require('./presenceRotator');
 const { periodicPresenceCheck } = require('./presenceTracker');
@@ -35,12 +34,12 @@ function initializeCronJobs(client) {
     console.log('[CRON] מאתחל את כל משימות התזמון המרכזיות...');
 
     const tasks = [
-        // משימות שרצות כל דקה
-        { name: 'ניקוי ערוצים ריקים', schedule: '* * * * *', func: cleanupEmptyChannels, args: [client] },
+        // משימות שרצות כל דקה (רק מה שחייב להיות מיידי)
         { name: 'מעקב קבוצות פעילות', schedule: '* * * * *', func: checkActiveGroups, args: [client] },
-        { name: 'בדיקת תגובות MVP', schedule: '* * * * *', func: checkMvpReactions, args: [client] },
         { name: 'ניקוי חיבורי קול ישנים', schedule: '* * * * *', func: cleanupIdleConnections, args: [] },
-        { name: 'ניקוי הודעות פיפו ישנות', schedule: '* * * * *', func: cleanupOldFifoMessages, args: [client] },
+
+        // משימות שרצות כל 3 דקות
+        { name: 'ניקוי ערוצים ריקים', schedule: '*/3 * * * *', func: cleanupEmptyChannels, args: [client] },
         
         // משימות שרצות כל 10 דקות
         { name: 'בדיקת נוכחות תקופתית', schedule: '*/10 * * * *', func: periodicPresenceCheck, args: [client] },
@@ -52,6 +51,9 @@ function initializeCronJobs(client) {
         // משימות שרצות כל 30 דקות
         { name: 'סריקת אי-פעילות אוטומטית', schedule: '*/30 * * * *', func: runAutoTracking, args: [client], runOnInit: true },
         
+        // משימות שרצות פעם בשעה
+        { name: 'ניקוי הודעות פיפו ישנות', schedule: '0 * * * *', func: cleanupOldFifoMessages, args: [client] },
+
         // משימות יומיות
         { name: 'בדיקת ימי הולדת', schedule: '1 0 * * *', func: checkBirthdays, args: [client], timezone: 'Asia/Jerusalem' },
         { name: 'שליחת ברכות יום הולדת בטלגרם', schedule: '2 0 * * *', func: sendTelegramBirthdays, args: [], timezone: 'Asia/Jerusalem' },
@@ -68,8 +70,6 @@ function initializeCronJobs(client) {
         
         // משימות ייעודיות
         { name: 'הכרזת Warzone', schedule: '0 21 * * 3,4,6,0', func: sendWarzoneEmbed, args: [client], timezone: 'Asia/Jerusalem' },
-
-        // --- ✅ [תיקון] הוסרו שתי משימות הפודקאסט הלא רלוונטיות ---
     ];
 
     tasks.forEach(task => {

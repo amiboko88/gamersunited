@@ -8,183 +8,138 @@ const TRACKING_COLLECTION = 'dmTracking';
 const INFRACTIONS_COLLECTION = 'infractions';
 const WARNING_TTL_MS = 1000 * 60 * 60 * 24; // 24 שעות
 
-const { sendStaffLog } = require('../utils/staffLogger'); // ✅ ייבוא sendStaffLog ישירות, ללא שם חדש
+const { sendStaffLog } = require('../utils/staffLogger');
 
-// ✅ רשימות הקללות הקיימות בתוך הקובץ הזה
+// רשימות הקללות הקיימות בתוך הקובץ הזה
 const badWordsHe = [
   'תזדיין', 'תמות', 'זדיין', 'מפגר', 'מטומטם', 'בן זונה', 'בן אלף זונות',
   'אמא שלך', 'אבא שלך', 'זין', 'זיונר', 'מזדיין', 'מתרומם', 'מתומתם',
   'יא חתיכת', 'חלאה', 'כלב', 'כלבה', 'כלבתא', 'מניאק', 'קוקסינל',
   'הומו', 'לסבית', 'זונה', 'זונות', 'שרמוטה', 'שרמוטות', 'יא אפס',
-  'יא עלוב', 'אידיוט', 'אפס', 'פסיכי', 'טמבל', 'מפגר', 'מסריח', 'מגעיל',
-  'דביל', 'חרא', 'נבלה', 'נודניק', 'בהמה', 'בהמתי', 'עקום', 'עלוב',
-  'שטן', 'נאצי', 'נאצית', 'נאציים', 'כושילאמאשך', 'חרא של בן אדם',
-  'זבל', 'זבל אנושי', 'סמרטוט', 'פח אשפה', 'קללה', 'לוזר', 'נפול',
-  'מטונף', 'שייגעץ', 'שמנה', 'גועל', 'דוחה', 'מעפן', 'מכוער',
-  'קקה', 'חסרת כבוד', 'חסר כבוד', 'קללה קשה', 'קללות', 'סתום', 'שתוק'
+  'יא עלוב', 'אידיוט', 'אפס'
 ];
 
 const badWordsEn = [
-  'fuck', 'shit', 'bitch', 'asshole', 'faggot', 'cunt',
-  'bastard', 'dick', 'slut', 'whore', 'jerk', 'crap', 'damn',
-  'moron', 'retard', 'nigger', 'gay', 'stupid', 'idiot', 'dumb',
-  'pussy', 'loser', 'freak', 'trash', 'ugly', 'fat', 'kill',
-  'motherfucker', 'cock', 'suck', 'hell', 'dammit', 'twat', 'nigga',
-  'pedophile', 'rapist', 'incest', 'nazi', 'racist', 'dyke',
-  'abuse', 'sicko', 'creep', 'jerkoff', 'douche', 'lame', 'scum',
-  'shithead', 'fool', 'wanker'
+  'fuck', 'fucker', 'fucking', 'motherfucker', 'bitch', 'whore', 'slut', 'cunt',
+  'asshole', 'dick', 'pussy', 'retard', 'idiot'
 ];
 
-// ✅ רשימת הקללות המאוחדת שתשמש לבדיקה
-const allCursesCombined = badWordsHe.concat(badWordsEn);
+const badWords = [...badWordsHe, ...badWordsEn];
+const linkRegex = /(https?:\/\/[^\s]+)/g;
 
-const invitePatterns = ['discord.gg', 'discord.com/invite', 'https://discord.gg'];
+function checkViolation(content) {
+  const lowerContent = content.toLowerCase();
+  
+  if (linkRegex.test(lowerContent)) {
+    return { type: 'link', word: content.match(linkRegex)[0] };
+  }
 
-function checkMessageType(content) {
-  const lowered = content.toLowerCase();
-  if (invitePatterns.some(p => lowered.includes(p))) return 'invite';
-  if (allCursesCombined.some(word => lowered.includes(word))) return 'curse'; 
+  for (const word of badWords) {
+    if (lowerContent.includes(word)) {
+      return { type: 'bad_word', word: word };
+    }
+  }
+
   return null;
 }
 
-async function handleSpam(message) {
-  if (message.author.bot || !message.guild) return;
-
-  const content = message.content;
-  const type = checkMessageType(content);
-  if (!type) return;
-
-  const userId = message.author.id;
-  const displayName = message.member?.displayName || message.author.username;
-
-  // אם מדובר בקללה על שמעון
-  const isTowardBot = /שמעון|shim|bot/i.test(content);
-  if (type === 'curse' && isTowardBot) {
-    return smartRespond(message, 'כועס');
-  }
-
-  // המשך אנטי-ספאם רגיל
-  try {
-    await message.delete();
-  } catch (err) {
-    console.warn(`⚠️ לא ניתן למחוק את ההודעה: ${err.message}`);
-    return;
-  }
-
-  let publicResponse = '🚫 ההודעה שלך נחסמה – לא יפה לדבר ככה.';
-  if (type === 'invite') publicResponse = '🚫 פרסום הזמנות אסור כאן.';
-
-  try {
-    const reply = await message.channel.send({ content: `<@${userId}> ${publicResponse}` });
-    setTimeout(() => reply.delete().catch(() => {}), 15_000);
-  } catch (err) {
-    console.warn(`⚠️ שגיאה בשליחת תגובה בערוץ: ${err.message}`);
-  }
-
-  let responded = false;
-  let dmText = 'נא לא לקלל. אם יש בעיה – דבר איתי כאן.';
-  if (type === 'invite') dmText = 'פרסום הזמנות אסור כאן. שמור את זה לפרטי אם צריך.';
-
-  try {
-    const dm = await message.author.send(dmText);
-
-    await db.collection(TRACKING_COLLECTION).doc(userId).set({
-      sentAt: new Date().toISOString(),
-      type,
-      status: 'pending',
-      guildId: message.guild.id,
-      channelId: message.channel.id,
-      originalMessage: content
-    });
-
-    const collector = dm.channel.createMessageCollector({ filter: m => !m.author.bot, time: WARNING_TTL_MS, max: 1 });
-
-    collector.on('collect', async reply => {
-      responded = true;
-      await db.collection(TRACKING_COLLECTION).doc(userId).update({ status: 'responded', response: reply.content });
-      // ✅ קריאה ל-sendStaffLog (הפעם הנכונה)
-      await sendStaffLog(client, '📬 תגובה לאזהרת DM', `<@${userId}> הגיב ל־DM: \`${reply.content}\``, 0xFFA500); 
-    });
-
-    collector.on('end', async () => {
-      if (!responded) {
-        await db.collection(TRACKING_COLLECTION).doc(userId).update({ status: 'ignored' });
-        // ✅ קריאה ל-sendStaffLog (הפעם הנכונה)
-        await sendStaffLog(client, '⏱️ לא התקבלה תגובה ל־DM', `<@${userId}> לא הגיב תוך 24 שעות להודעת הבוט.`, 0xFFA500);
-      }
-    });
-  } catch (err) { // לתפוס שגיאות שליחת DM
-    console.log(`📭 לא ניתן לשלוח DM ל־${displayName}: ${err.message}`);
-    // עדיין נרצה לתעד זאת ב-STAFF LOG אם נכשל
-    await sendStaffLog(client, '❌ כשלון שליחת DM', `נכשל שליחת DM ל־<@${userId}> (${displayName}): ${err.message}`, 0xFF0000);
-  }
-
-  try {
-    const ref = db.collection(INFRACTIONS_COLLECTION).doc(userId);
-    const snap = await ref.get();
-    const data = snap.exists ? snap.data() : { count: 0 };
-
-    await ref.set({
-      count: (data.count || 0) + 1,
-      lastReason: type,
-      lastTimestamp: new Date().toISOString()
-    }, { merge: true });
-  } catch (err) {
-    console.error('❌ שגיאה בשמירת אזהרה:', err.message);
-  }
-
-  // ✅ קריאה ל-sendStaffLog (הפעם הנכונה)
-  await sendStaffLog(client, '🚨 זוהתה הפרת שפה', 
-      `**משתמש:** <@${userId}> (${displayName})\n**סוג הפרה:** \`${type}\`\n**הודעה מקורית:** \`${original || '—'}\``, 0xFF0000);
+async function sendWarningDM(message, violation) {
+    try {
+        const dmChannel = await message.author.createDM();
+        const msg = await dmChannel.send(`הודעתך בשרת נמחקה עקב שימוש בביטוי/קישור לא הולם: \`${violation.word}\`.\nזוהי אזהרה ראשונה. אנא קרא שוב את חוקי השרת. להסבר נוסף, השב להודעה זו.`);
+        
+        await db.collection(TRACKING_COLLECTION).doc(message.author.id).set({
+            warningSentAt: new Date(),
+            guildId: message.guild.id
+        });
+        
+        return true;
+    } catch (error) {
+        if (error.code === 50007) { // Cannot send messages to this user
+            sendStaffLog(message.client, '⚠️ DM חסום', `המשתמש <@${message.author.id}> חוסם הודעות פרטיות. לא ניתן היה לשלוח לו אזהרה.`);
+        } else {
+            console.error(`שגיאה בשליחת DM למשתמש ${message.author.id}:`, error);
+        }
+        return false;
+    }
 }
 
-// ✅ פונקציות העזר הועברו למעלה, אין צורך בהן ב-module.exports
-/*
-async function logDmReplyToStaff(userId, content, guild) {
-  const staffChannel = guild.channels.cache.get(STAFF_CHANNEL_ID);
-  if (!staffChannel?.isTextBased()) return;
+async function handleSpam(message) {
+    if (!message.guild || message.author.bot) return;
 
-  const embed = new EmbedBuilder()
-    .setColor('Orange')
-    .setTitle('📬 תגובה לאזהרת DM')
-    .addFields({ name: 'משתמש', value: `<@${userId}> (${userId})` }, { name: 'תגובה', value: content })
-    .setTimestamp();
+    // בודק אם למשתמש יש הרשאות ניהול
+    if (message.member && (message.member.permissions.has('Administrator') || message.member.permissions.has('ManageMessages'))) {
+        return;
+    }
 
-  staffChannel.send({ embeds: [embed] }).catch(() => {});
+    const violation = checkViolation(message.content);
+    if (!violation) return;
+    
+    try {
+        await message.delete();
+        const dmSent = await sendWarningDM(message, violation);
+        
+        // --- ✅ [תיקון] הוספת הפרמטר החסר "message.content" ---
+        await logViolationToStaff(message.author.id, message.member.displayName, violation.type, message.content, message.guild);
+        // --------------------------------------------------------
+
+        if (dmSent) {
+            await message.channel.send({ 
+                content: `<@${message.author.id}>, הודעתך נמחקה ונשלחה אליך אזהרה בפרטי.`,
+                flags: [MessageFlags.SuppressEmbeds] 
+            }).then(msg => setTimeout(() => msg.delete().catch(() => {}), 5000));
+        }
+
+    } catch (error) {
+        console.error(`שגיאה בטיפול בספאם מהמשתמש ${message.author.id}:`, error);
+    }
+}
+
+async function logReplyToStaff(userId, content, guild) {
+    const staffChannel = guild.channels.cache.get(STAFF_CHANNEL_ID);
+    if (!staffChannel?.isTextBased()) return;
+
+    const embed = new EmbedBuilder()
+        .setColor('Orange')
+        .setTitle('📬 תגובה לאזהרת DM')
+        .addFields({ name: 'משתמש', value: `<@${userId}> (${userId})` }, { name: 'תגובה', value: content })
+        .setTimestamp();
+
+    staffChannel.send({ embeds: [embed] }).catch(() => {});
 }
 
 async function logNoReplyToStaff(userId, guild) {
-  const staffChannel = guild.channels.cache.get(STAFF_CHANNEL_ID);
-  if (!staffChannel?.isTextBased()) return;
+    const staffChannel = guild.channels.cache.get(STAFF_CHANNEL_ID);
+    if (!staffChannel?.isTextBased()) return;
 
-  const embed = new EmbedBuilder()
-    .setColor('Yellow')
-    .setTitle('⏱️ לא התקבלה תגובה ל־DM')
-    .setDescription(`<@${userId}> לא הגיב תוך 24 שעות להודעת הבוט.`)
-    .setTimestamp();
+    const embed = new EmbedBuilder()
+        .setColor('Yellow')
+        .setTitle('⏱️ לא התקבלה תגובה ל־DM')
+        .setDescription(`<@${userId}> לא הגיב תוך 24 שעות להודעת הבוט.`)
+        .setTimestamp();
 
-  staffChannel.send({ embeds: [embed] }).catch(() => {});
+    staffChannel.send({ embeds: [embed] }).catch(() => {});
 }
 
 async function logViolationToStaff(userId, displayName, type, original, guild) {
-  const staffChannel = guild.channels.cache.get(STAFF_CHANNEL_ID);
-  if (!staffChannel?.isTextBased()) return;
+    const staffChannel = guild.channels.cache.get(STAFF_CHANNEL_ID);
+    if (!staffChannel?.isTextBased()) return;
 
-  const embed = new EmbedBuilder()
-    .setColor('Red')
-    .setTitle('🚨 זוהתה הפרת שפה')
-    .addFields(
-      { name: 'משתמש', value: `<@${userId}> (${userId})` },
-      { name: 'סוג הפרה', value: type },
-      { name: 'הודעה מקורית', value: original || '—' }
-    )
-    .setTimestamp();
+    const embed = new EmbedBuilder()
+        .setColor('Red')
+        .setTitle('🚨 זוהתה הפרת חוקים')
+        .addFields(
+            { name: 'משתמש', value: `<@${userId}> (${displayName})` },
+            { name: 'סוג ההפרה', value: type === 'link' ? 'שליחת קישור' : 'שימוש במילה לא הולמת' },
+            { name: 'הודעה מקורית', value: `\`\`\`${original}\`\`\`` }
+        )
+        .setTimestamp();
 
-  staffChannel.send({ embeds: [embed] }).catch(() => {});
+    staffChannel.send({ embeds: [embed] }).catch(() => {});
 }
-*/
 
-module.exports = {
+module.exports = { 
     handleSpam,
-    // ✅ allCurseWords מוסר מהייצוא, כי משמש רק פנימית
+    logReplyToStaff,
+    logNoReplyToStaff
 };

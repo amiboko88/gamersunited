@@ -93,14 +93,12 @@ client.once('ready', async () => {
     console.log(`⚡️ Shimon is READY! Logged in as ${client.user.tag}`);
     try {
         const { initializeCronJobs } = require('./handlers/botLifecycle');
-        const { initializeMvpReactionListener } = require('./handlers/mvpReactions');
         const { hardSyncPresenceOnReady } = require('./handlers/presenceTracker');
         const { setupVerificationMessage } = require('./handlers/verificationButton');
         const setupWelcomeImage = require('./handlers/welcomeImage');
 
         await hardSyncPresenceOnReady(client);
         await setupVerificationMessage(client);
-        initializeMvpReactionListener(client);
         initializeCronJobs(client);
         setupWelcomeImage(client);
 

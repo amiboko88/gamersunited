@@ -1,4 +1,4 @@
-// 📁 handlers/birthdayCongratulator.js (גרסה משודרגת עם ריפוי עצמי)
+// 📁 handlers/birthdayCongratulator.js (מתוקן עם fetch)
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const path = require('path');
 const db = require('../utils/firebase');
@@ -62,15 +62,17 @@ async function handlePlayBirthdayTTS(interaction) {
     await interaction.editReply({ content: 'הברכה הושמעה! 🎤' });
 }
 
-/**
- * פונקציה גנרית לשליחת ברכה, מקבלת את כל המידע הדרוש.
- * משמשת גם את ה-CRON וגם את בדיקת ההשלמה.
- * @param {import('discord.js').Client} client
- * @param {Array<object>} birthdaysToCongratulate
- */
 async function processAndSendGreetings(client, birthdaysToCongratulate) {
     const guild = client.guilds.cache.get(process.env.GUILD_ID);
-    const channel = guild?.channels.cache.get(TARGET_CHANNEL_ID);
+    if (!guild) {
+        log('❌ [BIRTHDAY] לא ניתן למצוא את השרת.');
+        return;
+    }
+
+    // --- ✅ [תיקון] שימוש ב-fetch במקום cache כדי למנוע שגיאות תזמון ---
+    const channel = await guild.channels.fetch(TARGET_CHANNEL_ID).catch(() => null);
+    // --------------------------------------------------------------------
+
     if (!channel?.isTextBased()) {
         log(`❌ ערוץ יום ההולדת (${TARGET_CHANNEL_ID}) לא נמצא או אינו ערוץ טקסט.`);
         return;
@@ -124,9 +126,6 @@ async function processAndSendGreetings(client, birthdaysToCongratulate) {
     }
 }
 
-/**
- * הפונקציה המרכזית שמופעלת על ידי CRON.
- */
 async function sendBirthdayMessage(client) {
     const todayBirthdays = await getTodaysBirthdays();
     if (todayBirthdays.length === 0) {
@@ -136,16 +135,15 @@ async function sendBirthdayMessage(client) {
     await processAndSendGreetings(client, todayBirthdays);
 }
 
-/**
- * ✅ [שדרוג] פונקציה חדשה שרצה בעליית הבוט כדי להשלים פערים.
- */
 async function runMissedBirthdayChecks(client) {
     log('[BIRTHDAY CATCH-UP] מבצע בדיקת השלמה לימי הולדת שפוספסו...');
-    await sendBirthdayMessage(client); // הלוגיקה זהה, פשוט קוראים לה שוב
+    const todayBirthdays = await getTodaysBirthdays();
+    if (todayBirthdays.length === 0) return;
+    await processAndSendGreetings(client, todayBirthdays);
 }
 
 module.exports = { 
     sendBirthdayMessage,
     handlePlayBirthdayTTS,
-    runMissedBirthdayChecks // ✅ ייצוא הפונקציה החדשה
+    runMissedBirthdayChecks
 };

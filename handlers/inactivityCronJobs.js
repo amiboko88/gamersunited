@@ -1,10 +1,11 @@
-// 📁 handlers/inactivityCronJobs.js
+// 📁 handlers/inactivityCronJobs.js (מתוקן)
 const { EmbedBuilder } = require('discord.js');
 const db = require('../utils/firebase');
 const { sendStaffLog } = require('../utils/staffLogger');
 
-// ייבוא הפונקציות הנחוצות
-const { createPaginatedFields } = require('../interactions/selectors/inactivitySelectMenuHandler');
+// --- ✅ [תיקון] שינוי הנתיב לקובץ העזר המרכזי ---
+const { createPaginatedFields } = require('../utils/embedUtils');
+// ---------------------------------------------------
 const { sendReminderDM } = require('../interactions/buttons/inactivityDmButtons');
 
 const INACTIVITY_DAYS_FIRST_DM = 7;
@@ -39,8 +40,6 @@ async function runAutoTracking(client) {
     const guild = await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return;
 
-    // --- ✅ התיקון היחיד נמצא כאן ---
-    // הוספת force: true כדי למנוע את השגיאה GuildMembersTimeout
     const members = await guild.members.fetch({ force: true });
     
     const snapshot = await db.collection('memberTracking').get();
@@ -117,7 +116,6 @@ async function runScheduledReminders(client) {
     const guild = await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return;
 
-    // --- ✅ התיקון היחיד נמצא כאן ---
     const members = await guild.members.fetch({ force: true });
     const allTracked = await db.collection('memberTracking').get();
     const success = [];

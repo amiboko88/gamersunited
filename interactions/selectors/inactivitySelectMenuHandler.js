@@ -2,10 +2,12 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const db = require('../../utils/firebase');
 const { sendStaffLog } = require('../../utils/staffLogger');
+// --- ✅ [תיקון] שינוי הנתיב לקובץ העזר המרכזי ---
+const { createPaginatedFields } = require('../../utils/embedUtils');
 
-// --- ✅ [שדרוג] כל הפונקציות עכשיו מקבלות interaction במקום client ---
+// --- פונקציית ליבה חדשה לאיסוף ועיבוד כל הנתונים ---
 async function fetchAndProcessInactivityData(interaction) {
-    const guild = interaction.guild; // ✅ שימוש בדרך האמינה לקבל את השרת
+    const guild = interaction.guild;
     if (!guild) throw new Error("Guild not found from interaction.");
 
     const allTrackedDocs = await db.collection('memberTracking').get();
@@ -69,9 +71,10 @@ async function fetchAndProcessInactivityData(interaction) {
     return processedData;
 }
 
+// ... (שאר הפונקציות בקובץ נשארות זהות לחלוטין)
+
 function buildStatusSummaryEmbed(summary, interaction) {
-    //... (הפונקציה נשארת זהה)
-    const statusMap = {
+      const statusMap = {
         joined: '🆕 הצטרף', waiting_dm: '⏳ ממתין לתזכורת 1', dm_sent: '📩 תזכורת 1 נשלחה',
         final_warning: '🔴 תזכורת 2 סופית (ידנית)', final_warning_auto: '🚨 תזכורת 2 סופית (אוטומטית)',
         responded: '💬 הגיב ל-DM', failed_dm: '❌ כשלון שליחת DM', active: '✅ פעיל',
@@ -91,7 +94,6 @@ function buildStatusSummaryEmbed(summary, interaction) {
 }
 
 function buildUserListEmbed(title, users, color, showStatus = false) {
-    //... (הפונקציה נשארת זהה)
     const userLines = users.map(user => {
         let line = `• <@${user.id}>`;
         if (user.daysInactive !== undefined) line += ` (${user.daysInactive} ימים)`;
@@ -104,8 +106,8 @@ function buildUserListEmbed(title, users, color, showStatus = false) {
         .setFooter({ text: `Shimon BOT – ניטור פעילות • ${users.length} משתמשים` }).setTimestamp();
 }
 
+
 function buildMainPanelEmbed(interaction, stats) {
-    //... (הפונקציה נשארת זהה)
     return new EmbedBuilder()
         .setTitle('📊 לוח בקרה וסטטוס פעילות משתמשים – שמעון BOT')
         .setDescription('ברוכים הבאים ללוח הבקרה המרכזי לניהול פעילות המשתמשים בשרת.')
@@ -123,7 +125,6 @@ function buildMainPanelEmbed(interaction, stats) {
 }
 
 function buildMainPanelComponents() {
-    //... (הפונקציה נשארת זהה)
     const dmRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('send_dm_batch_list').setLabel('שלח תזכורת רגילה 📨').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('send_dm_batch_final_check').setLabel('שלח תזכורת סופית 🚨').setStyle(ButtonStyle.Danger)
@@ -143,24 +144,8 @@ function buildMainPanelComponents() {
     return [dmRow, selectRow];
 }
 
-function createPaginatedFields(title, items) {
-    //... (הפונקציה נשארת זהה)
-    const fields = [];
-    let currentContent = '';
-    let pageNum = 1;
-    if (items.length === 0) return [{ name: title, value: '— אין נתונים זמינים —', inline: false }];
-    for (const item of items) {
-        if (currentContent.length + item.length + 1 > 1024) {
-            fields.push({ name: `${title} (עמוד ${pageNum})`, value: currentContent, inline: false });
-            currentContent = item; pageNum++;
-        } else {
-            currentContent += (currentContent ? '\n' : '') + item;
-        }
-    }
-    if (currentContent) fields.push({ name: `${title} (עמוד ${pageNum})`, value: currentContent, inline: false });
-    return fields;
-}
 
+// --- פונקציית Handler ראשית ---
 const execute = async (interaction) => {
     await interaction.deferReply({ ephemeral: true });
     const selectedValue = interaction.values?.[0];
@@ -204,6 +189,7 @@ const customId = (interaction) => {
     return interaction.customId === 'inactivity_action_select';
 };
 
+// --- ייצוא כל הפונקציות לתאימות עם קובץ הפקודה ---
 module.exports = {
     customId,
     execute,

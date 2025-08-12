@@ -1,6 +1,5 @@
-// 📁 commands/inactivity.js (הגרסה המפושטת והמעודכנת)
+// 📁 commands/inactivity.js (מתוקן)
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-// ייבוא פונקציות בניית ה-Embed והקומפוננטות וגם שליפת הנתונים מהקובץ החדש
 const { buildMainPanelEmbed, buildMainPanelComponents, getDetailedInactivityStats } = require('../interactions/selectors/inactivitySelectMenuHandler');
 
 const data = new SlashCommandBuilder()
@@ -19,17 +18,22 @@ const execute = async (interaction, client) => {
         flags: MessageFlags.Ephemeral,
       });
     }
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ ephemeral: true });
 
-    const stats = await getDetailedInactivityStats(client);
-    const embed = buildMainPanelEmbed(client, stats);
-    const components = buildMainPanelComponents();
+    try {
+      // --- ✅ [תיקון] העברת אובייקט ה-interaction השלם במקום client ---
+      const stats = await getDetailedInactivityStats(interaction);
+      const embed = buildMainPanelEmbed(interaction, stats);
+      const components = buildMainPanelComponents();
 
-    await interaction.editReply({
-      embeds: [embed],
-      components: components,
-      flags: MessageFlags.Ephemeral,
-    });
+      await interaction.editReply({
+        embeds: [embed],
+        components: components,
+      });
+    } catch (error) {
+        console.error("❌ שגיאה בהפעלת פקודת /ניהול:", error);
+        await interaction.editReply({ content: 'אירעה שגיאה בעת בניית הפאנל.' });
+    }
   }
 };
 

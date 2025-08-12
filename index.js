@@ -96,11 +96,16 @@ client.once('ready', async () => {
         const { hardSyncPresenceOnReady } = require('./handlers/presenceTracker');
         const { setupVerificationMessage } = require('./handlers/verificationButton');
         const setupWelcomeImage = require('./handlers/welcomeImage');
+        // --- ✅ [שדרוג] ייבוא פונקציית השלמת הפערים ---
+        const { runMissedBirthdayChecks } = require('./handlers/birthdayCongratulator');
 
         await hardSyncPresenceOnReady(client);
         await setupVerificationMessage(client);
         initializeCronJobs(client);
         setupWelcomeImage(client);
+
+        // --- ✅ [שדרוג] הפעלת בדיקת ההשלמה בעת עליית הבוט ---
+        await runMissedBirthdayChecks(client);
 
         console.log("✅ All systems initialized successfully.");
     } catch (err) {
@@ -114,9 +119,7 @@ const podcastManager = require('./handlers/podcastManager');
 client.on('interactionCreate', async interaction => {
     try {
         if (interaction.isCommand() && interaction.guildId) {
-            // --- ✅ [תיקון] שימוש בפונקציה הנכונה לבדיקת סטטוס הפודקאסט ---
             if (podcastManager.getPodcastStatus()) {
-            // -----------------------------------------------------------------
                 const commandName = interaction.commandName;
                 if (podcastManager.restrictedCommands.includes(commandName)) {
                     return interaction.reply({ content: 'שמעון עסוק כרגע בפודקאסט ולא ניתן להפריע לו!', ephemeral: true });

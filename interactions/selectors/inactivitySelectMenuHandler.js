@@ -1,17 +1,12 @@
-// 📁 interactions/selectors/inactivitySelectMenuHandler.js
+// 📁 interactions/selectors/inactivitySelectMenuHandler.js (מתוקן סופית)
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const db = require('../../utils/firebase');
 const { sendStaffLog } = require('../../utils/staffLogger');
 
-// --- ✅ [שדרוג] פונקציית ליבה חדשה לאיסוף ועיבוד כל הנתונים ---
-/**
- * סורק את הדאטהבייס פעם אחת ומכין אובייקט מקיף עם כל הנתונים הנדרשים לפאנל.
- * @param {import('discord.js').Client} client
- * @returns {Promise<Object>}
- */
-async function fetchAndProcessInactivityData(client) {
-    const guild = client.guilds.cache.get(process.env.GUILD_ID);
-    if (!guild) throw new Error("Guild not found.");
+// --- ✅ [שדרוג] כל הפונקציות עכשיו מקבלות interaction במקום client ---
+async function fetchAndProcessInactivityData(interaction) {
+    const guild = interaction.guild; // ✅ שימוש בדרך האמינה לקבל את השרת
+    if (!guild) throw new Error("Guild not found from interaction.");
 
     const allTrackedDocs = await db.collection('memberTracking').get();
     const now = Date.now();
@@ -30,7 +25,7 @@ async function fetchAndProcessInactivityData(client) {
         
         const statusKey = member ? (data.statusStage || 'active') : (data.statusStage || 'left');
         processedData.statusSummary[statusKey] = (processedData.statusSummary[statusKey] || 0) + 1;
-
+        
         if (member && member.user.bot) {
             processedData.statusSummary['bot'] = (processedData.statusSummary['bot'] || 0) + 1;
             continue;
@@ -74,45 +69,47 @@ async function fetchAndProcessInactivityData(client) {
     return processedData;
 }
 
-// --- פונקציות עזר לבניית UI (לא השתנו, רק מקור הנתונים שלהן) ---
-
-function buildStatusSummaryEmbed(summary, client) {
+function buildStatusSummaryEmbed(summary, interaction) {
+    //... (הפונקציה נשארת זהה)
     const statusMap = {
-      joined: '🆕 הצטרף', waiting_dm: '⏳ ממתין לתזכורת 1', dm_sent: '📩 תזכורת 1 נשלחה',
-      final_warning: '🔴 תזכורת 2 סופית (ידנית)', final_warning_auto: '🚨 תזכורת 2 סופית (אוטומטית)',
-      responded: '💬 הגיב ל-DM', failed_dm: '❌ כשלון שליחת DM', active: '✅ פעיל',
-      left: '🚪 עזב את השרת', kicked: '🚫 הורחק מהשרת', bot: '🤖 בוט',
-    };
-    const order = ['active', 'responded', 'joined', 'waiting_dm', 'dm_sent', 'final_warning', 'final_warning_auto', 'failed_dm', 'kicked', 'left'];
-    const sortedStatuses = Object.keys(summary).sort((a, b) => order.indexOf(a) - order.indexOf(b));
-    const fields = sortedStatuses.map(key => ({
-        name: `${statusMap[key]?.split(' ')[0] || '❓'} ${statusMap[key]?.substring((statusMap[key]?.split(' ')[0] || '').length).trim() || key}`,
-        value: `\`${summary[key]}\` משתמשים`, inline: true
-    }));
-    while (fields.length % 3 !== 0) fields.push({ name: '\u200B', value: '\u200B', inline: true });
-    return new EmbedBuilder().setTitle('📊 דוח סטטוס מפורט של משתמשי השרת')
-        .setDescription('פילוח מלא של כל המשתמשים במערכת הניטור, לפי שלב הסטטוס הנוכחי שלהם.')
-        .addFields(fields).setColor(0x3498db)
-        .setFooter({ text: `סה"כ משתמשים במעקב: ${Object.values(summary).reduce((a, b) => a + b, 0)}` }).setTimestamp();
+        joined: '🆕 הצטרף', waiting_dm: '⏳ ממתין לתזכורת 1', dm_sent: '📩 תזכורת 1 נשלחה',
+        final_warning: '🔴 תזכורת 2 סופית (ידנית)', final_warning_auto: '🚨 תזכורת 2 סופית (אוטומטית)',
+        responded: '💬 הגיב ל-DM', failed_dm: '❌ כשלון שליחת DM', active: '✅ פעיל',
+        left: '🚪 עזב את השרת', kicked: '🚫 הורחק מהשרת', bot: '🤖 בוט',
+      };
+      const order = ['active', 'responded', 'joined', 'waiting_dm', 'dm_sent', 'final_warning', 'final_warning_auto', 'failed_dm', 'kicked', 'left'];
+      const sortedStatuses = Object.keys(summary).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+      const fields = sortedStatuses.map(key => ({
+          name: `${statusMap[key]?.split(' ')[0] || '❓'} ${statusMap[key]?.substring((statusMap[key]?.split(' ')[0] || '').length).trim() || key}`,
+          value: `\`${summary[key]}\` משתמשים`, inline: true
+      }));
+      while (fields.length % 3 !== 0) fields.push({ name: '\u200B', value: '\u200B', inline: true });
+      return new EmbedBuilder().setTitle('📊 דוח סטטוס מפורט של משתמשי השרת')
+          .setDescription('פילוח מלא של כל המשתמשים במערכת הניטור, לפי שלב הסטטוס הנוכחי שלהם.')
+          .addFields(fields).setColor(0x3498db)
+          .setFooter({ text: `סה"כ משתמשים במעקב: ${Object.values(summary).reduce((a, b) => a + b, 0)}` }).setTimestamp();
 }
 
 function buildUserListEmbed(title, users, color, showStatus = false) {
+    //... (הפונקציה נשארת זהה)
     const userLines = users.map(user => {
         let line = `• <@${user.id}>`;
         if (user.daysInactive !== undefined) line += ` (${user.daysInactive} ימים)`;
         if (showStatus) line += ` (סטטוס: \`${user.data.statusStage || 'לא ידוע'}\`)`;
         return line;
     });
+
     const fields = createPaginatedFields(title, userLines);
     return new EmbedBuilder().setColor(color).addFields(fields)
         .setFooter({ text: `Shimon BOT – ניטור פעילות • ${users.length} משתמשים` }).setTimestamp();
 }
 
-function buildMainPanelEmbed(client, stats) {
+function buildMainPanelEmbed(interaction, stats) {
+    //... (הפונקציה נשארת זהה)
     return new EmbedBuilder()
         .setTitle('📊 לוח בקרה וסטטוס פעילות משתמשים – שמעון BOT')
         .setDescription('ברוכים הבאים ללוח הבקרה המרכזי לניהול פעילות המשתמשים בשרת.')
-        .setColor('#5865F2').setThumbnail(client.user.displayAvatarURL())
+        .setColor('#5865F2').setThumbnail(interaction.client.user.displayAvatarURL())
         .addFields(
             { name: '⚠️ לא פעילים (7+ ימים):', value: `\`${stats.inactive7Days}\` משתמשים`, inline: true },
             { name: '⛔ לא פעילים (14+ ימים):', value: `\`${stats.inactive14Days}\` משתמשים`, inline: true },
@@ -122,10 +119,11 @@ function buildMainPanelEmbed(client, stats) {
             { name: '✅ הגיבו ל־DM:', value: `\`${stats.repliedDM}\` משתמשים`, inline: true },
             { name: '🗑️ משתמשים שהורחקו:', value: `\`${stats.kickedUsers}\` משתמשים`, inline: true }
         )
-        .setFooter({ text: 'Shimon BOT — מערכת ניהול פעילות מתקדמת', iconURL: client.user.displayAvatarURL() }).setTimestamp();
+        .setFooter({ text: 'Shimon BOT — מערכת ניהול פעילות מתקדמת', iconURL: interaction.client.user.displayAvatarURL() }).setTimestamp();
 }
 
 function buildMainPanelComponents() {
+    //... (הפונקציה נשארת זהה)
     const dmRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('send_dm_batch_list').setLabel('שלח תזכורת רגילה 📨').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('send_dm_batch_final_check').setLabel('שלח תזכורת סופית 🚨').setStyle(ButtonStyle.Danger)
@@ -146,6 +144,7 @@ function buildMainPanelComponents() {
 }
 
 function createPaginatedFields(title, items) {
+    //... (הפונקציה נשארת זהה)
     const fields = [];
     let currentContent = '';
     let pageNum = 1;
@@ -162,18 +161,17 @@ function createPaginatedFields(title, items) {
     return fields;
 }
 
-// --- פונקציית Handler ראשית (משתמשת עכשיו בנתונים המעובדים) ---
-const execute = async (interaction, client) => {
+const execute = async (interaction) => {
     await interaction.deferReply({ ephemeral: true });
     const selectedValue = interaction.values?.[0];
 
     try {
-        const data = await fetchAndProcessInactivityData(client);
+        const data = await fetchAndProcessInactivityData(interaction);
         let embed;
 
         switch (selectedValue) {
             case 'show_status_summary':
-                embed = buildStatusSummaryEmbed(data.statusSummary, client);
+                embed = buildStatusSummaryEmbed(data.statusSummary, interaction);
                 break;
             case 'show_replied_list':
                 embed = buildUserListEmbed('💬 משתמשים שהגיבו להודעה פרטית', data.lists.replied, '#2ECC71');
@@ -191,7 +189,7 @@ const execute = async (interaction, client) => {
                 embed = buildUserListEmbed('⛔ 30+ ימים ללא פעילות', data.lists.inactive30, '#992D22', true);
                 break;
             default:
-                await sendStaffLog(client, '⚠️ פעולת אינטראקציה לא מטופלת', `המשתמש ${interaction.user.tag} בחר בפעולה \`${selectedValue}\` שעדיין לא ממומשה.`, '#FEE75C');
+                await sendStaffLog(interaction.client, '⚠️ פעולת אינטראקציה לא מטופלת', `המשתמש ${interaction.user.tag} בחר בפעולה \`${selectedValue}\` שעדיין לא ממומשה.`, '#FEE75C');
                 return interaction.editReply({ content: `הפעולה '${selectedValue}' עדיין בפיתוח.`, ephemeral: true });
         }
         return interaction.editReply({ embeds: [embed], ephemeral: true });
@@ -206,26 +204,10 @@ const customId = (interaction) => {
     return interaction.customId === 'inactivity_action_select';
 };
 
-// --- ייצוא כל הפונקציות לתאימות ---
 module.exports = {
     customId,
     execute,
-    // ייצוא הפונקציות הישנות נשאר לתאימות עם פקודת /inactivity
-    getDetailedInactivityStats: async (client) => (await fetchAndProcessInactivityData(client)).stats,
+    getDetailedInactivityStats: async (interaction) => (await fetchAndProcessInactivityData(interaction)).stats,
     buildMainPanelEmbed,
     buildMainPanelComponents,
-    // שאר הפונקציות מיוצאות לשימוש פנימי או עתידי, אם כי לא חובה
-    getMemberStatusSummary: async (client) => (await fetchAndProcessInactivityData(client)).statusSummary,
-    getInactiveUsersByDays: async (client, days) => {
-        const data = await fetchAndProcessInactivityData(client);
-        if (days >= 30) return data.lists.inactive30;
-        if (days >= 14) return data.lists.inactive14;
-        if (days >= 7) return data.lists.inactive7;
-        return [];
-    },
-    getFailedDmUsers: async (client) => (await fetchAndProcessInactivityData(client)).lists.failedDM,
-    getRepliedDmUsers: async (client) => (await fetchAndProcessInactivityData(client)).lists.replied,
-    buildStatusSummaryEmbed,
-    buildUserListEmbed,
-    createPaginatedFields,
 };

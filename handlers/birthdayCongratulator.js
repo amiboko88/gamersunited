@@ -1,26 +1,19 @@
-// 📁 handlers/birthdayCongratulator.js (גרסה משודרגת ומאוחדת)
+// 📁 handlers/birthdayCongratulator.js (גרסה משודרגת עם ריפוי עצמי)
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const path = require('path');
 const db = require('../utils/firebase');
 const { log } = require('../utils/logger');
-const { playTTSInVoiceChannel } = require('../utils/ttsQuickPlay'); // שימוש במנגנון TTS המהיר
+const { playTTSInVoiceChannel } = require('../utils/ttsQuickPlay');
 
 const TARGET_CHANNEL_ID = '583575179880431616';
-const BIRTHDAY_ROLE_ID = process.env.BIRTHDAY_ROLE_ID; // יש לוודא שמשתנה הסביבה הזה קיים
+const BIRTHDAY_ROLE_ID = process.env.BIRTHDAY_ROLE_ID;
 
 const birthdayTTSMessages = [
     (name, age) => `מזל טוב ל־${name}! אתה בן ${age} היום, וזה אומר שאתה עדיין משחק ולא פרשת כמו הגדולים!`,
     (name, age) => `${name}, ${age} שנה שאתה מחזיק שליטה – אולי השנה תלמד גם להרים קבוצה?`,
     (name, age) => `היי ${name}, בגיל ${age} כבר מגיעה לך קבוצה קבועה ו־ping יציב. יאללה תעשה סדר!`,
-    (name, age) => `יום הולדת שמח ${name}! גיל ${age} זה בדיוק הזמן לפרוש… סתם, תישאר איתנו 🎉`,
-    (name, age) => `וואו ${name}, ${age} שנה ואתה עדיין rage quit כל סיבוב? חוגגים אותך בכל זאת!`
 ];
 
-/**
- * מחשב את הגיל הנוכחי על סמך תאריך לידה.
- * @param {{day: number, month: number, year: number}} birthday 
- * @returns {number}
- */
 function calculateAge(birthday) {
     const today = new Date();
     const birthDate = new Date(birthday.year, birthday.month - 1, birthday.day);
@@ -32,83 +25,60 @@ function calculateAge(birthday) {
     return age;
 }
 
-/**
- * שולף את כל המשתמשים שחוגגים יום הולדת היום.
- * @returns {Promise<Array<object>>}
- */
 async function getTodaysBirthdays() {
     const today = new Date();
     const day = today.getDate();
     const month = today.getMonth() + 1;
-
     const snapshot = await db.collection('birthdays').where('birthday.day', '==', day).where('birthday.month', '==', month).get();
     if (snapshot.empty) return [];
 
     const seenDiscordIds = new Set();
     const birthdays = [];
-
     for (const doc of snapshot.docs) {
         const data = doc.data();
         const discordId = data.linkedAccounts?.find(id => id.startsWith('discord:'))?.split(':')[1];
-
         if (discordId && !seenDiscordIds.has(discordId)) {
             seenDiscordIds.add(discordId);
             const age = calculateAge(data.birthday);
-            birthdays.push({
-                fullName: data.fullName,
-                age,
-                discordId
-            });
+            birthdays.push({ fullName: data.fullName, age, discordId });
         }
     }
     return birthdays;
 }
 
-/**
- * ✅ [שדרוג] פונקציה חדשה שמטפלת בלחיצה על כפתור הברכה הקולית.
- * @param {import('discord.js').ButtonInteraction} interaction 
- */
 async function handlePlayBirthdayTTS(interaction) {
     const member = interaction.member;
     const voiceChannel = member.voice.channel;
-
     if (!voiceChannel) {
         return interaction.reply({ content: 'אתה צריך להיות בערוץ קולי כדי לשמוע את הברכה!', ephemeral: true });
     }
-
     const originalMessage = interaction.message;
     const birthdayPersonName = originalMessage.embeds[0]?.title?.replace('🎉 מזל טוב ל־', '').replace('!', '') || 'חבר הקהילה';
     const ageMatch = originalMessage.embeds[0]?.description?.match(/חוגג\/ת היום \*\*(\d+)\*\* שנים/);
-    const age = ageMatch ? parseInt(ageMatch[1]) : 25; // גיל ברירת מחדל אם לא נמצא
-
+    const age = ageMatch ? parseInt(ageMatch[1]) : 25;
     const phrase = birthdayTTSMessages[Math.floor(Math.random() * birthdayTTSMessages.length)](birthdayPersonName, age);
-
     await interaction.deferReply({ ephemeral: true });
     await playTTSInVoiceChannel(voiceChannel, phrase);
     await interaction.editReply({ content: 'הברכה הושמעה! 🎤' });
 }
 
 /**
- * הפונקציה המרכזית שמופעלת על ידי CRON לשליחת ברכות יום הולדת.
- * @param {import('discord.js').Client} client 
+ * פונקציה גנרית לשליחת ברכה, מקבלת את כל המידע הדרוש.
+ * משמשת גם את ה-CRON וגם את בדיקת ההשלמה.
+ * @param {import('discord.js').Client} client
+ * @param {Array<object>} birthdaysToCongratulate
  */
-async function sendBirthdayMessage(client) {
+async function processAndSendGreetings(client, birthdaysToCongratulate) {
     const guild = client.guilds.cache.get(process.env.GUILD_ID);
     const channel = guild?.channels.cache.get(TARGET_CHANNEL_ID);
     if (!channel?.isTextBased()) {
         log(`❌ ערוץ יום ההולדת (${TARGET_CHANNEL_ID}) לא נמצא או אינו ערוץ טקסט.`);
         return;
     }
+    
+    const todayKey = new Date().toISOString().split('T')[0];
 
-    const todayBirthdays = await getTodaysBirthdays();
-    if (todayBirthdays.length === 0) {
-        log('[BIRTHDAY] אין ימי הולדת להיום.');
-        return;
-    }
-
-    const todayKey = new Date().toISOString().split('T')[0]; // מפתח ייחודי לכל יום
-
-    for (const person of todayBirthdays) {
+    for (const person of birthdaysToCongratulate) {
         const logRef = db.collection('birthdayLogs').doc(`${todayKey}_${person.discordId}`);
         const logSnap = await logRef.get();
         if (logSnap.exists) {
@@ -131,8 +101,7 @@ async function sendBirthdayMessage(client) {
             new ButtonBuilder()
                 .setCustomId(`bday_play_tts_${person.discordId}`)
                 .setLabel('▶️ השמע ברכה קולית')
-                .setStyle(ButtonStyle.Success)
-                .setEmoji('🎤')
+                .setStyle(ButtonStyle.Success).setEmoji('🎤')
         );
 
         try {
@@ -149,14 +118,34 @@ async function sendBirthdayMessage(client) {
 
             await logRef.set({ sentAt: new Date() });
             log(`[BIRTHDAY] ✅ ברכת יום הולדת נשלחה בהצלחה ל־${person.fullName}`);
-
         } catch (error) {
             log(`❌ שגיאה קריטית בשליחת ברכת יום הולדת ל-${person.fullName}:`, error);
         }
     }
 }
 
+/**
+ * הפונקציה המרכזית שמופעלת על ידי CRON.
+ */
+async function sendBirthdayMessage(client) {
+    const todayBirthdays = await getTodaysBirthdays();
+    if (todayBirthdays.length === 0) {
+        log('[BIRTHDAY CRON] אין ימי הולדת להיום.');
+        return;
+    }
+    await processAndSendGreetings(client, todayBirthdays);
+}
+
+/**
+ * ✅ [שדרוג] פונקציה חדשה שרצה בעליית הבוט כדי להשלים פערים.
+ */
+async function runMissedBirthdayChecks(client) {
+    log('[BIRTHDAY CATCH-UP] מבצע בדיקת השלמה לימי הולדת שפוספסו...');
+    await sendBirthdayMessage(client); // הלוגיקה זהה, פשוט קוראים לה שוב
+}
+
 module.exports = { 
     sendBirthdayMessage,
-    handlePlayBirthdayTTS 
+    handlePlayBirthdayTTS,
+    runMissedBirthdayChecks // ✅ ייצוא הפונקציה החדשה
 };

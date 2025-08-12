@@ -5,7 +5,6 @@ const { sendStaffLog } = require('../utils/staffLogger');
 // ייבוא כל המודולים הנדרשים
 const { sendWeeklyReminder } = require('./weeklyBirthdayReminder');
 const { sendBirthdayMessage } = require('./birthdayCongratulator');
-const { checkBirthdays } = require('./birthdayTracker');
 const { cleanupEmptyChannels } = require('./channelCleaner');
 const { checkActiveGroups } = require('./groupTracker');
 const { checkMVPStatusAndRun } = require('./mvpTracker');
@@ -34,7 +33,7 @@ function initializeCronJobs(client) {
     console.log('[CRON] מאתחל את כל משימות התזמון המרכזיות...');
 
     const tasks = [
-        // משימות שרצות כל דקה (רק מה שחייב להיות מיידי)
+        // משימות שרצות כל דקה
         { name: 'מעקב קבוצות פעילות', schedule: '* * * * *', func: checkActiveGroups, args: [client] },
         { name: 'ניקוי חיבורי קול ישנים', schedule: '* * * * *', func: cleanupIdleConnections, args: [] },
 
@@ -55,9 +54,9 @@ function initializeCronJobs(client) {
         { name: 'ניקוי הודעות פיפו ישנות', schedule: '0 * * * *', func: cleanupOldFifoMessages, args: [client] },
 
         // משימות יומיות
-        { name: 'בדיקת ימי הולדת', schedule: '1 0 * * *', func: checkBirthdays, args: [client], timezone: 'Asia/Jerusalem' },
+        // { name: 'בדיקת ימי הולדת', schedule: '1 0 * * *', func: checkBirthdays, args: [client], timezone: 'Asia/Jerusalem' }, // ✅ [הסרה] מחיקת משימת ה-CRON של המערכת הישנה
         { name: 'שליחת ברכות יום הולדת בטלגרם', schedule: '2 0 * * *', func: sendTelegramBirthdays, args: [], timezone: 'Asia/Jerusalem' },
-        { name: 'שליחת ברכות יום הולדת בדיסקורד', schedule: '3 0 * * *', func: sendBirthdayMessage, args: [client], timezone: 'Asia/Jerusalem' },
+        { name: 'שליחת ברכות יום הולדת בדיסקורד', schedule: '3 0 * * *', func: sendBirthdayMessage, args: [client], timezone: 'Asia/Jerusalem' }, // ✅ זו המשימה היחידה שנשארת
         { name: 'שליחת התראות אי-פעילות', schedule: '0 10,18 * * *', func: runScheduledReminders, args: [client], timezone: 'Asia/Jerusalem' },
 
         // משימות שבועיות

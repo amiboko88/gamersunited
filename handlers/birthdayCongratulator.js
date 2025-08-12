@@ -1,4 +1,4 @@
-// 📁 handlers/birthdayCongratulator.js (מתוקן עם fetch)
+// 📁 handlers/birthdayCongratulator.js (מתוקן סופית עם fetch)
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const path = require('path');
 const db = require('../utils/firebase');
@@ -63,13 +63,13 @@ async function handlePlayBirthdayTTS(interaction) {
 }
 
 async function processAndSendGreetings(client, birthdaysToCongratulate) {
-    const guild = client.guilds.cache.get(process.env.GUILD_ID);
+    // --- ✅ [תיקון] שימוש ב-fetch במקום cache כדי למנוע שגיאות תזמון ---
+    const guild = await client.guilds.fetch(process.env.GUILD_ID).catch(() => null);
     if (!guild) {
         log('❌ [BIRTHDAY] לא ניתן למצוא את השרת.');
         return;
     }
 
-    // --- ✅ [תיקון] שימוש ב-fetch במקום cache כדי למנוע שגיאות תזמון ---
     const channel = await guild.channels.fetch(TARGET_CHANNEL_ID).catch(() => null);
     // --------------------------------------------------------------------
 

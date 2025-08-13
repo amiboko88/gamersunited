@@ -1,64 +1,47 @@
-const { OpenAI } = require("openai");
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// 📁 telegram/telegramTTSRoaster.js (מתוקן ומקצועי)
+const { log } = require('../utils/logger');
+const ttsEngine = require('../tts/ttsEngine.elevenlabs'); // זהו מנוע גוגל, למרות השם
+const { InputFile } = require('grammy'); // --- ✅ [שדרוג] ייבוא הרכיב החיוני ---
 
-const generateRoastVoice = async (ctx) => {
-  const name = ctx.from?.first_name || "חבר";
+const VOICE_PROFILE = 'shimon_energetic';
 
-  const prompt = `כתוב ירידת צחוק עוקצנית בעברית במשפט אחד לבנאדם בשם "${name}". בלי קללות, אבל עם חוצפה.`;
+/**
+ * יוצר קובץ קול מטקסט ה"צליה" ושולח אותו לטלגרם.
+ * @param {import('grammy').Context} ctx - קונטקסט השיחה של grammY.
+ * @param {string} roastText - הטקסט שנוצר על ידי GPT.
+ * @param {string} targetUsername - שם המשתמש של קורבן הצלייה.
+ */
+async function generateRoastVoice(ctx, roastText, targetUsername) {
+    try {
+        log(`[TELEGRAM-TTS] מתחיל יצירת קול עבור Roast על ${targetUsername}`);
 
-  try {
-    const gptRes = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.85,
-      max_tokens: 60
-    });
+        // 1. יצירת האודיו באמצעות מנוע ה-TTS המרכזי של הבוט
+        const audioBuffer = await ttsEngine.synthesizeTTS(roastText, VOICE_PROFILE);
+        
+        if (!audioBuffer || audioBuffer.length === 0) {
+            throw new Error('TTS engine returned an empty audio buffer.');
+        }
 
-    let text = gptRes.choices?.[0]?.message?.content?.trim();
-    if (!text || text.length < 5 || text.length > 250) {
-      console.warn("⚠️ GPT החזיר תגובה בעייתית:", text);
-      return ctx.reply("😕 ה־GPT לא סיפק טקסט קול תקני. נסה שוב.");
+        // --- ✅ [תיקון קריטי] עטיפת קובץ השמע באובייקט InputFile ---
+        // זו הדרך המודרנית והנכונה לשלוח קבצים מהזיכרון ב-grammY.
+        const voiceFile = new InputFile(audioBuffer, 'roast.ogg');
+        // ----------------------------------------------------------------
+
+        // 2. שליחת קובץ הקול למשתמש בטלגרם
+        await ctx.replyWithVoice(voiceFile, {
+            caption: `🎤 ${targetUsername}, ${roastText}`,
+            parse_mode: 'HTML' // מאפשר עיצוב טקסט במידת הצורך
+        });
+
+        log(`[TELEGRAM-TTS] ✅ קובץ קול נשלח בהצלחה ל-${ctx.from.username}`);
+
+    } catch (error) {
+        log('❌ [TELEGRAM-TTS] generateRoastVoice error:', error);
+        // שלח הודעת שגיאה חזרה למשתמש כדי שהוא ידע שהייתה בעיה
+        await ctx.reply('אוי... משהו השתבש במיתרי הקול שלי. נסה שוב מאוחר יותר. 🥴');
     }
+}
 
-    text = text
-      .replace(/["'”)\s]+$/g, "")
-      .replace(/^["'“(]+/g, "")
-      .trim();
-
-    await ctx.reply("🎧 שמעון מבשל צלייה קולית...");
-
-    const tts = await openai.audio.speech.create({
-      model: "tts-1-hd",
-      input: text,
-      voice: "nova"
-    });
-
-    const arrayBuffer = await tts.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    if (!buffer || buffer.length < 2000) {
-      console.warn("❌ Buffer קצר או ריק מ־TTS:", buffer.length);
-      return ctx.reply("🎧 שמעון השתתק – הקול לא נוצר כראוי. נסה שוב.");
-    }
-
-    await ctx.replyWithVoice(
-      {
-        source: buffer,
-        filename: "roast.ogg"
-      },
-      {
-        caption: `🎤 ${text}`.slice(0, 1000),
-        parse_mode: "HTML"
-      }
-    );
-
-  } catch (err) {
-    console.error("❌ generateRoastVoice error:", err);
-    const msg = err.name === "AbortError"
-      ? "⌛ שמעון התעייף מהמתנה ל־GPT. נסה שוב."
-      : "🔌 שמעון נתקע באמצע הצלייה. נסה שוב מאוחר יותר.";
-    await ctx.reply(msg);
-  }
+module.exports = {
+    generateRoastVoice,
 };
-
-module.exports = { generateRoastVoice };

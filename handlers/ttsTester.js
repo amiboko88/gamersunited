@@ -1,11 +1,11 @@
 // 📁 handlers/ttsTester.js
-// ✅ גרסה חדשה המדמה הפעלת פודקאסט מלא לבדיקה
+// 🔍 גרסת אבחון עם לוגיקת "מלכודת שגיאות" משופרת
 
 const { log } = require('../utils/logger');
-const podcastManager = require('./podcastManager'); // ייבוא של מנהל הפודקאסט
+const podcastManager = require('./podcastManager');
 
 // --- הגדרות ---
-const TEST_CHANNEL_ID = '1396779274173943828'; // ניתן לשנות למשתנה סביבה אם רוצים
+const TEST_CHANNEL_ID = '1396779274173943828';
 let isTestRunning = false;
 
 /**
@@ -23,32 +23,45 @@ async function runTTSTest(member) {
     log(`[TTS_TESTER] ➡️  התחלת בדיקת פודקאסט מלאה עבור ${member.displayName}`);
 
     try {
-        // קוראים ישירות לפונקציית "הבמאי" של הפודקאסט.
-        // היא תבנה את התסריט, תייצר את האודיו ותוסיף לתור הניגון.
         await podcastManager.playPersonalPodcast(
             member.voice.channel,
             member,
             member.client
         );
         log(`[TTS_TESTER] ✅ בקשת הפודקאסט נשלחה בהצלחה למנהל התורים.`);
-        
-        // אין צורך לנהל כאן חיבור קולי או נגן. 
-        // voiceQueue.js אחראי על כך באופן מלא, וזה בדיוק מה שאנחנו בודקים.
 
     } catch (error) {
-        // ✅ [תיקון] שונתה הקריאה מ-log.error ל-log כדי למנוע קריסה
-        log(`[TTS_TESTER] ❌ שגיאה קריטית בתהליך בדיקת הפודקאסט:`, error);
+        // --- 🔍 מלכודת השגיאות המשופרת 🔍 ---
+        log(`[TTS_TESTER] ❌ שגיאה קריטית נתפסה! מנסה לפענח את מקור התקלה...`);
+        
+        if (error instanceof Error) {
+            // אם זו שגיאה סטנדרטית, נדפיס את ה-stack trace המלא
+            log('[TTS_TESTER] [סוג השגיאה]: Error Object');
+            log('[TTS_TESTER] [Stack Trace]:', error.stack);
+        } else if (typeof error === 'object' && error !== null) {
+            // אם זה אובייקט כללי, ננסה להמיר אותו לטקסט
+            log('[TTS_TESTER] [סוג השגיאה]: Object');
+            try {
+                log('[TTS_TESTER] [תוכן האובייקט]:', JSON.stringify(error, null, 2));
+            } catch (jsonError) {
+                log('[TTS_TESTER] ⚠️ לא ניתן היה להמיר את אובייקט השגיאה ל-JSON.');
+            }
+        } else {
+            // אם זה משהו אחר (למשל, טקסט, מספר, או undefined)
+            log('[TTS_TESTER] [סוג השגיאה]: Primitive or Unknown');
+            log('[TTS_TESTER] [תוכן השגיאה]:', error);
+        }
+        // -----------------------------------------
+
     } finally {
-        // נוסיף צינון קצר כדי למנוע הפעלה כפולה בטעות
-        // ולאפשר לתור להתחיל לעבוד לפני שניתן להפעיל בדיקה נוספת.
         setTimeout(() => {
             isTestRunning = false;
             log('[TTS_TESTER] ⏹️  ניתן להפעיל בדיקת פודקאסט נוספת.');
-        }, 15000); // צינון של 15 שניות
+        }, 15000);
     }
 }
 
 module.exports = {
-    runTTSTest, // שם הפונקציה נשמר לתאימות עם voiceHandler
+    runTTSTest,
     TEST_CHANNEL_ID
 };

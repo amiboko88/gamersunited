@@ -13,13 +13,14 @@ if (googleCredentialsJson) {
         googleTtsClient = new TextToSpeechClient({ credentials });
         log('🔊 [Google TTS Engine] הלקוח של גוגל אותחל בהצלחה.');
     } catch (error) {
-        log.error('❌ [Google TTS Engine] שגיאה בפענוח GOOGLE_CREDENTIALS_JSON.', error);
+        // ✅ [תיקון] שונתה הקריאה מ-log.error ל-log כדי למנוע קריסה בזמן עלייה
+        log('❌ [Google TTS Engine] שגיאה בפענוח GOOGLE_CREDENTIALS_JSON.', error);
     }
 } else {
     log('⚠️ [Google TTS Engine] משתנה הסביבה GOOGLE_CREDENTIALS_JSON לא נמצא.');
 }
 
-// --- ✨ שדרוג: הגדרות קול דינמיות במקום פרופילים קבועים ---
+// --- הגדרות קול דינמיות ---
 const VOICE_CONFIG = {
     shimon: {
         voice: { languageCode: 'he-IL', name: 'he-IL-Wavenet-C' },
@@ -35,8 +36,6 @@ const VOICE_CONFIG = {
 
 /**
  * יוצר וריאציית קול אקראית על בסיס הגדרות.
- * @param {string} speaker - 'shimon' or 'shirly'
- * @returns {object}
  */
 function createDynamicVoiceProfile(speaker) {
     const config = VOICE_CONFIG[speaker.toLowerCase()] || VOICE_CONFIG.shimon;
@@ -50,22 +49,23 @@ function createDynamicVoiceProfile(speaker) {
 }
 
 /**
- * פונקציה מרכזית חדשה: מייצרת שיחה שלמה עם "מצב רוח" מתפתח.
- * @param {object[]} script - מערך של שורות הסקריפט.
- * @param {import('discord.js').GuildMember} member - המשתמש שהפעיל את הפעולה.
- * @returns {Promise<Buffer[]>}
+ * מייצרת שיחה שלמה עם "מצב רוח" מתפתח.
  */
 async function synthesizeConversation(script, member) {
-    if (!googleTtsClient) throw new Error('הלקוח של Google TTS אינו מאותחל.');
+    // ✅ [שיפור] הוספת בדיקה כדי למנוע קריסה אם הלקוח לא אותחל
+    if (!googleTtsClient) {
+        log('❌ [Google TTS Engine] ניסיון להשתמש במנוע TTS כאשר הלקוח אינו מאותחל. הפעולה בוטלה.');
+        return []; // מחזירים מערך ריק כדי למנוע שגיאה בהמשך התהליך
+    }
 
     const audioBuffers = [];
-    let conversationTension = 0.0; // "מתח" השיחה, יתפתח לאורך הסקריפט
+    let conversationTension = 0.0; 
 
     for (const line of script) {
-        if (!line.speaker || !line.text) continue; // הגנה מפני שורות ריקות
+        if (!line.speaker || !line.text) continue;
 
         const dynamicProfile = createDynamicVoiceProfile(line.speaker);
-        dynamicProfile.audioConfig.pitch += conversationTension; // התאמת הקול ל"מתח" השיחה
+        dynamicProfile.audioConfig.pitch += conversationTension;
         
         const cleanText = line.text.replace(/[*_~`]/g, '');
         const ssmlText = `<speak>${cleanText.replace(/,/g, '<break time="300ms"/>').replace(/\./g, '<break time="500ms"/>')}</speak>`;
@@ -79,20 +79,24 @@ async function synthesizeConversation(script, member) {
         try {
             const [response] = await googleTtsClient.synthesizeSpeech(request);
             audioBuffers.push(response.audioContent);
-            conversationTension += 0.2; // העלאת המתח לקראת השורה הבאה
+            conversationTension += 0.2;
             
             const profileName = `${line.speaker.toLowerCase()}_dynamic`;
             await registerTTSUsage(cleanText.length, member.id, member.displayName, 'Google', profileName);
         } catch (error) {
-            log.error(`❌ [Google TTS] שגיאה בייצור קול עבור: "${cleanText}"`, error);
+            // ✅ [תיקון] שונתה הקריאה מ-log.error ל-log
+            log(`❌ [Google TTS] שגיאה בייצור קול עבור: "${cleanText}"`, error);
         }
     }
     return audioBuffers;
 }
 
-// הפונקציה הישנה נשארת לתאימות עם חלקים אחרים במערכת
+// ... (שאר הקובץ נשאר ללא שינוי) ...
 async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
-    // קוד זה יכול לשמש לפונקציות אחרות שצריכות קול יחיד ולא שיחה שלמה
+    if (!googleTtsClient) {
+        log('❌ [Google TTS Engine] ניסיון להשתמש במנוע TTS כאשר הלקוח אינו מאותחל. הפעולה בוטלה.');
+        return null;
+    }
     const staticProfiles = {
         shimon_calm: { voice: { languageCode: 'he-IL', name: 'he-IL-Wavenet-C' }, audioConfig: { speakingRate: 1.0, pitch: 0.0 } },
         shimon_energetic: { voice: { languageCode: 'he-IL', name: 'he-IL-Wavenet-C' }, audioConfig: { speakingRate: 1.1, pitch: 1.2 } },

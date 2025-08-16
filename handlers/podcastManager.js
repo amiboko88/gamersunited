@@ -8,7 +8,6 @@ const voiceQueue = require('./voiceQueue.js');
 const FIFO_CHANNEL_ID = '1142436125354958938';
 const MIN_USERS_FOR_PODCAST = 4;
 const PODCAST_COOLDOWN = 1 * 60 * 1000;
-// ✅ [תיקון] הוספת רשימת פקודות לחסימה בזמן פודקאסט
 const restrictedCommands = ['soundboard', 'song'];
 
 // --- משתני ניהול מצב ---
@@ -26,7 +25,6 @@ function initializePodcastState() {
     log('[PODCAST] מנהל הפודקאסט אותחל בהצלחה.');
 }
 
-// --- ✅ [תיקון] הוספת פונקציה לבדיקת סטטוס ---
 /**
  * מחזיר אם הפודקאסט פעיל כרגע.
  * @returns {boolean}
@@ -34,7 +32,6 @@ function initializePodcastState() {
 function getPodcastStatus() {
     return isPodcastActive;
 }
-// ---------------------------------------------
 
 /**
  * נקודת הכניסה הראשית מ-voiceHandler.js.
@@ -85,7 +82,6 @@ async function handleVoiceStateUpdate(oldState, newState) {
  * "הבמאי": בונה ומפעיל פודקאסט אישי קצר.
  */
 async function playPersonalPodcast(channel, member, client) {
-    // ... (הלוגיקה של הפונקציה נשארת זהה)
     const userId = member.id;
     const userName = member.displayName;
     const userProfileLines = profiles.playerProfiles[userId];
@@ -123,10 +119,11 @@ async function playPersonalPodcast(channel, member, client) {
     }
 }
 
-// --- ✅ [תיקון] עדכון הייצוא של המודול ---
 module.exports = {
     handleVoiceStateUpdate,
     initializePodcastState,
-    getPodcastStatus, // הפונקציה זמינה כעת עבור index.js
-    restrictedCommands  // הרשימה זמינה כעת עבור index.js
+    getPodcastStatus,
+    restrictedCommands,
+    // ✅ [תיקון] הוספת הפונקציה לייצוא כדי שתהיה זמינה לקבצים אחרים
+    playPersonalPodcast 
 };

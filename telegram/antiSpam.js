@@ -1,21 +1,18 @@
-// 📁 telegram/antiSpam.js (מעודכן: תיקון שגיאות reply_to_message_id ו-sendStaffLog)
+// 📁 telegram/antiSpam.js (שדרוג למערכת מבוססת DB)
 const openai = require('../utils/openaiConfig');
 const db = require('../utils/firebase');
+const { sendStaffLog } = require('../utils/staffLogger');
 
-const SPAM_THRESHOLD_TIME = 5000; // 5 שניות
-const SPAM_THRESHOLD_COUNT = 3; // 3 הודעות
-const SPAM_LINK_THRESHOLD = 2; // 2 קישורים
-const SPAM_CURSE_THRESHOLD = 3; // 3 קללות
-const SPAM_SAME_MESSAGE_THRESHOLD = 3; // 3 הודעות זהות
+// הגדרות סף לספאם
+const SPAM_CONFIG = {
+    FAST_SPAM_TIME_WINDOW_MS: 8000,    // חלון זמן לבדיקת הודעות מהירות (8 שניות)
+    FAST_SPAM_MESSAGE_COUNT: 4,        // כמות הודעות בחלון הזמן שתיחשב ספאם
+    LINK_SPAM_THRESHOLD: 2,            // כמות קישורים שתיחשב ספאם
+    CURSE_SPAM_THRESHOLD: 3,           // כמות קללות שתיחשב ספאם
+    SAME_MESSAGE_SPAM_THRESHOLD: 3,    // כמות הודעות זהות שתיחשב ספאם
+};
 
-const userMessageHistory = new Map(); // userId -> [{ timestamp, text }]
-const userLinkCount = new Map(); // userId -> count
-const userCurseCount = new Map(); // userId -> count
-
-// ✅ אין צורך להגדיר STAFF_CHANNEL_ID כאן אם sendStaffLog משמש
-const { sendStaffLog: discordSendStaffLog } = require('../utils/staffLogger'); // ייבוא עם שם שונה כדי למנוע התנגשות
-
-// רשימת קללות בסיסית (אם אין קובץ חיצוני)
+// רשימת קללות מובנית
 const defaultCurses = [
   'זין', 'חרא', 'בן זונה', 'כוס', 'כוסית', 'זונה', 'מטומטם', 'מפגר', 'נכה', 'בהמה',
   'אפס', 'פח', 'ילד כאפות', 'סמרטוט', 'שמן', 'מכוער', 'חולה נפש', 'אידיוט', 'עקום', 'עיוור',
@@ -23,109 +20,125 @@ const defaultCurses = [
   'fuck', 'shit', 'bitch', 'dick', 'pussy', 'asshole', 'retard', 'faggot', 'moron', 'jerk',
   'loser', 'idiot', 'stupid', 'whore', 'slut', 'f*ck', 'sh*t', 'c*nt', 'dumb', 'suck',
   'lame', 'douche', 'f@ggot', 'n*gga', 'ret@rd', 'pu$$y', 'cuck', 'אידיוטית', 'קללה',
-  'משוגע', 'עלוב', 'שפל', 'דביל', 'סתומה', 'תחת', 'זבל', 'מטונף', 'מזדיין', 'כושי',
-  'ערבי מסריח', 'רוסי זבל', 'אשכנזי מסריח', 'מרוקאי חמום', 'אתיופי טיפש',
-  'חצי בן אדם', 'מושתן', 'דפוק', 'קשקשן', 'חפרן', 'מזבלה', 'רפש', 'שאריות',
-  'שטן', 'קללה רב מערכתית', 'ילד חרא', 'לא יוצלח', 'נודניק', 'שקרן', 'אנס סדרתי'
+  'משוגע', 'עלוב', 'שפל', 'דביל', 'סתומה', 'תחת', 'זבל', 'מטונף', 'מזדיין', 'כושי'
 ];
 
+const SPAM_TRACKING_COLLECTION = 'telegramSpamTracking';
 
 /**
- * בודק אם הודעה היא ספאם.
+ * מאחזר או יוצר דוקומנט מעקב למשתמש ב-Firestore.
+ * @param {number} userId - מזהה המשתמש.
+ * @returns {Promise<FirebaseFirestore.DocumentSnapshot>} - סנאפשוט של הדוקומנט.
+ */
+async function getUserTrackingDoc(userId) {
+    const userRef = db.collection(SPAM_TRACKING_COLLECTION).doc(String(userId));
+    let userDoc = await userRef.get();
+    if (!userDoc.exists) {
+        await userRef.set({
+            messageHistory: [],
+            linkCount: 0,
+            curseCount: 0,
+            lastMessage: ''
+        });
+        userDoc = await userRef.get();
+    }
+    return userDoc;
+}
+
+/**
+ * הפונקציה הראשית לבדיקת ספאם.
  * @param {import('grammy').Context} ctx - אובייקט הקונטקסט של grammy.
  * @returns {Promise<boolean>} - האם ההודעה היא ספאם.
  */
 async function isSpam(ctx) {
-    const message = ctx.message;
-    const userId = message.from.id;
-    const chatId = message.chat.id; // ✅ המשתנה הזה קיים בשימוש, כפי שדנו קודם.
-    const messageText = message.text || '';
+    const userId = ctx.from.id;
+    const messageText = ctx.message.text || '';
     const now = Date.now();
 
+    const userDoc = await getUserTrackingDoc(userId);
+    const userData = userDoc.data();
+    const userRef = userDoc.ref;
+
     // 1. בדיקת ספאם מהיר (הודעות רבות בזמן קצר)
-    if (!userMessageHistory.has(userId)) {
-        userMessageHistory.set(userId, []);
-    }
-    const history = userMessageHistory.get(userId);
-    history.push({ timestamp: now, text: messageText });
+    const newHistory = userData.messageHistory.filter(timestamp => now - timestamp < SPAM_CONFIG.FAST_SPAM_TIME_WINDOW_MS);
+    newHistory.push(now);
 
-    userMessageHistory.set(userId, history.filter(msg => now - msg.timestamp < SPAM_THRESHOLD_TIME));
-
-    if (userMessageHistory.get(userId).length > SPAM_THRESHOLD_COUNT) {
+    if (newHistory.length > SPAM_CONFIG.FAST_SPAM_MESSAGE_COUNT) {
         await handleSpam(ctx, 'fast_spam');
+        await userRef.update({ messageHistory: [] }); // איפוס לאחר טיפול
         return true;
     }
 
     // 2. בדיקת ספאם קישורים
     const linkRegex = /(https?:\/\/[^\s]+)/g;
     const links = messageText.match(linkRegex);
+    let currentLinkCount = userData.linkCount || 0;
     if (links && links.length > 0) {
-        userLinkCount.set(userId, (userLinkCount.get(userId) || 0) + links.length);
-        if (userLinkCount.get(userId) > SPAM_LINK_THRESHOLD) {
+        currentLinkCount += links.length;
+        if (currentLinkCount > SPAM_CONFIG.LINK_SPAM_THRESHOLD) {
             await handleSpam(ctx, 'link_spam');
-            userLinkCount.set(userId, 0); // Reset after action
+            await userRef.update({ linkCount: 0, messageHistory: newHistory });
             return true;
         }
-    } else {
-        userLinkCount.set(userId, 0);
     }
 
-    // 3. בדיקת ספאם קללות (דורש רשימת קללות)
-    const cursesList = typeof curses !== 'undefined' ? curses : defaultCurses; // ✅ שימוש ברשימה המיובאת או בדיפולט
-
+    // 3. בדיקת ספאם קללות
     const lowerCaseText = messageText.toLowerCase();
-    const curseMatches = cursesList.filter(curse => lowerCaseText.includes(curse));
+    const curseMatches = defaultCurses.filter(curse => lowerCaseText.includes(curse));
+    let currentCurseCount = userData.curseCount || 0;
     if (curseMatches.length > 0) {
-        userCurseCount.set(userId, (userCurseCount.get(userId) || 0) + curseMatches.length);
-        if (userCurseCount.get(userId) > SPAM_CURSE_THRESHOLD) {
+        currentCurseCount += curseMatches.length;
+        if (currentCurseCount > SPAM_CONFIG.CURSE_SPAM_THRESHOLD) {
             await handleSpam(ctx, 'curse_spam');
-            userCurseCount.set(userId, 0); // Reset after action
+            await userRef.update({ curseCount: 0, messageHistory: newHistory });
             return true;
         }
-    } else {
-        userCurseCount.set(userId, 0);
+    }
+    
+    // 4. בדיקת הודעות זהות חוזרות
+    const recentMessages = newHistory.map(ts => userData.messageHistory.find(m => m.timestamp === ts)?.text).filter(Boolean);
+    recentMessages.push(messageText);
+    const sameMessagesCount = recentMessages.filter(text => text === messageText).length;
+
+    if (sameMessagesCount > SPAM_CONFIG.SAME_MESSAGE_SPAM_THRESHOLD) {
+         await handleSpam(ctx, 'same_message_spam');
+         await userRef.update({ messageHistory: [] });
+         return true;
     }
 
-    // 4. בדיקת הודעות זהות חוזרות
-    const sameMessages = history.filter(msg => msg.text === messageText);
-    if (sameMessages.length > SPAM_SAME_MESSAGE_THRESHOLD) {
-        await handleSpam(ctx, 'same_message_spam');
-        return true;
-    }
+    // עדכון הנתונים ב-Firestore בסוף הבדיקה
+    await userRef.update({
+        messageHistory: newHistory,
+        linkCount: currentLinkCount,
+        curseCount: currentCurseCount,
+        lastMessage: messageText
+    });
 
     return false;
 }
 
 /**
- * מטפל בהודעת ספאם - מוחק אותה ושולח תגובה.
+ * מטפל בהודעת ספאם - מוחק אותה, שולח תגובה חכמה ומתעד.
  * @param {import('grammy').Context} ctx - אובייקט הקונטקסט של grammy.
  * @param {string} spamType - סוג הספאם שזוהה.
  */
 async function handleSpam(ctx, spamType) {
     try {
-        // מחק את הודעת הספאם
-        await ctx.deleteMessage().catch(e => console.error('Failed to delete spam message:', e));
+        await ctx.deleteMessage().catch(e => console.error(`[AntiSpam] Failed to delete spam message: ${e.message}`));
 
-        // שלח תגובה חכמה באמצעות GPT
         const spamResponse = await getAntiSpamResponse(spamType);
-        // ✅ תיקון: הסרת reply_to_message_id מכיוון שההודעה נמחקת
-        await ctx.reply(spamResponse, { parse_mode: 'HTML' }).catch(e => console.error('Failed to reply to spam:', e)); 
+        await ctx.reply(spamResponse, { parse_mode: 'HTML' });
 
         const user = ctx.from;
-        const chat = ctx.chat; // ✅ המשתנה הזה קיים בשימוש, כפי שדנו קודם.
-        const logMessage = `🚨 **ספאם זוהה ומטופל!**\n` +
+        const chat = ctx.chat;
+        const logMessage = `🚨 **ספאם זוהה ומטופל בטלגרם!**\n` +
                            `**משתמש:** ${user.first_name} (@${user.username || user.id})\n` +
                            `**צ'אט:** ${chat.title || chat.type} (ID: ${chat.id})\n` +
                            `**סוג ספאם:** ${spamType.replace('_', ' ')}\n` +
                            `**הודעה מקורית:** \`${ctx.message.text ? ctx.message.text.substring(0, 100) : '[אין טקסט]'}\``;
         
-        // ✅ שימוש ב-discordSendStaffLog רק אם קיים גשר לדיסקורד
-        if (typeof global.client !== 'undefined' && global.client.channels) { // בדיקה בטוחה
-            await discordSendStaffLog(global.client, '🚨 ספאם טלגרם זוהה', logMessage, 0xFF0000);
-        } else {
-            // אם אין גשר לדיסקורד, נדפיס לקונסול בלבד עבור לוגים של טלגרם
-            console.log(`[STAFF_LOG_TELEGRAM] ${logMessage}`);
-        }
+        // שליחת לוג לדיסקורד אם קיים גשר
+        await sendStaffLog('🚨 ספאם טלגרם זוהה', logMessage, 0xFF0000);
         
     } catch (error) {
         console.error('❌ שגיאה בטיפול בספאם:', error);
@@ -138,36 +151,25 @@ async function handleSpam(ctx, spamType) {
  * @returns {Promise<string>} - התגובה שנוצרה.
  */
 async function getAntiSpamResponse(spamType) {
-    let prompt = '';
-    switch (spamType) {
-        case 'fast_spam':
-            prompt = `משתמש שולח הודעות מהר מדי. הגב בטון עוקצני אך מתוחכם, כאילו אתה מתלונן על הרעש. אל תהיה בוטה.
-            דוגמאות: "אפשר להוריד את הווליום, אנחנו עדיין פה.", "הקצב שלך שלך מהיר יותר מהמוח שלי. תאט קצת.", "נראה לי שהמקלדת שלך נתקעה על הילוך חמישי."
-            תגובה:`;
-            break;
-        case 'link_spam':
-            prompt = `משתמש שולח הרבה קישורים. הגב בסרקסטיות, כאילו אתה מזהיר אותו מההשלכות או מתלונן על הפרסומות.
+    const prompts = {
+        'fast_spam': `משתמש שולח הודעות מהר מדי. הגב בטון עוקצני אך מתוחכם, כאילו אתה מתלונן על הרעש. אל תהיה בוטה.
+            דוגמאות: "אפשר להוריד את הווליום, אנחנו עדיין פה.", "הקצב שלך מהיר יותר מהמוח שלי. תאט קצת.", "נראה לי שהמקלדת שלך נתקעה על הילוך חמישי."
+            תגובה:`,
+        'link_spam': `משתמש שולח הרבה קישורים. הגב בסרקסטיות, כאילו אתה מזהיר אותו מההשלכות או מתלונן על הפרסומות.
             דוגמאות: "תודה על הקישור, אבל אני לא מחפש הלוואה מהירה כרגע.", "האם אתה מנסה למכור לי משהו? כי אני לא קונה.", "אני מניח שאתה מקבל עמלה על כל קישור שאתה שולח."
-            תגובה:`;
-            break;
-        case 'curse_spam':
-            prompt = `משתמש מקלל. הגב בטון מתנשא וציני, כאילו אתה מעל השפה הזו. אל תחזיר קללות.
+            תגובה:`,
+        'curse_spam': `משתמש מקלל. הגב בטון מתנשא וציני, כאילו אתה מעל השפה הזו. אל תחזיר קללות.
             דוגמאות: "הלקסיקון שלך מרשים... בערך.", "נראה שמישהו שכח את המילים היפות בבית.", "האם זה ניסיון להרשים? כי זה לא עובד."
-            תגובה:`;
-            break;
-        case 'same_message_spam':
-            prompt = `משתמש שולח הודעות זהות שוב ושוב. הגב בסרקסטיות על חוסר היצירתיות או על חוסר הטעם.
+            תגובה:`,
+        'same_message_spam': `משתמש שולח הודעות זהות שוב ושוב. הגב בסרקסטיות על חוסר היצירתיות או על חוסר הטעם.
             דוגמאות: "כבר הבנו, יש לך רק מילה אחת בלקסיקון?", "האם אתה תקוע בלופ? כי אני לא.", "העתק-הדבק זה כל כך 2000 ואחת."
-            תגובה:`;
-            break;
-        default:
-            prompt = `זוהה ספאם. הגב בטון סרקסטי ועוקצני.
-            תגובה:`;
-    }
+            תגובה:`
+    };
+    const prompt = prompts[spamType] || 'זוהה ספאם. הגב בטון סרקסטי ועוקצני. תגובה:';
 
     try {
         const response = await openai.chat.completions.create({
-            model: 'gpt-4o', // או 'gpt-3.5-turbo' לחיסכון
+            model: 'gpt-4o',
             messages: [{ role: 'user', content: prompt }],
             max_tokens: 50,
             temperature: 0.9,

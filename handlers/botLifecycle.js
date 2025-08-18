@@ -1,7 +1,7 @@
-// 📁 handlers/botLifecycle.js (שדרוג לסנכרון ראשוני)
+// 📁 handlers/botLifecycle.js (מתוקן)
 const cron = require('node-cron');
 const { sendStaffLog } = require('../utils/staffLogger');
-const { updateVoiceCounterChannel } = require('./voiceHandler'); // ✅ [שדרוג] ייבוא פונקציית העדכון
+const { updateVoiceCounterChannel } = require('./voiceHandler');
 
 // ייבוא כל המודולים הנדרשים
 const { sendWeeklyReminder } = require('./weeklyBirthdayReminder');
@@ -23,10 +23,6 @@ const podcastManager = require('./podcastManager');
 
 let cronJobs = [];
 
-/**
- * ✅ [שדרוג] פונקציה לסנכרון ראשוני של מונה המשתמשים הקוליים.
- * @param {import('discord.js').Client} client 
- */
 async function syncInitialVoiceState(client) {
     console.log('[SYNC] מבצע סנכרון ראשוני של מונה המשתמשים הקוליים...');
     try {
@@ -51,44 +47,25 @@ function initializeCronJobs(client) {
     stopCronJobs();
     console.log('[CRON] מאתחל את כל משימות התזמון המרכזיות...');
     
-    // ✅ [שדרוג] הפעלת הסנכרון הראשוני לפני רישום המשימות
     syncInitialVoiceState(client);
 
     const tasks = [
-        // משימות שרצות כל דקה
+        // ... (רשימת המשימות נשארת זהה)
         { name: 'מעקב קבוצות פעילות', schedule: '* * * * *', func: checkActiveGroups, args: [client] },
         { name: 'ניקוי חיבורי קול ישנים', schedule: '* * * * *', func: cleanupIdleConnections, args: [] },
-
-        // משימות שרצות כל 3 דקות
         { name: 'ניקוי ערוצים ריקים', schedule: '*/3 * * * *', func: cleanupEmptyChannels, args: [client] },
-        
-        // משימות שרצות כל 10 דקות
         { name: 'בדיקת נוכחות תקופתית', schedule: '*/10 * * * *', func: periodicPresenceCheck, args: [client] },
         { name: 'בדיקת הודעות אימות ממתינות', schedule: '*/10 * * * *', func: checkPendingDms, args: [client] },
-
-        // משימות שרצות כל 15 דקות
         { name: 'החלפת סטטוס הבוט', schedule: '*/15 * * * *', func: rotatePresence, args: [client], runOnInit: true },
-
-        // משימות שרצות כל 30 דקות
         { name: 'סריקת אי-פעילות אוטומטית', schedule: '*/30 * * * *', func: runAutoTracking, args: [client], runOnInit: true },
-        
-        // משימות שרצות פעם בשעה
         { name: 'ניקוי הודעות פיפו ישנות', schedule: '0 * * * *', func: cleanupOldFifoMessages, args: [client] },
-
-        // משימות יומיות
         { name: 'שליחת ברכות יום הולדת בטלגרם', schedule: '2 0 * * *', func: sendTelegramBirthdays, args: [], timezone: 'Asia/Jerusalem' },
         { name: 'שליחת ברכות יום הולדת בדיסקורד', schedule: '3 0 * * *', func: sendBirthdayMessage, args: [client], timezone: 'Asia/Jerusalem' },
         { name: 'שליחת התראות אי-פעילות', schedule: '0 10,18 * * *', func: runScheduledReminders, args: [client], timezone: 'Asia/Jerusalem' },
-
-        // משימות שבועיות
         { name: 'בדיקת MVP שבועי', schedule: '0 19 * * 0', func: checkMVPStatusAndRun, args: [client], timezone: 'Asia/Jerusalem' },
         { name: 'עדכון Leaderboard שבועי', schedule: '0 20 * * 0', func: updateWeeklyLeaderboard, args: [client], timezone: 'Asia/Jerusalem' },
         { name: 'תזכורת יום הולדת שבועית', schedule: '0 12 * * 1', func: sendWeeklyReminder, args: [client], timezone: 'Asia/Jerusalem' },
-        
-        // משימות חודשיות
         { name: 'דוח הרחקה חודשי', schedule: '0 12 1 * *', func: runMonthlyKickReport, args: [client], timezone: 'Asia/Jerusalem' },
-        
-        // משימות ייעודיות
         { name: 'הכרזת Warzone', schedule: '0 21 * * 3,4,6,0', func: sendWarzoneEmbed, args: [client], timezone: 'Asia/Jerusalem' },
     ];
 
@@ -110,9 +87,15 @@ function initializeCronJobs(client) {
             timezone: task.timezone || "Asia/Jerusalem"
         });
 
+        // ✅ [תיקון] הוספת בדיקה בטיחותית לפני קריאה ל-.catch
         if (task.runOnInit) {
             console.log(`[CRON] ▶️  מריץ משימת אתחול מיידית: ${task.name}`);
-            task.func(...(task.args || [])).catch(e => console.error(`[CRON] ❌ שגיאה בהרצה ראשונית של "${task.name}":`, e));
+            const initialRunResult = task.func(...(task.args || []));
+
+            // הבדיקה מוודאת שהתוצאה היא אובייקט תקין (Promise) לפני שמנסים להשתמש בו
+            if (initialRunResult && typeof initialRunResult.catch === 'function') {
+                initialRunResult.catch(e => console.error(`[CRON] ❌ שגיאה בהרצה ראשונית של "${task.name}":`, e));
+            }
         }
         
         cronJobs.push(job);

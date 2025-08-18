@@ -1,6 +1,7 @@
-// 📁 handlers/botLifecycle.js
+// 📁 handlers/botLifecycle.js (שדרוג לסנכרון ראשוני)
 const cron = require('node-cron');
 const { sendStaffLog } = require('../utils/staffLogger');
+const { updateVoiceCounterChannel } = require('./voiceHandler'); // ✅ [שדרוג] ייבוא פונקציית העדכון
 
 // ייבוא כל המודולים הנדרשים
 const { sendWeeklyReminder } = require('./weeklyBirthdayReminder');
@@ -22,6 +23,24 @@ const podcastManager = require('./podcastManager');
 
 let cronJobs = [];
 
+/**
+ * ✅ [שדרוג] פונקציה לסנכרון ראשוני של מונה המשתמשים הקוליים.
+ * @param {import('discord.js').Client} client 
+ */
+async function syncInitialVoiceState(client) {
+    console.log('[SYNC] מבצע סנכרון ראשוני של מונה המשתמשים הקוליים...');
+    try {
+        const guild = await client.guilds.fetch(process.env.GUILD_ID);
+        if (guild) {
+            await updateVoiceCounterChannel(guild);
+        } else {
+            console.error('[SYNC] ❌ לא ניתן למצוא את השרת הראשי לסנכרון.');
+        }
+    } catch (error) {
+        console.error('[SYNC] ❌ שגיאה בסנכרון הראשוני של המונה הקולי:', error);
+    }
+}
+
 function stopCronJobs() {
     cronJobs.forEach(job => job.stop());
     cronJobs = [];
@@ -31,6 +50,9 @@ function stopCronJobs() {
 function initializeCronJobs(client) {
     stopCronJobs();
     console.log('[CRON] מאתחל את כל משימות התזמון המרכזיות...');
+    
+    // ✅ [שדרוג] הפעלת הסנכרון הראשוני לפני רישום המשימות
+    syncInitialVoiceState(client);
 
     const tasks = [
         // משימות שרצות כל דקה
@@ -54,9 +76,8 @@ function initializeCronJobs(client) {
         { name: 'ניקוי הודעות פיפו ישנות', schedule: '0 * * * *', func: cleanupOldFifoMessages, args: [client] },
 
         // משימות יומיות
-        // { name: 'בדיקת ימי הולדת', schedule: '1 0 * * *', func: checkBirthdays, args: [client], timezone: 'Asia/Jerusalem' }, // ✅ [הסרה] מחיקת משימת ה-CRON של המערכת הישנה
         { name: 'שליחת ברכות יום הולדת בטלגרם', schedule: '2 0 * * *', func: sendTelegramBirthdays, args: [], timezone: 'Asia/Jerusalem' },
-        { name: 'שליחת ברכות יום הולדת בדיסקורד', schedule: '3 0 * * *', func: sendBirthdayMessage, args: [client], timezone: 'Asia/Jerusalem' }, // ✅ זו המשימה היחידה שנשארת
+        { name: 'שליחת ברכות יום הולדת בדיסקורד', schedule: '3 0 * * *', func: sendBirthdayMessage, args: [client], timezone: 'Asia/Jerusalem' },
         { name: 'שליחת התראות אי-פעילות', schedule: '0 10,18 * * *', func: runScheduledReminders, args: [client], timezone: 'Asia/Jerusalem' },
 
         // משימות שבועיות
@@ -83,7 +104,7 @@ function initializeCronJobs(client) {
                 await task.func(...(task.args || []));
             } catch (error) {
                 console.error(`[CRON] ❌ שגיאה במשימה "${task.name}":`, error);
-                sendStaffLog(client, `❌ שגיאת Cron`, `אירעה שגיאה במשימה **${task.name}**:\n\`\`\`${error.message}\`\`\``, 0xff0000);
+                sendStaffLog(`❌ שגיאת Cron`, `אירעה שגיאה במשימה **${task.name}**:\n\`\`\`${error.message}\`\`\``, 0xff0000);
             }
         }, {
             timezone: task.timezone || "Asia/Jerusalem"
@@ -91,10 +112,7 @@ function initializeCronJobs(client) {
 
         if (task.runOnInit) {
             console.log(`[CRON] ▶️  מריץ משימת אתחול מיידית: ${task.name}`);
-            const initialRunPromise = task.func(...(task.args || []));
-            if (initialRunPromise && typeof initialRunPromise.catch === 'function') {
-                initialRunPromise.catch(e => console.error(`[CRON] ❌ שגיאה בהרצה ראשונית של "${task.name}":`, e));
-            }
+            task.func(...(task.args || [])).catch(e => console.error(`[CRON] ❌ שגיאה בהרצה ראשונית של "${task.name}":`, e));
         }
         
         cronJobs.push(job);

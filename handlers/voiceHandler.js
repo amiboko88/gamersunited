@@ -1,4 +1,4 @@
-// 📁 handlers/voiceHandler.js
+// 📁 handlers/voiceHandler.js (שדרוג למערכת חכמה ויעילה)
 const fs = require('fs');
 const path = require('path');
 const { ChannelType, PermissionFlagsBits } = require('discord.js');
@@ -24,24 +24,25 @@ const COUNTER_CATEGORY_ID = '689124379019313214'; // קטגוריית FIFO
 const COUNTER_CHANNEL_PREFIX = '🔊 In Voice:';
 const COUNTER_DELETE_AFTER_MINUTES = 5;
 let voiceCounterTimeout = null;
+let debounceTimeout = null; // ✅ [שדרוג] משתנה למנגנון ה-Debounce
 
 /**
  * מנהלת את ערוץ המונה בזמן אמת.
  * @param {import('discord.js').Guild} guild 
  */
 async function updateVoiceCounterChannel(guild) {
-    if (!guild) return;
+    if (!guild || !guild.channels) return;
 
-    const voiceChannels = guild.channels.cache.filter(c =>
-        c.parentId === COUNTER_CATEGORY_ID && c.type === ChannelType.GuildVoice
-    );
-    const totalMembersInVoice = [...voiceChannels.values()]
+    // ✅ [שדרוג] חישוב יעיל ומדויק יותר של המשתמשים
+    const totalMembersInVoice = guild.channels.cache
+        .filter(c => c.parentId === COUNTER_CATEGORY_ID && c.type === ChannelType.GuildVoice)
         .reduce((acc, channel) => acc + channel.members.filter(m => !m.user.bot).size, 0);
 
     let counterChannel = guild.channels.cache.find(
         c => c.parentId === COUNTER_CATEGORY_ID && c.name.startsWith(COUNTER_CHANNEL_PREFIX)
     );
 
+    // ניקוי טיימר המחיקה אם יש משתמשים בערוץ
     if (totalMembersInVoice > 0 && voiceCounterTimeout) {
         clearTimeout(voiceCounterTimeout);
         voiceCounterTimeout = null;
@@ -54,22 +55,27 @@ async function updateVoiceCounterChannel(guild) {
                 await counterChannel.setName(newName).catch(err => log(`⚠️ שגיאה בעדכון שם ערוץ המונה: ${err.message}`));
             }
         } else {
-            await guild.channels.create({
-                name: newName,
-                type: ChannelType.GuildVoice,
-                parent: COUNTER_CATEGORY_ID,
-                position: 0,
-                permissionOverwrites: [
-                    { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.Connect], allow: [PermissionFlagsBits.ViewChannel] }
-                ]
-            }).catch(err => log(`⚠️ שגיאה ביצירת ערוץ המונה: ${err.message}`));
+            // יצירת ערוץ חדש אם לא קיים
+            try {
+                counterChannel = await guild.channels.create({
+                    name: newName,
+                    type: ChannelType.GuildVoice,
+                    parent: COUNTER_CATEGORY_ID,
+                    position: 0,
+                    permissionOverwrites: [
+                        { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.Connect], allow: [PermissionFlagsBits.ViewChannel] }
+                    ]
+                });
+            } catch (err) {
+                log(`⚠️ שגיאה ביצירת ערוץ המונה: ${err.message}`);
+            }
         }
-    } else if (counterChannel) {
-        const channelIdToDelete = counterChannel.id; // שמירת ה-ID של הערוץ
-        log(`[COUNTER] אין משתמשים בערוצים קוליים. מתחיל טיימר של ${COUNTER_DELETE_AFTER_MINUTES} דקות למחיקת ערוץ המונה.`);
+    } else if (counterChannel && !voiceCounterTimeout) {
+        // אם אין משתמשים והערוץ קיים, מתחילים טיימר למחיקה
+        const channelIdToDelete = counterChannel.id;
+        log(`[COUNTER] אין משתמשים בערוצים קוליים. מתחיל טיימר של ${COUNTER_DELETE_AFTER_MINUTES} דקות למחיקה.`);
         
         voiceCounterTimeout = setTimeout(async () => {
-            // ✅ [תיקון] מאחזרים את הערוץ מחדש לפני המחיקה כדי למנוע שגיאת "Unknown Channel"
             const channelToDeleteRef = await guild.channels.fetch(channelIdToDelete).catch(() => null);
             if (channelToDeleteRef) {
                 await channelToDeleteRef.delete().catch(err => log(`⚠️ שגיאה במחיקת ערוץ המונה: ${err.message}`));
@@ -77,19 +83,37 @@ async function updateVoiceCounterChannel(guild) {
             } else {
                 log(`[COUNTER] ניסיון מחיקה בוטל. ערוץ המונה לא נמצא.`);
             }
+            voiceCounterTimeout = null; // איפוס הטיימר
         }, COUNTER_DELETE_AFTER_MINUTES * 60 * 1000);
     }
 }
 
 
 /**
+ * ✅ [שדרוג] פונקציית מעטפת המפעילה את העדכון עם דיליי (Debounce).
+ * מונעת קריאות API מרובות וחוסכת משאבים.
+ * @param {import('discord.js').Guild} guild 
+ */
+function scheduleVoiceCounterUpdate(guild) {
+    if (debounceTimeout) {
+        clearTimeout(debounceTimeout);
+    }
+    debounceTimeout = setTimeout(() => {
+        updateVoiceCounterChannel(guild);
+    }, 2000); // השהייה של 2 שניות לאיסוף כל השינויים
+}
+
+/**
  * מטפל בעדכוני מצב קולי של משתמשים.
  */
 async function handleVoiceStateUpdate(oldState, newState) {
-    if (!newState.member || newState.member.user.bot) {
-        // ✅ [תיקון] קוראים למונה גם ביציאת הבוט כדי לעדכן את הספירה ל-0
-        if (oldState.member?.user.bot) return;
-        await updateVoiceCounterChannel(oldState.guild);
+    const guild = newState.guild || oldState.guild;
+    if (!guild) return;
+
+    // ✅ [שדרוג] קוראים לפונקציית ה-Debounce במקום לעדכון הישיר
+    scheduleVoiceCounterUpdate(guild);
+    
+    if (newState.member?.user.bot) {
         return;
     }
 
@@ -97,7 +121,6 @@ async function handleVoiceStateUpdate(oldState, newState) {
     const userId = member.id;
     const oldChannel = oldState.channel;
     const newChannel = newState.channel;
-    const guild = member.guild;
     const now = Date.now();
 
     const joinedTestChannel = !oldChannel && newChannel && newChannel.id === ttsTester.TEST_CHANNEL_ID;
@@ -109,8 +132,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
     }
 
     if (newChannel?.id === guild.afkChannelId || oldChannel?.id === guild.afkChannelId) {
-        await updateVoiceCounterChannel(guild); // עדכון גם בכניסה/יציאה מ-AFK
-        return;
+        return; // העדכון כבר נקרא בתחילת הפונקציה
     }
     
     const fifoRole = guild.roles.cache.find(r => r.name === FIFO_ROLE_NAME);
@@ -160,10 +182,9 @@ async function handleVoiceStateUpdate(oldState, newState) {
             await podcastManager.handleVoiceStateUpdate(oldState, newState);
         }
     }
-    
-    await updateVoiceCounterChannel(guild);
 }
 
 module.exports = {
-    handleVoiceStateUpdate
+    handleVoiceStateUpdate,
+    updateVoiceCounterChannel // ✅ [שדרוג] ייצוא הפונקציה לשימוש בסנכרון הראשוני
 };

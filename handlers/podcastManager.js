@@ -1,4 +1,6 @@
 // 📁 managers/podcastManager.js
+// 🔍 גרסת אבחון עם לוגים מפורטים לבדיקת תנאי ההפעלה
+
 const { log } = require('../utils/logger');
 const ttsEngine = require('../tts/ttsEngine.elevenlabs.js');
 const profiles = require('../data/profiles.js');
@@ -6,7 +8,7 @@ const voiceQueue = require('./voiceQueue.js');
 
 // --- הגדרות הפודקאסט ---
 const FIFO_CHANNEL_ID = '1142436125354958938';
-const MIN_USERS_FOR_PODCAST = 4;
+const MIN_USERS_FOR_PODCAST = 4; // הוחזר לערך המקורי
 const PODCAST_COOLDOWN = 1 * 60 * 1000;
 const restrictedCommands = ['soundboard', 'song'];
 
@@ -15,9 +17,6 @@ let isPodcastActive = false;
 let podcastCooldown = false;
 const spokenUsers = new Set();
 
-/**
- * מאתחל את מצב הפודקאסט.
- */
 function initializePodcastState() {
     isPodcastActive = false;
     podcastCooldown = false;
@@ -25,17 +24,8 @@ function initializePodcastState() {
     log('[PODCAST] מנהל הפודקאסט אותחל בהצלחה.');
 }
 
-/**
- * מחזיר אם הפודקאסט פעיל כרגע.
- * @returns {boolean}
- */
-function getPodcastStatus() {
-    return isPodcastActive;
-}
+function getPodcastStatus() { return isPodcastActive; }
 
-/**
- * נקודת הכניסה הראשית מ-voiceHandler.js.
- */
 async function handleVoiceStateUpdate(oldState, newState) {
     const newChannel = newState.channel;
     const oldChannel = oldState.channel;
@@ -43,9 +33,9 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
     if (oldChannel?.id === newChannel?.id) return;
 
-    if (oldChannel?.id === FIFO_CHANNEL_ID) {
+    if (oldChannel?.id === FIFO_CHANNEL_ID && isPodcastActive) {
         const membersInOldChannel = oldChannel.members.filter(m => !m.user.bot);
-        if (membersInOldChannel.size < MIN_USERS_FOR_PODCAST && isPodcastActive) {
+        if (membersInOldChannel.size < MIN_USERS_FOR_PODCAST) {
             log(`[PODCAST] מספר המשתמשים ירד מתחת ל-${MIN_USERS_FOR_PODCAST}. מפסיק את הפודקאסט.`);
             isPodcastActive = false;
             spokenUsers.clear();
@@ -61,12 +51,21 @@ async function handleVoiceStateUpdate(oldState, newState) {
         const membersInNewChannel = newChannel.members.filter(m => !m.user.bot);
         const memberCount = membersInNewChannel.size;
 
+        // --- 🔍 לוג אבחון 🔍 ---
+        log(`[PODCAST DIAGNOSTIC] משתמש נכנס לערוץ הראשי. בודק תנאים...`);
+        log(`[PODCAST DIAGNOSTIC] -> כמות משתמשים: ${memberCount} (נדרש: ${MIN_USERS_FOR_PODCAST})`);
+        log(`[PODCAST DIAGNOSTIC] -> האם פודקאסט פעיל? ${isPodcastActive}`);
+        log(`[PODCAST DIAGNOSTIC] -> האם במצב צינון? ${podcastCooldown}`);
+        // --------------------
+
         const shouldStart = memberCount >= MIN_USERS_FOR_PODCAST && !isPodcastActive && !podcastCooldown;
         const shouldAnnounce = isPodcastActive && !spokenUsers.has(newState.member.id);
+        
+        log(`[PODCAST DIAGNOSTIC] -> תוצאה: האם צריך להתחיל? ${shouldStart}`);
 
         if (shouldStart || shouldAnnounce) {
             if (shouldStart) {
-                log(`[PODCAST] זוהתה כניסה לערוץ. ${memberCount} משתמשים נוכחים. מתחיל את הפודקאסט.`);
+                log(`[PODCAST] התנאים התקיימו. מתחיל את הפודקאסט.`);
                 isPodcastActive = true;
             } else {
                 log(`[PODCAST] משתמש חדש, ${newState.member.displayName}, הצטרף בזמן פודקאסט פעיל.`);
@@ -74,13 +73,12 @@ async function handleVoiceStateUpdate(oldState, newState) {
             
             spokenUsers.add(newState.member.id);
             await playPersonalPodcast(newChannel, newState.member, client);
+        } else {
+            log(`[PODCAST DIAGNOSTIC] -> סיום: התנאים לא התקיימו, לא מפעיל את הפודקאסט.`);
         }
     }
 }
 
-/**
- * "הבמאי": בונה ומפעיל פודקאסט אישי קצר.
- */
 async function playPersonalPodcast(channel, member, client) {
     const userId = member.id;
     const userName = member.displayName;
@@ -124,6 +122,5 @@ module.exports = {
     initializePodcastState,
     getPodcastStatus,
     restrictedCommands,
-    // ✅ [תיקון] הוספת הפונקציה לייצוא כדי שתהיה זמינה לקבצים אחרים
     playPersonalPodcast 
 };

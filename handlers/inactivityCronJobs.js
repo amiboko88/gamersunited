@@ -2,21 +2,13 @@
 const { EmbedBuilder } = require('discord.js');
 const db = require('../utils/firebase');
 const { sendStaffLog } = require('../utils/staffLogger');
-
-// --- ✅ [תיקון] שינוי הנתיב לקובץ העזר המרכזי ---
 const { createPaginatedFields } = require('../utils/embedUtils');
-// ---------------------------------------------------
 const { sendReminderDM } = require('../interactions/buttons/inactivityDmButtons');
 
 const INACTIVITY_DAYS_FIRST_DM = 7;
 const INACTIVITY_DAYS_FINAL_DM = 30;
 let lastInactiveIds = []; 
 
-/**
- * פונקציית עזר לעדכון סטטוס משתמש ב-Firebase.
- * @param {string} userId - ה-ID של המשתמש.
- * @param {object} updates - אובייקט עם השדות לעדכון.
- */
 async function updateMemberStatus(userId, updates) {
     try {
         await db.collection('memberTracking').doc(userId).set(updates, { merge: true });
@@ -25,12 +17,6 @@ async function updateMemberStatus(userId, updates) {
     }
 }
 
-// --- פונקציות CRON ---
-
-/**
- * משימת CRON: עדכון סטטוס אי-פעילות אוטומטי ושליחת דוח שינויים לערוץ הצוות.
- * @param {import('discord.js').Client} client - אובייקט הקליינט של הבוט.
- */
 async function runAutoTracking(client) {
     const guildId = process.env.GUILD_ID;
     if (!guildId) {
@@ -86,7 +72,8 @@ async function runAutoTracking(client) {
 
     if (statusChanges.length > 0) {
         const fields = createPaginatedFields('🔄 סיכום עדכוני סטטוס', statusChanges);
-        await sendStaffLog(client, '📜 עדכון סטטוסים אוטומטי', `בוצעו ${statusChanges.length} עדכוני סטטוס.`, 0x3498db, fields);
+        // ✅ [תיקון] הסרת הפרמטר client מהקריאה
+        await sendStaffLog('📜 עדכון סטטוסים אוטומטי', `בוצעו ${statusChanges.length} עדכוני סטטוס.`, 0x3498db, fields);
     }
 
     const currentInactiveIds = allInactive.map(u => u.id).sort();
@@ -105,7 +92,8 @@ async function runAutoTracking(client) {
         const allFields = [...fields1, ...fields2];
         
         if (allInactive.length > 0) {
-            await sendStaffLog(client, '📢 דוח משתמשים לא פעילים', `זוהה שינוי ברשימה. סה"כ ${allInactive.length} משתמשים לא פעילים.`, 0xe67e22, allFields);
+            // ✅ [תיקון] הסרת הפרמטר client מהקריאה
+            await sendStaffLog('📢 דוח משתמשים לא פעילים', `זוהה שינוי ברשימה. סה"כ ${allInactive.length} משתמשים לא פעילים.`, 0xe67e22, allFields);
         }
     }
 }
@@ -150,7 +138,8 @@ async function runScheduledReminders(client) {
         const fields = [];
         if (success.length > 0) fields.push(createPaginatedFields('✅ נשלחו בהצלחה', success)[0]);
         if (fails.length > 0) fields.push(createPaginatedFields('❌ נכשלו', fails)[0]);
-        await sendStaffLog(client, '📤 סיכום שליחת תזכורות אוטומטי', `הושלם סבב אוטומטי.`, 0x00aaff, fields);
+        // ✅ [תיקון] הסרת הפרמטר client מהקריאה
+        await sendStaffLog('📤 סיכום שליחת תזכורות אוטומטי', `הושלם סבב אוטומטי.`, 0x00aaff, fields);
     }
 }
 
@@ -167,15 +156,16 @@ async function runMonthlyKickReport(client) {
     });
 
     if (eligibleToKick.length === 0) {
-        await sendStaffLog(client, '🗓️ דוח הרחקה חודשי', 'אין משתמשים העומדים בקריטריונים להרחקה החודש.', 0x00ff00);
+        // ✅ [תיקון] הסרת הפרמטר client מהקריאה
+        await sendStaffLog('🗓️ דוח הרחקה חודשי', 'אין משתמשים העומדים בקריטריונים להרחקה החודש.', 0x00ff00);
         return;
     }
 
     const userLines = eligibleToKick.map(doc => `• <@${doc.id}> (סטטוס: \`${doc.data().statusStage}\`)`);
     const fields = createPaginatedFields(`מועמדים להרחקה (${eligibleToKick.length})`, userLines);
 
+    // ✅ [תיקון] הסרת הפרמטר client מהקריאה
     await sendStaffLog(
-        client,
         '🗓️ דוח הרחקה חודשי',
         'להלן המשתמשים שניתן להרחיק עקב אי-פעילות. לביצוע, השתמשו בפקודת `/ניהול` ובחרו באפשרות ההרחקה.',
         0xffa500,

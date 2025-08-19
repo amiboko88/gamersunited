@@ -1,10 +1,11 @@
-// 📁 managers/podcastManager.js (גרסה יציבה ומתוקנת סופית)
+// 📁 managers/podcastManager.js (משודרג לפעולה בכל הערוצים)
 const { log } = require('../utils/logger');
 const ttsEngine = require('../tts/ttsEngine.elevenlabs.js');
 const profiles = require('../data/profiles.js');
 const voiceQueue = require('./voiceQueue.js');
 
-const FIFO_CHANNEL_ID = process.env.FIFO_CHANNEL_ID;
+// --- הגדרות הפודקאסט ---
+// ❌ הסרנו את המשתנה FIFO_CHANNEL_ID כי הפודקאסט כבר לא מוגבל לערוץ אחד
 const MIN_USERS_FOR_PODCAST = 4;
 const PODCAST_COOLDOWN = 1 * 60 * 1000;
 const restrictedCommands = ['soundboard', 'song'];
@@ -27,32 +28,33 @@ const GENERIC_GREETINGS = [
     { shimon: 'זהירות, {userName} בשטח. כולם לתפוס מחסה!', shirly: 'הלוואי שהאויבים היו אומרים את זה עליו.' }
 ];
 
-let isPodcastActive = false;
+let activePodcastChannelId = null; // ✅ משתנה חדש שעוקב אחרי הערוץ שבו הפודקאסט פעיל
 let podcastCooldown = false;
 const spokenUsers = new Set();
 
 function initializePodcastState() {
-    isPodcastActive = false;
+    activePodcastChannelId = null;
     podcastCooldown = false;
     spokenUsers.clear();
     log('[PODCAST] מנהל הפודקאסט אותחל.');
 }
 
-function getPodcastStatus() { return isPodcastActive; }
+function getPodcastStatus() { return !!activePodcastChannelId; }
 
 async function handleVoiceStateUpdate(oldState, newState) {
     const { channel: newChannel, client, member, guild } = newState;
+    const { channelId: oldChannelId } = oldState;
 
-    if (oldState.channelId === newState.channelId) return;
+    if (oldChannelId === newChannel?.id) return;
 
-    // ✅ [תיקון קריסה סופי] לוגיקה חדשה ועמידה המבוססת על המידע העדכני ביותר
-    if (oldState.channelId === FIFO_CHANNEL_ID && isPodcastActive) {
-        const oldChannel = guild.channels.cache.get(oldState.channelId);
-        if (oldChannel) { // בודקים שהערוץ עדיין קיים בזיכרון
+    // ✅ [שדרוג] בודק אם משתמש עזב את הערוץ שבו הפודקאסט פעיל כרגע
+    if (oldChannelId && oldChannelId === activePodcastChannelId) {
+        const oldChannel = guild.channels.cache.get(oldChannelId);
+        if (oldChannel) {
             const members = oldChannel.members.filter(m => !m.user.bot);
             if (members.size < MIN_USERS_FOR_PODCAST) {
-                log(`[PODCAST] מספר המשתמשים ירד מתחת ל-${MIN_USERS_FOR_PODCAST}. מסיים את הפודקאסט.`);
-                isPodcastActive = false;
+                log(`[PODCAST] מספר המשתמשים בערוץ ${oldChannel.name} ירד מתחת ל-${MIN_USERS_FOR_PODCAST}. מסיים את הפודקאסט.`);
+                activePodcastChannelId = null;
                 spokenUsers.clear();
                 podcastCooldown = true;
                 setTimeout(() => { podcastCooldown = false; log('[PODCAST] תקופת הצינון הסתיימה.'); }, PODCAST_COOLDOWN);
@@ -60,15 +62,18 @@ async function handleVoiceStateUpdate(oldState, newState) {
         }
     }
 
-    if (newChannel?.id === FIFO_CHANNEL_ID) {
+    // ✅ [שדרוג] בודק אם משתמש הצטרף לערוץ כלשהו ועומד בתנאים
+    if (newChannel) {
         const members = newChannel.members.filter(m => !m.user.bot);
-        const shouldStart = members.size >= MIN_USERS_FOR_PODCAST && !isPodcastActive && !podcastCooldown;
-        const shouldAnnounce = isPodcastActive && !spokenUsers.has(member.id);
+        const isPodcastActiveInThisChannel = newChannel.id === activePodcastChannelId;
+        
+        const shouldStart = members.size >= MIN_USERS_FOR_PODCAST && !getPodcastStatus() && !podcastCooldown;
+        const shouldAnnounce = isPodcastActiveInThisChannel && !spokenUsers.has(member.id);
 
         if (shouldStart || shouldAnnounce) {
             if (shouldStart) {
-                log(`[PODCAST] התנאים התקיימו (${members.size} משתמשים). מתחיל פודקאסט.`);
-                isPodcastActive = true;
+                log(`[PODCAST] התנאים התקיימו בערוץ ${newChannel.name} (${members.size} משתמשים). מתחיל פודקאסט.`);
+                activePodcastChannelId = newChannel.id;
             }
             spokenUsers.add(member.id);
             await playPersonalPodcast(newChannel, member, client);

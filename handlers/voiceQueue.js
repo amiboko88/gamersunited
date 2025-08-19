@@ -1,12 +1,7 @@
-// 📁 handlers/voiceQueue.js (משופר עם selfDeaf)
+// 📁 handlers/voiceQueue.js (גרסה סופית עם הגדרות חיבור מלאות)
 const {
-    joinVoiceChannel,
-    createAudioPlayer,
-    createAudioResource,
-    entersState,
-    AudioPlayerStatus,
-    VoiceConnectionStatus,
-    NoSubscriberBehavior
+    joinVoiceChannel, createAudioPlayer, createAudioResource, entersState,
+    AudioPlayerStatus, VoiceConnectionStatus, NoSubscriberBehavior
 } = require('@discordjs/voice');
 const { log } = require('../utils/logger');
 const { Readable } = require('stream');
@@ -16,9 +11,7 @@ const IDLE_TIMEOUT_MINUTES = 5;
 
 function getQueue(guildId, client) {
     if (!queues.has(guildId)) {
-        const player = createAudioPlayer({
-            behaviors: { noSubscriber: NoSubscriberBehavior.Pause },
-        });
+        const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Pause } });
 
         player.on(AudioPlayerStatus.Idle, (oldState) => {
             const serverQueue = queues.get(guildId);
@@ -31,10 +24,7 @@ function getQueue(guildId, client) {
         player.on('error', error => {
             log(`❌ [PLAYER_ERROR] שגיאה בנגן האודיו בשרת ${guildId}:`, error);
             const serverQueue = queues.get(guildId);
-            if (serverQueue) {
-                serverQueue.isPlaying = false;
-                playNextInQueue(guildId);
-            }
+            if (serverQueue) { serverQueue.isPlaying = false; playNextInQueue(guildId); }
         });
         
         const queueConstruct = {
@@ -78,8 +68,9 @@ async function playNextInQueue(guildId) {
                 channelId: channel.id,
                 guildId: guild.id,
                 adapterCreator: guild.voiceAdapterCreator,
-                // ✅ [תיקון DEAFENED] הוספת פרמטר זה פותרת את בעיית האייקון ומשפרת יציבות
+                // ✅ [תיקון אייקון סופי] הגדרות מלאות למצב הבוט בערוץ
                 selfDeaf: true, 
+                selfMute: false
             });
             await entersState(serverQueue.connection, VoiceConnectionStatus.Ready, 30_000);
         }

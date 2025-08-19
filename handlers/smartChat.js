@@ -1,8 +1,8 @@
-// 📁 handlers/smartChat.js
+// 📁 handlers/smartChat.js (מתוקן)
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const db = require("../utils/firebase");
-const { Collection } = require('discord.js'); // [שדרוג] ייבוא נדרש למטמון
+const { Collection } = require('discord.js');
 
 const STAFF_CHANNEL_ID = '881445829100060723';
 const ADMIN_ROLE_NAME = 'ADMIN';
@@ -11,7 +11,6 @@ const USER_COOLDOWN_SEC = 8;
 const lastReplyPerUser = new Map();
 const recentReplies = new Set();
 
-// [שדרוג] מערכת מטמון (Cache) להגדרות ופרופילים
 const configCache = {
     blacklistedChannels: new Set(),
     playerProfiles: new Map(),
@@ -19,17 +18,14 @@ const configCache = {
     ttl: 5 * 60 * 1000 // 5 דקות
 };
 
-// [שדרוג] פונקציה לטעינת הגדרות ופרופילים מה-DB אל המטמון
 async function loadConfig() {
     if (Date.now() - configCache.lastFetched < configCache.ttl) return;
 
-    // טעינת ערוצים חסומים
     const settingsDoc = await db.collection('settings').doc('botConfig').get();
     if (settingsDoc.exists) {
         configCache.blacklistedChannels = new Set(settingsDoc.data().blacklistedChannels || []);
     }
 
-    // טעינת פרופילים
     const profilesSnapshot = await db.collection('playerProfiles').get();
     configCache.playerProfiles.clear();
     profilesSnapshot.forEach(doc => {
@@ -39,7 +35,6 @@ async function loadConfig() {
     configCache.lastFetched = Date.now();
 }
 
-// [שדרוג] ניתוח מצב רוח באמצעות AI במקום רשימות סטטיות
 async function analyzeMoodWithAI(text) {
     try {
         const response = await openai.chat.completions.create({
@@ -57,18 +52,22 @@ async function analyzeMoodWithAI(text) {
         return response.choices[0]?.message?.content.trim() || 'ניטרלי';
     } catch (err) {
         console.warn("⚠️ AI mood analysis failed:", err.message);
-        return 'ניטרלי'; // Fallback to neutral mood on error
+        return 'ניטרלי';
     }
 }
 
-// [שדרוג] פונקציה לאחזור היסטוריית השיחה מהערוץ
 async function getConversationHistory(message, limit = 3) {
+    // ✅ [תיקון] הוספת בדיקה שמונעת ריצה על הודעות "דמה" או הודעות ללא ערוץ תקין
+    if (message._simulateOnly || !message.channel?.messages) {
+        return null;
+    }
+    
     try {
         const messages = await message.channel.messages.fetch({ limit, before: message.id });
         return messages
-            .filter(m => !m.author.bot) // התעלם מהודעות של בוטים
+            .filter(m => !m.author.bot)
             .map(m => `${m.member?.displayName || m.author.username}: ${m.content}`)
-            .reverse() // סדר מההודעה הישנה לחדשה
+            .reverse()
             .join('\n');
     } catch (err) {
         console.warn("⚠️ Could not fetch message history:", err.message);
@@ -87,7 +86,6 @@ function isTargetingBot(text) {
     return ['שמעון', 'shim', 'bot', 'שמעון בוט'].some(name => lower.includes(name));
 }
 
-// [שדרוג] ה-Prompt כולל כעת גם היסטוריית שיחה
 function createPrompt({ userText, mood, displayName, profileLine, isAdminUser, history }) {
     let base = `אתה שמעון, בוט קהילתי ישראלי לגיימרים בוגרים (25+). מצב הרוח שלך: ${mood}.`;
     if (isAdminUser) base += ` המשתמש שמולך הוא אדמין – תכבד אותו אבל תתחכם!`;
@@ -103,34 +101,31 @@ ${context}עכשיו, "${displayName}" כתב: "${userText}"
 תגיב לו ישירות בעברית. תהיה קצר, סרקסטי, ציני, ומקורי. התגובה שלך צריכה להתייחס ישירות להודעה שלו, וגם להקשר השיחה אם רלוונטי.`;
 }
 
-async function logToFirestore(message, reply, mood) { /* ללא שינוי */ }
-async function tryModel({ model, prompt }) { /* ללא שינוי */ }
+// ... שאר הקובץ נשאר ללא שינוי ...
+async function logToFirestore(message, reply, mood) { /* ... */ }
+async function tryModel({ model, prompt }) { /* ... */ }
 
 async function smartRespond(message, force = false) {
     const content = message.content.trim();
-    if (!content) return; // התעלם מהודעות ריקות
+    if (!content) return;
 
     const userId = message.author.id;
     if (isUserRateLimited(userId)) return;
     setUserCooldown(userId);
 
-    // [שדרוג] טעינת הגדרות מהמטמון/DB
     await loadConfig();
     if (configCache.blacklistedChannels.has(message.channel.id) && !force) return;
 
-    // [שדרוג] שליפת פרופיל אישי מהמטמון
     let profileLine = null;
     const userProfileLines = configCache.playerProfiles.get(userId);
     if (Array.isArray(userProfileLines) && userProfileLines.length > 0) {
         profileLine = userProfileLines[Math.floor(Math.random() * userProfileLines.length)];
     }
 
-    // [שדרוג] שימוש בניתוח מצב רוח דינמי
     const mood = await analyzeMoodWithAI(content);
     const isAdminUser = message.member ? isAdmin(message.member) : false;
     const displayName = message.member?.displayName || message.author.username || "משתמש";
-
-    // [שדרוג] הוספת היסטוריית שיחה
+    
     const history = await getConversationHistory(message);
 
     const prompt = createPrompt({ userText: content, mood, displayName, profileLine, isAdminUser, history });
@@ -138,31 +133,42 @@ async function smartRespond(message, force = false) {
 
     for (let attempt = 0; attempt < 2; attempt++) {
         try {
-            reply = await tryModel({ model: attempt === 0 ? 'gpt-4o' : 'gpt-3.5-turbo', prompt });
+            const modelToUse = message._simulateOnly ? 'gpt-3.5-turbo' : (attempt === 0 ? 'gpt-4o' : 'gpt-3.5-turbo');
+            reply = await tryModel({ model: modelToUse, prompt });
             if (!recentReplies.has(reply)) break;
         } catch (err) {
-            if (attempt === 0) {
+            if (attempt === 0 && !message._simulateOnly) {
                 const channel = message.client.channels.cache.get(STAFF_CHANNEL_ID);
                 if (channel) channel.send(`⚠️ GPT-4o נפל: ${err.code || err.status}`);
             }
         }
     }
-    if (!reply) return;
-
+    
+    if (!reply) {
+        // [הבהרה] עבור הודעות אוטומטיות, נחזיר את התוכן במקום לשלוח אותו
+        if (message._simulateOnly) {
+           return null;
+        }
+        return;
+    }
+   
     recentReplies.add(reply);
     if (recentReplies.size > 6) recentReplies.delete([...recentReplies][0]);
+   
+    // [הבהרה] החזרת התוכן עבור הודעות אוטומטיות
+    if (message._simulateOnly) {
+       return reply;
+    }
 
     await message.reply({ content: reply });
     logToFirestore(message, reply, mood).catch(() => {});
-    // ודא שאתה קורא ל-trackSmartReply במקום המתאים בקוד הראשי
 }
 
 module.exports = async function smartChat(message) {
     if (message.author.bot || message.content.startsWith('/')) return;
 
-    // [שדרוג] הפעלת הבוט רק אם פונים אליו ישירות, כדי למנוע הצפה
     if (isTargetingBot(message.content)) {
-        return smartRespond(message, true); // `true` עוקף רשימה שחורה
+        return smartRespond(message, true);
     }
 };
 

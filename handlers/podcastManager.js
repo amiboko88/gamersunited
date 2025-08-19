@@ -42,20 +42,24 @@ function initializePodcastState() {
 function getPodcastStatus() { return isPodcastActive; }
 
 async function handleVoiceStateUpdate(oldState, newState) {
-    const { channel: newChannel, client, member } = newState;
-    const { channel: oldChannel } = oldState;
+    const { channel: newChannel, client, member, guild } = newState;
+    const { channelId: oldChannelId } = oldState;
 
-    if (oldChannel?.id === newChannel?.id) return;
+    if (oldState.channelId === newState.channelId) return;
 
-    // ✅ [תיקון] הוספנו בדיקה ש-oldChannel אינו null לפני השימוש בו
-    if (oldChannel && oldChannel.id === FIFO_CHANNEL_ID && isPodcastActive) {
-        const members = oldChannel.members.filter(m => !m.user.bot);
-        if (members.size < MIN_USERS_FOR_PODCAST) {
-            log(`[PODCAST] מספר המשתמשים ירד מתחת ל-${MIN_USERS_FOR_PODCAST}. מסיים את הפודקאסט.`);
-            isPodcastActive = false;
-            spokenUsers.clear();
-            podcastCooldown = true;
-            setTimeout(() => { podcastCooldown = false; log('[PODCAST] תקופת הצינון הסתיימה.'); }, PODCAST_COOLDOWN);
+    // ✅ [תיקון קריסה] לוגיקה חדשה ועמידה לטיפול ביציאה מערוץ
+    if (oldChannelId === FIFO_CHANNEL_ID && isPodcastActive) {
+        // שולפים גרסה עדכנית של הערוץ מה-cache כדי למנוע עבודה עם מידע ישן
+        const oldChannel = guild.channels.cache.get(oldChannelId);
+        if (oldChannel) { // מוודאים שהערוץ עדיין קיים לפני שמשתמשים בו
+            const members = oldChannel.members.filter(m => !m.user.bot);
+            if (members.size < MIN_USERS_FOR_PODCAST) {
+                log(`[PODCAST] מספר המשתמשים ירד מתחת ל-${MIN_USERS_FOR_PODCAST}. מסיים את הפודקאסט.`);
+                isPodcastActive = false;
+                spokenUsers.clear();
+                podcastCooldown = true;
+                setTimeout(() => { podcastCooldown = false; log('[PODCAST] תקופת הצינון הסתיימה.'); }, PODCAST_COOLDOWN);
+            }
         }
     }
 

@@ -1,10 +1,9 @@
-// 📁 managers/podcastManager.js (מתוקן ועמיד בפני קריסות)
+// 📁 managers/podcastManager.js (גרסה יציבה ומתוקנת סופית)
 const { log } = require('../utils/logger');
 const ttsEngine = require('../tts/ttsEngine.elevenlabs.js');
 const profiles = require('../data/profiles.js');
 const voiceQueue = require('./voiceQueue.js');
 
-// --- הגדרות הפודקאסט ---
 const FIFO_CHANNEL_ID = process.env.FIFO_CHANNEL_ID;
 const MIN_USERS_FOR_PODCAST = 4;
 const PODCAST_COOLDOWN = 1 * 60 * 1000;
@@ -43,15 +42,13 @@ function getPodcastStatus() { return isPodcastActive; }
 
 async function handleVoiceStateUpdate(oldState, newState) {
     const { channel: newChannel, client, member, guild } = newState;
-    const { channelId: oldChannelId } = oldState;
 
     if (oldState.channelId === newState.channelId) return;
 
-    // ✅ [תיקון קריסה] לוגיקה חדשה ועמידה לטיפול ביציאה מערוץ
-    if (oldChannelId === FIFO_CHANNEL_ID && isPodcastActive) {
-        // שולפים גרסה עדכנית של הערוץ מה-cache כדי למנוע עבודה עם מידע ישן
-        const oldChannel = guild.channels.cache.get(oldChannelId);
-        if (oldChannel) { // מוודאים שהערוץ עדיין קיים לפני שמשתמשים בו
+    // ✅ [תיקון קריסה סופי] לוגיקה חדשה ועמידה המבוססת על המידע העדכני ביותר
+    if (oldState.channelId === FIFO_CHANNEL_ID && isPodcastActive) {
+        const oldChannel = guild.channels.cache.get(oldState.channelId);
+        if (oldChannel) { // בודקים שהערוץ עדיין קיים בזיכרון
             const members = oldChannel.members.filter(m => !m.user.bot);
             if (members.size < MIN_USERS_FOR_PODCAST) {
                 log(`[PODCAST] מספר המשתמשים ירד מתחת ל-${MIN_USERS_FOR_PODCAST}. מסיים את הפודקאסט.`);
@@ -85,19 +82,15 @@ async function playPersonalPodcast(channel, member, client) {
     let script = [];
 
     if (Array.isArray(userProfileLines) && userProfileLines.length > 0) {
-        log(`[PODCAST] נמצא פרופיל למשתמש ${userName}. בונה תסריט אישי...`);
         const selectedLines = [...userProfileLines].sort(() => 0.5 - Math.random()).slice(0, 3);
         script.push({ speaker: 'shimon', text: selectedLines[0] });
         if (selectedLines[1]) script.push({ speaker: 'shirly', text: selectedLines[1] });
         if (selectedLines[2]) script.push({ speaker: 'shimon', text: selectedLines[2] });
     } else {
-        log(`[PODCAST] לא נמצא פרופיל למשתמש ${userName}. יוצר תסריט גיבוי אקראי.`);
         const greeting = GENERIC_GREETINGS[Math.floor(Math.random() * GENERIC_GREETINGS.length)];
-        const shimonText = greeting.shimon.replace('{userName}', userName);
-        const shirlyText = greeting.shirly.replace('{userName}', userName);
         script = [
-            { speaker: 'shimon', text: shimonText },
-            { speaker: 'shirly', text: shirlyText }
+            { speaker: 'shimon', text: greeting.shimon.replace('{userName}', userName) },
+            { speaker: 'shirly', text: greeting.shirly.replace('{userName}', userName) }
         ];
     }
     

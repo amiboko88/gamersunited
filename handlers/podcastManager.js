@@ -1,4 +1,4 @@
-// 📁 managers/podcastManager.js (משודרג עם מאגר תגובות דינמי)
+// 📁 managers/podcastManager.js (מתוקן ועמיד בפני קריסות)
 const { log } = require('../utils/logger');
 const ttsEngine = require('../tts/ttsEngine.elevenlabs.js');
 const profiles = require('../data/profiles.js');
@@ -10,10 +10,9 @@ const MIN_USERS_FOR_PODCAST = 4;
 const PODCAST_COOLDOWN = 1 * 60 * 1000;
 const restrictedCommands = ['soundboard', 'song'];
 
-// ✅ [שדרוג] מאגר תגובות אקראיות למשתמשים חדשים
 const GENERIC_GREETINGS = [
     { shimon: 'תראי שירלי, בשר טרי הגיע. ברוך הבא, {userName}.', shirly: 'נקווה שהוא לא יתפרק מהר כמו הקודמים.' },
-    { shimon: 'שימי לב, {userName} הצטרף אלינו. נראה מבטיח.', shirly: 'כולם נראים מבטיחים בהתח-לה, שמעון. השאלה היא איך הם מסיימים.' },
+    { shimon: 'שימי לב, {userName} הצטרף אלינו. נראה מבטיח.', shirly: 'כולם נראים מבטיחים בהתחלה, שמעון. השאלה היא איך הם מסיימים.' },
     { shimon: 'עוד אחד נפל ברשת. שלום לך, {userName}.', shirly: 'השאלה היא אם זו רשת של דייגים או רשת של עכבישים.' },
     { shimon: '{userName} נחת בלובי. תכיני את עצמך.', shirly: 'אני תמיד מוכנה. השאלה אם הוא מוכן למה שמצפה לו.' },
     { shimon: 'קבלו את הכוכב החדש שלנו, {userName}!', shirly: 'כוכב או כוכב נופל? רק הזמן יגיד.' },
@@ -29,7 +28,6 @@ const GENERIC_GREETINGS = [
     { shimon: 'זהירות, {userName} בשטח. כולם לתפוס מחסה!', shirly: 'הלוואי שהאויבים היו אומרים את זה עליו.' }
 ];
 
-// --- משתני ניהול מצב ---
 let isPodcastActive = false;
 let podcastCooldown = false;
 const spokenUsers = new Set();
@@ -49,7 +47,8 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
     if (oldChannel?.id === newChannel?.id) return;
 
-    if (oldChannel?.id === FIFO_CHANNEL_ID && isPodcastActive) {
+    // ✅ [תיקון] הוספנו בדיקה ש-oldChannel אינו null לפני השימוש בו
+    if (oldChannel && oldChannel.id === FIFO_CHANNEL_ID && isPodcastActive) {
         const members = oldChannel.members.filter(m => !m.user.bot);
         if (members.size < MIN_USERS_FOR_PODCAST) {
             log(`[PODCAST] מספר המשתמשים ירד מתחת ל-${MIN_USERS_FOR_PODCAST}. מסיים את הפודקאסט.`);
@@ -88,7 +87,6 @@ async function playPersonalPodcast(channel, member, client) {
         if (selectedLines[1]) script.push({ speaker: 'shirly', text: selectedLines[1] });
         if (selectedLines[2]) script.push({ speaker: 'shimon', text: selectedLines[2] });
     } else {
-        // ✅ [שדרוג] לוגיקה לבחירת תגובה אקראית מהמאגר
         log(`[PODCAST] לא נמצא פרופיל למשתמש ${userName}. יוצר תסריט גיבוי אקראי.`);
         const greeting = GENERIC_GREETINGS[Math.floor(Math.random() * GENERIC_GREETINGS.length)];
         const shimonText = greeting.shimon.replace('{userName}', userName);

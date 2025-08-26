@@ -1,52 +1,63 @@
-// 📁 utils/squadBuilder.js
+// 📁 utils/squadBuilder.js (משודרג)
 const { ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { log } = require('./logger');
 
-const createdChannels = new Map(); // מפה לשמירת הערוצים שנוצרו
+const createdChannels = new Map();
 
-/**
- * מחזיר את רשימת הערוצים שנוצרו על ידי הפקודה האחרונה.
- * @returns {Map<string, import('discord.js').VoiceChannel>}
- */
 function getCreatedChannels() {
     return createdChannels;
 }
 
 /**
- * יוצר קבוצות וערוצים קוליים.
+ * [שדרוג] אלגוריתם חכם לחלוקת קבוצות הממזער ממתינים.
  */
 async function createGroupsAndChannels({ interaction, members, groupSize, categoryId }) {
-    await cleanupFifo(interaction); // ניקוי מקדים של ערוצים ישנים
+    await cleanupFifo(interaction);
 
     const shuffledMembers = [...members].sort(() => 0.5 - Math.random());
-    const numGroups = Math.floor(shuffledMembers.length / groupSize);
+    const memberCount = shuffledMembers.length;
     const squads = [];
-    const channels = [];
-    const waiting = shuffledMembers.slice(numGroups * groupSize);
+    let waiting = [];
 
-    for (let i = 0; i < numGroups; i++) {
-        const squad = shuffledMembers.slice(i * groupSize, (i + 1) * groupSize);
-        squads.push(squad);
+    let membersToAssign = [...shuffledMembers];
+
+    // יצירת קבוצות מלאות
+    while (membersToAssign.length >= groupSize) {
+        squads.push(membersToAssign.splice(0, groupSize));
     }
 
+    // טיפול בשארית
+    const remainingCount = membersToAssign.length;
+    if (remainingCount > 0) {
+        // אם השארית מספיק גדולה לקבוצה קטנה (למשל, 3 נשארו כשביקשו 4)
+        // או אם אין בכלל קבוצות מלאות (למשל, 3 אנשים ביקשו קבוצה של 4)
+        if (remainingCount >= groupSize - 1 || squads.length === 0) {
+            squads.push(membersToAssign);
+        } else {
+            waiting = membersToAssign;
+        }
+    }
+
+    const channels = [];
     for (let i = 0; i < squads.length; i++) {
         const teamName = `TEAM ${String.fromCharCode(65 + i)}`;
+        const currentSquad = squads[i];
         try {
             const channel = await interaction.guild.channels.create({
                 name: teamName,
                 type: ChannelType.GuildVoice,
                 parent: categoryId,
-                userLimit: groupSize,
+                userLimit: currentSquad.length, // הגודל יכול להיות שונה מהמבוקש
             });
             channels.push(channel);
-            createdChannels.set(channel.id, channel); // שמירת הערוץ שנוצר
+            createdChannels.set(channel.id, channel);
 
-            for (const member of squads[i]) {
+            for (const member of currentSquad) {
                 await member.voice.setChannel(channel).catch(err => {
                     log(`⚠️ לא ניתן היה להעביר את ${member.displayName}: ${err.message}`);
                 });
             }
-            log(`✅ נוצר ערוץ ${teamName} והועברו אליו ${squads[i].length} חברים.`);
+            log(`✅ נוצר ערוץ ${teamName} והועברו אליו ${currentSquad.length} חברים.`);
         } catch (error) {
             log(`❌ שגיאה ביצירת ערוץ או העברת חברים עבור ${teamName}:`, error);
             throw new Error('Failed to create team channels.');
@@ -56,45 +67,33 @@ async function createGroupsAndChannels({ interaction, members, groupSize, catego
     return { channels, squads, waiting };
 }
 
-/**
- * מנקה את כל ערוצי הפיפו שנוצרו.
- */
 async function cleanupFifo(interaction, originalVoiceChannel = null) {
     log('🧼 מתחיל תהליך ניקוי פיפו...');
     const channelsToDelete = getCreatedChannels();
 
     for (const [channelId, channel] of channelsToDelete) {
         try {
-            // העבר חזרה לערוץ המקורי אם הוא קיים
             if (originalVoiceChannel) {
                 for (const member of channel.members.values()) {
                     await member.voice.setChannel(originalVoiceChannel).catch(() => {});
                 }
             }
-            await channel.delete('איפוס פיפו');
+            await channel.delete('איפוס פיפו').catch(() => {});
             log(`🗑️ נמחק ערוץ פיפו: ${channel.name}`);
         } catch (error) {
             log(`⚠️ שגיאה במחיקת ערוץ פיפו ${channel.name}: ${error.message}`);
         }
     }
-    createdChannels.clear(); // איפוס המפה
+    createdChannels.clear();
 }
 
-/**
- * ✅ [שדרוג] בונה הודעה מעוצבת וכפתור איפוס עבור כל קבוצה.
- * @param {string} teamName - e.g., "TEAM A"
- * @param {import('discord.js').GuildMember[]} squadMembers
- * @param {number} teamIndex
- * @returns {{embeds: EmbedBuilder[], components: ActionRowBuilder[]}}
- */
 function buildTeamMessage(teamName, squadMembers, teamIndex) {
     const TEAM_COLORS = ['#3498DB', '#E74C3C', '#2ECC71', '#F1C40F', '#9B59B6', '#34495E'];
 
     const embed = new EmbedBuilder()
         .setColor(TEAM_COLORS[teamIndex % TEAM_COLORS.length])
-        .setTitle(`\\[ ${teamName} \\] - בהצלחה בקרב!`)
+        .setTitle(`\u200FTEAM ${String.fromCharCode(65 + teamIndex)}`) // \u200F for RTL
         .setDescription('**חברי הקבוצה:**\n' + squadMembers.map(m => `> <:dott:1140333334958129283> <@${m.id}>`).join('\n'))
-        .setThumbnail('https://i.imgur.com/gJ4d1t1.png')
         .setFooter({ text: 'לחצו על הכפתור כדי להצביע לאיפוס הקבוצה.' });
 
     const resetButton = new ButtonBuilder()
@@ -112,5 +111,5 @@ module.exports = {
     createGroupsAndChannels,
     cleanupFifo,
     getCreatedChannels,
-    buildTeamMessage // ✅ ייצוא הפונקציה החדשה
+    buildTeamMessage
 };

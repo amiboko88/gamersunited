@@ -1,57 +1,50 @@
-// 📁 utils/replayManager.js
+// 📁 utils/replayManager.js (משודרג ותקין)
 const { log } = require('./logger');
 
 const teams = new Map();
-const votes = new Map(); // מפה לאחסון הצבעות האיפוס
+const votes = new Map();
 
-/**
- * רושם קבוצה חדשה במערכת.
- */
 function registerTeam(teamName, members) {
-    teams.set(teamName, { members, size: members.length });
-    votes.set(teamName, new Set()); // אתחול מאגר הצבעות ריק
-    log(`[VOTE] קבוצה ${teamName} נרשמה להצבעת איפוס.`);
+    const teamData = { members, size: members.length };
+    teams.set(teamName, teamData);
+    votes.set(teamName, new Set()); // מאתחל סט הצבעות ריק
+    log(`[VOTE] קבוצה ${teamName} נרשמה למערכת ההצבעות.`);
+    return teamData;
 }
 
-/**
- * ✅ [שדרוג] מוסיף הצבעה לאיפוס עבור משתמש בקבוצה.
- * @param {string} userId
- * @param {string} teamName
- * @returns {boolean} - מחזיר true אם ההצבעה חדשה, false אם המשתמש כבר הצביע
- */
 function addResetVote(userId, teamName) {
     if (!votes.has(teamName)) return false;
-
     const teamVotes = votes.get(teamName);
-    if (teamVotes.has(userId)) {
-        return false; // כבר הצביע
-    }
-    
+    if (teamVotes.has(userId)) return false; // כבר הצביע
     teamVotes.add(userId);
     return true;
 }
 
-/**
- * ✅ [שדרוג] בודק אם קבוצה הגיעה למספר ההצבעות הדרוש לאיפוס.
- * @param {string} teamName
- * @returns {boolean}
- */
-function hasEnoughVotesToReset(teamName) {
-    const team = teams.get(teamName);
+function hasEnoughVotesToReset(teamName, teamSize) {
     const teamVotes = votes.get(teamName);
-
-    if (!team || !teamVotes) return false;
-
-    return teamVotes.size >= team.size;
+    return teamVotes && teamVotes.size >= teamSize;
 }
 
-/**
- * מאפס את כל נתוני ההצבעות והקבוצות.
- */
+function getVoteCount(teamName) {
+    return votes.get(teamName)?.size || 0;
+}
+
+// ✅ [הוחזר] בודק אם שתי הקבוצות הצביעו ל-Replay
+function hasBothTeamsVoted() {
+    if (teams.size < 2) return false;
+    // ודא שלכל קבוצה רשומה יש לפחות הצבעה אחת
+    return Array.from(votes.values()).every(voteSet => voteSet.size > 0);
+}
+
+// ✅ [הוחזר] מחזיר את כל המידע על הקבוצות הפעילות
+function getAllTeams() {
+    return Array.from(teams.values());
+}
+
 function resetReplayVotes() {
     teams.clear();
     votes.clear();
-    log('[VOTE] כל נתוני ההצבעות אופסו.');
+    log('[VOTE] כל נתוני ההצבעות והקבוצות אופסו.');
 }
 
 module.exports = {
@@ -59,5 +52,8 @@ module.exports = {
     addResetVote,
     hasEnoughVotesToReset,
     resetReplayVotes,
-    teams // ייצוא המפה כדי שנוכל למצוא את הקבוצה היריבה
+    getVoteCount,
+    hasBothTeamsVoted,
+    getAllTeams,
+    teams
 };

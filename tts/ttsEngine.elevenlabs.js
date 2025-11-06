@@ -1,12 +1,12 @@
 // 📁 tts/ttsEngine.elevenlabs.js
-const { ElevenLabs } = require('elevenlabs-node');
+const { ElevenLabs } = require('@elevenlabs/elevenlabs-js'); // ✅ [תיקון] הוחלף לשם החבילה החדש
 const { log } = require('../utils/logger.js');
 const { registerTTSUsage, getElevenLabsQuota } = require('./ttsQuotaManager.eleven.js');
 const { Readable } = require('stream');
 
 let elevenLabs;
 
-// --- ✅ [שדרוג 1] הפרדת מזהי קולות ---
+// --- הפרדת מזהי קולות ---
 const SHIMON_VOICE_ID = 'txHtK15K5KtX959ZtpRa'; // ⬅️ הקול המשובט שלך
 const SHIRLY_VOICE_ID = 'tnSpp4vdxKPjI9w0GnoV'; // ⬅️ הדבק כאן את ה-ID של הקול הנשי שבחרת
 // ----------------------------------------------------
@@ -31,7 +31,7 @@ if (process.env.ELEVENLABS_API_KEY) {
 }
 
 
-// --- ✅ [שדרוג 2] הגדרת פרופילים מבוססי סגנון עם IDs נפרדים ---
+// --- הגדרת פרופילים מבוססי סגנון עם IDs נפרדים ---
 const VOICE_CONFIG = {
     // --- קולות לפודקאסט ---
     // "שמעון" - הקריין הראשי, יציב יחסית
@@ -102,7 +102,6 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
         return null;
     }
     
-    // ✅ [שדרוג 3] שולף את כל הגדרות הפרופיל, לא רק ID
     const profile = VOICE_CONFIG[profileName] || DEFAULT_PROFILE;
     
     // בדיקה לוודא שה-ID של שירלי הוזן
@@ -166,7 +165,6 @@ async function synthesizeConversation(script, member) {
 
         const cleanText = line.text.replace(/[*_~`]/g, '');
         
-        // ✅ [שדרוג 3] שולף את כל הגדרות הפרופיל, לא רק ID
         const profileName = line.speaker.toLowerCase();
         const profile = VOICE_CONFIG[profileName] || DEFAULT_PROFILE;
 

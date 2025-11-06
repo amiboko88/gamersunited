@@ -1,5 +1,5 @@
 // 📁 tts/ttsEngine.elevenlabs.js
-const { ElevenLabs } = require('@elevenlabs/elevenlabs-js'); // ✅ [תיקון] הוחלף לשם החבילה החדש
+const { ElevenLabs } = require('@elevenlabs/elevenlabs-js');
 const { log } = require('../utils/logger.js');
 const { registerTTSUsage, getElevenLabsQuota } = require('./ttsQuotaManager.eleven.js');
 const { Readable } = require('stream');
@@ -11,9 +11,10 @@ const SHIMON_VOICE_ID = 'txHtK15K5KtX959ZtpRa'; // ⬅️ הקול המשובט 
 const SHIRLY_VOICE_ID = 'tnSpp4vdxKPjI9w0GnoV'; // ⬅️ הדבק כאן את ה-ID של הקול הנשי שבחרת
 // ----------------------------------------------------
 
-if (process.env.ELEVENLABS_API_KEY) {
+// ✅ [תיקון] הוחלף לשם משתנה הסביבה הנכון
+if (process.env.ELEVEN_API_KEY) { 
     elevenLabs = new ElevenLabs({
-        apiKey: process.env.ELEVENLABS_API_KEY,
+        apiKey: process.env.ELEVEN_API_KEY, // ✅ [תיקון]
     });
     log('🔊 [ElevenLabs Engine] הלקוח של ElevenLabs אותחל בהצלחה.');
     getElevenLabsQuota()
@@ -27,7 +28,7 @@ if (process.env.ELEVENLABS_API_KEY) {
         });
 
 } else {
-    log('⚠️ [ElevenLabs Engine] משתנה הסביבה ELEVENLABS_API_KEY לא נמצא. המנוע מושבת.');
+    log('⚠️ [ElevenLabs Engine] משתנה הסביבה ELEVEN_API_KEY לא נמצא. המנוע מושבת.');
 }
 
 
@@ -146,7 +147,8 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
  */
 async function synthesizeConversation(script, member) {
     if (!elevenLabs) {
-        log(`❌ [ElevenLabs Engine] ניסיון להשתמש במנוע TTS (שיחה) כאשר הלקוח אינו מאותחל. (מפתח: ${process.env.ELEVENLABS_API_KEY ? 'קיים' : 'חסר'})`);
+        // ✅ [תיקון]
+        log(`❌ [ElevenLabs Engine] ניסיון להשתמש במנוע TTS (שיחה) כאשר הלקוח אינו מאותחל. (מפתח: ${process.env.ELEVEN_API_KEY ? 'קיים' : 'חסר'})`);
         return [];
     }
     

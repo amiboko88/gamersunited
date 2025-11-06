@@ -1,4 +1,4 @@
-// 📁 handlers/voiceQueue.js (מתוקן עם ניקוי תור ב-Destroy)
+// 📁 handlers/voiceQueue.js (מתוקן עם בדיקת סטטוס ב-Idle)
 const {
     joinVoiceChannel, createAudioPlayer, createAudioResource, entersState,
     AudioPlayerStatus, VoiceConnectionStatus, NoSubscriberBehavior
@@ -15,9 +15,21 @@ function getQueue(guildId, client) {
 
         player.on(AudioPlayerStatus.Idle, (oldState) => {
             const serverQueue = queues.get(guildId);
-            if (serverQueue && oldState.status !== AudioPlayerStatus.Idle) {
+            if (!serverQueue) return;
+
+            // ✅ [תיקון באג ה-Stuck] בודק אם החיבור נהרס לפני שמנסה לנגן שוב
+            const connectionDestroyed = !serverQueue.connection || 
+                                        serverQueue.connection.state.status === VoiceConnectionStatus.Destroyed ||
+                                        serverQueue.connection.state.status === VoiceConnectionStatus.Disconnected;
+
+            if (oldState.status !== AudioPlayerStatus.Idle && !connectionDestroyed) {
                 serverQueue.isPlaying = false;
                 playNextInQueue(guildId);
+            } else if (connectionDestroyed) {
+                // אם החיבור נהרס (למשל, ניתוק ידני), נקה הכל
+                log(`[QUEUE] החיבור נהרס, מנקה את התור בשרת ${guildId}.`);
+                serverQueue.queue = [];
+                serverQueue.isPlaying = false;
             }
         });
 
@@ -72,11 +84,10 @@ async function playNextInQueue(guildId) {
                 selfMute: false
             });
             
-            // ✅ [תיקון באג ה-Stuck] מוסיפים האזנה להרס החיבור
             connection.on(VoiceConnectionStatus.Destroyed, () => {
-                log(`[QUEUE] החיבור בשרת ${guildId} נהרס (ניתוק ידני?). מנקה את התור.`);
+                log(`[QUEUE] החיבור בשרת ${guildId} נהרס. מנקה את התור.`);
                 if (serverQueue) {
-                    serverQueue.queue = []; // מרוקן את התור
+                    serverQueue.queue = []; 
                     serverQueue.isPlaying = false;
                     if (serverQueue.connection) serverQueue.connection = null;
                 }
@@ -94,7 +105,7 @@ async function playNextInQueue(guildId) {
     } catch (error) {
         log(`❌ [QUEUE] שגיאה קריטית בתהליך הניגון בשרת ${guildId}:`, error);
         serverQueue.isPlaying = false;
-        playNextInQueue(guildId);
+        playNextInQueue(guildId); // נסה את הפריט הבא בתור
     }
 }
 
@@ -105,7 +116,6 @@ function cleanupIdleConnections() {
         if (!serverQueue.isPlaying && serverQueue.queue.length === 0 && idleTime > IDLE_TIMEOUT_MINUTES * 60 * 1000) {
             log(`[CLEANUP] מנתק חיבור לא פעיל בשרת ${guildId}.`);
             
-            // ✅ [תיקון באג ה-Cron] בודק שהחיבור קיים ועדיין לא הושמד
             if (serverQueue.connection && serverQueue.connection.state.status !== VoiceConnectionStatus.Destroyed) {
                 serverQueue.connection.destroy();
             }

@@ -58,13 +58,23 @@ const DEFAULT_PROFILE = VOICE_CONFIG.shimon;
 // -----------------------------------------------------------------
 
 
-function streamToBuffer(stream) {
-    return new Promise((resolve, reject) => {
-        const chunks = [];
-        stream.on('data', (chunk) => chunks.push(chunk));
-        stream.on('end', () => resolve(Buffer.concat(chunks)));
-        stream.on('error', (error) => reject(error));
-    });
+/**
+ * ✅ [תיקון סופי] הוחלפה לפונקציה מודרנית (AsyncIterable) שתואמת ל-SDK.
+ * ממיר Stream ל-Buffer
+ * @param {AsyncIterable<Buffer>} stream 
+ * @returns {Promise<Buffer>}
+ */
+async function streamToBuffer(stream) {
+    const chunks = [];
+    try {
+        for await (const chunk of stream) { // ⬅️ שימוש בתחביר for-await-of
+            chunks.push(chunk);
+        }
+        return Buffer.concat(chunks);
+    } catch (error) {
+        log(`❌ [streamToBuffer] שגיאה באיסוף ה-Stream: ${error.message}`);
+        throw error; // זורק את השגיאה חזרה לפונקציה שקראה
+    }
 }
 
 /**
@@ -87,7 +97,6 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
     try {
         log(`[ElevenLabs Engine] מייצר אודיו עבור: "${cleanText}" עם פרופיל ${profileName}`);
         
-        // ✅ [תיקון סופי] שינוי מבנה הקריאה ל-2 ארגומנטים
         const audioStream = await elevenLabs.textToSpeech.stream(
             profile.id, // ⬅️ ארגומנט 1: Voice ID
             {           // ⬅️ ארגומנט 2: Options Object
@@ -98,7 +107,7 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
             }
         );
 
-        const audioBuffer = await streamToBuffer(audioStream);
+        const audioBuffer = await streamToBuffer(audioStream); // ⬅️ עכשיו יפעל
 
         const userId = member ? member.id : 'system';
         const username = member ? member.displayName : 'System';
@@ -144,7 +153,6 @@ async function synthesizeConversation(script, member) {
         try {
             log(`[ElevenLabs Podcast] מייצר שורה: [${profileName}] - "${cleanText}"`);
 
-            // ✅ [תיקון סופי] שינוי מבנה הקריאה ל-2 ארגומנטים
             const audioStream = await elevenLabs.textToSpeech.stream(
                 profile.id, // ⬅️ ארגומנט 1: Voice ID
                 {           // ⬅️ ארגומנט 2: Options Object
@@ -155,7 +163,7 @@ async function synthesizeConversation(script, member) {
                 }
             );
             
-            const audioBuffer = await streamToBuffer(audioStream);
+            const audioBuffer = await streamToBuffer(audioStream); // ⬅️ עכשיו יפעל
             audioBuffers.push(audioBuffer);
 
             await registerTTSUsage(cleanText.length, userId, username, 'ElevenLabs-Podcast', profileName);

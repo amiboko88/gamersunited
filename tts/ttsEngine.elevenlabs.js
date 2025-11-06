@@ -87,14 +87,16 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
     try {
         log(`[ElevenLabs Engine] מייצר אודיו עבור: "${cleanText}" עם פרופיל ${profileName}`);
         
-        // ✅ [תיקון] שימוש ב-snake_case עבור כל הפרמטרים
-        const audioStream = await elevenLabs.textToSpeech.stream({
-            text: cleanText,
-            voice_id: profile.id, 
-            model_id: 'eleven_multilingual_v3',
-            output_format: 'mp3_44100_128',
-            voice_settings: profile.settings 
-        });
+        // ✅ [תיקון סופי] שינוי מבנה הקריאה ל-2 ארגומנטים
+        const audioStream = await elevenLabs.textToSpeech.stream(
+            profile.id, // ⬅️ ארגומנט 1: Voice ID
+            {           // ⬅️ ארגומנט 2: Options Object
+                text: cleanText,
+                model_id: 'eleven_multilingual_v3',
+                output_format: 'mp3_44100_128',
+                ...profile.settings 
+            }
+        );
 
         const audioBuffer = await streamToBuffer(audioStream);
 
@@ -142,14 +144,16 @@ async function synthesizeConversation(script, member) {
         try {
             log(`[ElevenLabs Podcast] מייצר שורה: [${profileName}] - "${cleanText}"`);
 
-            // ✅ [תיקון] שימוש ב-snake_case עבור כל הפרמטרים
-            const audioStream = await elevenLabs.textToSpeech.stream({
-                text: cleanText,
-                voice_id: profile.id, 
-                model_id: 'eleven_multilingual_v3',
-                output_format: 'mp3_44100_128',
-                voice_settings: profile.settings
-            });
+            // ✅ [תיקון סופי] שינוי מבנה הקריאה ל-2 ארגומנטים
+            const audioStream = await elevenLabs.textToSpeech.stream(
+                profile.id, // ⬅️ ארגומנט 1: Voice ID
+                {           // ⬅️ ארגומנט 2: Options Object
+                    text: cleanText,
+                    model_id: 'eleven_multilingual_v3',
+                    output_format: 'mp3_44100_128',
+                    ...profile.settings
+                }
+            );
             
             const audioBuffer = await streamToBuffer(audioStream);
             audioBuffers.push(audioBuffer);

@@ -8,7 +8,7 @@ let elevenLabs;
 
 // --- הפרדת מזהי קולות ---
 const SHIMON_VOICE_ID = 'txHtK15K5KtX959ZtpRa'; // ⬅️ הקול המשובט שלך
-const SHIRLY_VOICE_ID = 'ID_נשי_מעברית_להדביק_כאן'; // ⬅️ הדבק כאן את ה-ID של הקול הנשי שבחרת
+const SHIRLY_VOICE_ID = 'tnSpp4vdxKPjI9w0GnoV'; // ⬅️ הדבק כאן את ה-ID של הקול הנשי שבחרת
 // ----------------------------------------------------
 
 if (process.env.ELEVEN_API_KEY) { 

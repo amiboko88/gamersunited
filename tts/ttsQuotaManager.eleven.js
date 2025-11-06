@@ -2,7 +2,7 @@
 
 const db = require('../utils/firebase.js');
 const { log } = require('../utils/logger.js');
-const { ElevenLabsClient } = require('@elevenlabs/elevenlabs-js'); // ✅ [תיקון] שינוי שם הקלאס
+const { ElevenLabsClient } = require('@elevenlabs/elevenlabs-js');
 
 const USAGE_COLLECTION = 'elevenTtsUsage'; // קולקציה חדשה
 
@@ -51,8 +51,13 @@ async function getElevenLabsQuota() {
     }
     
     try {
-        const elevenLabs = new ElevenLabsClient({ apiKey: process.env.ELEVEN_API_KEY }); // ✅ [תיקון]
-        const sub = await elevenLabs.user.getSubscription(); // ✅ [תיקון] הגרסה החדשה קוראת לזה ככה
+        const elevenLabs = new ElevenLabsClient({ apiKey: process.env.ELEVEN_API_KEY });
+        
+        // ✅ [תיקון סופי] הפונקציה הנכונה היא .user.get()
+        const userInfo = await elevenLabs.user.get(); 
+        
+        // ✅ [תיקון סופי] ניגשים למידע דרך האובייקט שהתקבל
+        const sub = userInfo.subscription; 
         
         const total = sub.character_limit;
         const used = sub.character_count;

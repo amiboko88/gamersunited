@@ -2,12 +2,13 @@
 const { ElevenLabsClient } = require('@elevenlabs/elevenlabs-js');
 const { log } = require('../utils/logger.js');
 const { registerTTSUsage, getElevenLabsQuota } = require('./ttsQuotaManager.eleven.js');
-const { Readable } = require('stream');
 
 let elevenLabs;
 
+// --- הפרדת מזהי קולות ---
 const SHIMON_VOICE_ID = 'txHtK15K5KtX959ZtpRa'; // ⬅️ הקול המשובט שלך
 const SHIRLY_VOICE_ID = 'tnSpp4vdxKPjI9w0GnoV'; // ⬅️ ה-ID של שירלי
+// ----------------------------------------------------
 
 if (process.env.ELEVEN_API_KEY) { 
     elevenLabs = new ElevenLabsClient({ 
@@ -17,7 +18,6 @@ if (process.env.ELEVEN_API_KEY) {
     getElevenLabsQuota()
         .then(quota => {
             if (quota) {
-                 // ✅ [תיקון] עדכון הלוג להצגת קרדיטים
                 log(`[ElevenLabs Quota] מצב מכסה: ${quota.used} / ${quota.total} ${quota.unit}. (${quota.percentUsed}%)`);
             }
         })
@@ -29,28 +29,13 @@ if (process.env.ELEVEN_API_KEY) {
     log('⚠️ [ElevenLabs Engine] משתנה הסביבה ELEVEN_API_KEY לא נמצא. המנוע מושבת.');
 }
 
-
-// --- הגדרת פרופילים מבוססי סגנון עם IDs נפרדים ---
+// --- ✅ [ניסיון תיקון] הסרת כל ההגדרות (stability וכו') ---
+// אנחנו נותנים למודל v3 להחליט בעצמו.
 const VOICE_CONFIG = {
-    // --- קולות לפודקאסט ---
-    shimon: {
-        id: SHIMON_VOICE_ID, 
-        settings: { stability: 0.5, similarity_boost: 0.75 }
-    },
-    shirly: {
-        id: SHIRLY_VOICE_ID, 
-        settings: { stability: 0.4, similarity_boost: 0.75, style_exaggeration: 0.2 }
-    },
-    
-    // --- פרופילים סטטיים לפקודת /tts (מבוססים על הקול שלך) ---
-    shimon_calm: {
-        id: SHIMON_VOICE_ID,
-        settings: { stability: 0.75, similarity_boost: 0.75 }
-    },
-    shimon_energetic: {
-        id: SHIMON_VOICE_ID,
-        settings: { stability: 0.30, similarity_boost: 0.7, style_exaggeration: 0.5 }
-    },
+    shimon: { id: SHIMON_VOICE_ID },
+    shirly: { id: SHIRLY_VOICE_ID },
+    shimon_calm: { id: SHIMON_VOICE_ID },
+    shimon_energetic: { id: SHIMON_VOICE_ID },
 };
 
 const DEFAULT_PROFILE = VOICE_CONFIG.shimon;
@@ -77,7 +62,6 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
     }
     
     const profile = VOICE_CONFIG[profileName] || DEFAULT_PROFILE;
-        
     const cleanText = text.replace(/[*_~`]/g, '');
     
     try {
@@ -89,7 +73,7 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
                 text: cleanText,
                 model_id: 'eleven_multilingual_v3',
                 output_format: 'mp3_44100_128',
-                ...profile.settings 
+                // ❌ כל ההגדרות הוסרו כדי לתת ל-v3 לעבוד נקי
             }
         );
 
@@ -110,12 +94,12 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
 
 async function synthesizeConversation(script, member) {
     if (!elevenLabs) {
-        log(`❌ [ElevenLabs Engine] ניסיון להשתמש במנוע TTS (שיחה) כאשר הלקוח אינו מאותחל. (מפתח: ${process.env.ELEVEN_API_KEY ? 'קיים' : 'חסר'})`);
+        log(`❌ [ElevenLabs Engine] ניסיון להשתמש במנוע TTS (שיחה) כאשר הלקוח אינו מאותחל.`);
         return [];
     }
     
-    if (SHIRLY_VOICE_ID === 'ID_נשי_מעברית_להדביק_כאן') {
-        log('❌ [ElevenLabs Podcast] לא ניתן להתחיל פודקאסט. ה-Voice ID של שירלי חסר בקוד.');
+    if (SHIRLY_VOICE_ID === 'ID_נשי_מעברית_להדביק_כאן' || SHIMON_VOICE_ID === 'פה_לשים_ID_של_קול_גבר_עברי_סטוק') {
+        log('❌ [ElevenLabs Podcast] לא ניתן להתחיל פודקאסט. ה-Voice IDs לא הוחלפו בקוד.');
         return []; 
     }
 
@@ -139,7 +123,7 @@ async function synthesizeConversation(script, member) {
                     text: cleanText,
                     model_id: 'eleven_multilingual_v3',
                     output_format: 'mp3_44100_128',
-                    ...profile.settings
+                     // ❌ כל ההגדרות הוסרו כדי לתת ל-v3 לעבוד נקי
                 }
             );
             

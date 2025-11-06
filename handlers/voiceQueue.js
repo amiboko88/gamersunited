@@ -1,4 +1,4 @@
-// 📁 handlers/voiceQueue.js (גרסה סופית עם הגדרות חיבור מלאות)
+// 📁 handlers/voiceQueue.js (מתוקן עם בדיקת סטטוס)
 const {
     joinVoiceChannel, createAudioPlayer, createAudioResource, entersState,
     AudioPlayerStatus, VoiceConnectionStatus, NoSubscriberBehavior
@@ -68,7 +68,6 @@ async function playNextInQueue(guildId) {
                 channelId: channel.id,
                 guildId: guild.id,
                 adapterCreator: guild.voiceAdapterCreator,
-                // ✅ [תיקון אייקון סופי] הגדרות מלאות למצב הבוט בערוץ
                 selfDeaf: true, 
                 selfMute: false
             });
@@ -93,7 +92,11 @@ function cleanupIdleConnections() {
         const idleTime = now - serverQueue.lastActivity;
         if (!serverQueue.isPlaying && serverQueue.queue.length === 0 && idleTime > IDLE_TIMEOUT_MINUTES * 60 * 1000) {
             log(`[CLEANUP] מנתק חיבור לא פעיל בשרת ${guildId}.`);
-            if (serverQueue.connection) serverQueue.connection.destroy();
+            
+            // ✅ [תיקון] בודק שהחיבור קיים ועדיין לא הושמד לפני שמנסה להשמיד אותו
+            if (serverQueue.connection && serverQueue.connection.state.status !== VoiceConnectionStatus.Destroyed) {
+                serverQueue.connection.destroy();
+            }
             if (serverQueue.player) serverQueue.player.stop();
             queues.delete(guildId);
         }

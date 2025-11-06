@@ -29,13 +29,46 @@ if (process.env.ELEVEN_API_KEY) {
     log('⚠️ [ElevenLabs Engine] משתנה הסביבה ELEVEN_API_KEY לא נמצא. המנוע מושבת.');
 }
 
-// --- ✅ [ניסיון תיקון] הסרת כל ההגדרות (stability וכו') ---
-// אנחנו נותנים למודל v3 להחליט בעצמו.
+
+// --- ✅ [תיקון הג'יבריש] מחזירים הגדרות ומוסיפים "use_speaker_boost" ---
 const VOICE_CONFIG = {
-    shimon: { id: SHIMON_VOICE_ID },
-    shirly: { id: SHIRLY_VOICE_ID },
-    shimon_calm: { id: SHIMON_VOICE_ID },
-    shimon_energetic: { id: SHIMON_VOICE_ID },
+    // --- קולות לפודקאסט ---
+    shimon: {
+        id: SHIMON_VOICE_ID, 
+        settings: { 
+            stability: 0.5, 
+            similarity_boost: 0.75,
+            use_speaker_boost: true // ⬅️ ההגדרה הקריטית
+        }
+    },
+    shirly: {
+        id: SHIRLY_VOICE_ID, 
+        settings: { 
+            stability: 0.4, 
+            similarity_boost: 0.75, 
+            style_exaggeration: 0.2,
+            use_speaker_boost: true // ⬅️ ההגדרה הקריטית
+        }
+    },
+    
+    // --- פרופילים סטטיים לפקודת /tts (מבוססים על הקול שלך) ---
+    shimon_calm: {
+        id: SHIMON_VOICE_ID,
+        settings: { 
+            stability: 0.75, 
+            similarity_boost: 0.75,
+            use_speaker_boost: true
+        }
+    },
+    shimon_energetic: {
+        id: SHIMON_VOICE_ID,
+        settings: { 
+            stability: 0.30, 
+            similarity_boost: 0.7, 
+            style_exaggeration: 0.5,
+            use_speaker_boost: true
+        }
+    },
 };
 
 const DEFAULT_PROFILE = VOICE_CONFIG.shimon;
@@ -71,9 +104,9 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
             profile.id, 
             {           
                 text: cleanText,
-                model_id: 'eleven_multilingual_v3',
+                model_id: 'eleven_multilingual_v3', // שימוש ב-V3
                 output_format: 'mp3_44100_128',
-                // ❌ כל ההגדרות הוסרו כדי לתת ל-v3 לעבוד נקי
+                ...profile.settings // ✅ [תיקון] מחזירים את ההגדרות המלאות
             }
         );
 
@@ -98,7 +131,8 @@ async function synthesizeConversation(script, member) {
         return [];
     }
     
-    if (SHIRLY_VOICE_ID === 'ID_נשי_מעברית_להדביק_כאן' || SHIMON_VOICE_ID === 'פה_לשים_ID_של_קול_גבר_עברי_סטוק') {
+    // בדיקה פשוטה יותר לוודאות שה-ID הוחלף
+    if (SHIRLY_VOICE_ID.startsWith('ID_') || SHIMON_VOICE_ID.startsWith('פה_לשים_')) {
         log('❌ [ElevenLabs Podcast] לא ניתן להתחיל פודקאסט. ה-Voice IDs לא הוחלפו בקוד.');
         return []; 
     }
@@ -121,9 +155,9 @@ async function synthesizeConversation(script, member) {
                 profile.id,
                 {
                     text: cleanText,
-                    model_id: 'eleven_multilingual_v3',
+                    model_id: 'eleven_multilingual_v3', // שימוש ב-V3
                     output_format: 'mp3_44100_128',
-                     // ❌ כל ההגדרות הוסרו כדי לתת ל-v3 לעבוד נקי
+                    ...profile.settings // ✅ [תיקון] מחזירים את ההגדרות המלאות
                 }
             );
             

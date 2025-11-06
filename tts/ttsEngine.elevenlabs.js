@@ -30,24 +30,19 @@ if (process.env.ELEVEN_API_KEY) {
 }
 
 
-// --- ✅ [תיקון הג'יבריש] מחזירים הגדרות ומוסיפים "use_speaker_boost" ---
+// --- ✅ [תיקון הג'יבריש V3] שימוש רק ב-Stability (לפי התיעוד הרשמי) ---
 const VOICE_CONFIG = {
     // --- קולות לפודקאסט ---
     shimon: {
         id: SHIMON_VOICE_ID, 
         settings: { 
-            stability: 0.5, 
-            similarity_boost: 0.75,
-            use_speaker_boost: true // ⬅️ ההגדרה הקריטית
+            stability: 0.5, // ⬅️ ההגדרה היחידה שנשלח
         }
     },
     shirly: {
         id: SHIRLY_VOICE_ID, 
         settings: { 
-            stability: 0.4, 
-            similarity_boost: 0.75, 
-            style_exaggeration: 0.2,
-            use_speaker_boost: true // ⬅️ ההגדרה הקריטית
+            stability: 0.4, // ⬅️ ההגדרה היחידה שנשלח
         }
     },
     
@@ -55,18 +50,13 @@ const VOICE_CONFIG = {
     shimon_calm: {
         id: SHIMON_VOICE_ID,
         settings: { 
-            stability: 0.75, 
-            similarity_boost: 0.75,
-            use_speaker_boost: true
+            stability: 0.75, // ⬅️ גבוה = רגוע
         }
     },
     shimon_energetic: {
         id: SHIMON_VOICE_ID,
         settings: { 
-            stability: 0.30, 
-            similarity_boost: 0.7, 
-            style_exaggeration: 0.5,
-            use_speaker_boost: true
+            stability: 0.30, // ⬅️ נמוך = אנרגטי
         }
     },
 };
@@ -106,7 +96,7 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
                 text: cleanText,
                 model_id: 'eleven_multilingual_v3', // שימוש ב-V3
                 output_format: 'mp3_44100_128',
-                ...profile.settings // ✅ [תיקון] מחזירים את ההגדרות המלאות
+                ...profile.settings // ✅ [תיקון] שולח רק הגדרות נתמכות
             }
         );
 
@@ -131,7 +121,6 @@ async function synthesizeConversation(script, member) {
         return [];
     }
     
-    // בדיקה פשוטה יותר לוודאות שה-ID הוחלף
     if (SHIRLY_VOICE_ID.startsWith('ID_') || SHIMON_VOICE_ID.startsWith('פה_לשים_')) {
         log('❌ [ElevenLabs Podcast] לא ניתן להתחיל פודקאסט. ה-Voice IDs לא הוחלפו בקוד.');
         return []; 
@@ -157,7 +146,7 @@ async function synthesizeConversation(script, member) {
                     text: cleanText,
                     model_id: 'eleven_multilingual_v3', // שימוש ב-V3
                     output_format: 'mp3_44100_128',
-                    ...profile.settings // ✅ [תיקון] מחזירים את ההגדרות המלאות
+                    ...profile.settings // ✅ [תיקון] שולח רק הגדרות נתמכות
                 }
             );
             

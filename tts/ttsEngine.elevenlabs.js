@@ -67,6 +67,13 @@ function streamToBuffer(stream) {
     });
 }
 
+/**
+ * מייצר אודיו בודד מטקסט.
+ * @param {string} text - הטקסט להקראה
+ * @param {string} profileName - שם הפרופיל (למשל 'shimon_calm')
+ * @param {import('discord.js').GuildMember} member - המשתמש שביקש
+ * @returns {Promise<Buffer|null>}
+ */
 async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
     if (!elevenLabs) {
         log('❌ [ElevenLabs Engine] ניסיון להשתמש במנוע TTS כאשר הלקוח אינו מאותחל.');
@@ -74,23 +81,19 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
     }
     
     const profile = VOICE_CONFIG[profileName] || DEFAULT_PROFILE;
-    
-    if (profile.id === 'ID_נשי_מעברית_להדביק_כאן') {
-        log(`❌ [ElevenLabs Engine] ניסיון להשתמש בפרופיל "${profileName}" לפני שהוזן Voice ID עבור שירלי.`);
-        return null;
-    }
         
     const cleanText = text.replace(/[*_~`]/g, '');
     
     try {
         log(`[ElevenLabs Engine] מייצר אודיו עבור: "${cleanText}" עם פרופיל ${profileName}`);
         
+        // ✅ [תיקון] שימוש ב-snake_case עבור כל הפרמטרים
         const audioStream = await elevenLabs.textToSpeech.stream({
             text: cleanText,
-            voiceId: profile.id, 
-            modelId: 'eleven_multilingual_v3',
-            outputFormat: 'mp3_44100_128',
-            voiceSettings: profile.settings 
+            voice_id: profile.id, 
+            model_id: 'eleven_multilingual_v3',
+            output_format: 'mp3_44100_128',
+            voice_settings: profile.settings 
         });
 
         const audioBuffer = await streamToBuffer(audioStream);
@@ -102,13 +105,18 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
         return audioBuffer;
 
     } catch (error) {
-        // ✅ [שדרוג לוג] מדפיסים את כל השגיאה כדי להבין מה ה-API החזיר
         log(`❌ [ElevenLabs Engine] שגיאה קריטית בייצור קול: ${error.message}`);
-        log(error); // הדפסת אובייקט השגיאה המלא
+        log(error); 
         return null;
     }
 }
 
+/**
+ * מייצר שיחה שלמה (פודקאסט) מסקריפט.
+ * @param {Array<{speaker: string, text: string}>} script 
+ * @param {import('discord.js').GuildMember} member
+ * @returns {Promise<Buffer[]>}
+ */
 async function synthesizeConversation(script, member) {
     if (!elevenLabs) {
         log(`❌ [ElevenLabs Engine] ניסיון להשתמש במנוע TTS (שיחה) כאשר הלקוח אינו מאותחל. (מפתח: ${process.env.ELEVEN_API_KEY ? 'קיים' : 'חסר'})`);
@@ -134,12 +142,13 @@ async function synthesizeConversation(script, member) {
         try {
             log(`[ElevenLabs Podcast] מייצר שורה: [${profileName}] - "${cleanText}"`);
 
+            // ✅ [תיקון] שימוש ב-snake_case עבור כל הפרמטרים
             const audioStream = await elevenLabs.textToSpeech.stream({
                 text: cleanText,
-                voiceId: profile.id, 
-                modelId: 'eleven_multilingual_v3',
-                outputFormat: 'mp3_44100_128',
-                voiceSettings: profile.settings
+                voice_id: profile.id, 
+                model_id: 'eleven_multilingual_v3',
+                output_format: 'mp3_44100_128',
+                voice_settings: profile.settings
             });
             
             const audioBuffer = await streamToBuffer(audioStream);
@@ -148,9 +157,8 @@ async function synthesizeConversation(script, member) {
             await registerTTSUsage(cleanText.length, userId, username, 'ElevenLabs-Podcast', profileName);
 
         } catch (error) {
-            // ✅ [שדרוג לוג] מדפיסים את כל השגיאה כדי להבין מה ה-API החזיר
             log(`❌ [ElevenLabs Podcast] שגיאה בייצור שורה: ${error.message}`);
-            log(error); // הדפסת אובייקט השגיאה המלא
+            log(error); 
         }
     }
     

@@ -44,25 +44,25 @@ async function getElevenLabsQuota() {
         const elevenLabs = new ElevenLabsClient({ apiKey: process.env.ELEVEN_API_KEY }); 
         const userInfo = await elevenLabs.user.get(); 
         
-        // ✅ [שדרוג לוג] בודקים אם המידע על המנוי קיים
         if (!userInfo || !userInfo.subscription) {
-            log('⚠️ [QUOTA] לא נמצא אובייקט "subscription" במידע המשתמש. ייתכן שהתוכנית אינה נתמכת API.');
+            log('⚠️ [QUOTA] לא נמצא אובייקט "subscription" במידע המשתמש.');
             return null;
         }
         
         const sub = userInfo.subscription; 
         
-        const total = sub.character_limit;
-        const used = sub.character_count;
-        const remaining = total - used;
+        // ✅ [תיקון] שימוש בקרדיטים במקום תווים
+        const total = sub.credits_limit || sub.character_limit;
+        const used = (total - (sub.credits_remaining || sub.character_count));
+        const remaining = sub.credits_remaining || (total - used);
         const percentUsed = ((used / total) * 100).toFixed(2);
         
-        return { total, used, remaining, percentUsed };
+        // ✅ [תיקון] שינוי יחידת המידה בלוג
+        return { total, used, remaining, percentUsed, unit: sub.credits_limit ? 'קרדיטים' : 'תווים' };
         
     } catch (error) {
-        // ✅ [שדרוג לוג] מדפיסים את כל השגיאה
         log(`❌ [QUOTA] שגיאה קריטית בשליפת מידע מנוי מ-ElevenLabs: ${error.message}`);
-        log(error); // הדפסת אובייקט השגיאה המלא
+        log(error); 
         return null;
     }
 }

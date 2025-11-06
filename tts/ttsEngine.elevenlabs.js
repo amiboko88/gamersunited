@@ -6,10 +6,8 @@ const { Readable } = require('stream');
 
 let elevenLabs;
 
-// --- הפרדת מזהי קולות ---
 const SHIMON_VOICE_ID = 'txHtK15K5KtX959ZtpRa'; // ⬅️ הקול המשובט שלך
 const SHIRLY_VOICE_ID = 'tnSpp4vdxKPjI9w0GnoV'; // ⬅️ ה-ID של שירלי
-// ----------------------------------------------------
 
 if (process.env.ELEVEN_API_KEY) { 
     elevenLabs = new ElevenLabsClient({ 
@@ -19,7 +17,8 @@ if (process.env.ELEVEN_API_KEY) {
     getElevenLabsQuota()
         .then(quota => {
             if (quota) {
-                log(`[ElevenLabs Quota] מצב מכסה: ${quota.used} / ${quota.total} תווים. (${quota.percentUsed}%)`);
+                 // ✅ [תיקון] עדכון הלוג להצגת קרדיטים
+                log(`[ElevenLabs Quota] מצב מכסה: ${quota.used} / ${quota.total} ${quota.unit}. (${quota.percentUsed}%)`);
             }
         })
         .catch(err => {
@@ -58,32 +57,19 @@ const DEFAULT_PROFILE = VOICE_CONFIG.shimon;
 // -----------------------------------------------------------------
 
 
-/**
- * ✅ [תיקון סופי] הוחלפה לפונקציה מודרנית (AsyncIterable) שתואמת ל-SDK.
- * ממיר Stream ל-Buffer
- * @param {AsyncIterable<Buffer>} stream 
- * @returns {Promise<Buffer>}
- */
 async function streamToBuffer(stream) {
     const chunks = [];
     try {
-        for await (const chunk of stream) { // ⬅️ שימוש בתחביר for-await-of
+        for await (const chunk of stream) {
             chunks.push(chunk);
         }
         return Buffer.concat(chunks);
     } catch (error) {
         log(`❌ [streamToBuffer] שגיאה באיסוף ה-Stream: ${error.message}`);
-        throw error; // זורק את השגיאה חזרה לפונקציה שקראה
+        throw error;
     }
 }
 
-/**
- * מייצר אודיו בודד מטקסט.
- * @param {string} text - הטקסט להקראה
- * @param {string} profileName - שם הפרופיל (למשל 'shimon_calm')
- * @param {import('discord.js').GuildMember} member - המשתמש שביקש
- * @returns {Promise<Buffer|null>}
- */
 async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
     if (!elevenLabs) {
         log('❌ [ElevenLabs Engine] ניסיון להשתמש במנוע TTS כאשר הלקוח אינו מאותחל.');
@@ -98,8 +84,8 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
         log(`[ElevenLabs Engine] מייצר אודיו עבור: "${cleanText}" עם פרופיל ${profileName}`);
         
         const audioStream = await elevenLabs.textToSpeech.stream(
-            profile.id, // ⬅️ ארגומנט 1: Voice ID
-            {           // ⬅️ ארגומנט 2: Options Object
+            profile.id, 
+            {           
                 text: cleanText,
                 model_id: 'eleven_multilingual_v3',
                 output_format: 'mp3_44100_128',
@@ -107,7 +93,7 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
             }
         );
 
-        const audioBuffer = await streamToBuffer(audioStream); // ⬅️ עכשיו יפעל
+        const audioBuffer = await streamToBuffer(audioStream);
 
         const userId = member ? member.id : 'system';
         const username = member ? member.displayName : 'System';
@@ -122,12 +108,6 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
     }
 }
 
-/**
- * מייצר שיחה שלמה (פודקאסט) מסקריפט.
- * @param {Array<{speaker: string, text: string}>} script 
- * @param {import('discord.js').GuildMember} member
- * @returns {Promise<Buffer[]>}
- */
 async function synthesizeConversation(script, member) {
     if (!elevenLabs) {
         log(`❌ [ElevenLabs Engine] ניסיון להשתמש במנוע TTS (שיחה) כאשר הלקוח אינו מאותחל. (מפתח: ${process.env.ELEVEN_API_KEY ? 'קיים' : 'חסר'})`);
@@ -154,8 +134,8 @@ async function synthesizeConversation(script, member) {
             log(`[ElevenLabs Podcast] מייצר שורה: [${profileName}] - "${cleanText}"`);
 
             const audioStream = await elevenLabs.textToSpeech.stream(
-                profile.id, // ⬅️ ארגומנט 1: Voice ID
-                {           // ⬅️ ארגומנט 2: Options Object
+                profile.id,
+                {
                     text: cleanText,
                     model_id: 'eleven_multilingual_v3',
                     output_format: 'mp3_44100_128',
@@ -163,7 +143,7 @@ async function synthesizeConversation(script, member) {
                 }
             );
             
-            const audioBuffer = await streamToBuffer(audioStream); // ⬅️ עכשיו יפעל
+            const audioBuffer = await streamToBuffer(audioStream);
             audioBuffers.push(audioBuffer);
 
             await registerTTSUsage(cleanText.length, userId, username, 'ElevenLabs-Podcast', profileName);

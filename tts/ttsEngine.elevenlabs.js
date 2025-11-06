@@ -1,5 +1,5 @@
 // 📁 tts/ttsEngine.elevenlabs.js
-const { ElevenLabsClient } = require('@elevenlabs/elevenlabs-js'); // ✅ [תיקון] שינוי שם הקלאס
+const { ElevenLabsClient } = require('@elevenlabs/elevenlabs-js');
 const { log } = require('../utils/logger.js');
 const { registerTTSUsage, getElevenLabsQuota } = require('./ttsQuotaManager.eleven.js');
 const { Readable } = require('stream');
@@ -8,11 +8,11 @@ let elevenLabs;
 
 // --- הפרדת מזהי קולות ---
 const SHIMON_VOICE_ID = 'txHtK15K5KtX959ZtpRa'; // ⬅️ הקול המשובט שלך
-const SHIRLY_VOICE_ID = 'tnSpp4vdxKPjI9w0GnoV'; // ⬅️ הדבק כאן את ה-ID של הקול הנשי שבחרת
+const SHIRLY_VOICE_ID = 'tnSpp4vdxKPjI9w0GnoV'; // ⬅️ ה-ID של שירלי
 // ----------------------------------------------------
 
 if (process.env.ELEVEN_API_KEY) { 
-    elevenLabs = new ElevenLabsClient({ // ✅ [תיקון] שינוי שם הקלאס
+    elevenLabs = new ElevenLabsClient({ 
         apiKey: process.env.ELEVEN_API_KEY, 
     });
     log('🔊 [ElevenLabs Engine] הלקוח של ElevenLabs אותחל בהצלחה.');
@@ -34,52 +34,30 @@ if (process.env.ELEVEN_API_KEY) {
 // --- הגדרת פרופילים מבוססי סגנון עם IDs נפרדים ---
 const VOICE_CONFIG = {
     // --- קולות לפודקאסט ---
-    // "שמעון" - הקריין הראשי, יציב יחסית
     shimon: {
-        id: SHIMON_VOICE_ID, // ⬅️ משתמש בקול שלך
-        settings: {
-            stability: 0.5, // ערך מאוזן
-            similarity_boost: 0.75,
-        }
+        id: SHIMON_VOICE_ID, 
+        settings: { stability: 0.5, similarity_boost: 0.75 }
     },
-    // "שירלי" - השותפה, קצת יותר אקספרסיבית
     shirly: {
-        id: SHIRLY_VOICE_ID, // ⬅️ משתמש בקול הנשי
-        settings: {
-            stability: 0.4, // פחות יציב = יותר אקספרסיבי
-            similarity_boost: 0.75,
-            style_exaggeration: 0.2
-        }
+        id: SHIRLY_VOICE_ID, 
+        settings: { stability: 0.4, similarity_boost: 0.75, style_exaggeration: 0.2 }
     },
     
     // --- פרופילים סטטיים לפקודת /tts (מבוססים על הקול שלך) ---
     shimon_calm: {
         id: SHIMON_VOICE_ID,
-        settings: {
-            stability: 0.75, // יציבות גבוהה = קול רגוע ומונוטוני
-            similarity_boost: 0.75,
-        }
+        settings: { stability: 0.75, similarity_boost: 0.75 }
     },
     shimon_energetic: {
         id: SHIMON_VOICE_ID,
-        settings: {
-            stability: 0.30, // יציבות נמוכה = קול אנרגטי ודינמי
-            similarity_boost: 0.7,
-            style_exaggeration: 0.5 // הגזמה של הסגנון
-        }
+        settings: { stability: 0.30, similarity_boost: 0.7, style_exaggeration: 0.5 }
     },
 };
 
-// הגדרת ברירת מחדל אם נשלח פרופיל לא קיים (יהיה הקול שלך)
 const DEFAULT_PROFILE = VOICE_CONFIG.shimon;
 // -----------------------------------------------------------------
 
 
-/**
- * ממיר Stream ל-Buffer
- * @param {Readable} stream 
- * @returns {Promise<Buffer>}
- */
 function streamToBuffer(stream) {
     return new Promise((resolve, reject) => {
         const chunks = [];
@@ -89,13 +67,6 @@ function streamToBuffer(stream) {
     });
 }
 
-/**
- * מייצר אודיו בודד מטקסט.
- * @param {string} text - הטקסט להקראה
- * @param {string} profileName - שם הפרופיל (למשל 'shimon_calm')
- * @param {import('discord.js').GuildMember} member - המשתמש שביקש
- * @returns {Promise<Buffer|null>}
- */
 async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
     if (!elevenLabs) {
         log('❌ [ElevenLabs Engine] ניסיון להשתמש במנוע TTS כאשר הלקוח אינו מאותחל.');
@@ -114,18 +85,16 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
     try {
         log(`[ElevenLabs Engine] מייצר אודיו עבור: "${cleanText}" עם פרופיל ${profileName}`);
         
-        // הערה: הפונקציה בגרסה החדשה היא .stream (ולא .generate)
         const audioStream = await elevenLabs.textToSpeech.stream({
             text: cleanText,
-            voiceId: profile.id, // שימוש ב-ID מהפרופיל
+            voiceId: profile.id, 
             modelId: 'eleven_multilingual_v3',
             outputFormat: 'mp3_44100_128',
-            voiceSettings: profile.settings // ✅ יישום הגדרות הסגנון (Stability וכו')
+            voiceSettings: profile.settings 
         });
 
         const audioBuffer = await streamToBuffer(audioStream);
 
-        // רישום שימוש
         const userId = member ? member.id : 'system';
         const username = member ? member.displayName : 'System';
         await registerTTSUsage(cleanText.length, userId, username, 'ElevenLabs', profileName);
@@ -133,17 +102,13 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
         return audioBuffer;
 
     } catch (error) {
-        log(`❌ [ElevenLabs Engine] שגיאה בייצור קול: ${error.message}`);
+        // ✅ [שדרוג לוג] מדפיסים את כל השגיאה כדי להבין מה ה-API החזיר
+        log(`❌ [ElevenLabs Engine] שגיאה קריטית בייצור קול: ${error.message}`);
+        log(error); // הדפסת אובייקט השגיאה המלא
         return null;
     }
 }
 
-/**
- * מייצר שיחה שלמה (פודקאסט) מסקריפט.
- * @param {Array<{speaker: string, text: string}>} script 
- * @param {import('discord.js').GuildMember} member
- * @returns {Promise<Buffer[]>}
- */
 async function synthesizeConversation(script, member) {
     if (!elevenLabs) {
         log(`❌ [ElevenLabs Engine] ניסיון להשתמש במנוע TTS (שיחה) כאשר הלקוח אינו מאותחל. (מפתח: ${process.env.ELEVEN_API_KEY ? 'קיים' : 'חסר'})`);
@@ -152,7 +117,7 @@ async function synthesizeConversation(script, member) {
     
     if (SHIRLY_VOICE_ID === 'ID_נשי_מעברית_להדביק_כאן') {
         log('❌ [ElevenLabs Podcast] לא ניתן להתחיל פודקאסט. ה-Voice ID של שירלי חסר בקוד.');
-        return []; // מחזיר מערך ריק
+        return []; 
     }
 
     const audioBuffers = [];
@@ -163,20 +128,18 @@ async function synthesizeConversation(script, member) {
         if (!line.speaker || !line.text) continue;
 
         const cleanText = line.text.replace(/[*_~`]/g, '');
-        
         const profileName = line.speaker.toLowerCase();
         const profile = VOICE_CONFIG[profileName] || DEFAULT_PROFILE;
 
         try {
             log(`[ElevenLabs Podcast] מייצר שורה: [${profileName}] - "${cleanText}"`);
 
-            // הערה: הפונקציה בגרסה החדשה היא .stream (ולא .generate)
             const audioStream = await elevenLabs.textToSpeech.stream({
                 text: cleanText,
-                voiceId: profile.id, // שימוש ב-ID מהפרופיל
+                voiceId: profile.id, 
                 modelId: 'eleven_multilingual_v3',
                 outputFormat: 'mp3_44100_128',
-                voiceSettings: profile.settings // ✅ יישום הגדרות הסגנון (Stability וכו')
+                voiceSettings: profile.settings
             });
             
             const audioBuffer = await streamToBuffer(audioStream);
@@ -185,7 +148,9 @@ async function synthesizeConversation(script, member) {
             await registerTTSUsage(cleanText.length, userId, username, 'ElevenLabs-Podcast', profileName);
 
         } catch (error) {
-            log(`❌ [ElevenLabs Podcast] שגיאה בייצור שורה עבור: "${cleanText}"`, error.message);
+            // ✅ [שדרוג לוג] מדפיסים את כל השגיאה כדי להבין מה ה-API החזיר
+            log(`❌ [ElevenLabs Podcast] שגיאה בייצור שורה: ${error.message}`);
+            log(error); // הדפסת אובייקט השגיאה המלא
         }
     }
     

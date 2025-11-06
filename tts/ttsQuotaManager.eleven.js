@@ -4,11 +4,8 @@ const db = require('../utils/firebase.js');
 const { log } = require('../utils/logger.js');
 const { ElevenLabsClient } = require('@elevenlabs/elevenlabs-js');
 
-const USAGE_COLLECTION = 'elevenTtsUsage'; // קולקציה חדשה
+const USAGE_COLLECTION = 'elevenTtsUsage'; 
 
-/**
- * רושם שימוש בודד ב-TTS ב-Firestore.
- */
 async function registerTTSUsage(characterCount, userId, username, engine, voiceProfile) {
     if (characterCount <= 0) return;
     try {
@@ -26,9 +23,6 @@ async function registerTTSUsage(characterCount, userId, username, engine, voiceP
     }
 }
 
-/**
- * שולף את כל נתוני השימוש הגולמיים עבור פקודת הסלאש.
- */
 async function getTTSUsageData() {
     try {
         const snapshot = await db.collection(USAGE_COLLECTION).get();
@@ -40,10 +34,6 @@ async function getTTSUsageData() {
     }
 }
 
-/**
- * שולף את מצב המכסה הנוכחי ישירות מה-API של ElevenLabs.
- * @returns {Promise<{total: number, used: number, remaining: number, percentUsed: string}|null>}
- */
 async function getElevenLabsQuota() {
     if (!process.env.ELEVEN_API_KEY) {
         log('⚠️ [QUOTA] לא ניתן לשלוף מכסת ElevenLabs. המפתח (ELEVEN_API_KEY) אינו מוגדר.');
@@ -51,12 +41,15 @@ async function getElevenLabsQuota() {
     }
     
     try {
-        const elevenLabs = new ElevenLabsClient({ apiKey: process.env.ELEVEN_API_KEY });
-        
-        // ✅ [תיקון סופי] הפונקציה הנכונה היא .user.get()
+        const elevenLabs = new ElevenLabsClient({ apiKey: process.env.ELEVEN_API_KEY }); 
         const userInfo = await elevenLabs.user.get(); 
         
-        // ✅ [תיקון סופי] ניגשים למידע דרך האובייקט שהתקבל
+        // ✅ [שדרוג לוג] בודקים אם המידע על המנוי קיים
+        if (!userInfo || !userInfo.subscription) {
+            log('⚠️ [QUOTA] לא נמצא אובייקט "subscription" במידע המשתמש. ייתכן שהתוכנית אינה נתמכת API.');
+            return null;
+        }
+        
         const sub = userInfo.subscription; 
         
         const total = sub.character_limit;
@@ -67,7 +60,9 @@ async function getElevenLabsQuota() {
         return { total, used, remaining, percentUsed };
         
     } catch (error) {
-        log(`❌ [QUOTA] שגיאה בשליפת מידע מנוי מ-ElevenLabs: ${error.message}`);
+        // ✅ [שדרוג לוג] מדפיסים את כל השגיאה
+        log(`❌ [QUOTA] שגיאה קריטית בשליפת מידע מנוי מ-ElevenLabs: ${error.message}`);
+        log(error); // הדפסת אובייקט השגיאה המלא
         return null;
     }
 }
@@ -75,6 +70,6 @@ async function getElevenLabsQuota() {
 module.exports = {
     registerTTSUsage,
     getTTSUsageData,
-    getElevenLabsQuota, // מיוצא לשימוש ב-engine
+    getElevenLabsQuota, 
     USAGE_COLLECTION,
 };

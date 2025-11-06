@@ -1,11 +1,12 @@
 // 📁 handlers/ttsTester.js
-// 🔍 גרסת אבחון סופית עם חילוץ פרטני של פרטי השגיאה
+// 🔍 גרסת אבחון סופית
+// ✅ [שדרוג] ה-ID של ערוץ הבדיקות הוכנס ישירות לקוד
 
 const { log } = require('../utils/logger');
 const podcastManager = require('./podcastManager');
 
 // --- הגדרות ---
-const TEST_CHANNEL_ID = '1396779274173943828';
+const TEST_CHANNEL_ID = '1396779274173943828'; // ⬅️ ה-ID שלך הוכנס כאן
 let isTestRunning = false;
 
 /**
@@ -34,15 +35,11 @@ async function runTTSTest(member) {
         log(`[TTS_TESTER] ❌ שגיאה קריטית נתפסה! מפענח את מקור התקלה...`);
         
         if (error instanceof Error) {
-            // --- 🔍 חילוץ פרטני של המידע 🔍 ---
             log(`[TTS_TESTER] [שם השגיאה]: ${error.name}`);
             log(`[TTS_TESTER] [הודעת השגיאה]: ${error.message}`);
             log(`[TTS_TESTER] [Stack Trace]:`);
-            // הדפסת ה-stack בשורה נפרדת כדי לוודא שהוא לא נחתך
             log(error.stack);
-            // ------------------------------------
         } else {
-            // הדפסת שגיאה שאינה אובייקט Error סטנדרטי
             log('[TTS_TESTER] [תוכן השגיאה (לא סטנדרטי)]:', error);
         }
 
@@ -50,11 +47,11 @@ async function runTTSTest(member) {
         setTimeout(() => {
             isTestRunning = false;
             log('[TTS_TESTER] ⏹️  ניתן להפעיל בדיקת פודקאסט נוספת.');
-        }, 15000);
+        }, 15000); // 15 שניות צינון
     }
 }
 
 module.exports = {
     runTTSTest,
-    TEST_CHANNEL_ID
+    TEST_CHANNEL_ID // ✅ [שדרוג] ה-ID מיוצא שוב כדי ש-voiceHandler ישתמש בו
 };

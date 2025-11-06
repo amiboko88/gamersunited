@@ -1,119 +1,198 @@
 // 📁 tts/ttsEngine.elevenlabs.js
-
-const { TextToSpeechClient } = require('@google-cloud/text-to-speech');
+const { ElevenLabs } = require('elevenlabs-node');
 const { log } = require('../utils/logger.js');
-const { registerTTSUsage } = require('./ttsQuotaManager.eleven.js');
+const { registerTTSUsage, getElevenLabsQuota } = require('./ttsQuotaManager.eleven.js');
+const { Readable } = require('stream');
 
-let googleTtsClient;
-const googleCredentialsJson = process.env.GOOGLE_CREDENTIALS_JSON;
+let elevenLabs;
 
-if (googleCredentialsJson) {
-    try {
-        const credentials = JSON.parse(googleCredentialsJson);
-        googleTtsClient = new TextToSpeechClient({ credentials });
-        log('🔊 [Google TTS Engine] הלקוח של גוגל אותחל בהצלחה.');
-    } catch (error) {
-        // ✅ [תיקון] שונתה הקריאה מ-log.error ל-log כדי למנוע קריסה בזמן עלייה
-        log('❌ [Google TTS Engine] שגיאה בפענוח GOOGLE_CREDENTIALS_JSON.', error);
-    }
+// --- ✅ [שדרוג 1] הפרדת מזהי קולות ---
+const SHIMON_VOICE_ID = 'txHtK15K5KtX959ZtpRa'; // ⬅️ הקול המשובט שלך
+const SHIRLY_VOICE_ID = 'tnSpp4vdxKPjI9w0GnoV'; // ⬅️ הדבק כאן את ה-ID של הקול הנשי שבחרת
+// ----------------------------------------------------
+
+if (process.env.ELEVENLABS_API_KEY) {
+    elevenLabs = new ElevenLabs({
+        apiKey: process.env.ELEVENLABS_API_KEY,
+    });
+    log('🔊 [ElevenLabs Engine] הלקוח של ElevenLabs אותחל בהצלחה.');
+    getElevenLabsQuota()
+        .then(quota => {
+            if (quota) {
+                log(`[ElevenLabs Quota] מצב מכסה: ${quota.used} / ${quota.total} תווים. (${quota.percentUsed}%)`);
+            }
+        })
+        .catch(err => {
+            log(`❌ [ElevenLabs Quota] שגיאה בבדיקת מכסה ראשונית: ${err.message}`);
+        });
+
 } else {
-    log('⚠️ [Google TTS Engine] משתנה הסביבה GOOGLE_CREDENTIALS_JSON לא נמצא.');
+    log('⚠️ [ElevenLabs Engine] משתנה הסביבה ELEVENLABS_API_KEY לא נמצא. המנוע מושבת.');
 }
 
-// --- הגדרות קול דינמיות ---
+
+// --- ✅ [שדרוג 2] הגדרת פרופילים מבוססי סגנון עם IDs נפרדים ---
 const VOICE_CONFIG = {
+    // --- קולות לפודקאסט ---
+    // "שמעון" - הקריין הראשי, יציב יחסית
     shimon: {
-        voice: { languageCode: 'he-IL', name: 'he-IL-Wavenet-C' },
-        pitchRange: [-1.0, 2.0],
-        rateRange: [0.95, 1.15],
+        id: SHIMON_VOICE_ID, // ⬅️ משתמש בקול שלך
+        settings: {
+            stability: 0.5, // ערך מאוזן
+            similarity_boost: 0.75,
+        }
     },
+    // "שירלי" - השותפה, קצת יותר אקספרסיבית
     shirly: {
-        voice: { languageCode: 'he-IL', name: 'he-IL-Wavenet-A' },
-        pitchRange: [-0.5, 1.5],
-        rateRange: [1.0, 1.2],
-    }
+        id: SHIRLY_VOICE_ID, // ⬅️ משתמש בקול הנשי
+        settings: {
+            stability: 0.4, // פחות יציב = יותר אקספרסיבי
+            similarity_boost: 0.75,
+            style_exaggeration: 0.2
+        }
+    },
+    
+    // --- פרופילים סטטיים לפקודת /tts (מבוססים על הקול שלך) ---
+    shimon_calm: {
+        id: SHIMON_VOICE_ID,
+        settings: {
+            stability: 0.75, // יציבות גבוהה = קול רגוע ומונוטוני
+            similarity_boost: 0.75,
+        }
+    },
+    shimon_energetic: {
+        id: SHIMON_VOICE_ID,
+        settings: {
+            stability: 0.30, // יציבות נמוכה = קול אנרגטי ודינמי
+            similarity_boost: 0.7,
+            style_exaggeration: 0.5 // הגזמה של הסגנון
+        }
+    },
 };
 
+// הגדרת ברירת מחדל אם נשלח פרופיל לא קיים (יהיה הקול שלך)
+const DEFAULT_PROFILE = VOICE_CONFIG.shimon;
+// -----------------------------------------------------------------
+
+
 /**
- * יוצר וריאציית קול אקראית על בסיס הגדרות.
+ * ממיר Stream ל-Buffer
+ * @param {Readable} stream 
+ * @returns {Promise<Buffer>}
  */
-function createDynamicVoiceProfile(speaker) {
-    const config = VOICE_CONFIG[speaker.toLowerCase()] || VOICE_CONFIG.shimon;
-    const pitch = Math.random() * (config.pitchRange[1] - config.pitchRange[0]) + config.pitchRange[0];
-    const speakingRate = Math.random() * (config.rateRange[1] - config.rateRange[0]) + config.rateRange[0];
-    
-    return {
-        voice: config.voice,
-        audioConfig: { speakingRate, pitch }
-    };
+function streamToBuffer(stream) {
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        stream.on('data', (chunk) => chunks.push(chunk));
+        stream.on('end', () => resolve(Buffer.concat(chunks)));
+        stream.on('error', (error) => reject(error));
+    });
 }
 
 /**
- * מייצרת שיחה שלמה עם "מצב רוח" מתפתח.
+ * מייצר אודיו בודד מטקסט.
+ * @param {string} text - הטקסט להקראה
+ * @param {string} profileName - שם הפרופיל (למשל 'shimon_calm')
+ * @param {import('discord.js').GuildMember} member - המשתמש שביקש
+ * @returns {Promise<Buffer|null>}
+ */
+async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
+    if (!elevenLabs) {
+        log('❌ [ElevenLabs Engine] ניסיון להשתמש במנוע TTS כאשר הלקוח אינו מאותחל.');
+        return null;
+    }
+    
+    // ✅ [שדרוג 3] שולף את כל הגדרות הפרופיל, לא רק ID
+    const profile = VOICE_CONFIG[profileName] || DEFAULT_PROFILE;
+    
+    // בדיקה לוודא שה-ID של שירלי הוזן
+    if (profile.id === 'ID_נשי_מעברית_להדביק_כאן') {
+        log(`❌ [ElevenLabs Engine] ניסיון להשתמש בפרופיל "${profileName}" לפני שהוזן Voice ID עבור שירלי.`);
+        return null;
+    }
+        
+    const cleanText = text.replace(/[*_~`]/g, '');
+    
+    try {
+        log(`[ElevenLabs Engine] מייצר אודיו עבור: "${cleanText}" עם פרופיל ${profileName}`);
+        
+        const audioStream = await elevenLabs.generate({
+            text: cleanText,
+            voice_id: profile.id, // שימוש ב-ID מהפרופיל
+            model_id: 'eleven_multilingual_v3',
+            output_format: 'mp3_44100_128',
+            ...profile.settings // ✅ יישום הגדרות הסגנון (Stability וכו')
+        });
+
+        const audioBuffer = await streamToBuffer(audioStream);
+
+        // רישום שימוש
+        const userId = member ? member.id : 'system';
+        const username = member ? member.displayName : 'System';
+        await registerTTSUsage(cleanText.length, userId, username, 'ElevenLabs', profileName);
+
+        return audioBuffer;
+
+    } catch (error) {
+        log(`❌ [ElevenLabs Engine] שגיאה בייצור קול: ${error.message}`);
+        return null;
+    }
+}
+
+/**
+ * מייצר שיחה שלמה (פודקאסט) מסקריפט.
+ * @param {Array<{speaker: string, text: string}>} script 
+ * @param {import('discord.js').GuildMember} member
+ * @returns {Promise<Buffer[]>}
  */
 async function synthesizeConversation(script, member) {
-    // ✅ [שיפור] הוספת בדיקה כדי למנוע קריסה אם הלקוח לא אותחל
-    if (!googleTtsClient) {
-        log('❌ [Google TTS Engine] ניסיון להשתמש במנוע TTS כאשר הלקוח אינו מאותחל. הפעולה בוטלה.');
-        return []; // מחזירים מערך ריק כדי למנוע שגיאה בהמשך התהליך
+    if (!elevenLabs) {
+        log(`❌ [ElevenLabs Engine] ניסיון להשתמש במנוע TTS (שיחה) כאשר הלקוח אינו מאותחל. (מפתח: ${process.env.ELEVENLABS_API_KEY ? 'קיים' : 'חסר'})`);
+        return [];
+    }
+    
+    // בדיקה לוודא שה-ID של שירלי הוזן
+    if (SHIRLY_VOICE_ID === 'ID_נשי_מעברית_להדביק_כאן') {
+        log('❌ [ElevenLabs Podcast] לא ניתן להתחיל פודקאסט. ה-Voice ID של שירלי חסר בקוד.');
+        return []; // מחזיר מערך ריק
     }
 
     const audioBuffers = [];
-    let conversationTension = 0.0; 
+    const userId = member.id;
+    const username = member.displayName;
 
     for (const line of script) {
         if (!line.speaker || !line.text) continue;
 
-        const dynamicProfile = createDynamicVoiceProfile(line.speaker);
-        dynamicProfile.audioConfig.pitch += conversationTension;
-        
         const cleanText = line.text.replace(/[*_~`]/g, '');
-        const ssmlText = `<speak>${cleanText.replace(/,/g, '<break time="300ms"/>').replace(/\./g, '<break time="500ms"/>')}</speak>`;
-
-        const request = {
-            input: { ssml: ssmlText },
-            voice: dynamicProfile.voice,
-            audioConfig: { ...dynamicProfile.audioConfig, audioEncoding: 'MP3' },
-        };
         
+        // ✅ [שדרוג 3] שולף את כל הגדרות הפרופיל, לא רק ID
+        const profileName = line.speaker.toLowerCase();
+        const profile = VOICE_CONFIG[profileName] || DEFAULT_PROFILE;
+
         try {
-            const [response] = await googleTtsClient.synthesizeSpeech(request);
-            audioBuffers.push(response.audioContent);
-            conversationTension += 0.2;
+            log(`[ElevenLabs Podcast] מייצר שורה: [${profileName}] - "${cleanText}"`);
+
+            const audioStream = await elevenLabs.generate({
+                text: cleanText,
+                voice_id: profile.id, // שימוש ב-ID מהפרופיל
+                model_id: 'eleven_multilingual_v3',
+                output_format: 'mp3_44100_128',
+                ...profile.settings // ✅ יישום הגדרות הסגנון (Stability וכו')
+            });
             
-            const profileName = `${line.speaker.toLowerCase()}_dynamic`;
-            await registerTTSUsage(cleanText.length, member.id, member.displayName, 'Google', profileName);
+            const audioBuffer = await streamToBuffer(audioStream);
+            audioBuffers.push(audioBuffer);
+
+            await registerTTSUsage(cleanText.length, userId, username, 'ElevenLabs-Podcast', profileName);
+
         } catch (error) {
-            // ✅ [תיקון] שונתה הקריאה מ-log.error ל-log
-            log(`❌ [Google TTS] שגיאה בייצור קול עבור: "${cleanText}"`, error);
+            log(`❌ [ElevenLabs Podcast] שגיאה בייצור שורה עבור: "${cleanText}"`, error.message);
         }
     }
+    
+    log(`[ElevenLabs Podcast] יצירת השיחה עבור ${username} הסתיימה. ${audioBuffers.length} קטעי אודיו נוצרו.`);
     return audioBuffers;
-}
-
-// ... (שאר הקובץ נשאר ללא שינוי) ...
-async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
-    if (!googleTtsClient) {
-        log('❌ [Google TTS Engine] ניסיון להשתמש במנוע TTS כאשר הלקוח אינו מאותחל. הפעולה בוטלה.');
-        return null;
-    }
-    const staticProfiles = {
-        shimon_calm: { voice: { languageCode: 'he-IL', name: 'he-IL-Wavenet-C' }, audioConfig: { speakingRate: 1.0, pitch: 0.0 } },
-        shimon_energetic: { voice: { languageCode: 'he-IL', name: 'he-IL-Wavenet-C' }, audioConfig: { speakingRate: 1.1, pitch: 1.2 } },
-    };
-    const profile = staticProfiles[profileName] || staticProfiles.shimon_calm;
-    const cleanText = text.replace(/[*_~`]/g, '');
-    const ssmlText = `<speak>${cleanText}</speak>`;
-    const request = {
-        input: { ssml: ssmlText },
-        voice: profile.voice,
-        audioConfig: { ...profile.audioConfig, audioEncoding: 'MP3' },
-    };
-    const [response] = await googleTtsClient.synthesizeSpeech(request);
-    const userId = member ? member.id : 'system';
-    const username = member ? member.displayName : 'System';
-    await registerTTSUsage(cleanText.length, userId, username, 'Google', profileName);
-    return response.audioContent;
 }
 
 module.exports = {

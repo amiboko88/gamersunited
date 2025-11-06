@@ -9,13 +9,12 @@ const {
 } = require('./statTracker');
 const db = require('../utils/firebase');
 const podcastManager = require('./podcastManager');
-const ttsTester = require('./ttsTester');
+const ttsTester = require('./ttsTester'); // ⬅️ מוודאים שזה מיובא
 const { log } = require('../utils/logger');
 
 // --- הגדרות כלליות ---
-// ✅ [תיקון] שונתה הגדרת המשתנה כדי להשתמש במשתנה סביבה ייעודי לערוץ הראשי
-// אנא הגדר משתנה סביבה חדש בשם FIFO_CHANNEL_ID עם המזהה של הערוץ הראשי.
 const FIFO_CHANNEL_ID = process.env.FIFO_CHANNEL_ID; 
+// ❌ [שדרוג] הסרנו את המשתנה TTS_TEST_CHANNEL_ID מ-process.env
 const FIFO_ROLE_NAME = 'FIFO';
 const joinTimestamps = new Map();
 
@@ -72,10 +71,24 @@ async function handleVoiceStateUpdate(oldState, newState) {
     if (newState.member?.user.bot) return;
 
     const member = newState.member, userId = member.id, oldChannel = oldState.channel, newChannel = newState.channel, now = Date.now();
-    if (!oldChannel && newChannel && newChannel.id === ttsTester.TEST_CHANNEL_ID) {
-        if (member.permissions.has(PermissionFlagsBits.Administrator)) await ttsTester.runTTSTest(member);
-        return;
+    
+    // ✅ [שדרוג] הבדיקה משתמשת כעת ב-ID המיובא מ-ttsTester
+    if (ttsTester.TEST_CHANNEL_ID) {
+        // בודק כניסה לערוץ הטסטים
+        if (!oldChannel && newChannel && newChannel.id === ttsTester.TEST_CHANNEL_ID) {
+            if (member.permissions.has(PermissionFlagsBits.Administrator)) {
+                log(`[TTS_TESTER] מזהה כניסת אדמין (${member.displayName}) לערוץ הבדיקות. מפעיל בדיקה...`);
+                await ttsTester.runTTSTest(member);
+            }
+            return; // עוצר כאן כדי לא להפעיל לוגיקות אחרות (פודקאסט, סטטיסטיקות) בערוץ הטסט
+        }
+        // בודק יציאה מערוץ הטסטים
+        if (oldChannel && !newChannel && oldChannel.id === ttsTester.TEST_CHANNEL_ID) {
+             log(`[TTS_TESTER] מזהה יציאת (${member.displayName}) מערוץ הבדיקות.`);
+             return; // עוצר כאן
+        }
     }
+
     if (newChannel?.id === guild.afkChannelId || oldChannel?.id === guild.afkChannelId) return;
     
     const fifoRole = guild.roles.cache.find(r => r.name === FIFO_ROLE_NAME);
@@ -103,6 +116,8 @@ async function handleVoiceStateUpdate(oldState, newState) {
             joinTimestamps.delete(userId);
         }
     }
+    
+    // ✅ [שדרוג] הבדיקה מוודאת שאנחנו לא בערוץ הטסטים
     if (oldChannel?.id !== newChannel?.id && newChannel?.id !== ttsTester.TEST_CHANNEL_ID) {
         await podcastManager.handleVoiceStateUpdate(oldState, newState);
     }

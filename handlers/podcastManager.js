@@ -5,30 +5,25 @@ const profiles = require('../data/profiles.js');
 const voiceQueue = require('./voiceQueue.js');
 
 // --- הגדרות הפודקאסט ---
-// ❌ הסרנו את המשתנה FIFO_CHANNEL_ID כי הפודקאסט כבר לא מוגבל לערוץ אחד
 const MIN_USERS_FOR_PODCAST = 4;
 const PODCAST_COOLDOWN = 1 * 60 * 1000;
 const restrictedCommands = ['soundboard', 'song'];
 
+// ✅ [שדרוג] הברכות הוחלפו לגרסה קצרה, קולעת וגסה יותר
 const GENERIC_GREETINGS = [
-    { shimon: 'תראי שירלי, בשר טרי הגיע. ברוך הבא, {userName}.', shirly: 'נקווה שהוא לא יתפרק מהר כמו הקודמים.' },
-    { shimon: 'שימי לב, {userName} הצטרף אלינו. נראה מבטיח.', shirly: 'כולם נראים מבטיחים בהתחלה, שמעון. השאלה היא איך הם מסיימים.' },
-    { shimon: 'עוד אחד נפל ברשת. שלום לך, {userName}.', shirly: 'השאלה היא אם זו רשת של דייגים או רשת של עכבישים.' },
-    { shimon: '{userName} נחת בלובי. תכיני את עצמך.', shirly: 'אני תמיד מוכנה. השאלה אם הוא מוכן למה שמצפה לו.' },
-    { shimon: 'קבלו את הכוכב החדש שלנו, {userName}!', shirly: 'כוכב או כוכב נופל? רק הזמן יגיד.' },
-    { shimon: 'נראה ש-{userName} החליט להצטרף לחגיגה. מעניין אם הוא הביא מתנות.', shirly: 'המתנה הכי טובה שהוא יכול להביא זה קצת סקיל.' },
-    { shimon: 'הגעתו של {userName} מסמנת עידן חדש. או עוד ערב של הפסדים.', shirly: 'אני מהמרת על האפשרות השנייה, שמעון.' },
-    { shimon: 'שקט, שקט... נראה לי ששמעתי משהו. אה, זה רק {userName} שהתחבר.', shirly: 'חבל, קיוויתי שזה היה הד של הניצחון האחרון שלנו. שכחתי שאין כזה.' },
-    { shimon: 'ברוך הבא, {userName}. אל תדאג, אנחנו לא נושכים. בדרך כלל.', shirly: 'רק כשאנחנו מפסידים. כלומר, אנחנו נושכים הרבה.' },
-    { shimon: 'הנה מגיע {userName}, רענן ומוכן לקרב!', shirly: 'בוא נראה כמה זמן הרעננות הזאת תחזיק מעמד.' },
-    { shimon: 'שימו לב, {userName} איתנו. המשחק עומד להשתנות.', shirly: 'לרעה או לטובה? זאת השאלה האמיתית.' },
-    { shimon: 'הצטרף אלינו {userName}. תגיד שלום, ותקווה לטוב.', shirly: 'תקווה זה נחמד, אבל כוונת טובה יותר.' },
-    { shimon: 'מה זה הרעש הזה? אה, המערכת מזהה כניסה של {userName}.', shirly: 'מעניין, המערכת שלי מזהה בעיקר כאב ראש מתקרב.' },
-    { shimon: 'טוב, {userName} כאן. עכשיו אפשר להתחיל ברצינות.', shirly: 'התכוונת, עכשיו אפשר להתחיל להפסיד ברצינות.' },
-    { shimon: 'זהירות, {userName} בשטח. כולם לתפוס מחסה!', shirly: 'הלוואי שהאויבים היו אומרים את זה עליו.' }
+    { shimon: 'מי זה הנכה הזה שהצטרף?', shirly: 'עוד אפס לצוות. ברוך הבא, {userName}.' },
+    { shimon: 'טוב, {userName} פה. הלך המשחק.', shirly: 'לפחות יש על מי לצחוק.' },
+    { shimon: 'שירלי, תראי. {userName} נכנס.', shirly: 'יופי. בדיוק היה חסר לנו בוט.' },
+    { shimon: 'מה זה הריח הזה? אה, זה {userName} הגיע.', shirly: 'תסגרו חלונות, הגיע זבל.' },
+    { shimon: 'קלטו את {userName}. נראה כמו פרי קיל.', shirly: 'הוא פרי קיל רק אם הוא בצד השני. אצלנו הוא סתם פרי.' },
+    { shimon: 'טוב, {userName} כאן.', shirly: 'מי?' },
+    { shimon: 'עוד גופה הגיעה ללובי. שלום {userName}.', shirly: 'אל תדאג, אנחנו נסחוב אותך. או שלא.' },
+    { shimon: 'שיט, {userName} התחבר.', shirly: 'נו, לפחות יהיה מצחיק לראות אותו מת.' },
+    { shimon: 'מי פתח את הדלת ל-{userName}?', shirly: 'הוא נראה אבוד. בטח חשב שזה לובי של בוטים.' },
+    { shimon: 'הנה הגיע {userName}. האיש שהופך כל ניצחון להפסד.', shirly: 'שמעון, תהיה אופטימי. אולי הפעם הוא רק ימות ראשון.' }
 ];
 
-let activePodcastChannelId = null; // ✅ משתנה חדש שעוקב אחרי הערוץ שבו הפודקאסט פעיל
+let activePodcastChannelId = null; 
 let podcastCooldown = false;
 const spokenUsers = new Set();
 
@@ -45,9 +40,9 @@ async function handleVoiceStateUpdate(oldState, newState) {
     const { channel: newChannel, client, member, guild } = newState;
     const { channelId: oldChannelId } = oldState;
 
-    if (oldChannelId === newChannel?.id) return;
+    if (oldChannelId === newChannel?.id) return; // לא קרה שינוי ערוץ
 
-    // ✅ [שדרוג] בודק אם משתמש עזב את הערוץ שבו הפודקאסט פעיל כרגע
+    // בודק אם משתמש עזב את הערוץ שבו הפודקאסט פעיל
     if (oldChannelId && oldChannelId === activePodcastChannelId) {
         const oldChannel = guild.channels.cache.get(oldChannelId);
         if (oldChannel) {
@@ -62,20 +57,31 @@ async function handleVoiceStateUpdate(oldState, newState) {
         }
     }
 
-    // ✅ [שדרוג] בודק אם משתמש הצטרף לערוץ כלשהו ועומד בתנאים
+    // בודק אם משתמש הצטרף לערוץ כלשהו ועומד בתנאים
     if (newChannel) {
         const members = newChannel.members.filter(m => !m.user.bot);
         const isPodcastActiveInThisChannel = newChannel.id === activePodcastChannelId;
         
+        // התנאים:
+        // 1. יש מספיק אנשים בערוץ
+        // 2. אין פודקאסט שפעיל כרגע (בשום ערוץ אחר)
+        // 3. הבוט לא בתקופת צינון
         const shouldStart = members.size >= MIN_USERS_FOR_PODCAST && !getPodcastStatus() && !podcastCooldown;
+        
+        // התנאי להכרזה:
+        // 1. הפודקאסט כבר פעיל בערוץ הזה
+        // 2. המשתמש הספציפי הזה עוד לא דובר
         const shouldAnnounce = isPodcastActiveInThisChannel && !spokenUsers.has(member.id);
 
         if (shouldStart || shouldAnnounce) {
             if (shouldStart) {
                 log(`[PODCAST] התנאים התקיימו בערוץ ${newChannel.name} (${members.size} משתמשים). מתחיל פודקאסט.`);
-                activePodcastChannelId = newChannel.id;
+                activePodcastChannelId = newChannel.id; // נועל את הפודקאסט לערוץ הזה
             }
+            
+            // מוסיף את המשתמש לרשימת "דוברים" כדי לא להכריז עליו שוב
             spokenUsers.add(member.id);
+            // קורא לפונקציה שתכין את התסריט ותשלח לניגון
             await playPersonalPodcast(newChannel, member, client);
         }
     }
@@ -87,11 +93,13 @@ async function playPersonalPodcast(channel, member, client) {
     let script = [];
 
     if (Array.isArray(userProfileLines) && userProfileLines.length > 0) {
+        // בוחר 3 "רוסטים" אישיים אקראיים
         const selectedLines = [...userProfileLines].sort(() => 0.5 - Math.random()).slice(0, 3);
         script.push({ speaker: 'shimon', text: selectedLines[0] });
         if (selectedLines[1]) script.push({ speaker: 'shirly', text: selectedLines[1] });
         if (selectedLines[2]) script.push({ speaker: 'shimon', text: selectedLines[2] });
     } else {
+        // בוחר ברכה גנרית (מהרשימה הגסה החדשה)
         const greeting = GENERIC_GREETINGS[Math.floor(Math.random() * GENERIC_GREETINGS.length)];
         script = [
             { speaker: 'shimon', text: greeting.shimon.replace('{userName}', userName) },
@@ -99,14 +107,21 @@ async function playPersonalPodcast(channel, member, client) {
         ];
     }
     
-    if (script.length === 0) return;
+    if (script.length === 0) {
+        log('[PODCAST] ⚠️ נוצר תסריט ריק. מדלג על הניגון.');
+        return;
+    }
 
+    // שולח את התסריט למנוע v3 המשודרג שלנו
     const audioBuffers = await ttsEngine.synthesizeConversation(script, member);
+    
     if (audioBuffers.length > 0) {
         log(`[PODCAST] מעביר ${audioBuffers.length} קטעי שמע לתור הניגון.`);
         for (const buffer of audioBuffers) {
             voiceQueue.addToQueue(channel.guild.id, channel.id, buffer, client);
         }
+    } else {
+        log('[PODCAST] ⚠️ ttsEngine החזיר 0 קטעי אודיו. (ייתכן שהייתה שגיאה ב-API של ElevenLabs, בדוק לוגים קודמים)');
     }
 }
 
@@ -115,5 +130,5 @@ module.exports = {
     initializePodcastState,
     getPodcastStatus,
     restrictedCommands,
-    playPersonalPodcast 
+    playPersonalPodcast // מיוצא לשימוש ה-Tester
 };

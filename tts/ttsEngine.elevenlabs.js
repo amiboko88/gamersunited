@@ -6,8 +6,8 @@ const { registerTTSUsage, getElevenLabsQuota } = require('./ttsQuotaManager.elev
 let elevenLabs;
 
 // --- הפרדת מזהי קולות ---
-const SHIMON_VOICE_ID = 'txHtK15K5KtX959ZtpRa'; // ⬅️ הקול המשובט שלך
-const SHIRLY_VOICE_ID = 'tnSpp4vdxKPjI9w0GnoV'; // ⬅️ ה-ID של שירלי
+const SHIMON_VOICE_ID = 'UgBBYS2sOqTuMpoF3BR0'; // ⬅️ הקול המשובט שלך
+const SHIRLY_VOICE_ID = 'pBZVCk298iJlHAcHQwLr'; // ⬅️ ה-ID של שירלי
 // ----------------------------------------------------
 
 if (process.env.ELEVEN_API_KEY) { 

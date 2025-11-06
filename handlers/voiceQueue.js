@@ -1,4 +1,4 @@
-// 📁 handlers/voiceQueue.js (מתוקן עם בדיקת סטטוס)
+// 📁 handlers/voiceQueue.js (מתוקן עם ניקוי תור ב-Destroy)
 const {
     joinVoiceChannel, createAudioPlayer, createAudioResource, entersState,
     AudioPlayerStatus, VoiceConnectionStatus, NoSubscriberBehavior
@@ -64,13 +64,25 @@ async function playNextInQueue(guildId) {
             const guild = await serverQueue.client.guilds.fetch(guildId);
             const channel = await guild.channels.fetch(serverQueue.channelId);
 
-            serverQueue.connection = joinVoiceChannel({
+            const connection = joinVoiceChannel({
                 channelId: channel.id,
                 guildId: guild.id,
                 adapterCreator: guild.voiceAdapterCreator,
                 selfDeaf: true, 
                 selfMute: false
             });
+            
+            // ✅ [תיקון באג ה-Stuck] מוסיפים האזנה להרס החיבור
+            connection.on(VoiceConnectionStatus.Destroyed, () => {
+                log(`[QUEUE] החיבור בשרת ${guildId} נהרס (ניתוק ידני?). מנקה את התור.`);
+                if (serverQueue) {
+                    serverQueue.queue = []; // מרוקן את התור
+                    serverQueue.isPlaying = false;
+                    if (serverQueue.connection) serverQueue.connection = null;
+                }
+            });
+
+            serverQueue.connection = connection;
             await entersState(serverQueue.connection, VoiceConnectionStatus.Ready, 30_000);
         }
         
@@ -93,7 +105,7 @@ function cleanupIdleConnections() {
         if (!serverQueue.isPlaying && serverQueue.queue.length === 0 && idleTime > IDLE_TIMEOUT_MINUTES * 60 * 1000) {
             log(`[CLEANUP] מנתק חיבור לא פעיל בשרת ${guildId}.`);
             
-            // ✅ [תיקון] בודק שהחיבור קיים ועדיין לא הושמד לפני שמנסה להשמיד אותו
+            // ✅ [תיקון באג ה-Cron] בודק שהחיבור קיים ועדיין לא הושמד
             if (serverQueue.connection && serverQueue.connection.state.status !== VoiceConnectionStatus.Destroyed) {
                 serverQueue.connection.destroy();
             }

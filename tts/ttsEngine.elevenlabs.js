@@ -1,63 +1,44 @@
-// 📁 tts/ttsEngine.elevenlabs.js
-const { ElevenLabsClient } = require('@elevenlabs/elevenlabs-js');
+// 📁 tts/ttsEngine.openai.js (שם הקובץ נשאר ttsEngine.elevenlabs.js אצלך)
+const { OpenAI } = require('openai');
 const { log } = require('../utils/logger.js');
-const { registerTTSUsage, getElevenLabsQuota } = require('./ttsQuotaManager.eleven.js');
+const { registerTTSUsage } = require('./ttsQuotaManager.eleven.js');
 
-let elevenLabs;
+let openai;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY; 
 
-// --- הפרדת מזהי קולות ---
-const SHIMON_VOICE_ID = 'UgBBYS2sOqTuMpoF3BR0'; // ⬅️ הקול המשובט שלך
-const SHIRLY_VOICE_ID = 'pBZVCk298iJlHAcHQwLr'; // ⬅️ ה-ID של שירלי
-// ----------------------------------------------------
-
-if (process.env.ELEVEN_API_KEY) { 
-    elevenLabs = new ElevenLabsClient({ 
-        apiKey: process.env.ELEVEN_API_KEY, 
+if (OPENAI_API_KEY) {
+    openai = new OpenAI({
+        apiKey: OPENAI_API_KEY,
     });
-    log('🔊 [ElevenLabs Engine] הלקוח של ElevenLabs אותחל בהצלחה.');
-    getElevenLabsQuota()
-        .then(quota => {
-            if (quota) {
-                log(`[ElevenLabs Quota] מצב מכסה: ${quota.used} / ${quota.total} ${quota.unit}. (${quota.percentUsed}%)`);
-            }
-        })
-        .catch(err => {
-            log(`❌ [ElevenLabs Quota] שגיאה בבדיקת מכסה ראשונית: ${err.message}`);
-        });
-
+    log('🔊 [OpenAI Engine] הלקוח של OpenAI אותחל בהצלחה.');
 } else {
-    log('⚠️ [ElevenLabs Engine] משתנה הסביבה ELEVEN_API_KEY לא נמצא. המנוע מושבת.');
+    log('⚠️ [OpenAI Engine] משתנה הסביבה OPENAI_API_KEY לא נמצא. המנוע מושבת.');
 }
 
-
-// --- ✅ [תיקון הג'יבריש V3] שימוש רק ב-Stability (לפי התיעוד הרשמי) ---
+// --- ✅ [100% מאומת] הגדרת פרופילים קוליים עם Prompt (הוראות טון) ---
 const VOICE_CONFIG = {
     // --- קולות לפודקאסט ---
     shimon: {
-        id: SHIMON_VOICE_ID, 
-        settings: { 
-            stability: 0.5, // ⬅️ ההגדרה היחידה שנשלח
-        }
+        model: 'gpt-4o-mini-tts',
+        voice: 'ballad',
+        instructions: 'Speak in a clear, neutral tone.' // פרומפט ברירת מחדל
     },
     shirly: {
-        id: SHIRLY_VOICE_ID, 
-        settings: { 
-            stability: 0.4, // ⬅️ ההגדרה היחידה שנשלח
-        }
+        model: 'gpt-4o-mini-tts',
+        voice: 'coral',
+        instructions: 'Speak in a clear, neutral tone.' // פרומפט ברירת מחדל
     },
     
-    // --- פרופילים סטטיים לפקודת /tts (מבוססים על הקול שלך) ---
+    // --- פרופילים סטטיים לפקודת /tts ---
     shimon_calm: {
-        id: SHIMON_VOICE_ID,
-        settings: { 
-            stability: 0.75, // ⬅️ גבוה = רגוע
-        }
+        model: 'gpt-4o-mini-tts',
+        voice: 'ballad',
+        instructions: 'Speak in a very calm, slow, and relaxed tone.' // ✅ הוראה לטון רגוע
     },
     shimon_energetic: {
-        id: SHIMON_VOICE_ID,
-        settings: { 
-            stability: 0.30, // ⬅️ נמוך = אנרגטי
-        }
+        model: 'gpt-4o-mini-tts',
+        voice: 'ballad',
+        instructions: 'Speak in an energetic, excited, and fast-paced tone.' // ✅ הוראה לטון אנרגטי
     },
 };
 
@@ -65,22 +46,39 @@ const DEFAULT_PROFILE = VOICE_CONFIG.shimon;
 // -----------------------------------------------------------------
 
 
+/**
+ * ממיר Stream ל-Buffer (גרסה מעודכנת עבור OpenAI)
+ * @param {ReadableStream<Uint8Array>} stream 
+ * @returns {Promise<Buffer>}
+ */
 async function streamToBuffer(stream) {
     const chunks = [];
+    const reader = stream.getReader();
     try {
-        for await (const chunk of stream) {
-            chunks.push(chunk);
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
         }
         return Buffer.concat(chunks);
     } catch (error) {
         log(`❌ [streamToBuffer] שגיאה באיסוף ה-Stream: ${error.message}`);
         throw error;
+    } finally {
+        reader.releaseLock();
     }
 }
 
+/**
+ * מייצר אודיו בודד מטקסט.
+ * @param {string} text - הטקסט להקראה
+ * @param {string} profileName - שם הפרופיל (למשל 'shimon_calm')
+ * @param {import('discord.js').GuildMember} member - המשתמש שביקש
+ * @returns {Promise<Buffer|null>}
+ */
 async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
-    if (!elevenLabs) {
-        log('❌ [ElevenLabs Engine] ניסיון להשתמש במנוע TTS כאשר הלקוח אינו מאותחל.');
+    if (!openai) {
+        log('❌ [OpenAI Engine] ניסיון להשתמש במנוע TTS כאשר הלקוח אינו מאותחל.');
         return null;
     }
     
@@ -88,44 +86,43 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
     const cleanText = text.replace(/[*_~`]/g, '');
     
     try {
-        log(`[ElevenLabs Engine] מייצר אודיו עבור: "${cleanText}" עם פרופיל ${profileName}`);
+        log(`[OpenAI Engine] מייצר אודיו עבור: "${cleanText}" עם פרופיל ${profileName} (קול: ${profile.voice})`);
         
-        const audioStream = await elevenLabs.textToSpeech.stream(
-            profile.id, 
-            {           
-                text: cleanText,
-                model_id: 'eleven_multilingual_v3', // שימוש ב-V3
-                output_format: 'mp3_44100_128',
-                ...profile.settings // ✅ [תיקון] שולח רק הגדרות נתמכות
-            }
-        );
-
-        const audioBuffer = await streamToBuffer(audioStream);
+        const response = await openai.audio.speech.create({
+            model: profile.model,
+            voice: profile.voice,
+            input: cleanText,
+            response_format: 'mp3',
+            instructions: profile.instructions // ✅ [תיקון] שימוש בפרמטר הנכון
+        });
+        
+        const audioBuffer = await streamToBuffer(response.body);
 
         const userId = member ? member.id : 'system';
         const username = member ? member.displayName : 'System';
-        await registerTTSUsage(cleanText.length, userId, username, 'ElevenLabs', profileName);
+        await registerTTSUsage(cleanText.length, userId, username, 'OpenAI', profileName);
 
         return audioBuffer;
 
     } catch (error) {
-        log(`❌ [ElevenLabs Engine] שגיאה קריטית בייצור קול: ${error.message}`);
+        log(`❌ [OpenAI Engine] שגיאה קריטית בייצור קול: ${error.message}`);
         log(error); 
         return null;
     }
 }
 
+/**
+ * מייצר שיחה שלמה (פודקאסט) מסקריפט.
+ * @param {Array<{speaker: string, text: string}>} script 
+ * @param {import('discord.js').GuildMember} member
+ * @returns {Promise<Buffer[]>}
+ */
 async function synthesizeConversation(script, member) {
-    if (!elevenLabs) {
-        log(`❌ [ElevenLabs Engine] ניסיון להשתמש במנוע TTS (שיחה) כאשר הלקוח אינו מאותחל.`);
+    if (!openai) {
+        log(`❌ [OpenAI Engine] ניסיון להשתמש במנוע TTS (שיחה) כאשר הלקוח אינו מאותחל.`);
         return [];
     }
     
-    if (SHIRLY_VOICE_ID.startsWith('ID_') || SHIMON_VOICE_ID.startsWith('פה_לשים_')) {
-        log('❌ [ElevenLabs Podcast] לא ניתן להתחיל פודקאסט. ה-Voice IDs לא הוחלפו בקוד.');
-        return []; 
-    }
-
     const audioBuffers = [];
     const userId = member.id;
     const username = member.displayName;
@@ -138,30 +135,28 @@ async function synthesizeConversation(script, member) {
         const profile = VOICE_CONFIG[profileName] || DEFAULT_PROFILE;
 
         try {
-            log(`[ElevenLabs Podcast] מייצר שורה: [${profileName}] - "${cleanText}"`);
+            log(`[OpenAI Podcast] מייצר שורה: [${profileName}] - "${cleanText}"`);
 
-            const audioStream = await elevenLabs.textToSpeech.stream(
-                profile.id,
-                {
-                    text: cleanText,
-                    model_id: 'eleven_multilingual_v3', // שימוש ב-V3
-                    output_format: 'mp3_44100_128',
-                    ...profile.settings // ✅ [תיקון] שולח רק הגדרות נתמכות
-                }
-            );
+            const response = await openai.audio.speech.create({
+                model: profile.model,
+                voice: profile.voice,
+                input: cleanText,
+                response_format: 'mp3',
+                instructions: profile.instructions // ✅ [תיקון] שימוש בפרמטר הנכון
+            });
             
-            const audioBuffer = await streamToBuffer(audioStream);
+            const audioBuffer = await streamToBuffer(response.body);
             audioBuffers.push(audioBuffer);
 
-            await registerTTSUsage(cleanText.length, userId, username, 'ElevenLabs-Podcast', profileName);
+            await registerTTSUsage(cleanText.length, userId, username, 'OpenAI-Podcast', profileName);
 
         } catch (error) {
-            log(`❌ [ElevenLabs Podcast] שגיאה בייצור שורה: ${error.message}`);
+            log(`❌ [OpenAI Podcast] שגיאה בייצור שורה: ${error.message}`);
             log(error); 
         }
     }
     
-    log(`[ElevenLabs Podcast] יצירת השיחה עבור ${username} הסתיימה. ${audioBuffers.length} קטעי אודיו נוצרו.`);
+    log(`[OpenAI Podcast] יצירת השיחה עבור ${username} הסתיימה. ${audioBuffers.length} קטעי אודיו נוצרו.`);
     return audioBuffers;
 }
 

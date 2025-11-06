@@ -118,12 +118,8 @@ module.exports = {
 
 player.on(AudioPlayerStatus.Idle, async () => {
   try {
-    await controlMessage.delete().catch(() => {});
-  } catch (err) {
-    console.warn('לא ניתן היה למחוק את הודעת הנגינה:', err);
-  }
+    // ✅ [תיקון] הסרנו את הפקודה .delete() שגרמה לבאג 10008
 
-  try {
     const endEmbed = new EmbedBuilder()
       .setColor('DarkRed')
       .setTitle('🎵 השיר הסתיים')
@@ -138,6 +134,7 @@ player.on(AudioPlayerStatus.Idle, async () => {
         .setStyle(ButtonStyle.Primary)
     );
 
+    // עכשיו הפקודה .edit() תעבוד כי ההודעה קיימת
     await controlMessage.edit({
       embeds: [endEmbed],
       components: [row]
@@ -149,14 +146,15 @@ player.on(AudioPlayerStatus.Idle, async () => {
     }, 60 * 60 * 1000);
 
   } catch (err) {
-    console.warn('שגיאה בעריכת הודעת סיום שיר:', err);
+    if (err.code === 10008) {
+      console.warn('שגיאה בעריכת הודעת סיום שיר (המשתמש מחק אותה ידנית).');
+    } else {
+      console.warn('שגיאה בעריכת הודעת סיום שיר:', err);
+    }
   }
 
   clearState(channel.guild.id);
 });
-
-
-
 
     player.on('error', err => {
       console.error('שגיאת נגן:', err);

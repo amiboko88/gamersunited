@@ -15,30 +15,30 @@ if (OPENAI_API_KEY) {
     log('⚠️ [OpenAI Engine] משתנה הסביבה OPENAI_API_KEY לא נמצא. המנוע מושבת.');
 }
 
-// --- ✅ [100% מאומת] הגדרת פרופילים קוליים עם Prompt (הוראות טון) ---
+// --- הגדרת פרופילים קוליים של OpenAI ---
 const VOICE_CONFIG = {
     // --- קולות לפודקאסט ---
     shimon: {
         model: 'gpt-4o-mini-tts',
         voice: 'ballad',
-        instructions: 'Speak in a clear, neutral tone.' // פרומפט ברירת מחדל
+        instructions: 'Speak in a clear, neutral tone.' 
     },
     shirly: {
         model: 'gpt-4o-mini-tts',
         voice: 'coral',
-        instructions: 'Speak in a clear, neutral tone.' // פרומפט ברירת מחדל
+        instructions: 'Speak in a clear, neutral tone.' 
     },
     
     // --- פרופילים סטטיים לפקודת /tts ---
     shimon_calm: {
         model: 'gpt-4o-mini-tts',
         voice: 'ballad',
-        instructions: 'Speak in a very calm, slow, and relaxed tone.' // ✅ הוראה לטון רגוע
+        instructions: 'Speak in a very calm, slow, and relaxed tone.' 
     },
     shimon_energetic: {
         model: 'gpt-4o-mini-tts',
         voice: 'ballad',
-        instructions: 'Speak in an energetic, excited, and fast-paced tone.' // ✅ הוראה לטון אנרגטי
+        instructions: 'Speak in an energetic, excited, and fast-paced tone.' 
     },
 };
 
@@ -47,26 +47,21 @@ const DEFAULT_PROFILE = VOICE_CONFIG.shimon;
 
 
 /**
- * ממיר Stream ל-Buffer (גרסה מעודכנת עבור OpenAI)
- * @param {ReadableStream<Uint8Array>} stream 
+ * ✅ [תיקון סופי] הוחלפה לפונקציה הקלאסית (Node.js Stream) שתואמת ל-OpenAI.
+ * ממיר Stream ל-Buffer
+ * @param {NodeJS.ReadableStream} stream 
  * @returns {Promise<Buffer>}
  */
-async function streamToBuffer(stream) {
-    const chunks = [];
-    const reader = stream.getReader();
-    try {
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
-        }
-        return Buffer.concat(chunks);
-    } catch (error) {
-        log(`❌ [streamToBuffer] שגיאה באיסוף ה-Stream: ${error.message}`);
-        throw error;
-    } finally {
-        reader.releaseLock();
-    }
+function streamToBuffer(stream) {
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        stream.on('data', (chunk) => chunks.push(chunk));
+        stream.on('end', () => resolve(Buffer.concat(chunks)));
+        stream.on('error', (error) => {
+            log(`❌ [streamToBuffer] שגיאה באיסוף ה-Stream: ${error.message}`);
+            reject(error);
+        });
+    });
 }
 
 /**
@@ -93,9 +88,10 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
             voice: profile.voice,
             input: cleanText,
             response_format: 'mp3',
-            instructions: profile.instructions // ✅ [תיקון] שימוש בפרמטר הנכון
+            instructions: profile.instructions 
         });
         
+        // response.body הוא NodeJS.ReadableStream, הפונקציה המתוקנת תעבוד
         const audioBuffer = await streamToBuffer(response.body);
 
         const userId = member ? member.id : 'system';
@@ -142,9 +138,10 @@ async function synthesizeConversation(script, member) {
                 voice: profile.voice,
                 input: cleanText,
                 response_format: 'mp3',
-                instructions: profile.instructions // ✅ [תיקון] שימוש בפרמטר הנכון
+                instructions: profile.instructions 
             });
             
+            // response.body הוא NodeJS.ReadableStream, הפונקציה המתוקנת תעבוד
             const audioBuffer = await streamToBuffer(response.body);
             audioBuffers.push(audioBuffer);
 

@@ -2,7 +2,7 @@
 
 const db = require('../utils/firebase.js');
 const { log } = require('../utils/logger.js');
-const { ElevenLabs } = require('@elevenlabs/elevenlabs-js');
+const { ElevenLabsClient } = require('@elevenlabs/elevenlabs-js'); // ✅ [תיקון] שינוי שם הקלאס
 
 const USAGE_COLLECTION = 'elevenTtsUsage'; // קולקציה חדשה
 
@@ -45,16 +45,14 @@ async function getTTSUsageData() {
  * @returns {Promise<{total: number, used: number, remaining: number, percentUsed: string}|null>}
  */
 async function getElevenLabsQuota() {
-    // ✅ [תיקון] הוחלף לשם משתנה הסביבה הנכון
     if (!process.env.ELEVEN_API_KEY) {
         log('⚠️ [QUOTA] לא ניתן לשלוף מכסת ElevenLabs. המפתח (ELEVEN_API_KEY) אינו מוגדר.');
         return null;
     }
     
     try {
-        // ✅ [תיקון]
-        const elevenLabs = new ElevenLabs({ apiKey: process.env.ELEVEN_API_KEY });
-        const sub = await elevenLabs.user.getSubscription();
+        const elevenLabs = new ElevenLabsClient({ apiKey: process.env.ELEVEN_API_KEY }); // ✅ [תיקון]
+        const sub = await elevenLabs.user.getSubscription(); // ✅ [תיקון] הגרסה החדשה קוראת לזה ככה
         
         const total = sub.character_limit;
         const used = sub.character_count;

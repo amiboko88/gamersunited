@@ -1,5 +1,5 @@
 // 📁 tts/ttsEngine.elevenlabs.js
-const { ElevenLabs } = require('@elevenlabs/elevenlabs-js');
+const { ElevenLabsClient } = require('@elevenlabs/elevenlabs-js'); // ✅ [תיקון] שינוי שם הקלאס
 const { log } = require('../utils/logger.js');
 const { registerTTSUsage, getElevenLabsQuota } = require('./ttsQuotaManager.eleven.js');
 const { Readable } = require('stream');
@@ -8,13 +8,12 @@ let elevenLabs;
 
 // --- הפרדת מזהי קולות ---
 const SHIMON_VOICE_ID = 'txHtK15K5KtX959ZtpRa'; // ⬅️ הקול המשובט שלך
-const SHIRLY_VOICE_ID = 'tnSpp4vdxKPjI9w0GnoV'; // ⬅️ הדבק כאן את ה-ID של הקול הנשי שבחרת
+const SHIRLY_VOICE_ID = 'ID_נשי_מעברית_להדביק_כאן'; // ⬅️ הדבק כאן את ה-ID של הקול הנשי שבחרת
 // ----------------------------------------------------
 
-// ✅ [תיקון] הוחלף לשם משתנה הסביבה הנכון
 if (process.env.ELEVEN_API_KEY) { 
-    elevenLabs = new ElevenLabs({
-        apiKey: process.env.ELEVEN_API_KEY, // ✅ [תיקון]
+    elevenLabs = new ElevenLabsClient({ // ✅ [תיקון] שינוי שם הקלאס
+        apiKey: process.env.ELEVEN_API_KEY, 
     });
     log('🔊 [ElevenLabs Engine] הלקוח של ElevenLabs אותחל בהצלחה.');
     getElevenLabsQuota()
@@ -105,7 +104,6 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
     
     const profile = VOICE_CONFIG[profileName] || DEFAULT_PROFILE;
     
-    // בדיקה לוודא שה-ID של שירלי הוזן
     if (profile.id === 'ID_נשי_מעברית_להדביק_כאן') {
         log(`❌ [ElevenLabs Engine] ניסיון להשתמש בפרופיל "${profileName}" לפני שהוזן Voice ID עבור שירלי.`);
         return null;
@@ -116,12 +114,13 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
     try {
         log(`[ElevenLabs Engine] מייצר אודיו עבור: "${cleanText}" עם פרופיל ${profileName}`);
         
-        const audioStream = await elevenLabs.generate({
+        // הערה: הפונקציה בגרסה החדשה היא .stream (ולא .generate)
+        const audioStream = await elevenLabs.textToSpeech.stream({
             text: cleanText,
-            voice_id: profile.id, // שימוש ב-ID מהפרופיל
-            model_id: 'eleven_multilingual_v3',
-            output_format: 'mp3_44100_128',
-            ...profile.settings // ✅ יישום הגדרות הסגנון (Stability וכו')
+            voiceId: profile.id, // שימוש ב-ID מהפרופיל
+            modelId: 'eleven_multilingual_v3',
+            outputFormat: 'mp3_44100_128',
+            voiceSettings: profile.settings // ✅ יישום הגדרות הסגנון (Stability וכו')
         });
 
         const audioBuffer = await streamToBuffer(audioStream);
@@ -147,12 +146,10 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
  */
 async function synthesizeConversation(script, member) {
     if (!elevenLabs) {
-        // ✅ [תיקון]
         log(`❌ [ElevenLabs Engine] ניסיון להשתמש במנוע TTS (שיחה) כאשר הלקוח אינו מאותחל. (מפתח: ${process.env.ELEVEN_API_KEY ? 'קיים' : 'חסר'})`);
         return [];
     }
     
-    // בדיקה לוודא שה-ID של שירלי הוזן
     if (SHIRLY_VOICE_ID === 'ID_נשי_מעברית_להדביק_כאן') {
         log('❌ [ElevenLabs Podcast] לא ניתן להתחיל פודקאסט. ה-Voice ID של שירלי חסר בקוד.');
         return []; // מחזיר מערך ריק
@@ -173,12 +170,13 @@ async function synthesizeConversation(script, member) {
         try {
             log(`[ElevenLabs Podcast] מייצר שורה: [${profileName}] - "${cleanText}"`);
 
-            const audioStream = await elevenLabs.generate({
+            // הערה: הפונקציה בגרסה החדשה היא .stream (ולא .generate)
+            const audioStream = await elevenLabs.textToSpeech.stream({
                 text: cleanText,
-                voice_id: profile.id, // שימוש ב-ID מהפרופיל
-                model_id: 'eleven_multilingual_v3',
-                output_format: 'mp3_44100_128',
-                ...profile.settings // ✅ יישום הגדרות הסגנון (Stability וכו')
+                voiceId: profile.id, // שימוש ב-ID מהפרופיל
+                modelId: 'eleven_multilingual_v3',
+                outputFormat: 'mp3_44100_128',
+                voiceSettings: profile.settings // ✅ יישום הגדרות הסגנון (Stability וכו')
             });
             
             const audioBuffer = await streamToBuffer(audioStream);

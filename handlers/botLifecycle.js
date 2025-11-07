@@ -57,7 +57,8 @@ function initializeCronJobs(client) {
         { name: 'בדיקת נוכחות תקופתית', schedule: '*/10 * * * *', func: periodicPresenceCheck, args: [client] },
         { name: 'בדיקת הודעות אימות ממתינות', schedule: '*/10 * * * *', func: checkPendingDms, args: [client] },
         { name: 'החלפת סטטוס הבוט', schedule: '*/15 * * * *', func: rotatePresence, args: [client], runOnInit: true },
-        { name: 'סריקת אי-פעילות אוטומטית', schedule: '*/30 * * * *', func: runAutoTracking, args: [client], runOnInit: true },
+        // ✅ [תיקון GuildMembersTimeout] הסרנו את runOnInit מכאן. הסריקה תרוץ לראשונה אחרי 30 דקות.
+        { name: 'סריקת אי-פעילות אוטומטית', schedule: '*/30 * * * *', func: runAutoTracking, args: [client] }, 
         { name: 'ניקוי הודעות פיפו ישנות', schedule: '0 * * * *', func: cleanupOldFifoMessages, args: [client] },
         { name: 'שליחת ברכות יום הולדת בטלגרם', schedule: '2 0 * * *', func: sendTelegramBirthdays, args: [], timezone: 'Asia/Jerusalem' },
         { name: 'שליחת ברכות יום הולדת בדיסקורד', schedule: '3 0 * * *', func: sendBirthdayMessage, args: [client], timezone: 'Asia/Jerusalem' },
@@ -87,12 +88,10 @@ function initializeCronJobs(client) {
             timezone: task.timezone || "Asia/Jerusalem"
         });
 
-        // ✅ [תיקון] הוספת בדיקה בטיחותית לפני קריאה ל-.catch
         if (task.runOnInit) {
             console.log(`[CRON] ▶️  מריץ משימת אתחול מיידית: ${task.name}`);
             const initialRunResult = task.func(...(task.args || []));
 
-            // הבדיקה מוודאת שהתוצאה היא אובייקט תקין (Promise) לפני שמנסים להשתמש בו
             if (initialRunResult && typeof initialRunResult.catch === 'function') {
                 initialRunResult.catch(e => console.error(`[CRON] ❌ שגיאה בהרצה ראשונית של "${task.name}":`, e));
             }

@@ -1,4 +1,4 @@
-// 📁 handlers/voiceQueue.js (מתוקן עם בדיקת סטטוס ב-Idle)
+// 📁 handlers/voiceQueue.js (מתוקן עם ניתוק מיידי בערוץ טסט)
 const {
     joinVoiceChannel, createAudioPlayer, createAudioResource, entersState,
     AudioPlayerStatus, VoiceConnectionStatus, NoSubscriberBehavior
@@ -8,6 +8,7 @@ const { Readable } = require('stream');
 
 const queues = new Map();
 const IDLE_TIMEOUT_MINUTES = 5;
+const TEST_CHANNEL_ID = '1396779274173943828'; // ⬅️ ה-ID של ערוץ הטסט שלך
 
 function getQueue(guildId, client) {
     if (!queues.has(guildId)) {
@@ -17,7 +18,6 @@ function getQueue(guildId, client) {
             const serverQueue = queues.get(guildId);
             if (!serverQueue) return;
 
-            // ✅ [תיקון באג ה-Stuck] בודק אם החיבור נהרס לפני שמנסה לנגן שוב
             const connectionDestroyed = !serverQueue.connection || 
                                         serverQueue.connection.state.status === VoiceConnectionStatus.Destroyed ||
                                         serverQueue.connection.state.status === VoiceConnectionStatus.Disconnected;
@@ -26,7 +26,6 @@ function getQueue(guildId, client) {
                 serverQueue.isPlaying = false;
                 playNextInQueue(guildId);
             } else if (connectionDestroyed) {
-                // אם החיבור נהרס (למשל, ניתוק ידני), נקה הכל
                 log(`[QUEUE] החיבור נהרס, מנקה את התור בשרת ${guildId}.`);
                 serverQueue.queue = [];
                 serverQueue.isPlaying = false;
@@ -63,6 +62,18 @@ async function playNextInQueue(guildId) {
             serverQueue.isPlaying = false;
             serverQueue.lastActivity = Date.now();
             log(`[QUEUE] התור הסתיים בשרת ${guildId}.`);
+
+            // ✅ [תיקון הבוט התקוע]
+            // אם זה ערוץ הטסט, התנתק מיד. אחרת, המתן לטיימר הרגיל.
+            if (serverQueue.channelId === TEST_CHANNEL_ID) {
+                log('[QUEUE] מזהה ערוץ טסט. מתנתק מיידית (טיימר 1 שנייה).');
+                setTimeout(() => {
+                    if (serverQueue.connection && serverQueue.connection.state.status !== VoiceConnectionStatus.Destroyed) {
+                        serverQueue.connection.destroy();
+                    }
+                    queues.delete(guildId);
+                }, 1000); // השהייה קצרה לוודא שהכל הסתיים
+            }
         }
         return;
     }
@@ -85,7 +96,7 @@ async function playNextInQueue(guildId) {
             });
             
             connection.on(VoiceConnectionStatus.Destroyed, () => {
-                log(`[QUEUE] החיבור בשרת ${guildId} נהרס. מנקה את התור.`);
+                log(`[QUEUE] החיבור בשרת ${guildId} נהרס (ניתוק ידני?). מנקה את התור.`);
                 if (serverQueue) {
                     serverQueue.queue = []; 
                     serverQueue.isPlaying = false;
@@ -113,6 +124,10 @@ function cleanupIdleConnections() {
     const now = Date.now();
     for (const [guildId, serverQueue] of queues.entries()) {
         const idleTime = now - serverQueue.lastActivity;
+
+        // ✅ [תיקון הבוט התקוע] אל תנקה את ערוץ הטסט, הוא מנקה את עצמו
+        if (serverQueue.channelId === TEST_CHANNEL_ID) continue; 
+        
         if (!serverQueue.isPlaying && serverQueue.queue.length === 0 && idleTime > IDLE_TIMEOUT_MINUTES * 60 * 1000) {
             log(`[CLEANUP] מנתק חיבור לא פעיל בשרת ${guildId}.`);
             

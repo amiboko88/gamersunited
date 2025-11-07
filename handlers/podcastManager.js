@@ -26,7 +26,12 @@ const GENERIC_GREETINGS = [
     { shimon: 'למה {userName} נכנס? מישהו ביקש ממנו?', shirly: 'אני ביקשתי... בלב.' },
     { shimon: 'נו באמת, {userName}. אין לך מקום אחר להיות בו?', shirly: 'יש לו... פה... איתי.' },
     { shimon: 'אני לא מאמין. {userName}. למה.', shirly: 'למה לא, שמעון? תראה איזה חתיך {userName}.' },
-    { shimon: 'אוקיי, השרת הולך לקרוס. {userName} פה.', shirly: 'הלב שלי הולך לקרוס... {userName}...' }
+    { shimon: 'אוקיי, השרת הולך לקרוס. {userName} פה.', shirly: 'הלב שלי הולך לקרוס... {userName}...' },
+    { shimon: 'די, אני לא יכול יותר. {userName} נכנס.', shirly: 'תנשום, שמעון... הכל רגוע. היי {userName}, בוא תצטרף.' },
+    { shimon: 'אמרתי לכם לנעול את הדלת! {userName} בפנים!', shirly: 'אבל אני אוהבת שהוא בפנים... {userName}...' },
+    { shimon: 'מישהו יסביר לי מה {userName} עושה פה?', shirly: 'הוא בא לראות אותי, שמעון. נכון, {userName}?' },
+    { shimon: 'יופי, הגיע {userName}. עכשיו באמת אין סיכוי.', shirly: 'איתך תמיד יש סיכוי, {userName}... לכל דבר...' },
+    { shimon: 'זה לא אמיתי. {userName} נחת.', shirly: 'הוא נחת... ישר לזרועותיי. ברוך הבא, מותק.' }
 ];
 
 let activePodcastChannelId = null; 
@@ -65,9 +70,17 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
     // בודק אם משתמש הצטרף לערוץ כלשהו ועומד בתנאים
     if (newChannel) {
+        // ✅ [תיקון באג ה-Stuck] מוודאים שהערוץ החדש הוא לא ערוץ הטסט
+        const TEST_CHANNEL_ID = '1396779274173943828';
+        if (newChannel.id === TEST_CHANNEL_ID) {
+            log('[PODCAST] מזוהה כניסה לערוץ טסט. מנהל הפודקאסט לא יופעל.');
+            return;
+        }
+
         const members = newChannel.members.filter(m => !m.user.bot);
         const isPodcastActiveInThisChannel = newChannel.id === activePodcastChannelId;
         
+        // ✅ [תיקון לוגיקה] 'או' במקום 'ו' - מתחיל פודקאסט *או* מכריז על מצטרף חדש
         const shouldStart = members.size >= MIN_USERS_FOR_PODCAST && !getPodcastStatus() && !podcastCooldown;
         const shouldAnnounce = isPodcastActiveInThisChannel && !spokenUsers.has(member.id);
 
@@ -75,6 +88,8 @@ async function handleVoiceStateUpdate(oldState, newState) {
             if (shouldStart) {
                 log(`[PODCAST] התנאים התקיימו בערוץ ${newChannel.name} (${members.size} משתמשים). מתחיל פודקאסט.`);
                 activePodcastChannelId = newChannel.id; 
+                // ✅ [תיקון לוגיקה] כשמתחילים פודקאסט, יש לרוקן את רשימת הדוברים הקודמת
+                spokenUsers.clear();
             }
             
             spokenUsers.add(member.id);

@@ -9,12 +9,14 @@ const {
 } = require('./statTracker');
 const db = require('../utils/firebase');
 const podcastManager = require('./podcastManager');
-const ttsTester = require('./ttsTester'); // ⬅️ מוודאים שזה מיובא
+const ttsTester = require('./ttsTester');
+const bf6Announcer = require('./bf6Announcer'); // ✅ [שדרוג] ייבוא המנגנון החדש
 const { log } = require('../utils/logger');
 
 // --- הגדרות כלליות ---
 const FIFO_CHANNEL_ID = process.env.FIFO_CHANNEL_ID; 
-// ❌ [שדרוג] הסרנו את המשתנה TTS_TEST_CHANNEL_ID מ-process.env
+const TTS_TEST_CHANNEL_ID = '1396779274173943828';
+const BF6_VOICE_CHANNEL_ID = '1403121794235240489'; // ✅ [תיקון] ה-ID הוכנס ישירות
 const FIFO_ROLE_NAME = 'FIFO';
 const joinTimestamps = new Map();
 
@@ -26,6 +28,7 @@ let voiceCounterTimeout = null;
 let debounceTimeout = null;
 
 async function updateVoiceCounterChannel(guild) {
+    // ... (אין שינוי בפונקציה הזו)
     if (!guild || !guild.channels) return;
     const totalMembersInVoice = guild.channels.cache
         .filter(c => c.parentId === COUNTER_CATEGORY_ID && c.type === ChannelType.GuildVoice)
@@ -72,20 +75,27 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
     const member = newState.member, userId = member.id, oldChannel = oldState.channel, newChannel = newState.channel, now = Date.now();
     
-    // ✅ [שדרוג] הבדיקה משתמשת כעת ב-ID המיובא מ-ttsTester
-    if (ttsTester.TEST_CHANNEL_ID) {
-        // בודק כניסה לערוץ הטסטים
-        if (!oldChannel && newChannel && newChannel.id === ttsTester.TEST_CHANNEL_ID) {
+    // --- ✅ בדיקת ערוץ טסט (נשאר כמו קודם) ---
+    if (TTS_TEST_CHANNEL_ID) {
+        if (!oldChannel && newChannel && newChannel.id === TTS_TEST_CHANNEL_ID) {
             if (member.permissions.has(PermissionFlagsBits.Administrator)) {
                 log(`[TTS_TESTER] מזהה כניסת אדמין (${member.displayName}) לערוץ הבדיקות. מפעיל בדיקה...`);
                 await ttsTester.runTTSTest(member);
             }
-            return; // עוצר כאן כדי לא להפעיל לוגיקות אחרות (פודקאסט, סטטיסטיקות) בערוץ הטסט
+            return; 
         }
-        // בודק יציאה מערוץ הטסטים
-        if (oldChannel && !newChannel && oldChannel.id === ttsTester.TEST_CHANNEL_ID) {
+        if (oldChannel && !newChannel && oldChannel.id === TTS_TEST_CHANNEL_ID) {
              log(`[TTS_TESTER] מזהה יציאת (${member.displayName}) מערוץ הבדיקות.`);
-             return; // עוצר כאן
+             return; 
+        }
+    }
+
+    // --- ✅ [שדרוג] בדיקת ערוץ BF6 החדש ---
+    if (BF6_VOICE_CHANNEL_ID) {
+        if (!oldChannel && newChannel && newChannel.id === BF6_VOICE_CHANNEL_ID) {
+            log(`[BF6] מזהה כניסה של ${member.displayName} לערוץ BF6. מפעיל קטע אווירה...`);
+            await bf6Announcer.playBf6Theme(newChannel, member);
+            // ⚠️ אנחנו *לא* עושים 'return' כאן, כדי שהלוגיקות האחרות (כמו FIFO) ימשיכו
         }
     }
 
@@ -117,8 +127,8 @@ async function handleVoiceStateUpdate(oldState, newState) {
         }
     }
     
-    // ✅ [שדרוג] הבדיקה מוודאת שאנחנו לא בערוץ הטסטים
-    if (oldChannel?.id !== newChannel?.id && newChannel?.id !== ttsTester.TEST_CHANNEL_ID) {
+    // ✅ הפעלת הפודקאסט (מוודא שזה לא ערוץ הטסט)
+    if (oldChannel?.id !== newChannel?.id && newChannel?.id !== TTS_TEST_CHANNEL_ID) {
         await podcastManager.handleVoiceStateUpdate(oldState, newState);
     }
 }

@@ -2,8 +2,8 @@
 const {
   joinVoiceChannel,
   EndBehaviorType,
-  VoiceConnectionStatus, // ✅ כבר לא יהיה אפור
-  entersState // ✅ כבר לא יהיה אפור
+  VoiceConnectionStatus, 
+  entersState 
 } = require('@discordjs/voice');
 const { createWriteStream, existsSync, mkdirSync, unlinkSync, statSync, readdirSync } = require('fs');
 const path = require('path');
@@ -13,7 +13,7 @@ const ffmpeg = require('ffmpeg-static');
 const sodium = require('libsodium-wrappers');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { log } = require('../utils/logger');
-const prism = require('prism-media'); // ✅ [תיקון קריטי] ייבוא המפענח
+const prism = require('prism-media'); 
 
 const RECORDINGS_DIR = path.join(__dirname, '..', 'recordings');
 if (!existsSync(RECORDINGS_DIR)) mkdirSync(RECORDINGS_DIR);
@@ -49,7 +49,7 @@ async function convertPcmToMp3(inputPaths, outputPath) {
     }
 
     const ffmpegArgs = [
-      '-f', 's16le', '-ar', '48000', '-ac', '2', // הגדרות גלובליות לכל קבצי ה-input
+      '-f', 's16le', '-ar', '48000', '-ac', '2', 
     ];
 
     inputPaths.forEach(p => ffmpegArgs.push('-i', p));
@@ -64,7 +64,7 @@ async function convertPcmToMp3(inputPaths, outputPath) {
     const ffmpegProcess = spawn(ffmpeg, ffmpegArgs);
 
     ffmpegProcess.stderr.on('data', (data) => {
-      log(`[FFMPEG_STDERR]: ${data.toString()}`); // המרת הבאפר לסטרינג
+      log(`[FFMPEG_STDERR]: ${data.toString()}`); 
     });
     ffmpegProcess.on('exit', code => {
       if (code === 0) resolve();
@@ -112,7 +112,7 @@ module.exports = {
     );
 
     await interaction.reply({
-      content: '🎙️ אתה עומד להקליט את **כל מי שידבר** בערוץ למשך 30 שניות.\nלחץ כדי לאשר.',
+      content: '🎙️ אתה עומד להקליט את **כל מי שידבר** בערוץ למך 30 שניות.\nלחץ כדי לאשר.',
       components: [confirmRow],
       flags: MessageFlags.Ephemeral
     });
@@ -137,9 +137,7 @@ module.exports = {
         selfMute: false
       });
       
-      // --- ✅ [תיקון קריטי] לוגיקת הקלטה רב-ערוצית עם מפענח ---
       try {
-        // ✅ [תיקון] ממתינים שהחיבור יהיה מוכן
         await entersState(connection, VoiceConnectionStatus.Ready, 5_000); 
       } catch (error) {
         log('❌ [RECORDING] שגיאה בהתחברות לערוץ:', error);
@@ -164,18 +162,17 @@ module.exports = {
         const writeStream = createWriteStream(pcmPath);
         
         // 1. קבל את זרם האודיו המוצפן (Opus)
-        const opusStream = receiver.subscribe(userId, {
-          end: { behavior: EndBehaviorType.AfterSilence, duration: 100 }
-        });
+        // ✅ [תיקון] הסרת ההגדרה 'end' כדי להקליט ברציפות
+        const opusStream = receiver.subscribe(userId);
 
-        // 2. ✅ [תיקון] צור מפענח Opus
+        // 2. צור מפענח Opus
         const pcmStream = new prism.opus.Decoder({
           rate: 48000,
           channels: 2,
           frameSize: 960
         });
 
-        // 3. שמור את כל הזרמים כדי שנוכל לסגור אותם
+        // 3. שמור את כל הזרמים
         audioStreams.set(userId, { writeStream, opusStream, pcmStream, pcmPath });
         
         // 4. חבר את הצינור: Opus -> מפענח -> קובץ PCM
@@ -185,8 +182,7 @@ module.exports = {
             log(`[RECORDING] זרם אודיו (Opus) עבור ${userId} הסתיים.`);
         });
       });
-      // ------------------------------------------
-
+      
       setTimeout(async () => {
         try {
           connection.destroy();
@@ -199,7 +195,7 @@ module.exports = {
           
           const pcmFilesToMix = Array.from(audioStreams.values()).map(s => s.pcmPath);
 
-          await new Promise(resolve => setTimeout(resolve, 1000)); // תן לקבצים להיסגר
+          await new Promise(resolve => setTimeout(resolve, 1000)); 
 
           if (pcmFilesToMix.length === 0) {
             return interaction.followUp({
@@ -212,7 +208,7 @@ module.exports = {
               if (existsSync(p) && statSync(p).size > 1024) {
                   return true;
               }
-              if (existsSync(p)) unlinkSync(p); // מחק קובץ ריק
+              if (existsSync(p)) unlinkSync(p); 
               return false;
           });
           

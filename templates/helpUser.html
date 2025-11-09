@@ -11,32 +11,29 @@
       background: linear-gradient(to bottom right, #0f172a, #1e293b);
       color: #fff;
       width: 2400px;
-      height: 1200px;
+      height: 1200px; /* הגדלתי מעט את הגובה כדי שיהיה מקום */
       padding: 80px;
       box-sizing: border-box;
     }
-
     .title {
       font-size: 60px;
       text-align: center;
       margin-bottom: 30px;
       color: #38bdf8;
     }
-
     .sub-title {
       font-size: 42px;
       text-align: center;
       margin-bottom: 60px;
       color: #a5f3fc;
     }
-
     .commands-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+      /* ✅ שיניתי ל-3 עמודות כדי לנצל את המקום */
+      grid-template-columns: repeat(3, 1fr);
       gap: 40px;
       padding: 0 60px;
     }
-
     .command-box {
       background-color: #1e293b;
       border-radius: 20px;
@@ -47,13 +44,11 @@
       justify-content: center;
       font-size: 36px;
     }
-
     .command-name {
       color: #facc15;
       font-weight: bold;
       margin-bottom: 12px;
     }
-
     .command-desc {
       color: #e0f2fe;
     }
@@ -62,7 +57,7 @@
 <body>
   <div class="container">
     <div class="title">🙋‍♂️ המשתמש זוהה כמשתמש רגיל</div>
-    <div class="sub-title">👤 פקודות משתמש</div>
+    <div class="sub-title">כל הפקודות הזמינות עבורך</div>
 
     <div class="commands-grid">
       <div class="command-box">
@@ -70,23 +65,45 @@
         <div class="command-desc">אימות משתמש חדש ✅</div>
       </div>
       <div class="command-box">
-        <div class="command-name">/מוזיקה</div>
-        <div class="command-desc">נגן שיר 🎵</div>
+        <div class="command-name">/מצטיין_שבוע</div>
+        <div class="command-desc">תצוגת המצטיינים בפעילות 🏆</div>
       </div>
       <div class="command-box">
-        <div class="command-name">/פיפו</div>
-        <div class="command-desc">הפעל מצב פיפו 🎮</div>
+        <div class="command-name">/עזרה</div>
+        <div class="command-desc">מציג את פאנל העזרה הזה ❓</div>
+      </div>
+      
+      <div class="command-box">
+        <div class="command-name">/שירים</div>
+        <div class="command-desc">מנגן שיר מהמאגר 🎵</div>
       </div>
       <div class="command-box">
         <div class="command-name">/סאונדבורד</div>
-        <div class="command-desc">השמע סאונד מצחיק 🔊</div>
+        <div class="command-desc">משמיע סאונד מצחיק 🔊</div>
       </div>
       <div class="command-box">
-        <div class="command-name">/מצטיין_שבוע</div>
-        <div class="command-desc">תצוגת מצטיינים 🏆</div>
+        <div class="command-name">/פיפו</div>
+        <div class="command-desc">מחלק את הערוץ לקבוצות 🎮</div>
+      </div>
+
+      <div class="command-box">
+        <div class="command-name">/הוסף_יום_הולדת</div>
+        <div class="command-desc">הוסף את יום ההולדת שלך 🎂</div>
+      </div>
+      <div class="command-box">
+        <div class="command-name">/ימי_הולדת</div>
+        <div class="command-desc">רשימת החוגגים הקרובים 📅</div>
+      </div>
+      <div class="command-box">
+        <div class="command-name">/היום_הולדת_הבא</div>
+        <div class="command-desc">מי הכי קרוב לחגוג? 🔜</div>
+      </div>
+
+      <div class="command-box">
+        <div class="command-name">/הקלטות</div>
+        <div class="command-desc">פאנל ניהול ההקלטות האישיות 📂</div>
       </div>
     </div>
   </div>
 </body>
-
 </html>

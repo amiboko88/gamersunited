@@ -179,11 +179,16 @@ async function playNextInQueue(guildId) {
 
             serverQueue.connection = connection;
             await entersState(serverQueue.connection, VoiceConnectionStatus.Ready, 30_000);
-            
-            // ✅ [תיקון חיתוך סאונד] הוספת השהייה קטנה לייצוב
-            await new Promise(resolve => setTimeout(resolve, CONNECTION_STABILIZE_DELAY));
         }
         
+        // ✅ [תיקון חיתוך סאונד] הוספת השהייה חכמה *לפני* הניגון
+        // הוסף השהייה *רק* אם זה סאונד קצר (לא שיר או פודקאסט)
+        if (type === 'BF6_THEME' || type === 'SOUNDBOARD') {
+            await new Promise(resolve => setTimeout(resolve, 1500)); // 1.5 שניות
+        } else {
+            await new Promise(resolve => setTimeout(resolve, CONNECTION_STABILIZE_DELAY)); // 0.5 שניות לשירים ו-TTS
+        }
+
         const resource = createResource(input);
         if (!resource) {
             log(`❌ [QUEUE] נכשל ביצירת AudioResource.`);

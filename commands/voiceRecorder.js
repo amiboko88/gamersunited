@@ -1,4 +1,4 @@
-// 📁 commands/voiceRecorder.js (מתוקן עם מפענח Opus ומיקסוס)
+// 📁 commands/voiceRecorder.js (מתוקן עם מפענח Opus ומיקסוס חכם)
 const {
   joinVoiceChannel,
   EndBehaviorType,
@@ -42,6 +42,9 @@ function incrementUserCount(userId) {
 }
 // -------------------------------------------------------------------
 
+/**
+ * ✅ [תיקון] פונקציית המרה חכמה: המרה ישירה לקובץ 1, מיקסוס ל-2+
+ */
 async function convertPcmToMp3(inputPaths, outputPath) {
   return new Promise((resolve, reject) => {
     if (inputPaths.length === 0) {
@@ -49,18 +52,28 @@ async function convertPcmToMp3(inputPaths, outputPath) {
     }
 
     const ffmpegArgs = [
-      '-f', 's16le', '-ar', '48000', '-ac', '2', 
+      '-f', 's16le', '-ar', '48000', '-ac', '2', // הגדרות גלובליות לכל קבצי ה-input
     ];
 
     inputPaths.forEach(p => ffmpegArgs.push('-i', p));
 
-    ffmpegArgs.push(
-      '-filter_complex', `amix=inputs=${inputPaths.length}:duration=longest`,
-      '-y', 
-      outputPath
-    );
+    if (inputPaths.length > 1) {
+      // --- ✅ [לוגיקה 1] מיקסוס עבור 2+ קבצים ---
+      log(`[FFMPEG] מריץ פקודת מיקסוס עם ${inputPaths.length} קבצים...`);
+      ffmpegArgs.push(
+        '-filter_complex', `amix=inputs=${inputPaths.length}:duration=longest`,
+        '-y', 
+        outputPath
+      );
+    } else {
+      // --- ✅ [לוגיקה 2] המרה ישירה עבור קובץ בודד (מונע הנחתת ווליום) ---
+      log(`[FFMPEG] מריץ המרה ישירה עבור קובץ בודד...`);
+      ffmpegArgs.push(
+        '-y', 
+        outputPath
+      );
+    }
 
-    log(`[FFMPEG] מריץ פקודת מיקסוס עם ${inputPaths.length} קבצים...`);
     const ffmpegProcess = spawn(ffmpeg, ffmpegArgs);
 
     ffmpegProcess.stderr.on('data', (data) => {
@@ -68,7 +81,7 @@ async function convertPcmToMp3(inputPaths, outputPath) {
     });
     ffmpegProcess.on('exit', code => {
       if (code === 0) resolve();
-      else reject(new Error(`FFmpeg (amix) exited with code ${code}`));
+      else reject(new Error(`FFmpeg exited with code ${code}`));
     });
     ffmpegProcess.on('error', reject);
   });
@@ -161,21 +174,16 @@ module.exports = {
         const pcmPath = path.join(userDir, `${baseName}_${userId}.pcm`);
         const writeStream = createWriteStream(pcmPath);
         
-        // 1. קבל את זרם האודיו המוצפן (Opus)
-        // ✅ [תיקון] הסרת ההגדרה 'end' כדי להקליט ברציפות
         const opusStream = receiver.subscribe(userId);
 
-        // 2. צור מפענח Opus
         const pcmStream = new prism.opus.Decoder({
           rate: 48000,
           channels: 2,
           frameSize: 960
         });
 
-        // 3. שמור את כל הזרמים
         audioStreams.set(userId, { writeStream, opusStream, pcmStream, pcmPath });
         
-        // 4. חבר את הצינור: Opus -> מפענח -> קובץ PCM
         opusStream.pipe(pcmStream).pipe(writeStream);
 
         opusStream.on('end', () => {

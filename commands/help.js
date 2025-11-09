@@ -1,150 +1,79 @@
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder, MessageFlags } = require('discord.js');
-
+// 📁 commands/help.js
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder, MessageFlags, PermissionFlagsBits } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const generateHelpImage = require('../handlers/generateHelpImage');
+// ✅ [שדרוג] שימוש בגנרטור הקיים מבוסס Puppeteer
+const generateHelpImage = require('../handlers/generateHelpImage'); 
 
-const HELP_IMAGES = ['helpUser.png', 'helpBirthday.png'];
-const ADMIN_IMAGES = ['helpAdmin.png'];
+const USER_IMAGE_NAME = 'helpUser'; // שם ללא סיומת
+const ADMIN_IMAGE_NAME = 'helpAdmin';
+// ✅ [שדרוג] שימוש בנתיב הפלט שהוגדר ב-generateHelpImage.js
+const OUTPUT_DIR = path.resolve(__dirname, '..', 'images');
 
-function getImageList(isAdmin) {
-  return isAdmin ? [...HELP_IMAGES, ...ADMIN_IMAGES] : HELP_IMAGES;
-}
-
-function buildButtons(currentIndex, isAdmin) {
-  const images = getImageList(isAdmin);
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`help_prev_${currentIndex}`)
-      .setLabel('⬅️ הקודם')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(currentIndex === 0),
-    new ButtonBuilder()
-      .setCustomId(`help_next_${currentIndex}`)
-      .setLabel('הבא ➡️')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(currentIndex >= images.length - 1),
-    new ButtonBuilder()
-      .setCustomId(`help_ai_modal`)
-      .setLabel('שאל את שמעון 🤖')
-      .setStyle(ButtonStyle.Success)
-  );
-}
-
-async function ensureImageExists(imageName) {
-  const filePath = path.resolve(__dirname, `../images/${imageName}`);
-  if (!fs.existsSync(filePath)) {
-    console.log(`📸 ${imageName} לא נמצא – מייצר...`);
-    await generateHelpImage(imageName.replace('.png', ''));
-  }
-  return filePath;
-}
-
-function getCommandsText(index, isAdmin) {
-  const allSections = [
-    {
-      title: '👤 פקודות משתמש',
-      commands: [
-        '/אימות – אימות משתמש חדש ✅',
-        '/מוזיקה – נגן שיר 🎵',
-        '/פיפו – הפעל מצב פיפו 🎮',
-        '/סאונדבורד – השמע סאונד מצחיק 🔊',
-        '/מצטיין_שבוע – תצוגת מצטיינים 🏆'
-      ]
-    },
-    {
-      title: '🎂 פקודות ימי הולדת',
-      commands: [
-        '/הוסף_יום_הולדת – הוסף את היום שלך 🎂',
-        '/ימי_הולדת – רשימת החוגגים הקרובים 📅',
-        '/היום_הולדת_הבא – מי הכי קרוב לחגוג? 🔜',
-        '/ימי_הולדת_חסרים – מי לא עדכן עדיין? ⏳'
-      ]
-    },
-    {
-      title: '👑 פקודות מנהלים',
-      commands: [
-        '/updaterules – עדכון חוקים 🔧',
-        '/rulestats – אישרו חוקים 📑',
-        '/tts – בדיקת תווים 🗣️',
-        '/leaderboard – שליחת לוח תוצאות 🏅',
-        '/הקלט – התחלת הקלטת שיחה 🎙️',
-        '/השמע_אחרון – נגן את ההקלטה האחרונה ▶️',
-        '/רשימת_הקלטות – כל ההקלטות שלך 📂',
-        '/מחק_הקלטות – ניקוי ההקלטות 🧹'
-      ]
+/**
+ * פונקציית עזר להשגת/יצירת התמונה
+ */
+async function getHelpImage(imageName) {
+    const imagePath = path.join(OUTPUT_DIR, `${imageName}.png`);
+    
+    // הגנרטור שלך כולל לוגיקת cache, אז זה בסדר לקרוא לו.
+    // הוא ייצר תמונה רק אם היא חסרה או ישנה מדי.
+    try {
+        // 'imageName' כאן הוא 'helpUser' או 'helpAdmin'
+        await generateHelpImage(imageName); 
+    } catch (err) {
+        console.error(`❌ שגיאה בייצור תמונת עזרה ${imageName}:`, err.message);
+        // Fallback אם הייצור נכשל (למשל, קובץ HTML חסר)
+        const fallback = path.join(OUTPUT_DIR, 'helpUser.png'); 
+        if (fs.existsSync(fallback)) return fallback;
+        else throw new Error(`לא קיימת תמונת עזרה ${imageName}.png ולא ניתן לייצר אחת.`);
     }
-  ];
+    
+    return imagePath;
+}
 
-  const section = isAdmin
-    ? allSections[index]
-    : allSections.slice(0, 2)[index];
-
-  if (!section) return '';
-
-  return `**${section.title}**\n${section.commands.map(c => `• ${c}`).join('\n')}`;
+/**
+ * בונה את שורת הכפתורים הראשית
+ */
+function buildInitialButtons(isAdmin) {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('help_admin_panel')
+            .setLabel('👑 פקודות מנהל')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(!isAdmin), // ✅ חסום למשתמשים רגילים
+        new ButtonBuilder()
+            .setCustomId('help_ai_modal_button') // ✅ ID ברור יותר לכפתור
+            .setLabel('🤖 שאל את שמעון')
+            .setStyle(ButtonStyle.Success)
+    );
 }
 
 module.exports = {
-  data: new SlashCommandBuilder()
-    .setName('עזרה')
-    .setDescription('מרכז עזרה ברור ונגיש לפי תפקיד'),
+    data: new SlashCommandBuilder()
+        .setName('עזרה')
+        .setDescription('מציג את כל הפקודות הזמינות בשרת'),
 
-  async execute(interaction) {
-    const isAdmin = interaction.member.permissions.has('Administrator');
-    const images = getImageList(isAdmin);
-    const imageName = images[0];
-    const file = await ensureImageExists(imageName);
-    const attachment = new AttachmentBuilder(file);
-    const buttons = buildButtons(0, isAdmin);
+    async execute(interaction) {
+        const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
+        
+        try {
+            await interaction.deferReply({ ephemeral: true });
+            
+            // תמיד מציג את תמונת המשתמש הרגילה בהתחלה
+            const imagePath = await getHelpImage(USER_IMAGE_NAME);
+            const attachment = new AttachmentBuilder(imagePath);
+            const buttons = buildInitialButtons(isAdmin);
 
-    const roleText = isAdmin
-      ? '🎩 אתה מזוהה כ־Admin'
-      : '🙋‍♂️ אתה מזוהה כמשתמש רגיל';
+            await interaction.editReply({
+                content: null, // ✅ אין יותר טקסט מעל התמונה
+                files: [attachment],
+                components: [buttons],
+            });
 
-    const commandsText = getCommandsText(0, isAdmin);
-
-    await interaction.reply({
-      content: `${roleText}\n\n${commandsText}`,
-      files: [attachment],
-      components: [buttons],
-      flags: MessageFlags.Ephemeral
-    });
-  },
-
-  async handleButton(interaction) {
-    if (!interaction.isButton()) return false;
-
-    if (interaction.customId === 'help_ai_modal') {
-      await interaction.reply({
-        content: '🧠 כתוב את השאלה שלך כאן, שמעון יגיב בהתאם 😉',
-        flags: MessageFlags.Ephemeral
-      });
-      return true;
-    }
-
-    const isAdmin = interaction.member.permissions.has('Administrator');
-    const [action, , rawIndex] = interaction.customId.split('_');
-    const currentIndex = parseInt(rawIndex);
-    const images = getImageList(isAdmin);
-    const direction = interaction.customId.includes('next') ? 1 : -1;
-    const newIndex = currentIndex + direction;
-
-    if (newIndex < 0 || newIndex >= images.length) return true;
-
-    const imageName = images[newIndex];
-    const file = await ensureImageExists(imageName);
-    const attachment = new AttachmentBuilder(file);
-    const buttons = buildButtons(newIndex, isAdmin);
-    const commandsText = getCommandsText(newIndex, isAdmin);
-
-    await interaction.update({
-      content: commandsText,
-      files: [attachment],
-      components: [buttons],
-      flags: MessageFlags.Ephemeral
-    });
-
-    return true;
-  }
+        } catch (error) {
+            console.error("❌ שגיאה בפקודת /עזרה:", error);
+            await interaction.editReply({ content: 'אירעה שגיאה בהצגת העזרה. ייתכן שתבניות ה-HTML חסרות או שגויות.', flags: MessageFlags.Ephemeral });
+        }
+    },
 };

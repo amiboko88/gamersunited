@@ -1,49 +1,44 @@
 // 📁 commands/help.js
 const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder, MessageFlags, PermissionFlagsBits } = require('discord.js');
-const fs = require('fs');
 const path = require('path');
-// ✅ [שדרוג] שימוש בגנרטור הקיים מבוסס Puppeteer
+const fs = require('fs');
+
+// שימוש בגנרטור התמונות הקיים
 const generateHelpImage = require('../handlers/generateHelpImage'); 
 
-const USER_IMAGE_NAME = 'helpUser'; // שם ללא סיומת
-const ADMIN_IMAGE_NAME = 'helpAdmin';
-// ✅ [שדרוג] שימוש בנתיב הפלט שהוגדר ב-generateHelpImage.js
+const USER_IMAGE_NAME = 'helpUser'; 
+const ADMIN_IMAGE_NAME = 'helpAdmin'; 
 const OUTPUT_DIR = path.resolve(__dirname, '..', 'images');
 
 /**
- * פונקציית עזר להשגת/יצירת התמונה
+ * פונקציית עזר להשגת/יצירת התמונה (כמו ב-help_panel.js)
  */
 async function getHelpImage(imageName) {
     const imagePath = path.join(OUTPUT_DIR, `${imageName}.png`);
     
-    // הגנרטור שלך כולל לוגיקת cache, אז זה בסדר לקרוא לו.
-    // הוא ייצר תמונה רק אם היא חסרה או ישנה מדי.
     try {
-        // 'imageName' כאן הוא 'helpUser' או 'helpAdmin'
-        await generateHelpImage(imageName); 
+        await generateHelpImage(imageName); // ייצור התמונה אם חסרה או ישנה
     } catch (err) {
         console.error(`❌ שגיאה בייצור תמונת עזרה ${imageName}:`, err.message);
-        // Fallback אם הייצור נכשל (למשל, קובץ HTML חסר)
-        const fallback = path.join(OUTPUT_DIR, 'helpUser.png'); 
+        const fallback = path.join(OUTPUT_DIR, 'helpUser.png');
         if (fs.existsSync(fallback)) return fallback;
-        else throw new Error(`לא קיימת תמונת עזרה ${imageName}.png ולא ניתן לייצר אחת.`);
+        throw new Error(`לא קיימת תמונת עזרה ${imageName}.png ולא ניתן לייצר אחת.`);
     }
-    
     return imagePath;
 }
 
 /**
- * בונה את שורת הכפתורים הראשית
+ * בונה את כפתורי הפאנל ההתחלתיים
  */
 function buildInitialButtons(isAdmin) {
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('help_admin_panel')
+            .setCustomId('help_admin_panel') // ID למעבר לפאנל מנהל
             .setLabel('👑 פקודות מנהל')
             .setStyle(ButtonStyle.Secondary)
-            .setDisabled(!isAdmin), // ✅ חסום למשתמשים רגילים
+            .setDisabled(!isAdmin), // חסום למשתמשים רגילים
         new ButtonBuilder()
-            .setCustomId('help_ai_modal_button') // ✅ ID ברור יותר לכפתור
+            .setCustomId('help_ai_modal_button') // ID לפתיחת מודאל AI
             .setLabel('🤖 שאל את שמעון')
             .setStyle(ButtonStyle.Success)
     );
@@ -66,14 +61,17 @@ module.exports = {
             const buttons = buildInitialButtons(isAdmin);
 
             await interaction.editReply({
-                content: null, // ✅ אין יותר טקסט מעל התמונה
+                content: null, 
                 files: [attachment],
                 components: [buttons],
             });
 
         } catch (error) {
             console.error("❌ שגיאה בפקודת /עזרה:", error);
-            await interaction.editReply({ content: 'אירעה שגיאה בהצגת העזרה. ייתכן שתבניות ה-HTML חסרות או שגויות.', flags: MessageFlags.Ephemeral });
+            await interaction.editReply({ content: '❌ אירעה שגיאה בטעינת פאנל העזרה.', flags: MessageFlags.Ephemeral });
         }
     },
+    
+    // הפונקציות הישנות (handleButton) נמחקו כדי למנוע כפילויות, 
+    // והלוגיקה שלהן הועברה ל-help_panel.js ול-help_ai_modal.js
 };

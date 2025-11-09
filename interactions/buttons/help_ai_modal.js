@@ -1,16 +1,16 @@
-// 📁 interactions/buttons/help_ai_modal.js (או help_ai_button.js)
-const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, MessageFlags } = require('discord.js');
+// 📁 interactions/buttons/help_ai_modal.js (מטפל בכפתור AI)
+const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
 
 module.exports = {
+    // מזהה את כפתור פתיחת המודאל
     customId: (interaction) => {
-        // ✅ [תיקון] תואם ל-ID החדש של הכפתורים
         return interaction.isButton() && interaction.customId === 'help_ai_modal_button'; 
     },
 
     async execute(interaction) {
         try {
             const modal = new ModalBuilder()
-                .setCustomId('help_ai_submit') // ⬅️ זה ה-ID שהקובץ הבא יטפל בו
+                .setCustomId('help_ai_submit') // ה-ID שיופעל בשליחת הטופס
                 .setTitle('🤖 שאל את שמעון');
 
             const questionInput = new TextInputBuilder()
@@ -28,10 +28,7 @@ module.exports = {
         } catch (error) {
             console.error("❌ שגיאה בהצגת המודאל של /עזרה:", error);
             if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({
-                    content: 'אירעה שגיאה בפתיחת החלונית.',
-                    flags: MessageFlags.Ephemeral
-                });
+                await interaction.reply({ content: '❌ שגיאה בפתיחת המודאל.', ephemeral: true });
             }
         }
     }

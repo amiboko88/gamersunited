@@ -1,14 +1,19 @@
+// 📁 commands/voiceRecorder.js (מתוקן עם מפענח Opus ומיקסוס)
 const {
   joinVoiceChannel,
   EndBehaviorType,
+  VoiceConnectionStatus, // ✅ כבר לא יהיה אפור
+  entersState // ✅ כבר לא יהיה אפור
 } = require('@discordjs/voice');
-const { createWriteStream, existsSync, mkdirSync, unlinkSync, statSync } = require('fs');
+const { createWriteStream, existsSync, mkdirSync, unlinkSync, statSync, readdirSync } = require('fs');
 const path = require('path');
 const dayjs = require('dayjs');
 const { spawn } = require('child_process');
 const ffmpeg = require('ffmpeg-static');
 const sodium = require('libsodium-wrappers');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, MessageFlags } = require('discord.js');
+const { log } = require('../utils/logger');
+const prism = require('prism-media'); // ✅ [תיקון קריטי] ייבוא המפענח
 
 const RECORDINGS_DIR = path.join(__dirname, '..', 'recordings');
 if (!existsSync(RECORDINGS_DIR)) mkdirSync(RECORDINGS_DIR);
@@ -21,39 +26,50 @@ const ALLOWED_ROLE_IDS = [
 
 const dailyLimits = new Map();
 
+// ... (פונקציות העזר canRecord, getUserDailyKey וכו' נשארות זהות) ...
 function canRecord(member) {
   return member.roles.cache.some(r => ALLOWED_ROLE_IDS.includes(r.id));
 }
-
 function getUserDailyKey(userId) {
   return `${userId}_${dayjs().format('YYYY-MM-DD')}`;
 }
-
 function getUserDailyCount(userId) {
   return dailyLimits.get(getUserDailyKey(userId)) || 0;
 }
-
 function incrementUserCount(userId) {
   const key = getUserDailyKey(userId);
   dailyLimits.set(key, getUserDailyCount(userId) + 1);
 }
+// -------------------------------------------------------------------
 
-async function convertPcmToMp3(inputPath, outputPath) {
+async function convertPcmToMp3(inputPaths, outputPath) {
   return new Promise((resolve, reject) => {
-    const ffmpegProcess = spawn(ffmpeg, [
-      '-f', 's16le',
-      '-ar', '48000',
-      '-ac', '2',
-      '-i', inputPath,
-      '-y',
-      outputPath
-    ]);
+    if (inputPaths.length === 0) {
+      return reject(new Error('לא סופקו קבצי PCM להמרה.'));
+    }
 
+    const ffmpegArgs = [
+      '-f', 's16le', '-ar', '48000', '-ac', '2', // הגדרות גלובליות לכל קבצי ה-input
+    ];
+
+    inputPaths.forEach(p => ffmpegArgs.push('-i', p));
+
+    ffmpegArgs.push(
+      '-filter_complex', `amix=inputs=${inputPaths.length}:duration=longest`,
+      '-y', 
+      outputPath
+    );
+
+    log(`[FFMPEG] מריץ פקודת מיקסוס עם ${inputPaths.length} קבצים...`);
+    const ffmpegProcess = spawn(ffmpeg, ffmpegArgs);
+
+    ffmpegProcess.stderr.on('data', (data) => {
+      log(`[FFMPEG_STDERR]: ${data.toString()}`); // המרת הבאפר לסטרינג
+    });
     ffmpegProcess.on('exit', code => {
       if (code === 0) resolve();
-      else reject(new Error(`FFmpeg exited with code ${code}`));
+      else reject(new Error(`FFmpeg (amix) exited with code ${code}`));
     });
-
     ffmpegProcess.on('error', reject);
   });
 }
@@ -91,12 +107,12 @@ module.exports = {
     const confirmRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('confirm_recording')
-        .setLabel('✅ אשר הקלטה')
+        .setLabel('✅ אשר הקלטה (30 שניות)')
         .setStyle(ButtonStyle.Danger)
     );
 
     await interaction.reply({
-      content: '🎙️ אתה עומד להקליט את הערוץ שלך ל־30 שניות.\nלחץ כדי לאשר.',
+      content: '🎙️ אתה עומד להקליט את **כל מי שידבר** בערוץ למשך 30 שניות.\nלחץ כדי לאשר.',
       components: [confirmRow],
       flags: MessageFlags.Ephemeral
     });
@@ -109,7 +125,7 @@ module.exports = {
 
     collector.on('collect', async i => {
       await i.update({
-        content: '⏺️ ההקלטה החלה. המתן 30 שניות...',
+        content: '⏺️ ההקלטה החלה. כולם בערוץ מוקלטים עכשיו! (30 שניות)...',
         components: []
       });
 
@@ -117,9 +133,18 @@ module.exports = {
         channelId: member.voice.channel.id,
         guildId: member.guild.id,
         adapterCreator: member.guild.voiceAdapterCreator,
-        selfDeaf: false, // 🧠 חובה! הבוט לא יהיה מנותק!
+        selfDeaf: false, 
         selfMute: false
       });
+      
+      // --- ✅ [תיקון קריטי] לוגיקת הקלטה רב-ערוצית עם מפענח ---
+      try {
+        // ✅ [תיקון] ממתינים שהחיבור יהיה מוכן
+        await entersState(connection, VoiceConnectionStatus.Ready, 5_000); 
+      } catch (error) {
+        log('❌ [RECORDING] שגיאה בהתחברות לערוץ:', error);
+        return i.followUp({ content: '❌ שגיאה בהתחברות לערוץ הקולי.', flags: MessageFlags.Ephemeral });
+      }
 
       const receiver = connection.receiver;
       const timestamp = dayjs().format('YYYY-MM-DD_HH-mm-ss');
@@ -128,54 +153,82 @@ module.exports = {
       const userDir = path.join(RECORDINGS_DIR, member.id);
       if (!existsSync(userDir)) mkdirSync(userDir, { recursive: true });
 
-      const rawPath = path.join(userDir, `${baseName}.pcm`);
       const mp3Path = path.join(userDir, `${baseName}.mp3`);
-      const streams = new Map();
+      const audioStreams = new Map();
 
-      receiver.speaking.on('start', userId => {
-        if (streams.has(userId)) return;
+      receiver.speaking.on('start', (userId) => {
+        if (audioStreams.has(userId)) return;
 
-        const audioStream = receiver.subscribe(userId, {
+        log(`[RECORDING] קולט את המשתמש ${userId}`);
+        const pcmPath = path.join(userDir, `${baseName}_${userId}.pcm`);
+        const writeStream = createWriteStream(pcmPath);
+        
+        // 1. קבל את זרם האודיו המוצפן (Opus)
+        const opusStream = receiver.subscribe(userId, {
           end: { behavior: EndBehaviorType.AfterSilence, duration: 100 }
         });
 
-        const writeStream = createWriteStream(rawPath, { flags: 'a' });
-        audioStream.pipe(writeStream);
-        streams.set(userId, writeStream);
+        // 2. ✅ [תיקון] צור מפענח Opus
+        const pcmStream = new prism.opus.Decoder({
+          rate: 48000,
+          channels: 2,
+          frameSize: 960
+        });
 
-        console.log(`[RECORDING] קולט את המשתמש ${userId}`);
-        audioStream.on('end', () => {
-          writeStream.end();
-          streams.delete(userId);
+        // 3. שמור את כל הזרמים כדי שנוכל לסגור אותם
+        audioStreams.set(userId, { writeStream, opusStream, pcmStream, pcmPath });
+        
+        // 4. חבר את הצינור: Opus -> מפענח -> קובץ PCM
+        opusStream.pipe(pcmStream).pipe(writeStream);
+
+        opusStream.on('end', () => {
+            log(`[RECORDING] זרם אודיו (Opus) עבור ${userId} הסתיים.`);
         });
       });
+      // ------------------------------------------
 
       setTimeout(async () => {
         try {
           connection.destroy();
+          
+          audioStreams.forEach(streams => {
+            streams.opusStream.destroy();
+            streams.pcmStream.destroy();
+            streams.writeStream.end();
+          });
+          
+          const pcmFilesToMix = Array.from(audioStreams.values()).map(s => s.pcmPath);
 
-          if (!existsSync(rawPath)) {
+          await new Promise(resolve => setTimeout(resolve, 1000)); // תן לקבצים להיסגר
+
+          if (pcmFilesToMix.length === 0) {
             return interaction.followUp({
-              content: '❌ לא נוצר קובץ הקלטה. ודא שמישהו דיבר בערוץ.',
+              content: '❌ לא נקלט אודיו מאף משתמש במהלך 30 השניות.',
               flags: MessageFlags.Ephemeral
             });
           }
-
-          const stats = statSync(rawPath);
-          if (stats.size < 1024) {
-            unlinkSync(rawPath);
-            return interaction.followUp({
+          
+          const validPcmFiles = pcmFilesToMix.filter(p => {
+              if (existsSync(p) && statSync(p).size > 1024) {
+                  return true;
+              }
+              if (existsSync(p)) unlinkSync(p); // מחק קובץ ריק
+              return false;
+          });
+          
+          if (validPcmFiles.length === 0) {
+             return interaction.followUp({
               content: '❌ הקובץ היה ריק. ודא שהיה קול בערוץ.',
               flags: MessageFlags.Ephemeral
             });
           }
 
-          await convertPcmToMp3(rawPath, mp3Path);
-          unlinkSync(rawPath);
+          await convertPcmToMp3(validPcmFiles, mp3Path);
+          validPcmFiles.forEach(p => unlinkSync(p));
           incrementUserCount(member.id);
 
           await interaction.followUp({
-            content: `✅ ההקלטה נשמרה כ־MP3: \`${baseName}.mp3\``,
+            content: `✅ ההקלטה הקבוצתית נשמרה כ־MP3: \`${baseName}.mp3\``,
             flags: MessageFlags.Ephemeral
           });
 
@@ -186,8 +239,10 @@ module.exports = {
             content: '❌ שגיאה במהלך ההקלטה או ההמרה.',
             flags: MessageFlags.Ephemeral
           });
+          // נקה קבצי זבל
+          readdirSync(userDir).filter(f => f.includes(baseName)).forEach(f => unlinkSync(path.join(userDir, f)));
         }
-      }, 30_000);
+      }, 30_000); // 30 שניות הקלטה
     });
 
     collector.on('end', collected => {

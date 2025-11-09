@@ -6,14 +6,14 @@ const {
 const { log } = require('../utils/logger');
 const { Readable } = require('stream');
 const fs = require('fs');
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const path = require('path');
 
 const queues = new Map();
 const IDLE_TIMEOUT_MINUTES_LONG = 5; // 5 דקות לפודקאסט/שירים
 const IDLE_TIMEOUT_SECONDS_SHORT = 10; // 10 שניות לסאונדבורד/BF6
 const TEST_CHANNEL_ID = '1396779274173943828';
-const CONNECTION_STABILIZE_DELAY = 500; 
+const CONNECTION_STABILIZE_DELAY = 500; // חצי שנייה לייצוב
 const SONG_END_TIMEOUT_SECONDS = 60; // 60 שניות למחיקת הודעת "שיר נוסף"
 
 /**
@@ -21,9 +21,11 @@ const SONG_END_TIMEOUT_SECONDS = 60; // 60 שניות למחיקת הודעת "�
  */
 function createResource(input) {
     if (Buffer.isBuffer(input)) {
+        // עבור Buffers מ-TTS
         return createAudioResource(Readable.from(input));
     }
     if (typeof input === 'string' && fs.existsSync(input)) {
+        // עבור נתיבי קבצים (שירים, סאונדבורד)
         return createAudioResource(fs.createReadStream(input), { inputType: StreamType.Arbitrary });
     }
     log(`❌ [QUEUE] קלט לא חוקי ל-createResource: ${typeof input}`);
@@ -53,7 +55,7 @@ function getQueue(guildId, client) {
                 playNextInQueue(guildId);
             } else if (connectionDestroyed) {
                 log(`[QUEUE] החיבור נהרס (במהלך Idle), מנקה את התור בשרת ${guildId}.`);
-                queues.delete(guildId);
+                queues.delete(guildId); // מחיקה מלאה
             }
         });
 
@@ -111,6 +113,7 @@ async function playNextInQueue(guildId) {
             serverQueue.lastActivity = Date.now();
             log(`[QUEUE] התור הסתיים בשרת ${guildId}.`);
             
+            // ✅ [שדרוג] לוגיקת ניתוק חכמה
             let timeoutSeconds;
             if (serverQueue.channelId === TEST_CHANNEL_ID) {
                 timeoutSeconds = 1; 
@@ -149,8 +152,8 @@ async function playNextInQueue(guildId) {
     const { input, type, interaction, songName } = serverQueue.queue.shift();
     serverQueue.lastTrackType = type;
     
+    // ✅ [שדרוג] שמירת ההודעה שצריך לערוך
     if (type === 'SONG' && interaction) {
-        // שומרים את ההודעה כדי שנוכל לערוך אותה
         serverQueue.nowPlayingMessage = interaction.message || await interaction.fetchReply();
     }
 
@@ -170,12 +173,14 @@ async function playNextInQueue(guildId) {
             connection.on(VoiceConnectionStatus.Destroyed, () => {
                 log(`[QUEUE] החיבור בשרת ${guildId} נהרס (ניתוק ידני?). מנקה את התור.`);
                 if (queues.has(guildId)) {
-                    queues.delete(guildId);
+                    queues.delete(guildId); // מחיקה מלאה
                 }
             });
 
             serverQueue.connection = connection;
             await entersState(serverQueue.connection, VoiceConnectionStatus.Ready, 30_000);
+            
+            // ✅ [תיקון חיתוך סאונד] הוספת השהייה קטנה לייצוב
             await new Promise(resolve => setTimeout(resolve, CONNECTION_STABILIZE_DELAY));
         }
         
@@ -190,14 +195,13 @@ async function playNextInQueue(guildId) {
         serverQueue.player.play(resource);
         log(`[QUEUE] 🎵 מנגן (${type}) קטע שמע חדש בשרת ${guildId}.`);
         
-        // עדכון הודעת "מתנגן עכשיו"
+        // ✅ [שדרוג] עדכון הודעת "מתנגן עכשיו"
         if (type === 'SONG' && serverQueue.nowPlayingMessage) {
             const embed = new EmbedBuilder(serverQueue.nowPlayingMessage.embeds[0].data)
                 .setTitle('🎶 מתנגן עכשיו')
                 .setDescription(`**${songName}**`);
-            // החלף לכפתור Pause
-            const row = getMusicButtons(false);
-            await serverQueue.nowPlayingMessage.edit({ embeds: [embed], components: [row] });
+            const row = getMusicButtons(false); // כפתורים (עם Pause)
+            await serverQueue.nowPlayingMessage.edit({ content: '', embeds: [embed], components: [row] });
         }
 
     } catch (error) {
@@ -244,17 +248,18 @@ async function handleSongEnd(serverQueue) {
 
     try {
         const msg = await serverQueue.nowPlayingMessage.edit({
+            content: '',
             embeds: [endEmbed],
             components: [row]
         });
 
-        // מתחיל טיימר של דקה למחיקה
+        // מתחיל טיימר של דקה למחיקה (כפי שביקשת)
         setTimeout(async () => {
             await msg.delete().catch(() => {});
         }, SONG_END_TIMEOUT_SECONDS * 1000);
 
     } catch (error) {
-        if (error.code !== 10008) {
+        if (error.code !== 10008) { // התעלם אם ההודעה כבר נמחקה
             log(`❌ [QUEUE] שגיאה בעריכת הודעת סיום שיר:`, error);
         }
     }
@@ -282,8 +287,8 @@ function resume(guildId) {
 function stop(guildId) {
     const serverQueue = queues.get(guildId);
     if (serverQueue) {
-        serverQueue.queue = []; // מנקה את התור
-        if (serverQueue.player) serverQueue.player.stop(); // עוצר את הנגן (יפעיל 'Idle')
+        serverQueue.queue = []; 
+        if (serverQueue.player) serverQueue.player.stop(); 
         
         // ✅ [שדרוג] מוחק את הודעת הנגן
         if (serverQueue.nowPlayingMessage) {
@@ -299,7 +304,7 @@ function stop(guildId) {
 
 /**
  * פונקציה לעריכת הודעת השיר המקורי.
- * @param {import('discord.js').Message} message 
+ * @param {string} guildId
  * @param {string} content 
  * @param {boolean} isPaused 
  */
@@ -309,15 +314,16 @@ async function updateSongMessage(guildId, content, isPaused) {
 
     try {
         const embed = new EmbedBuilder(serverQueue.nowPlayingMessage.embeds[0].data);
-        const row = getMusicButtons(isPaused); // קבל כפתורים מעודכנים
+        const row = getMusicButtons(isPaused); // קבל כפתורים מעודכנים (Play/Pause)
         
+        // ✅ [שדרוג] מעדכן את תוכן ההודעה שמעל ה-Embed
         await serverQueue.nowPlayingMessage.edit({ 
             content: `*${content}*`,
             embeds: [embed], 
             components: [row]
         });
     } catch (error) {
-        if (error.code !== 10008) { // התעלם אם ההודעה נמחקה
+        if (error.code !== 10008) { 
             log(`❌ [QUEUE] שגיאה בעדכון הודעת שיר:`, error);
         }
     }

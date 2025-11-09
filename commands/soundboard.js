@@ -1,24 +1,16 @@
+// 📁 commands/soundboard.js (משודרג לשימוש ב-voiceQueue הראשי)
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState, VoiceConnectionStatus, AudioPlayerStatus, StreamType } = require('@discordjs/voice');
+const { log } = require('../utils/logger');
+const voiceQueue = require('../handlers/voiceQueue');
 const fs = require('fs');
 const path = require('path');
 const statTracker = require('../handlers/statTracker');
+const podcastManager = require('../handlers/podcastManager'); 
 
-// נתיב לתיקיית הסאונדים
 const soundsDir = path.join(__dirname, '..', 'sounds');
-
-// תור סאונדים לכל שרת
-const guildQueues = new Map();
-const guildConnections = new Map();
-const guildPlayers = new Map();
-const guildTimers = new Map();
-
-// זמני המתנה
 const COOLDOWN_SECONDS = 15;
-const DISCONNECT_TIMEOUT = 10000;
 const lastUsedTimestamps = new Map();
 
-// זמינים לבחירה
 const availableSounds = [
   { name: '🐐', value: 'goat' },
   { name: '🤯', value: 'headshot' },
@@ -39,6 +31,13 @@ module.exports = {
     ),
 
   async execute(interaction, client) {
+    if (podcastManager.getPodcastStatus()) {
+        return interaction.reply({ 
+            content: 'שמעון עסוק כרגע בפודקאסט ולא ניתן להפריע לו!', 
+            flags: MessageFlags.Ephemeral 
+        });
+    }
+
     const userId = interaction.user.id;
     const now = Date.now();
     const lastUsed = lastUsedTimestamps.get(userId) || 0;
@@ -64,85 +63,19 @@ module.exports = {
     }
 
     lastUsedTimestamps.set(userId, now);
-    await statTracker.trackSoundUse(userId); // ✅ רישום שימוש בסאונד
-    await interaction.reply({ content: `🎵 משמיע: ${soundName}` });
+    await statTracker.trackSoundUse(userId); 
 
-    const guildId = interaction.guild.id;
+    try {
+        // ✅ [שדרוג] שליחה ל-voiceQueue הראשי עם נתיב הקובץ
+        voiceQueue.addToQueue(channel.guild.id, channel.id, filePath, client, 'SOUNDBOARD');
+        
+        await interaction.reply({ content: `🎵 משמיע: ${soundName}` });
+        // מחיקה אוטומטית של ההודעה אחרי 5 שניות
+        setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
 
-    // צור תור אם לא קיים
-    if (!guildQueues.has(guildId)) {
-      guildQueues.set(guildId, []);
-    }
-
-    const queue = guildQueues.get(guildId);
-    queue.push({ filePath, channel });
-
-    // הפעל אם לא מופעל
-    if (!guildPlayers.has(guildId)) {
-      processQueue(guildId);
+    } catch (error) {
+        log(`❌ [SOUNDBOARD] שגיאה בהוספה לתור:`, error);
+        await interaction.reply({ content: '❌ אירעה שגיאה בניגון הסאונד.', flags: MessageFlags.Ephemeral });
     }
   }
 };
-
-// 🔁 מנגנון השמעה חכם
-async function processQueue(guildId) {
-  const queue = guildQueues.get(guildId);
-  if (!queue || queue.length === 0) {
-    guildPlayers.delete(guildId);
-
-    // תזמן ניתוק
-    if (guildConnections.has(guildId)) {
-      const timer = setTimeout(() => {
-        const conn = guildConnections.get(guildId);
-        if (conn) conn.destroy();
-        guildConnections.delete(guildId);
-      }, DISCONNECT_TIMEOUT);
-      guildTimers.set(guildId, timer);
-    }
-
-    return;
-  }
-
-  const { filePath, channel } = queue.shift();
-
-  // עצור ניתוק אם יש
-  const oldTimer = guildTimers.get(guildId);
-  if (oldTimer) clearTimeout(oldTimer);
-
-  let connection = guildConnections.get(guildId);
-  if (!connection) {
-    connection = joinVoiceChannel({
-      channelId: channel.id,
-      guildId: channel.guild.id,
-      adapterCreator: channel.guild.voiceAdapterCreator
-    });
-
-    try {
-      await entersState(connection, VoiceConnectionStatus.Ready, 5000);
-      guildConnections.set(guildId, connection);
-    } catch (err) {
-      console.error('❌ שגיאה בהתחברות לערוץ:', err);
-      return;
-    }
-  }
-
-  const player = createAudioPlayer();
-  const resource = createAudioResource(fs.createReadStream(filePath), {
-    inputType: StreamType.Arbitrary
-  });
-
-  connection.subscribe(player);
-  guildPlayers.set(guildId, player);
-
-  player.play(resource);
-  player.once(AudioPlayerStatus.Idle, () => {
-    guildPlayers.delete(guildId);
-    processQueue(guildId); // המשך לתור הבא
-  });
-
-  player.once('error', err => {
-    console.error('🎧 שגיאה בסאונד:', err);
-    guildPlayers.delete(guildId);
-    processQueue(guildId);
-  });
-}

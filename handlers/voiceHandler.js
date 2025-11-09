@@ -1,4 +1,4 @@
-// 📁 handlers/voiceHandler.js
+// 📁 handlers/voiceHandler.js (משודרג עם עדיפויות)
 const { ChannelType, PermissionFlagsBits } = require('discord.js');
 const { updateVoiceActivity } = require('./mvpTracker');
 const {
@@ -10,17 +10,18 @@ const {
 const db = require('../utils/firebase');
 const podcastManager = require('./podcastManager');
 const ttsTester = require('./ttsTester');
-const bf6Announcer = require('./bf6Announcer'); // ✅ [שדרוג] ייבוא המנגנון החדש
+const bf6Announcer = require('./bf6Announcer');
 const { log } = require('../utils/logger');
 
 // --- הגדרות כלליות ---
 const FIFO_CHANNEL_ID = process.env.FIFO_CHANNEL_ID; 
 const TTS_TEST_CHANNEL_ID = '1396779274173943828';
-const BF6_VOICE_CHANNEL_ID = '1403121794235240489'; // ✅ [תיקון] ה-ID הוכנס ישירות
+const BF6_VOICE_CHANNEL_ID = '1403121794235240489'; 
 const FIFO_ROLE_NAME = 'FIFO';
 const joinTimestamps = new Map();
 
 // --- הגדרות מונה הערוצים הקוליים ---
+// ... (הפונקציות updateVoiceCounterChannel ו-scheduleVoiceCounterUpdate נשארות זהות)
 const COUNTER_CATEGORY_ID = '689124379019313214';
 const COUNTER_CHANNEL_PREFIX = '🔊 In Voice:';
 const COUNTER_DELETE_AFTER_MINUTES = 5;
@@ -28,7 +29,6 @@ let voiceCounterTimeout = null;
 let debounceTimeout = null;
 
 async function updateVoiceCounterChannel(guild) {
-    // ... (אין שינוי בפונקציה הזו)
     if (!guild || !guild.channels) return;
     const totalMembersInVoice = guild.channels.cache
         .filter(c => c.parentId === COUNTER_CATEGORY_ID && c.type === ChannelType.GuildVoice)
@@ -67,6 +67,7 @@ function scheduleVoiceCounterUpdate(guild) {
     debounceTimeout = setTimeout(() => { updateVoiceCounterChannel(guild); }, 2000);
 }
 
+
 async function handleVoiceStateUpdate(oldState, newState) {
     const guild = newState.guild || oldState.guild;
     if (!guild) return;
@@ -75,32 +76,27 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
     const member = newState.member, userId = member.id, oldChannel = oldState.channel, newChannel = newState.channel, now = Date.now();
     
-    // --- ✅ בדיקת ערוץ טסט (נשאר כמו קודם) ---
+    // --- ✅ [שדרוג] לוגיקה חדשה עם עדיפויות ---
+
+    // 1. האם זו כניסה לערוץ הטסט?
     if (TTS_TEST_CHANNEL_ID) {
         if (!oldChannel && newChannel && newChannel.id === TTS_TEST_CHANNEL_ID) {
             if (member.permissions.has(PermissionFlagsBits.Administrator)) {
                 log(`[TTS_TESTER] מזהה כניסת אדמין (${member.displayName}) לערוץ הבדיקות. מפעיל בדיקה...`);
                 await ttsTester.runTTSTest(member);
             }
-            return; 
+            return; // עצור הכל, זה ערוץ טסט
         }
         if (oldChannel && !newChannel && oldChannel.id === TTS_TEST_CHANNEL_ID) {
              log(`[TTS_TESTER] מזהה יציאת (${member.displayName}) מערוץ הבדיקות.`);
-             return; 
+             return; // עצור הכל
         }
     }
-
-    // --- ✅ [שדרוג] בדיקת ערוץ BF6 החדש ---
-    if (BF6_VOICE_CHANNEL_ID) {
-        if (!oldChannel && newChannel && newChannel.id === BF6_VOICE_CHANNEL_ID) {
-            log(`[BF6] מזהה כניסה של ${member.displayName} לערוץ BF6. מפעיל קטע אווירה...`);
-            await bf6Announcer.playBf6Theme(newChannel, member);
-            // ⚠️ אנחנו *לא* עושים 'return' כאן, כדי שהלוגיקות האחרות (כמו FIFO) ימשיכו
-        }
-    }
-
-    if (newChannel?.id === guild.afkChannelId || oldChannel?.id === guild.afkChannelId) return;
     
+    // 2. האם זו כניסה לערוץ AFK?
+    if (newChannel?.id === guild.afkChannelId || oldChannel?.id === guild.afkChannelId) return;
+
+    // 3. האם זו כניסה לערוץ FIFO? (ניהול תפקיד)
     const fifoRole = guild.roles.cache.find(r => r.name === FIFO_ROLE_NAME);
     if (fifoRole && FIFO_CHANNEL_ID) {
         try {
@@ -110,6 +106,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
         } catch (err) { log(`⚠️ שגיאה בניהול תפקיד FIFO:`, err.message); }
     }
 
+    // 4. מעקב סטטיסטיקות (רישום כניסה/יציאה)
     if (!oldChannel && newChannel) {
         joinTimestamps.set(userId, now);
         await trackJoinCount(userId); await trackActiveHour(userId);
@@ -127,9 +124,19 @@ async function handleVoiceStateUpdate(oldState, newState) {
         }
     }
     
-    // ✅ הפעלת הפודקאסט (מוודא שזה לא ערוץ הטסט)
-    if (oldChannel?.id !== newChannel?.id && newChannel?.id !== TTS_TEST_CHANNEL_ID) {
-        await podcastManager.handleVoiceStateUpdate(oldState, newState);
+    // 5. לוגיקת הניגון (החלק החשוב)
+    // בדוק אם זו תזוזה בין ערוצים (לא רק mute/deafen)
+    if (oldChannel?.id !== newChannel?.id) {
+        // נסה להפעיל את הפודקאסט קודם
+        const podcastWillPlay = await podcastManager.handleVoiceStateUpdate(oldState, newState);
+
+        // אם הפודקאסט *לא* הופעל, וזו כניסה לערוץ BF6
+        if (!podcastWillPlay && BF6_VOICE_CHANNEL_ID) {
+            if (!oldChannel && newChannel && newChannel.id === BF6_VOICE_CHANNEL_ID) {
+                log(`[BF6] הפודקאסט לא הופעל. מנגן נעימת אווירה של BF6 עבור ${member.displayName}...`);
+                await bf6Announcer.playBf6Theme(newChannel, member);
+            }
+        }
     }
 }
 

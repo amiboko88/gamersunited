@@ -1,98 +1,69 @@
-// 📁 handlers/musicControls.js
-const { ButtonInteraction, MessageFlags } = require('discord.js');
-const songCommand = require('../commands/song');
+// 📁 handlers/musicControls.js (הלוגיקה החדשה לכפתורים)
+const { MessageFlags } = require('discord.js');
+const voiceQueue = require('./voiceQueue');
+const { log } = require('../utils/logger');
 
-const pauseRoasts = [
-  "נראה לך אני פה בשביל קונצרטים פרטיים? 🤡",
-  "אני בוט, לא דיסק און קי. תחליט מהר.",
-  "⏳ מחכה שתחזור… אה לא, בעצם לא.",
-  "הפסקת לשמוע? גם אני. ביי.",
-  "תגיד תודה שאני לא מוחק אותך מהשרת.",
-  "מה אתה חושב שזה? ספוטיפיי פרימיום?",
-  "לא שילמת? לא מקבל המשך!",
-  "יאללה ביי, תתאמן על פינג קודם.",
-  "הקהל התפזר, אני גם.",
-  "אפילו גוסט לא חיכה ככה."
-];
+async function handleMusicControls(interaction) {
+  const { customId, guildId } = interaction;
 
-const pauseTimers = new Map(); // guildId → timeout
-
-module.exports = async function handleMusicControls(interaction) {
-  if (!(interaction instanceof ButtonInteraction)) return;
-
-  const guildId = interaction.guildId;
-
-  // ✅ כפתור: "השמע שיר נוסף"
-  if (interaction.customId === 'new_song') {
-    try {
-      await interaction.reply({
-        content: '🎵 להריץ שיר חדש, השתמש בפקודה: `/מוזיקה` או כתוב את שם השיר 🔍'
-      });
-
-      // מחק את ההודעה עם הכפתור
-      await interaction.message.delete().catch(() => {});
-    } catch (err) {
-      console.warn('שגיאה בטיפול ב־new_song:', err);
-    }
-    return;
+  if (!interaction.member.voice.channel) {
+    return interaction.reply({ content: '🔇 עליך להיות בערוץ קולי כדי לשלוט בנגן.', flags: MessageFlags.Ephemeral });
   }
 
-  const state = songCommand.getState(guildId);
-  if (!state) {
-    return interaction.reply({ content: '🎵 אין כרגע שיר פעיל.' });
+  // ✅ [שדרוג] מאחזר את התור הנוכחי
+  const serverQueue = voiceQueue.getQueue(guildId);
+  if (!serverQueue || !serverQueue.nowPlayingMessage) {
+    return interaction.reply({ content: '🎵 אין כרגע שיר פעיל.', flags: MessageFlags.Ephemeral });
   }
 
-  const { player } = state;
+  let success = false;
+  let content = '...';
 
-  // ▶️ PAUSE
-  if (interaction.customId === 'pause') {
-    if (player.pause()) {
-      const elapsed = player._state.playbackDuration || 0;
-      songCommand.setPausedAt(guildId, elapsed);
+  try {
+    switch (customId) {
+      case 'pause':
+        success = voiceQueue.pause(guildId);
+        content = success ? '⏸️ השיר הושהה.' : '❌ הנגן כבר מושהה.';
+        if (success) {
+          // ✅ [שדרוג] עדכון ההודעה עם הכפתורים החדשים (כפתור Play)
+          await voiceQueue.updateSongMessage(guildId, content, true);
+        }
+        break;
 
-      await interaction.reply({ content: '⏸️ השיר הושהה.' });
+      case 'resume':
+        success = voiceQueue.resume(guildId);
+        content = success ? '▶️ הניגון ממשיך.' : '❌ הנגן כבר מנגן.';
+        if (success) {
+          // ✅ [שדרוג] עדכון ההודעה עם הכפתורים החדשים (כפתור Pause)
+          await voiceQueue.updateSongMessage(guildId, content, false);
+        }
+        break;
 
-      const msg = await interaction.fetchReply();
-      const timer = setTimeout(async () => {
-        try {
-          await msg.delete().catch(() => {});
-          const roast = pauseRoasts[Math.floor(Math.random() * pauseRoasts.length)];
-          await interaction.channel.send({ content: `💬 ${roast}` });
-        } catch {}
-        pauseTimers.delete(guildId);
-      }, 60_000);
-
-      pauseTimers.set(guildId, timer);
-    } else {
-      await interaction.reply({ content: '❌ לא ניתן להשהות.' });
-    }
-  }
-
-  // ▶️ RESUME
-  if (interaction.customId === 'resume') {
-    try {
-      songCommand.resumePlayback(guildId);
-      await interaction.reply({ content: '▶️ ממשיך לנגן מהנקודה האחרונה...' });
-
-      if (pauseTimers.has(guildId)) {
-        clearTimeout(pauseTimers.get(guildId));
-        pauseTimers.delete(guildId);
-      }
-    } catch {
-      await interaction.reply({ content: '❌ שגיאה בהמשך הנגינה.' });
-    }
-  }
-
-  // ⏹️ STOP
-  if (interaction.customId === 'stop') {
-    player.stop(true);
-    songCommand.clearState(guildId);
-
-    if (pauseTimers.has(guildId)) {
-      clearTimeout(pauseTimers.get(guildId));
-      pauseTimers.delete(guildId);
+      case 'stop':
+        success = voiceQueue.stop(guildId);
+        content = success ? '⏹️ הניגון הופסק והתור נוקה.' : '❌ לא היה מה לעצור.';
+        // ההודעה נמחקת אוטומטית על ידי פונקציית stop
+        break;
+        
+      case 'new_song':
+        // ✅ [שדרוג] טיפול בכפתור "שיר נוסף"
+        await interaction.message.delete().catch(() => {}); // מחיקת הודעת "השיר הסתיים"
+        return interaction.reply({
+            content: '🎵 להרצת שיר חדש, השתמש בפקודה: `/שירים`',
+            flags: MessageFlags.Ephemeral
+        });
     }
 
-    await interaction.reply({ content: '⏹️ הנגינה נעצרה.' });
+    // ✅ [שדרוג] שליחת עדכון זמני למשתמש שלחץ
+    await interaction.reply({ content: content, flags: MessageFlags.Ephemeral });
+    setTimeout(() => interaction.deleteReply().catch(() => {}), 3000); // מחיקת המשוב
+
+  } catch (error) {
+    log('❌ שגיאה ב-musicControls:', error);
+    if (!interaction.replied) {
+        await interaction.reply({ content: '❌ אירעה שגיאה בפעולת הנגן.', flags: MessageFlags.Ephemeral });
+    }
   }
-};
+}
+
+module.exports = handleMusicControls;

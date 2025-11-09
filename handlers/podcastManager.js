@@ -1,17 +1,15 @@
-// 📁 managers/podcastManager.js (עם טקסטים גנריים משודרגים)
+// 📁 managers/podcastManager.js (עם עדכון ערך החזרה)
 const { log } = require('../utils/logger');
-const ttsEngine = require('../tts/ttsEngine.elevenlabs.js'); // שם הקובץ נשאר בכוונה
+const ttsEngine = require('../tts/ttsEngine.elevenlabs.js');
 const profiles = require('../data/profiles.js');
 const voiceQueue = require('./voiceQueue.js');
 
-// --- הגדרות הפודקאסט ---
 const MIN_USERS_FOR_PODCAST = 4;
 const PODCAST_COOLDOWN = 1 * 60 * 1000;
 const restrictedCommands = ['soundboard', 'song'];
 
-// ✅ [שדרוג תוכן] הרחבה משמעותית של הברכות והתאמה לטונים החדשים
+// ... (רשימת ה-GENERIC_GREETINGS נשארת כפי שהיא)
 const GENERIC_GREETINGS = [
-    // שמעון כועס / שירלי סטלנית
     { shimon: 'מי זה הנכה הזה שהצטרף?', shirly: 'אוי, {userName} פה... איזה כיף... בוא, שב לידי...' },
     { shimon: 'טוב, {userName} פה. הלך המשחק.', shirly: 'הכל טוב שמעון, תירגע... {userName} דווקא חמוד.' },
     { shimon: 'שירלי, תראי. {userName} נכנס.', shirly: 'היי {userName}... בא לך משהו לגלגל?...' },
@@ -34,6 +32,7 @@ const GENERIC_GREETINGS = [
     { shimon: 'זה לא אמיתי. {userName} נחת.', shirly: 'הוא נחת... ישר לזרועותיי. ברוך הבא, מותק.' }
 ];
 
+
 let activePodcastChannelId = null; 
 let podcastCooldown = false;
 const spokenUsers = new Set();
@@ -51,9 +50,8 @@ async function handleVoiceStateUpdate(oldState, newState) {
     const { channel: newChannel, client, member, guild } = newState;
     const { channelId: oldChannelId } = oldState;
 
-    if (oldChannelId === newChannel?.id) return; 
+    if (oldChannelId === newChannel?.id) return false; 
 
-    // בודק אם משתמש עזב את הערוץ שבו הפודקאסט פעיל
     if (oldChannelId && oldChannelId === activePodcastChannelId) {
         const oldChannel = guild.channels.cache.get(oldChannelId);
         if (oldChannel) {
@@ -68,19 +66,13 @@ async function handleVoiceStateUpdate(oldState, newState) {
         }
     }
 
-    // בודק אם משתמש הצטרף לערוץ כלשהו ועומד בתנאים
     if (newChannel) {
-        // ✅ [תיקון באג ה-Stuck] מוודאים שהערוץ החדש הוא לא ערוץ הטסט
         const TEST_CHANNEL_ID = '1396779274173943828';
-        if (newChannel.id === TEST_CHANNEL_ID) {
-            log('[PODCAST] מזוהה כניסה לערוץ טסט. מנהל הפודקאסט לא יופעל.');
-            return;
-        }
+        if (newChannel.id === TEST_CHANNEL_ID) return false;
 
         const members = newChannel.members.filter(m => !m.user.bot);
         const isPodcastActiveInThisChannel = newChannel.id === activePodcastChannelId;
         
-        // ✅ [תיקון לוגיקה] 'או' במקום 'ו' - מתחיל פודקאסט *או* מכריז על מצטרף חדש
         const shouldStart = members.size >= MIN_USERS_FOR_PODCAST && !getPodcastStatus() && !podcastCooldown;
         const shouldAnnounce = isPodcastActiveInThisChannel && !spokenUsers.has(member.id);
 
@@ -88,14 +80,16 @@ async function handleVoiceStateUpdate(oldState, newState) {
             if (shouldStart) {
                 log(`[PODCAST] התנאים התקיימו בערוץ ${newChannel.name} (${members.size} משתמשים). מתחיל פודקאסט.`);
                 activePodcastChannelId = newChannel.id; 
-                // ✅ [תיקון לוגיקה] כשמתחילים פודקאסט, יש לרוקן את רשימת הדוברים הקודמת
                 spokenUsers.clear();
             }
             
             spokenUsers.add(member.id);
             await playPersonalPodcast(newChannel, member, client);
+            return true; 
         }
     }
+    
+    return false; 
 }
 
 async function playPersonalPodcast(channel, member, client) {
@@ -104,13 +98,11 @@ async function playPersonalPodcast(channel, member, client) {
     let script = [];
 
     if (Array.isArray(userProfileLines) && userProfileLines.length > 0) {
-        // בוחר 3 "רוסטים" אישיים אקראיים
         const selectedLines = [...userProfileLines].sort(() => 0.5 - Math.random()).slice(0, 3);
         script.push({ speaker: 'shimon', text: selectedLines[0] });
         if (selectedLines[1]) script.push({ speaker: 'shirly', text: selectedLines[1] });
         if (selectedLines[2]) script.push({ speaker: 'shimon', text: selectedLines[2] });
     } else {
-        // בוחר ברכה גנרית (מהרשימה החדשה)
         const greeting = GENERIC_GREETINGS[Math.floor(Math.random() * GENERIC_GREETINGS.length)];
         script = [
             { speaker: 'shimon', text: greeting.shimon.replace('{userName}', userName) },
@@ -123,16 +115,16 @@ async function playPersonalPodcast(channel, member, client) {
         return;
     }
 
-    // שולח את התסריט למנוע OpenAI המשודרג
     const audioBuffers = await ttsEngine.synthesizeConversation(script, member);
     
     if (audioBuffers.length > 0) {
         log(`[PODCAST] מעביר ${audioBuffers.length} קטעי שמע לתור הניגון.`);
         for (const buffer of audioBuffers) {
-            voiceQueue.addToQueue(channel.guild.id, channel.id, buffer, client);
+            // ✅ [שדרוג] מוסיף "type" כדי שהתור ידע להתנהג בהתאם
+            voiceQueue.addToQueue(channel.guild.id, channel.id, buffer, client, 'PODCAST');
         }
     } else {
-        log('[PODCAST] ⚠️ ttsEngine החזיר 0 קטעי אודיו. (ייתכן שהייתה שגיאה ב-API של OpenAI, בדוק לוגים קודמים)');
+        log('[PODCAST] ⚠️ ttsEngine החזיר 0 קטעי אודיו.');
     }
 }
 

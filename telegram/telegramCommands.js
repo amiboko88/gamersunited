@@ -5,17 +5,24 @@ const db = require("../utils/firebase");
 const lastStartCommand = new Map();
 const { generateRoastText } = require("./generateRoastText");
 const openai = require('../utils/openaiConfig');
-const { log } = require('../utils/logger');
+const { log } = require('../utils/logger'); // ⚠️ ודא שייבאת את לוגר
 const { InputFile } = require("grammy");
 const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 
 module.exports = function registerTelegramCommands(bot, WAITING_USERS) {
-  bot.api.setMyCommands([
-    { command: "start", description: "🚀 פתיחת תפריט ראשי" },
-    { command: "roast", description: "🔥 צליית משתמש באמצעות AI" }
-  ]);
+  // ✅ [תיקון] עטיפת הפקודה ב-try...catch למניעת קריסה בעת אתחול
+  try {
+    bot.api.setMyCommands([
+      { command: "start", description: "🚀 פתיחת תפריט ראשי" },
+      { command: "roast", description: "🔥 צליית משתמש באמצעות AI" }
+    ]);
+  } catch (error) {
+    log(`❌ [TELEGRAM] שגיאה ברישום פקודות: ${error.message}`);
+    // ממשיכים הלאה, זה לא קריטי לאתחול הבוט
+  }
+
 
   // ... (קוד הפקודות start ו-roast נשאר זהה) ...
   bot.command("start", async (ctx) => {

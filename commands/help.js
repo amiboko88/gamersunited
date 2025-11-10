@@ -8,7 +8,7 @@ const generateHelpImage = require('../handlers/generateHelpImage');
 
 const USER_IMAGE_NAME = 'helpUser'; 
 const ADMIN_IMAGE_NAME = 'helpAdmin'; 
-const OUTPUT_DIR = path.resolve(__dirname, '..', 'images');
+const OUTPUT_DIR = path.resolve(__dirname, '..', 'assets');
 
 /**
  * פונקציית עזר להשגת/יצירת התמונה (כמו ב-help_panel.js)

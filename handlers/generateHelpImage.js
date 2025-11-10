@@ -7,7 +7,7 @@ const { log } = require('../utils/logger');
 const IMAGE_WIDTH = 1200;
 const IMAGE_HEIGHT = 800;
 const PADDING = 60;
-const OUTPUT_DIR = path.resolve(__dirname, '..', 'images');
+const OUTPUT_DIR = path.resolve(__dirname, '..', 'assets');
 const FONT_PATH = path.join(OUTPUT_DIR, 'Rubik-Regular.ttf'); // נצטרך להוריד את הפונט הזה
 
 // הגדרות עיצוב

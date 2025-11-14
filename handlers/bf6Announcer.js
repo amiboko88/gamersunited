@@ -8,8 +8,7 @@ const voiceQueue = require('./voiceQueue');
 const BF6_MUSIC_DIR = path.join(__dirname, '..', 'music', 'bf6');
 
 const bf6Sounds = [
-    'theme1.mp3', 'theme2.mp3', 'theme3.mp3', 'theme4.mp3', 'theme5.mp3'
-];
+    'theme1.mp3', 'theme2.mp3', 'theme3.mp3', 'theme4.mp3', 'theme5.mp3', 'theme6.mp3', 'theme7.mp3'];
 
 let filesChecked = false;
 

@@ -1,4 +1,4 @@
-// 📁 handlers/smartChat.js (מתוקן)
+// 📁 handlers/smartChat.js (גרסת 2026 - Vision + GPT-4o)
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const db = require("../utils/firebase");
@@ -6,7 +6,7 @@ const { Collection } = require('discord.js');
 
 const STAFF_CHANNEL_ID = '881445829100060723';
 const ADMIN_ROLE_NAME = 'ADMIN';
-const USER_COOLDOWN_SEC = 8;
+const USER_COOLDOWN_SEC = 5; // הורדנו קצת כדי שיהיה יותר זורם
 
 const lastReplyPerUser = new Map();
 const recentReplies = new Set();
@@ -15,9 +15,10 @@ const configCache = {
     blacklistedChannels: new Set(),
     playerProfiles: new Map(),
     lastFetched: 0,
-    ttl: 5 * 60 * 1000 // 5 דקות
+    ttl: 5 * 60 * 1000 
 };
 
+// --- טעינת הגדרות ופרופילים ---
 async function loadConfig() {
     if (Date.now() - configCache.lastFetched < configCache.ttl) return;
 
@@ -26,22 +27,23 @@ async function loadConfig() {
         configCache.blacklistedChannels = new Set(settingsDoc.data().blacklistedChannels || []);
     }
 
-    const profilesSnapshot = await db.collection('playerProfiles').get();
-    configCache.playerProfiles.clear();
-    profilesSnapshot.forEach(doc => {
-        configCache.playerProfiles.set(doc.id, doc.data().lines || []);
-    });
+    // טעינת פרופילים מקובץ ה-data המקומי שלנו (יותר מהיר ואמין מ-DB במקרה הזה)
+    const { playerProfiles } = require('../data/profiles');
+    configCache.playerProfiles = playerProfiles; 
 
     configCache.lastFetched = Date.now();
 }
 
+/**
+ * מנתח את מצב הרוח של הטקסט
+ */
 async function analyzeMoodWithAI(text) {
     try {
         const response = await openai.chat.completions.create({
-            model: 'gpt-3.5-turbo',
+            model: 'gpt-4o-mini', // מודל מהיר וזול לניתוח רגשות
             messages: [{
                 role: 'system',
-                content: 'Analyze the sentiment/mood of the following Hebrew text. Respond with a single Hebrew word that fits one of these categories: סרקסטי, גס רוח, רגיש, מאוהב, כועס, שובב, מפרגן, חפפן, עצוב, מבולבל, ניטרלי.'
+                content: 'Analyze the sentiment of the Hebrew text. Return ONE word: סרקסטי, גס, רגיש, משועמם, כועס, שובב, מפרגן, עייף, מבולבל.'
             }, {
                 role: 'user',
                 content: text
@@ -49,127 +51,164 @@ async function analyzeMoodWithAI(text) {
             max_tokens: 10,
             temperature: 0.5
         });
-        return response.choices[0]?.message?.content.trim() || 'ניטרלי';
+        return response.choices[0]?.message?.content.trim() || 'ציני';
     } catch (err) {
-        console.warn("⚠️ AI mood analysis failed:", err.message);
-        return 'ניטרלי';
+        return 'ציני';
     }
 }
 
-async function getConversationHistory(message, limit = 3) {
-    // ✅ [תיקון] הוספת בדיקה שמונעת ריצה על הודעות "דמה" או הודעות ללא ערוץ תקין
-    if (message._simulateOnly || !message.channel?.messages) {
-        return null;
-    }
+/**
+ * שולף היסטוריית שיחה עשירה
+ */
+async function getConversationHistory(message, limit = 10) {
+    if (message._simulateOnly || !message.channel?.messages) return null;
     
     try {
         const messages = await message.channel.messages.fetch({ limit, before: message.id });
         return messages
-            .filter(m => !m.author.bot)
-            .map(m => `${m.member?.displayName || m.author.username}: ${m.content}`)
+            .filter(m => !m.author.bot && m.content.length > 0) // מסנן בוטים והודעות ריקות
+            .map(m => `[${m.member?.displayName || m.author.username}]: ${m.content}`)
             .reverse()
             .join('\n');
     } catch (err) {
-        console.warn("⚠️ Could not fetch message history:", err.message);
         return null;
     }
 }
 
-function isAdmin(member) { return member.permissions.has('Administrator') || member.roles.cache.some(r => r.name === ADMIN_ROLE_NAME); }
+function isAdmin(member) { return member?.permissions.has('Administrator') || member?.roles.cache.some(r => r.name === ADMIN_ROLE_NAME); }
+
 function isUserRateLimited(userId) {
     const last = lastReplyPerUser.get(userId) || 0;
     return (Date.now() - last) < USER_COOLDOWN_SEC * 1000;
 }
-function setUserCooldown(userId) { lastReplyPerUser.set(userId, Date.now()); }
+
 function isTargetingBot(text) {
     const lower = text.toLowerCase();
-    return ['שמעון', 'shim', 'bot', 'שמעון בוט'].some(name => lower.includes(name));
+    // הוספנו וריאציות נפוצות
+    return ['שמעון', 'shimon', 'shim', 'bot', 'בוט', 'תגיד', 'שומע'].some(name => lower.includes(name));
 }
 
-function createPrompt({ userText, mood, displayName, profileLine, isAdminUser, history }) {
-    let base = `אתה שמעון, בוט קהילתי ישראלי לגיימרים בוגרים (25+). מצב הרוח שלך: ${mood}.`;
-    if (isAdminUser) base += ` המשתמש שמולך הוא אדמין – תכבד אותו אבל תתחכם!`;
-    if (profileLine) base += ` הנה משפט ירידה על המשתמש כדי לתת לך קונטקסט: "${profileLine}"`;
-
-    let context = '';
-    if (history) {
-        context = `הנה ההודעות האחרונות בשיחה:\n${history}\n\n`;
-    }
-
-    return `${base}
-${context}עכשיו, "${displayName}" כתב: "${userText}"
-תגיב לו ישירות בעברית. תהיה קצר, סרקסטי, ציני, ומקורי. התגובה שלך צריכה להתייחס ישירות להודעה שלו, וגם להקשר השיחה אם רלוונטי.`;
-}
-
-// ... שאר הקובץ נשאר ללא שינוי ...
-async function logToFirestore(message, reply, mood) { /* ... */ }
-async function tryModel({ model, prompt }) { /* ... */ }
-
+/**
+ * פונקציה ראשית שמייצרת את התשובה
+ */
 async function smartRespond(message, force = false) {
     const content = message.content.trim();
-    if (!content) return;
+    // מאפשר לענות גם אם אין טקסט אבל יש תמונה (למשל תמונה של אוכל)
+    const hasImage = message.attachments.size > 0;
+    
+    if (!content && !hasImage) return;
 
     const userId = message.author.id;
-    if (isUserRateLimited(userId)) return;
-    setUserCooldown(userId);
+    if (isUserRateLimited(userId) && !force) return;
+    lastReplyPerUser.set(userId, Date.now());
 
     await loadConfig();
     if (configCache.blacklistedChannels.has(message.channel.id) && !force) return;
 
+    // שליפת משפט מחץ מהפרופיל האישי
     let profileLine = null;
-    const userProfileLines = configCache.playerProfiles.get(userId);
-    if (Array.isArray(userProfileLines) && userProfileLines.length > 0) {
-        profileLine = userProfileLines[Math.floor(Math.random() * userProfileLines.length)];
+    let profiles = configCache.playerProfiles; // שימוש בפרופילים שטענו
+    
+    // בדיקה בפרופיל אישי, ואז בדיפולט
+    const userLines = profiles[userId] || profiles.default;
+    if (userLines && userLines.length > 0) {
+        profileLine = userLines[Math.floor(Math.random() * userLines.length)];
+        // החלפת {userName} בשם המשתמש
+        profileLine = profileLine.replace(/{userName}/g, message.member?.displayName || message.author.username);
     }
 
-    const mood = await analyzeMoodWithAI(content);
-    const isAdminUser = message.member ? isAdmin(message.member) : false;
-    const displayName = message.member?.displayName || message.author.username || "משתמש";
-    
+    const mood = await analyzeMoodWithAI(content || "תמונה");
+    const isAdminUser = isAdmin(message.member);
+    const displayName = message.member?.displayName || message.author.username;
     const history = await getConversationHistory(message);
 
-    const prompt = createPrompt({ userText: content, mood, displayName, profileLine, isAdminUser, history });
-    let reply = null;
+    // בניית ה-Prompt למודל
+    const systemPrompt = `
+    אתה שמעון, בוט דיסקורד ישראלי ותיק (בן 60 בנפש, גיימר עייף).
+    האופי שלך: ציני, חד, ישיר, לא פוליטיקלי קורקט, מדבר בסלנג גיימינג ישראלי (נוב, לאג, פינג, בוט).
+    מצב הרוח שלך כרגע: ${mood}.
+    
+    ${isAdminUser ? "המשתמש מולך הוא אדמין. תן לו כבוד, אבל תעקוץ בקטנה." : "המשתמש מולך הוא שחקן רגיל. אל תרחם עליו."}
+    
+    ${profileLine ? `הנה עובדה שאתה יודע על המשתמש הזה: "${profileLine}". נסה לשלב את העקיצה הזו בתשובה שלך אם זה מתאים.` : ""}
+    
+    היסטוריית השיחה האחרונה בערוץ (לתשומת לבך לקונטקסט):
+    ${history || "אין היסטוריה זמינה."}
+    
+    הנחיות לתשובה:
+    1. תענה בעברית בלבד.
+    2. תהיה קצר וקולע (מקסימום 2 משפטים).
+    3. אם שלחו תמונה, תתייחס אליה כאילו אתה רואה אותה (למשל: "נראה טעים", "מה זה הגועל הזה").
+    4. אל תהיה רובוטי ("אני כאן כדי לעזור"). תהיה שמעון ("מה אתה רוצה עכשיו?").
+    `.trim();
 
-    for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-            const modelToUse = message._simulateOnly ? 'gpt-3.5-turbo' : (attempt === 0 ? 'gpt-4o' : 'gpt-3.5-turbo');
-            reply = await tryModel({ model: modelToUse, prompt });
-            if (!recentReplies.has(reply)) break;
-        } catch (err) {
-            if (attempt === 0 && !message._simulateOnly) {
-                const channel = message.client.channels.cache.get(STAFF_CHANNEL_ID);
-                if (channel) channel.send(`⚠️ GPT-4o נפל: ${err.code || err.status}`);
-            }
-        }
+    // הכנת ההודעות ל-API (כולל תמיכה בתמונות!)
+    const apiMessages = [
+        { role: "system", content: systemPrompt }
+    ];
+
+    const userMessageContent = [];
+    if (content) {
+        userMessageContent.push({ type: "text", text: `${displayName} אמר: ${content}` });
     }
     
-    if (!reply) {
-        // [הבהרה] עבור הודעות אוטומטיות, נחזיר את התוכן במקום לשלוח אותו
-        if (message._simulateOnly) {
-           return null;
-        }
-        return;
-    }
-   
-    recentReplies.add(reply);
-    if (recentReplies.size > 6) recentReplies.delete([...recentReplies][0]);
-   
-    // [הבהרה] החזרת התוכן עבור הודעות אוטומטיות
-    if (message._simulateOnly) {
-       return reply;
+    // אם יש תמונה, נוסיף אותה לבקשה (Vision)
+    if (hasImage) {
+        const imageUrl = message.attachments.first().url;
+        userMessageContent.push({
+            type: "image_url",
+            image_url: { url: imageUrl }
+        });
+        log(`[SmartChat] זוהתה תמונה בהודעה של ${displayName}. שולח לניתוח Vision.`);
     }
 
-    await message.reply({ content: reply });
-    logToFirestore(message, reply, mood).catch(() => {});
+    apiMessages.push({ role: "user", content: userMessageContent });
+
+    try {
+        message.channel.sendTyping(); // אפקט הקלדה
+
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o", // ✅ המודל החזק ביותר (תומך ראייה)
+            messages: apiMessages,
+            max_tokens: 150,
+            temperature: 0.85, // יצירתיות גבוהה
+        });
+
+        const reply = response.choices[0]?.message?.content.trim();
+        if (!reply) return;
+
+        // מניעת חזרות
+        if (recentReplies.has(reply)) return;
+        recentReplies.add(reply);
+        if (recentReplies.size > 10) recentReplies.delete([...recentReplies][0]);
+
+        await message.reply(reply);
+        
+        // לוג (אופציונלי)
+        // logToFirestore(message, reply, mood).catch(() => {});
+
+    } catch (err) {
+        console.error("❌ SmartChat Error:", err.message);
+        // אם זה אדמין, נשלח התראה
+        if (isAdminUser) {
+            const channel = message.client.channels.cache.get(STAFF_CHANNEL_ID);
+            if (channel) channel.send(`⚠️ שמעון נחנק (GPT Error): ${err.message}`);
+        }
+    }
 }
 
+// הייצוא הראשי
 module.exports = async function smartChat(message) {
     if (message.author.bot || message.content.startsWith('/')) return;
 
-    if (isTargetingBot(message.content)) {
+    // טריגר: תיוג ישיר, או אם מישהו מזכיר את השם "שמעון" בטקסט
+    // או אם זו הודעת תמונה ויש כיתוב רלוונטי
+    const shouldRespond = message.mentions.has(message.client.user) || isTargetingBot(message.content);
+
+    if (shouldRespond) {
         return smartRespond(message, true);
     }
 };
 
+// ייצוא הפונקציה לשימוש חיצוני (כמו אנטי-ספאם)
 module.exports.smartRespond = smartRespond;

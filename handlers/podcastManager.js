@@ -1,4 +1,4 @@
-// 📁 managers/podcastManager.js (עם עדכון ערך החזרה)
+// 📁 handlers/podcastManager.js
 const { log } = require('../utils/logger');
 const ttsEngine = require('../tts/ttsEngine.elevenlabs.js');
 const profiles = require('../data/profiles.js');
@@ -7,31 +7,6 @@ const voiceQueue = require('./voiceQueue.js');
 const MIN_USERS_FOR_PODCAST = 4;
 const PODCAST_COOLDOWN = 1 * 60 * 1000;
 const restrictedCommands = ['soundboard', 'song'];
-
-// ... (רשימת ה-GENERIC_GREETINGS נשארת כפי שהיא)
-const GENERIC_GREETINGS = [
-    { shimon: 'מי זה הנכה הזה שהצטרף?', shirly: 'אוי, {userName} פה... איזה כיף... בוא, שב לידי...' },
-    { shimon: 'טוב, {userName} פה. הלך המשחק.', shirly: 'הכל טוב שמעון, תירגע... {userName} דווקא חמוד.' },
-    { shimon: 'שירלי, תראי. {userName} נכנס.', shirly: 'היי {userName}... בא לך משהו לגלגל?...' },
-    { shimon: 'מה זה הריח הזה? אה, זה {userName} הגיע.', shirly: 'זה ריח טוב, שמעון. זה ריח של... {userName}.' },
-    { shimon: 'קלטו את {userName}. נראה כמו פרי קיל.', shirly: 'אני דווקא רואה בו פוטנציאל... פוטנציאל להיות קרוב אלי.' },
-    { shimon: 'טוב, {userName} כאן. תפסיקו לצחוק.', shirly: 'היי {userName}, בדיוק חשבתי עליך...' },
-    { shimon: 'עוד גופה הגיעה ללובי. שלום {userName}.', shirly: 'אוי, {userName}... איזה שם יפה... תגיד לי אותו שוב?' },
-    { shimon: 'שיט, {userName} התחבר.', shirly: 'אני אוהבת כשאתה פה, {userName}... זה עושה לי נעים.' },
-    { shimon: 'מי פתח את הדלת ל-{userName}?', shirly: 'אני פתחתי, שמעון... קיוויתי שהוא יבוא.' },
-    { shimon: 'הנה הגיע {userName}. האיש שהופך כל ניצחון להפסד.', shirly: 'לא נורא, העיקר הכוונה... והכוונה שלי טובה אליך, {userName}.' },
-    { shimon: 'אתם לא רציניים. {userName} שוב פה?', shirly: 'ששש... שמעון... אל תפריע לנו. היי {userName}.' },
-    { shimon: 'למה {userName} נכנס? מישהו ביקש ממנו?', shirly: 'אני ביקשתי... בלב.' },
-    { shimon: 'נו באמת, {userName}. אין לך מקום אחר להיות בו?', shirly: 'יש לו... פה... איתי.' },
-    { shimon: 'אני לא מאמין. {userName}. למה.', shirly: 'למה לא, שמעון? תראה איזה חתיך {userName}.' },
-    { shimon: 'אוקיי, השרת הולך לקרוס. {userName} פה.', shirly: 'הלב שלי הולך לקרוס... {userName}...' },
-    { shimon: 'די, אני לא יכול יותר. {userName} נכנס.', shirly: 'תנשום, שמעון... הכל רגוע. היי {userName}, בוא תצטרף.' },
-    { shimon: 'אמרתי לכם לנעול את הדלת! {userName} בפנים!', shirly: 'אבל אני אוהבת שהוא בפנים... {userName}...' },
-    { shimon: 'מישהו יסביר לי מה {userName} עושה פה?', shirly: 'הוא בא לראות אותי, שמעון. נכון, {userName}?' },
-    { shimon: 'יופי, הגיע {userName}. עכשיו באמת אין סיכוי.', shirly: 'איתך תמיד יש סיכוי, {userName}... לכל דבר...' },
-    { shimon: 'זה לא אמיתי. {userName} נחת.', shirly: 'הוא נחת... ישר לזרועותיי. ברוך הבא, מותק.' }
-];
-
 
 let activePodcastChannelId = null; 
 let podcastCooldown = false;
@@ -94,33 +69,38 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
 async function playPersonalPodcast(channel, member, client) {
     const { id: userId, displayName: userName } = member;
-    const userProfileLines = profiles.playerProfiles[userId];
-    let script = [];
-
-    if (Array.isArray(userProfileLines) && userProfileLines.length > 0) {
-        const selectedLines = [...userProfileLines].sort(() => 0.5 - Math.random()).slice(0, 3);
-        script.push({ speaker: 'shimon', text: selectedLines[0] });
-        if (selectedLines[1]) script.push({ speaker: 'shirly', text: selectedLines[1] });
-        if (selectedLines[2]) script.push({ speaker: 'shimon', text: selectedLines[2] });
-    } else {
-        const greeting = GENERIC_GREETINGS[Math.floor(Math.random() * GENERIC_GREETINGS.length)];
-        script = [
-            { speaker: 'shimon', text: greeting.shimon.replace('{userName}', userName) },
-            { speaker: 'shirly', text: greeting.shirly.replace('{userName}', userName) }
-        ];
-    }
     
-    if (script.length === 0) {
-        log('[PODCAST] ⚠️ נוצר תסריט ריק. מדלג על הניגון.');
+    // ✅ [שדרוג] שימוש ב-default כגיבוי ראשי
+    let userProfileLines = profiles.playerProfiles[userId];
+    let source = 'פרופיל אישי';
+
+    if (!userProfileLines || userProfileLines.length === 0) {
+        userProfileLines = profiles.playerProfiles.default;
+        source = 'פרופיל דיפולטיבי';
+    }
+
+    if (!userProfileLines || userProfileLines.length === 0) {
+        log(`[PODCAST] ⚠️ לא נמצאו שורות טקסט (גם לא ב-default). מדלג.`);
         return;
     }
+
+    log(`[PODCAST] מכין פודקאסט עבור ${userName} (מקור: ${source})`);
+
+    // בחירת 3 משפטים רנדומליים
+    const selectedLines = [...userProfileLines].sort(() => 0.5 - Math.random()).slice(0, 3);
+    
+    // ✅ [שדרוג] החלפת {userName} בשם המשתמש האמיתי בכל השורות
+    // ובניית הסקריפט (שמעון -> שירלי -> שמעון)
+    let script = [];
+    if (selectedLines[0]) script.push({ speaker: 'shimon', text: selectedLines[0].replace(/{userName}/g, userName) });
+    if (selectedLines[1]) script.push({ speaker: 'shirly', text: selectedLines[1].replace(/{userName}/g, userName) });
+    if (selectedLines[2]) script.push({ speaker: 'shimon', text: selectedLines[2].replace(/{userName}/g, userName) });
 
     const audioBuffers = await ttsEngine.synthesizeConversation(script, member);
     
     if (audioBuffers.length > 0) {
         log(`[PODCAST] מעביר ${audioBuffers.length} קטעי שמע לתור הניגון.`);
         for (const buffer of audioBuffers) {
-            // ✅ [שדרוג] מוסיף "type" כדי שהתור ידע להתנהג בהתאם
             voiceQueue.addToQueue(channel.guild.id, channel.id, buffer, client, 'PODCAST');
         }
     } else {

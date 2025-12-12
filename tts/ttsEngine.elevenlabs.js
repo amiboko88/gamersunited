@@ -15,42 +15,20 @@ if (OPENAI_API_KEY) {
     log('⚠️ [OpenAI Engine] משתנה הסביבה OPENAI_API_KEY לא נמצא. המנוע מושבת.');
 }
 
-// --- הגדרת פרופילים קוליים של OpenAI ---
-const VOICE_CONFIG = {
-    // --- קולות לפודקאסט ---
-    shimon: {
-        model: 'gpt-4o-mini-tts',
-        voice: 'ballad',
-        instructions: 'Speak in a clear, neutral tone.' 
-    },
-    shirly: {
-        model: 'gpt-4o-mini-tts',
-        voice: 'coral',
-        instructions: 'Speak in a clear, neutral tone.' 
-    },
-    
-    // --- פרופילים סטטיים לפקודת /tts ---
-    shimon_calm: {
-        model: 'gpt-4o-mini-tts',
-        voice: 'ballad',
-        instructions: 'Speak in a very calm, slow, and relaxed tone.' 
-    },
-    shimon_energetic: {
-        model: 'gpt-4o-mini-tts',
-        voice: 'ballad',
-        instructions: 'Speak in an energetic, excited, and fast-paced tone.' 
-    },
+// --- הגדרות קולות דינמיות ---
+const SHIMON_VOICE = 'ash'; // ✅ [שדרוג] הוחלף ל-Ash
+const SHIRLY_VOICES = ['alloy', 'shimmer', 'nova']; // ✅ [שדרוג] מאגר קולות לשירלי
+
+// --- הגדרת אישיות (System Instructions) ---
+const PERSONALITY = {
+    shimon: 'Speak in a deep, cynical, slightly impatient, and rude tone. You are a tired gamer who has seen too much failure.',
+    shirly: 'Speak in a very flirtatious, lively, energetic, and slightly sexy tone. You are amused and playful.', // ✅ [שדרוג] טון סקסי וחי
+    shimon_calm: 'Speak in a very calm, slow, and relaxed tone.',
+    shimon_energetic: 'Speak in an energetic, excited, and fast-paced tone.'
 };
 
-const DEFAULT_PROFILE = VOICE_CONFIG.shimon;
-// -----------------------------------------------------------------
-
-
 /**
- * ✅ [תיקון סופי] הוחלפה לפונקציה הקלאסית (Node.js Stream) שתואמת ל-OpenAI.
- * ממיר Stream ל-Buffer
- * @param {NodeJS.ReadableStream} stream 
- * @returns {Promise<Buffer>}
+ * ממיר Stream ל-Buffer (גרסה מעודכנת עבור OpenAI)
  */
 function streamToBuffer(stream) {
     return new Promise((resolve, reject) => {
@@ -65,11 +43,7 @@ function streamToBuffer(stream) {
 }
 
 /**
- * מייצר אודיו בודד מטקסט.
- * @param {string} text - הטקסט להקראה
- * @param {string} profileName - שם הפרופיל (למשל 'shimon_calm')
- * @param {import('discord.js').GuildMember} member - המשתמש שביקש
- * @returns {Promise<Buffer|null>}
+ * מייצר אודיו בודד מטקסט (עבור פקודות רגילות).
  */
 async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
     if (!openai) {
@@ -77,21 +51,31 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
         return null;
     }
     
-    const profile = VOICE_CONFIG[profileName] || DEFAULT_PROFILE;
+    let voice = SHIMON_VOICE;
+    let instructions = PERSONALITY.shimon_calm;
+
+    // התאמת קול והוראות לפי הפרופיל
+    if (profileName === 'shimon_energetic') {
+        instructions = PERSONALITY.shimon_energetic;
+    } else if (profileName === 'shirly') {
+        // בחירה רנדומלית לקול של שירלי גם ב-TTS רגיל
+        voice = SHIRLY_VOICES[Math.floor(Math.random() * SHIRLY_VOICES.length)];
+        instructions = PERSONALITY.shirly;
+    }
+
     const cleanText = text.replace(/[*_~`]/g, '');
     
     try {
-        log(`[OpenAI Engine] מייצר אודיו עבור: "${cleanText}" עם פרופיל ${profileName} (קול: ${profile.voice})`);
+        log(`[OpenAI Engine] מייצר אודיו (${profileName}): "${cleanText}"`);
         
         const response = await openai.audio.speech.create({
-            model: profile.model,
-            voice: profile.voice,
+            model: 'gpt-4o-mini-tts', // או tts-1-hd אם תרצה איכות גבוהה יותר
+            voice: voice,
             input: cleanText,
             response_format: 'mp3',
-            instructions: profile.instructions 
+            instructions: instructions 
         });
         
-        // response.body הוא NodeJS.ReadableStream, הפונקציה המתוקנת תעבוד
         const audioBuffer = await streamToBuffer(response.body);
 
         const userId = member ? member.id : 'system';
@@ -102,16 +86,12 @@ async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
 
     } catch (error) {
         log(`❌ [OpenAI Engine] שגיאה קריטית בייצור קול: ${error.message}`);
-        log(error); 
         return null;
     }
 }
 
 /**
  * מייצר שיחה שלמה (פודקאסט) מסקריפט.
- * @param {Array<{speaker: string, text: string}>} script 
- * @param {import('discord.js').GuildMember} member
- * @returns {Promise<Buffer[]>}
  */
 async function synthesizeConversation(script, member) {
     if (!openai) {
@@ -123,33 +103,43 @@ async function synthesizeConversation(script, member) {
     const userId = member.id;
     const username = member.displayName;
 
+    // ✅ [שדרוג] בחירת קול קבוע לשירלי *לכל השיחה הנוכחית* (כדי שלא תחליף קול באמצע משפט)
+    const currentShirlyVoice = SHIRLY_VOICES[Math.floor(Math.random() * SHIRLY_VOICES.length)];
+    log(`[OpenAI Podcast] הקול הנבחר לשירלי בשיחה זו: ${currentShirlyVoice}`);
+
     for (const line of script) {
         if (!line.speaker || !line.text) continue;
 
         const cleanText = line.text.replace(/[*_~`]/g, '');
-        const profileName = line.speaker.toLowerCase();
-        const profile = VOICE_CONFIG[profileName] || DEFAULT_PROFILE;
+        const speakerKey = line.speaker.toLowerCase();
+        
+        // הגדרת קול והוראות לפי הדובר
+        let voice = SHIMON_VOICE;
+        let instructions = PERSONALITY.shimon;
+
+        if (speakerKey === 'shirly') {
+            voice = currentShirlyVoice;
+            instructions = PERSONALITY.shirly;
+        }
 
         try {
-            log(`[OpenAI Podcast] מייצר שורה: [${profileName}] - "${cleanText}"`);
+            log(`[OpenAI Podcast] מייצר שורה: [${speakerKey}/${voice}] - "${cleanText}"`);
 
             const response = await openai.audio.speech.create({
-                model: profile.model,
-                voice: profile.voice,
+                model: 'gpt-4o-mini-tts',
+                voice: voice,
                 input: cleanText,
                 response_format: 'mp3',
-                instructions: profile.instructions 
+                instructions: instructions
             });
             
-            // response.body הוא NodeJS.ReadableStream, הפונקציה המתוקנת תעבוד
             const audioBuffer = await streamToBuffer(response.body);
             audioBuffers.push(audioBuffer);
 
-            await registerTTSUsage(cleanText.length, userId, username, 'OpenAI-Podcast', profileName);
+            await registerTTSUsage(cleanText.length, userId, username, 'OpenAI-Podcast', speakerKey);
 
         } catch (error) {
             log(`❌ [OpenAI Podcast] שגיאה בייצור שורה: ${error.message}`);
-            log(error); 
         }
     }
     

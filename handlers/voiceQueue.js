@@ -1,4 +1,4 @@
-// 📁 handlers/voiceQueue.js (הנגן המאוחד והמשודרג)
+// 📁 handlers/voiceQueue.js (מתוקן למניעת קיפאון)
 const {
     joinVoiceChannel, createAudioPlayer, createAudioResource, entersState,
     AudioPlayerStatus, VoiceConnectionStatus, NoSubscriberBehavior, StreamType
@@ -7,55 +7,82 @@ const { log } = require('../utils/logger');
 const { Readable } = require('stream');
 const fs = require('fs');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const path = require('path');
 
 const queues = new Map();
-const IDLE_TIMEOUT_MINUTES_LONG = 5; // 5 דקות לפודקאסט/שירים
-const IDLE_TIMEOUT_SECONDS_SHORT = 10; // 10 שניות לסאונדבורד/BF6
+const IDLE_TIMEOUT_MINUTES_LONG = 5; 
+const IDLE_TIMEOUT_SECONDS_SHORT = 10;
 const TEST_CHANNEL_ID = '1396779274173943828';
-const CONNECTION_STABILIZE_DELAY = 500; // חצי שנייה לייצוב
-const SONG_END_TIMEOUT_SECONDS = 60; // 60 שניות למחיקת הודעת "שיר נוסף"
+const CONNECTION_STABILIZE_DELAY = 500; 
+const SONG_END_TIMEOUT_SECONDS = 60; 
 
-/**
- * פונקציית עזר ליצירת AudioResource מכל סוג קלט
- */
 function createResource(input) {
     if (Buffer.isBuffer(input)) {
-        // עבור Buffers מ-TTS
         return createAudioResource(Readable.from(input));
     }
     if (typeof input === 'string' && fs.existsSync(input)) {
-        // עבור נתיבי קבצים (שירים, סאונדבורד)
         return createAudioResource(fs.createReadStream(input), { inputType: StreamType.Arbitrary });
     }
     log(`❌ [QUEUE] קלט לא חוקי ל-createResource: ${typeof input}`);
     return null;
 }
 
+/**
+ * ✅ [תיקון קריטי] פונקציה מרכזית להריסת תור וניקוי משאבים
+ * מונעת דליפות זיכרון וקיפאון
+ */
+function destroyQueue(guildId) {
+    const serverQueue = queues.get(guildId);
+    if (!serverQueue) return;
+
+    log(`[QUEUE] הורס ומנקה את התור בשרת ${guildId} למניעת קיפאון.`);
+
+    // 1. עצירת טיימרים
+    if (serverQueue.idleTimer) clearTimeout(serverQueue.idleTimer);
+
+    // 2. עצירת הנגן
+    if (serverQueue.player) {
+        serverQueue.player.stop();
+        serverQueue.player.removeAllListeners(); // ניקוי מאזינים למניעת כפילויות
+    }
+
+    // 3. ניתוק החיבור (אם קיים)
+    if (serverQueue.connection) {
+        if (serverQueue.connection.state.status !== VoiceConnectionStatus.Destroyed) {
+            serverQueue.connection.destroy();
+        }
+        serverQueue.connection.removeAllListeners(); // ניקוי מאזינים
+    }
+
+    // 4. מחיקה מהמפה
+    queues.delete(guildId);
+}
+
 function getQueue(guildId, client) {
     if (!queues.has(guildId)) {
         const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Pause } });
 
+        // --- מאזיני נגן ---
         player.on(AudioPlayerStatus.Idle, (oldState) => {
             const serverQueue = queues.get(guildId);
             if (!serverQueue) return;
 
+            // בדיקת שלמות החיבור
             const connectionDestroyed = !serverQueue.connection || 
                                         serverQueue.connection.state.status === VoiceConnectionStatus.Destroyed ||
                                         serverQueue.connection.state.status === VoiceConnectionStatus.Disconnected;
             
-            // ✅ [שדרוג] טיפול בסיום שיר (הצגת כפתור "שיר נוסף")
+            // טיפול בסיום שיר
             if (serverQueue.nowPlayingMessage && serverQueue.lastTrackType === 'SONG') {
                 handleSongEnd(serverQueue);
-                serverQueue.nowPlayingMessage = null; // אפס את ההודעה
+                serverQueue.nowPlayingMessage = null; 
             }
 
             if (oldState.status !== AudioPlayerStatus.Idle && !connectionDestroyed) {
                 serverQueue.isPlaying = false;
                 playNextInQueue(guildId);
             } else if (connectionDestroyed) {
-                log(`[QUEUE] החיבור נהרס (במהלך Idle), מנקה את התור בשרת ${guildId}.`);
-                queues.delete(guildId); // מחיקה מלאה
+                log(`[QUEUE] החיבור נהרס (במהלך Idle).`);
+                destroyQueue(guildId); // ✅ שימוש בפונקציית ההריסה
             }
         });
 
@@ -66,7 +93,7 @@ function getQueue(guildId, client) {
         });
         
         const queueConstruct = {
-            queue: [], // { input, type, songName, originalInteraction }
+            queue: [], 
             connection: null, 
             player: player, 
             isPlaying: false,
@@ -74,7 +101,7 @@ function getQueue(guildId, client) {
             client: client, 
             lastActivity: Date.now(),
             lastTrackType: 'GENERIC', 
-            nowPlayingMessage: null, // הודעת הנגן הנוכחית (לעריכה)
+            nowPlayingMessage: null, 
             idleTimer: null 
         };
         queues.set(guildId, queueConstruct);
@@ -82,15 +109,6 @@ function getQueue(guildId, client) {
     return queues.get(guildId);
 }
 
-/**
- * @param {string} guildId 
- * @param {string} channelId 
- * @param {Buffer | string} input - Buffer (TTS) או string (נתיב קובץ)
- * @param {import('discord.js').Client} client 
- * @param {'PODCAST' | 'BF6_THEME' | 'SOUNDBOARD' | 'SONG'} type 
- * @param {import('discord.js').ChatInputCommandInteraction | null} interaction - האינטראקציה המקורית (אופציונלי)
- * @param {string | null} songName - שם השיר (אופציונלי)
- */
 function addToQueue(guildId, channelId, input, client, type = 'GENERIC', interaction = null, songName = null) {
     const serverQueue = getQueue(guildId, client);
     
@@ -108,12 +126,10 @@ function addToQueue(guildId, channelId, input, client, type = 'GENERIC', interac
 async function playNextInQueue(guildId) {
     const serverQueue = queues.get(guildId);
     if (!serverQueue || serverQueue.isPlaying || serverQueue.queue.length === 0) {
-        // --- התור ריק ---
         if (serverQueue && serverQueue.queue.length === 0 && !serverQueue.isPlaying) {
             serverQueue.lastActivity = Date.now();
             log(`[QUEUE] התור הסתיים בשרת ${guildId}.`);
             
-            // ✅ [שדרוג] לוגיקת ניתוק חכמה
             let timeoutSeconds;
             if (serverQueue.channelId === TEST_CHANNEL_ID) {
                 timeoutSeconds = 1; 
@@ -122,7 +138,6 @@ async function playNextInQueue(guildId) {
                 timeoutSeconds = IDLE_TIMEOUT_SECONDS_SHORT; 
                 log(`[QUEUE] סאונד קצר הסתיים. מתנתק תוך ${timeoutSeconds} שניות.`);
             } else if (serverQueue.lastTrackType === 'SONG') {
-                // אם השיר האחרון היה שיר, אל תתנתק. הטיימר מנוהל ע"י handleSongEnd
                 return;
             } else {
                 timeoutSeconds = IDLE_TIMEOUT_MINUTES_LONG * 60; 
@@ -132,27 +147,22 @@ async function playNextInQueue(guildId) {
             if (serverQueue.idleTimer) clearTimeout(serverQueue.idleTimer);
             serverQueue.idleTimer = setTimeout(() => {
                 const currentQueue = queues.get(guildId);
+                // בדיקה כפולה לפני ניתוק
                 if (currentQueue && !currentQueue.isPlaying && currentQueue.queue.length === 0) {
-                    log(`[CLEANUP] טיימר הניתוק (${timeoutSeconds} שניות) הופעל. מנתק משרת ${guildId}.`);
-                    if (currentQueue.connection && currentQueue.connection.state.status !== VoiceConnectionStatus.Destroyed) {
-                        currentQueue.connection.destroy();
-                    }
-                    if (currentQueue.player) currentQueue.player.stop();
-                    queues.delete(guildId);
+                    log(`[CLEANUP] טיימר הניתוק (${timeoutSeconds} שניות) הופעל.`);
+                    destroyQueue(guildId); // ✅ שימוש בפונקציית ההריסה
                 }
             }, timeoutSeconds * 1000);
         }
         return;
     }
     
-    // --- יש פריטים בתור ---
     serverQueue.isPlaying = true;
     serverQueue.lastActivity = Date.now();
     
     const { input, type, interaction, songName } = serverQueue.queue.shift();
     serverQueue.lastTrackType = type;
     
-    // ✅ [שדרוג] שמירת ההודעה שצריך לערוך
     if (type === 'SONG' && interaction) {
         serverQueue.nowPlayingMessage = interaction.message || await interaction.fetchReply();
     }
@@ -170,25 +180,35 @@ async function playNextInQueue(guildId) {
                 selfMute: false
             });
             
-            connection.on(VoiceConnectionStatus.Destroyed, () => {
-                log(`[QUEUE] החיבור בשרת ${guildId} נהרס (ניתוק ידני?). מנקה את התור.`);
-                if (queues.has(guildId)) {
-                    queues.delete(guildId); // מחיקה מלאה
+            // --- מאזיני חיבור ---
+            connection.on(VoiceConnectionStatus.Disconnected, async () => {
+                try {
+                    await Promise.race([
+                        entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
+                        entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
+                    ]);
+                    // התחבר מחדש
+                } catch (error) {
+                    log(`[QUEUE] החיבור התנתק סופית.`);
+                    destroyQueue(guildId); // ✅ שימוש בפונקציית ההריסה
                 }
+            });
+
+            connection.on(VoiceConnectionStatus.Destroyed, () => {
+                log(`[QUEUE] החיבור נהרס (אירוע Destroyed).`);
+                destroyQueue(guildId); // ✅ שימוש בפונקציית ההריסה
             });
 
             serverQueue.connection = connection;
             await entersState(serverQueue.connection, VoiceConnectionStatus.Ready, 30_000);
+            
+            if (type === 'BF6_THEME' || type === 'SOUNDBOARD') {
+                await new Promise(resolve => setTimeout(resolve, 1500)); 
+            } else {
+                await new Promise(resolve => setTimeout(resolve, CONNECTION_STABILIZE_DELAY)); 
+            }
         }
         
-        // ✅ [תיקון חיתוך סאונד] הוספת השהייה חכמה *לפני* הניגון
-        // הוסף השהייה *רק* אם זה סאונד קצר (לא שיר או פודקאסט)
-        if (type === 'BF6_THEME' || type === 'SOUNDBOARD') {
-            await new Promise(resolve => setTimeout(resolve, 1500)); // 1.5 שניות
-        } else {
-            await new Promise(resolve => setTimeout(resolve, CONNECTION_STABILIZE_DELAY)); // 0.5 שניות לשירים ו-TTS
-        }
-
         const resource = createResource(input);
         if (!resource) {
             log(`❌ [QUEUE] נכשל ביצירת AudioResource.`);
@@ -200,12 +220,11 @@ async function playNextInQueue(guildId) {
         serverQueue.player.play(resource);
         log(`[QUEUE] 🎵 מנגן (${type}) קטע שמע חדש בשרת ${guildId}.`);
         
-        // ✅ [שדרוג] עדכון הודעת "מתנגן עכשיו"
         if (type === 'SONG' && serverQueue.nowPlayingMessage) {
             const embed = new EmbedBuilder(serverQueue.nowPlayingMessage.embeds[0].data)
                 .setTitle('🎶 מתנגן עכשיו')
                 .setDescription(`**${songName}**`);
-            const row = getMusicButtons(false); // כפתורים (עם Pause)
+            const row = getMusicButtons(false); 
             await serverQueue.nowPlayingMessage.edit({ content: '', embeds: [embed], components: [row] });
         }
 
@@ -216,10 +235,6 @@ async function playNextInQueue(guildId) {
     }
 }
 
-/**
- * מחזיר שורת כפתורים (Play/Pause)
- * @param {boolean} isPaused - האם הנגן במצב מושהה?
- */
 function getMusicButtons(isPaused = false) {
   return new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -235,9 +250,6 @@ function getMusicButtons(isPaused = false) {
   );
 }
 
-/**
- * טיפול בסיום שיר (מחליף כפתורים ומתחיל טיימר מחיקה)
- */
 async function handleSongEnd(serverQueue) {
     if (!serverQueue.nowPlayingMessage) return;
 
@@ -258,19 +270,17 @@ async function handleSongEnd(serverQueue) {
             components: [row]
         });
 
-        // מתחיל טיימר של דקה למחיקה (כפי שביקשת)
         setTimeout(async () => {
             await msg.delete().catch(() => {});
         }, SONG_END_TIMEOUT_SECONDS * 1000);
 
     } catch (error) {
-        if (error.code !== 10008) { // התעלם אם ההודעה כבר נמחקה
+        if (error.code !== 10008) { 
             log(`❌ [QUEUE] שגיאה בעריכת הודעת סיום שיר:`, error);
         }
     }
 }
 
-// --- פונקציות שליטה (עבור הכפתורים) ---
 function pause(guildId) {
     const serverQueue = queues.get(guildId);
     if (serverQueue && serverQueue.isPlaying && serverQueue.player.state.status === AudioPlayerStatus.Playing) {
@@ -290,38 +300,27 @@ function resume(guildId) {
 }
 
 function stop(guildId) {
+    // ✅ [תיקון] שימוש בפונקציית ההריסה גם לעצירה יזומה
     const serverQueue = queues.get(guildId);
     if (serverQueue) {
-        serverQueue.queue = []; 
-        if (serverQueue.player) serverQueue.player.stop(); 
-        
-        // ✅ [שדרוג] מוחק את הודעת הנגן
         if (serverQueue.nowPlayingMessage) {
             serverQueue.nowPlayingMessage.delete().catch(() => {});
             serverQueue.nowPlayingMessage = null;
         }
-        
-        // הניתוק יטופל ע"י טיימר ה-Idle הקצר
+        destroyQueue(guildId);
         return true;
     }
     return false;
 }
 
-/**
- * פונקציה לעריכת הודעת השיר המקורי.
- * @param {string} guildId
- * @param {string} content 
- * @param {boolean} isPaused 
- */
 async function updateSongMessage(guildId, content, isPaused) {
     const serverQueue = queues.get(guildId);
     if (!serverQueue || !serverQueue.nowPlayingMessage) return;
 
     try {
         const embed = new EmbedBuilder(serverQueue.nowPlayingMessage.embeds[0].data);
-        const row = getMusicButtons(isPaused); // קבל כפתורים מעודכנים (Play/Pause)
+        const row = getMusicButtons(isPaused); 
         
-        // ✅ [שדרוג] מעדכן את תוכן ההודעה שמעל ה-Embed
         await serverQueue.nowPlayingMessage.edit({ 
             content: `*${content}*`,
             embeds: [embed], 
@@ -334,9 +333,7 @@ async function updateSongMessage(guildId, content, isPaused) {
     }
 }
 
-function cleanupIdleConnections() {
-    // הלוגיקה הועברה לטיימר הפנימי ב-playNextInQueue.
-}
+function cleanupIdleConnections() {}
 
 module.exports = { 
     addToQueue, 
@@ -345,5 +342,5 @@ module.exports = {
     resume,
     stop,
     updateSongMessage,
-    getQueue // חשיפה עבור musicControls
+    getQueue 
 };

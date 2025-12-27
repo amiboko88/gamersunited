@@ -1,4 +1,4 @@
-// 📁 handlers/inactivityCronJobs.js (מתוקן)
+// 📁 handlers/inactivityCronJobs.js (מתוקן עם הגנה מפני קריסות Timeout)
 const { EmbedBuilder } = require('discord.js');
 const db = require('../utils/firebase');
 const { sendStaffLog } = require('../utils/staffLogger');
@@ -8,6 +8,18 @@ const { sendReminderDM } = require('../interactions/buttons/inactivityDmButtons'
 const INACTIVITY_DAYS_FIRST_DM = 7;
 const INACTIVITY_DAYS_FINAL_DM = 30;
 let lastInactiveIds = []; 
+
+// פונקציית עזר בטוחה לשליפת משתמשים
+async function safeFetchMembers(guild) {
+    try {
+        // מנסה למשוך משתמשים עם טיימר ארוך יותר, בלי לכפות (force) הורדה מחדש אם לא חייב
+        return await guild.members.fetch({ time: 120000 }); 
+    } catch (error) {
+        console.warn(`[AutoTracking] ⚠️ Timeout במשיכת חברים מדיסקורד. משתמש ב-Cache הקיים.`);
+        // במקרה של שגיאה, מחזיר את מה שיש בזיכרון כרגע
+        return guild.members.cache;
+    }
+}
 
 async function updateMemberStatus(userId, updates) {
     try {
@@ -26,7 +38,8 @@ async function runAutoTracking(client) {
     const guild = await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return;
 
-    const members = await guild.members.fetch({ force: true });
+    // ✅ [תיקון] שימוש בפונקציה הבטוחה במקום קריאה אגרסיבית שקורסת
+    const members = await safeFetchMembers(guild);
     
     const snapshot = await db.collection('memberTracking').get();
     const now = Date.now();
@@ -41,6 +54,7 @@ async function runAutoTracking(client) {
         const member = members.get(userId);
 
         if (!member || member.user.bot || userId === client.user.id || ['left', 'kicked'].includes(d.statusStage)) {
+            // אם המשתמש לא נמצא בשרת וגם לא מסומן כעזוב - נעדכן שעזב
             if (!member && !['left', 'kicked'].includes(d.statusStage)) {
                 await updateMemberStatus(userId, { statusStage: 'left', leftAt: new Date().toISOString() });
             }
@@ -72,7 +86,6 @@ async function runAutoTracking(client) {
 
     if (statusChanges.length > 0) {
         const fields = createPaginatedFields('🔄 סיכום עדכוני סטטוס', statusChanges);
-        // ✅ [תיקון] הסרת הפרמטר client מהקריאה
         await sendStaffLog('📜 עדכון סטטוסים אוטומטי', `בוצעו ${statusChanges.length} עדכוני סטטוס.`, 0x3498db, fields);
     }
 
@@ -92,7 +105,6 @@ async function runAutoTracking(client) {
         const allFields = [...fields1, ...fields2];
         
         if (allInactive.length > 0) {
-            // ✅ [תיקון] הסרת הפרמטר client מהקריאה
             await sendStaffLog('📢 דוח משתמשים לא פעילים', `זוהה שינוי ברשימה. סה"כ ${allInactive.length} משתמשים לא פעילים.`, 0xe67e22, allFields);
         }
     }
@@ -104,7 +116,9 @@ async function runScheduledReminders(client) {
     const guild = await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return;
 
-    const members = await guild.members.fetch({ force: true });
+    // ✅ [תיקון] שימוש בפונקציה הבטוחה
+    const members = await safeFetchMembers(guild);
+    
     const allTracked = await db.collection('memberTracking').get();
     const success = [];
     const fails = [];
@@ -138,7 +152,6 @@ async function runScheduledReminders(client) {
         const fields = [];
         if (success.length > 0) fields.push(createPaginatedFields('✅ נשלחו בהצלחה', success)[0]);
         if (fails.length > 0) fields.push(createPaginatedFields('❌ נכשלו', fails)[0]);
-        // ✅ [תיקון] הסרת הפרמטר client מהקריאה
         await sendStaffLog('📤 סיכום שליחת תזכורות אוטומטי', `הושלם סבב אוטומטי.`, 0x00aaff, fields);
     }
 }
@@ -156,7 +169,6 @@ async function runMonthlyKickReport(client) {
     });
 
     if (eligibleToKick.length === 0) {
-        // ✅ [תיקון] הסרת הפרמטר client מהקריאה
         await sendStaffLog('🗓️ דוח הרחקה חודשי', 'אין משתמשים העומדים בקריטריונים להרחקה החודש.', 0x00ff00);
         return;
     }
@@ -164,7 +176,6 @@ async function runMonthlyKickReport(client) {
     const userLines = eligibleToKick.map(doc => `• <@${doc.id}> (סטטוס: \`${doc.data().statusStage}\`)`);
     const fields = createPaginatedFields(`מועמדים להרחקה (${eligibleToKick.length})`, userLines);
 
-    // ✅ [תיקון] הסרת הפרמטר client מהקריאה
     await sendStaffLog(
         '🗓️ דוח הרחקה חודשי',
         'להלן המשתמשים שניתן להרחיק עקב אי-פעילות. לביצוע, השתמשו בפקודת `/ניהול` ובחרו באפשרות ההרחקה.',

@@ -1,153 +1,177 @@
-// 📁 tts/ttsEngine.openai.js (שם הקובץ נשאר ttsEngine.elevenlabs.js אצלך)
-const { OpenAI } = require('openai');
-const { log } = require('../utils/logger.js');
+// 📁 tts/ttsEngine.elevenlabs.js (Google Chirp 3 HD + LINEAR16 + גיוון מלא לשמעון ושירלי)
+const axios = require('axios');
+const { log } = require('../utils/logger');
 const { registerTTSUsage } = require('./ttsQuotaManager.eleven.js');
 
-let openai;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY; 
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+const GOOGLE_TTS_URL = `https://texttospeech.googleapis.com/v1beta1/text:synthesize?key=${GOOGLE_API_KEY}`;
 
-if (OPENAI_API_KEY) {
-    openai = new OpenAI({
-        apiKey: OPENAI_API_KEY,
-    });
-    log('🔊 [OpenAI Engine] הלקוח של OpenAI אותחל בהצלחה.');
+if (GOOGLE_API_KEY) {
+    log('🔊 [Google Chirp 3] מפתח API זוהה. מנוע HD (LINEAR16) מוכן.');
 } else {
-    log('⚠️ [OpenAI Engine] משתנה הסביבה OPENAI_API_KEY לא נמצא. המנוע מושבת.');
+    log('⚠️ [Google Chirp 3] חסר GOOGLE_API_KEY. המנוע מושבת.');
 }
 
-// --- הגדרות קולות דינמיות ---
-const SHIMON_VOICE = 'ash'; // ✅ [שדרוג] הוחלף ל-Ash
-const SHIRLY_VOICES = ['alloy', 'shimmer', 'nova']; // ✅ [שדרוג] מאגר קולות לשירלי
+// --- מאגר קולות Chirp 3 HD (כוכבים) ---
+const VOICE_POOLS = {
+    male: [
+        'he-IL-Chirp-3-HD-Achird', 
+        'he-IL-Chirp-3-HD-Algenib', 
+        'he-IL-Chirp-3-HD-Algieba', 
+        'he-IL-Chirp-3-HD-Alnilam'
+    ],
+    female: [
+        'he-IL-Chirp-3-HD-Achernar', 
+        'he-IL-Chirp-3-HD-Aoede', 
+        'he-IL-Chirp-3-HD-Autonoe', 
+        'he-IL-Chirp-3-HD-Callirrhoe'
+    ]
+};
 
-// --- הגדרת אישיות (System Instructions) ---
-const PERSONALITY = {
-    shimon: 'Speak in a deep, cynical, slightly impatient, and rude tone. You are a tired gamer who has seen too much failure.',
-    shirly: 'Speak in a very flirtatious, lively, energetic, and slightly sexy tone. You are amused and playful.', // ✅ [שדרוג] טון סקסי וחי
-    shimon_calm: 'Speak in a very calm, slow, and relaxed tone.',
-    shimon_energetic: 'Speak in an energetic, excited, and fast-paced tone.'
+// --- הגדרות אופי (מהירות בלבד) ---
+const CHARACTER_SETTINGS = {
+    shirly: {
+        speakingRate: 0.90 // איטי ורגוע
+    },
+    shimon: {
+        speakingRate: 0.95 // יציב וכבד
+    },
+    default: {
+        speakingRate: 1.0
+    }
 };
 
 /**
- * ממיר Stream ל-Buffer (גרסה מעודכנת עבור OpenAI)
+ * בוחר קול רנדומלי מתוך המאגר לפי מגדר
  */
-function streamToBuffer(stream) {
-    return new Promise((resolve, reject) => {
-        const chunks = [];
-        stream.on('data', (chunk) => chunks.push(chunk));
-        stream.on('end', () => resolve(Buffer.concat(chunks)));
-        stream.on('error', (error) => {
-            log(`❌ [streamToBuffer] שגיאה באיסוף ה-Stream: ${error.message}`);
-            reject(error);
-        });
-    });
+function getRandomVoice(gender) {
+    const pool = VOICE_POOLS[gender] || VOICE_POOLS.male;
+    return pool[Math.floor(Math.random() * pool.length)];
 }
 
 /**
- * מייצר אודיו בודד מטקסט (עבור פקודות רגילות).
+ * פונקציה ראשית לייצור אודיו (הודעות בודדות)
  */
-async function synthesizeTTS(text, profileName = 'shimon_calm', member = null) {
-    if (!openai) {
-        log('❌ [OpenAI Engine] ניסיון להשתמש במנוע TTS כאשר הלקוח אינו מאותחל.');
-        return null;
-    }
-    
-    let voice = SHIMON_VOICE;
-    let instructions = PERSONALITY.shimon_calm;
-
-    // התאמת קול והוראות לפי הפרופיל
-    if (profileName === 'shimon_energetic') {
-        instructions = PERSONALITY.shimon_energetic;
-    } else if (profileName === 'shirly') {
-        // בחירה רנדומלית לקול של שירלי גם ב-TTS רגיל
-        voice = SHIRLY_VOICES[Math.floor(Math.random() * SHIRLY_VOICES.length)];
-        instructions = PERSONALITY.shirly;
-    }
+async function synthesizeTTS(text, profileName = 'shimon', member = null) {
+    if (!GOOGLE_API_KEY) return null;
 
     const cleanText = text.replace(/[*_~`]/g, '');
+    let selectedVoice = '';
     
+    // זיהוי דמות
+    const characterKey = profileName.toLowerCase().includes('shirly') ? 'shirly' : 'shimon';
+    const settings = CHARACTER_SETTINGS[characterKey];
+
+    // ✅ [שדרוג] בחירה רנדומלית גם לשמעון וגם לשירלי
+    if (characterKey === 'shirly') {
+        selectedVoice = getRandomVoice('female');
+    } else {
+        selectedVoice = getRandomVoice('male'); 
+    }
+
+    const requestBody = {
+        input: { text: cleanText },
+        voice: {
+            languageCode: 'he-IL',
+            name: selectedVoice
+        },
+        audioConfig: {
+            audioEncoding: 'LINEAR16', // WAV איכותי
+            sampleRateHertz: 44100,
+            speakingRate: settings.speakingRate 
+        }
+    };
+
     try {
-        log(`[OpenAI Engine] מייצר אודיו (${profileName}): "${cleanText}"`);
-        
-        const response = await openai.audio.speech.create({
-            model: 'gpt-4o-mini-tts', // או tts-1-hd אם תרצה איכות גבוהה יותר
-            voice: voice,
-            input: cleanText,
-            response_format: 'mp3',
-            instructions: instructions 
-        });
-        
-        const audioBuffer = await streamToBuffer(response.body);
+        const voiceShortName = selectedVoice.split('-').pop();
+        log(`[Google HD] מייצר (${characterKey}): "${cleanText.substring(0, 15)}..." | קול: ${voiceShortName}`);
 
-        const userId = member ? member.id : 'system';
-        const username = member ? member.displayName : 'System';
-        await registerTTSUsage(cleanText.length, userId, username, 'OpenAI', profileName);
+        const response = await axios.post(GOOGLE_TTS_URL, requestBody);
 
-        return audioBuffer;
+        if (response.data && response.data.audioContent) {
+            const audioBuffer = Buffer.from(response.data.audioContent, 'base64');
+            
+            if (member) {
+                await registerTTSUsage(cleanText.length, member.id, member.displayName, 'Google-Chirp3', selectedVoice);
+            }
+
+            return audioBuffer;
+        } else {
+            throw new Error('התקבלה תשובה ריקה מגוגל.');
+        }
 
     } catch (error) {
-        log(`❌ [OpenAI Engine] שגיאה קריטית בייצור קול: ${error.message}`);
+        log(`❌ [Google TTS] שגיאה: ${error.response?.data?.error?.message || error.message}`);
+        
+        if (error.response?.data?.error?.message?.includes('not found')) {
+            log('🔄 מנסה גיבוי (Neural2)...');
+            return await synthesizeFallback(cleanText, characterKey === 'shirly' ? 'FEMALE' : 'MALE');
+        }
+        return null;
+    }
+}
+
+// פונקציית גיבוי
+async function synthesizeFallback(text, gender) {
+    const fallbackVoice = gender === 'FEMALE' ? 'he-IL-Neural2-A' : 'he-IL-Neural2-B';
+    try {
+        const response = await axios.post(GOOGLE_TTS_URL, {
+            input: { text },
+            voice: { languageCode: 'he-IL', name: fallbackVoice },
+            audioConfig: { audioEncoding: 'MP3' } 
+        });
+        return Buffer.from(response.data.audioContent, 'base64');
+    } catch (e) {
         return null;
     }
 }
 
 /**
- * מייצר שיחה שלמה (פודקאסט) מסקריפט.
+ * תמיכה בשיחות (פודקאסט)
  */
 async function synthesizeConversation(script, member) {
-    if (!openai) {
-        log(`❌ [OpenAI Engine] ניסיון להשתמש במנוע TTS (שיחה) כאשר הלקוח אינו מאותחל.`);
-        return [];
-    }
-    
     const audioBuffers = [];
-    const userId = member.id;
-    const username = member.displayName;
+    
+    // ✅ [שדרוג] מגרילים קולות חדשים בתחילת כל פודקאסט
+    // זה מבטיח גיוון בין פודקאסטים, אבל עקביות בתוך השיחה עצמה
+    const sessionVoices = {
+        shimon: getRandomVoice('male'), 
+        shirly: getRandomVoice('female') 
+    };
 
-    // ✅ [שדרוג] בחירת קול קבוע לשירלי *לכל השיחה הנוכחית* (כדי שלא תחליף קול באמצע משפט)
-    const currentShirlyVoice = SHIRLY_VOICES[Math.floor(Math.random() * SHIRLY_VOICES.length)];
-    log(`[OpenAI Podcast] הקול הנבחר לשירלי בשיחה זו: ${currentShirlyVoice}`);
+    log(`[Podcast] משתתפים: שמעון (${sessionVoices.shimon.split('-').pop()}) | שירלי (${sessionVoices.shirly.split('-').pop()})`);
 
     for (const line of script) {
         if (!line.speaker || !line.text) continue;
-
-        const cleanText = line.text.replace(/[*_~`]/g, '');
-        const speakerKey = line.speaker.toLowerCase();
         
-        // הגדרת קול והוראות לפי הדובר
-        let voice = SHIMON_VOICE;
-        let instructions = PERSONALITY.shimon;
-
-        if (speakerKey === 'shirly') {
-            voice = currentShirlyVoice;
-            instructions = PERSONALITY.shirly;
-        }
+        const isShirly = line.speaker.toLowerCase().includes('shirly');
+        const currentVoice = isShirly ? sessionVoices.shirly : sessionVoices.shimon;
+        const settings = isShirly ? CHARACTER_SETTINGS.shirly : CHARACTER_SETTINGS.shimon;
+        
+        const requestBody = {
+            input: { text: line.text.replace(/[*_~`]/g, '') },
+            voice: { languageCode: 'he-IL', name: currentVoice },
+            audioConfig: { 
+                audioEncoding: 'LINEAR16', 
+                sampleRateHertz: 44100,
+                speakingRate: settings.speakingRate
+            }
+        };
 
         try {
-            log(`[OpenAI Podcast] מייצר שורה: [${speakerKey}/${voice}] - "${cleanText}"`);
-
-            const response = await openai.audio.speech.create({
-                model: 'gpt-4o-mini-tts',
-                voice: voice,
-                input: cleanText,
-                response_format: 'mp3',
-                instructions: instructions
-            });
-            
-            const audioBuffer = await streamToBuffer(response.body);
-            audioBuffers.push(audioBuffer);
-
-            await registerTTSUsage(cleanText.length, userId, username, 'OpenAI-Podcast', speakerKey);
-
+            const response = await axios.post(GOOGLE_TTS_URL, requestBody);
+            if (response.data.audioContent) {
+                audioBuffers.push(Buffer.from(response.data.audioContent, 'base64'));
+            }
         } catch (error) {
-            log(`❌ [OpenAI Podcast] שגיאה בייצור שורה: ${error.message}`);
+            log(`❌ שגיאה בשורה של ${line.speaker}: ${error.message}`);
         }
     }
     
-    log(`[OpenAI Podcast] יצירת השיחה עבור ${username} הסתיימה. ${audioBuffers.length} קטעי אודיו נוצרו.`);
     return audioBuffers;
 }
 
 module.exports = {
-    synthesizeConversation,
     synthesizeTTS,
+    synthesizeConversation
 };

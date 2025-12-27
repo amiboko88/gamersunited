@@ -7,6 +7,9 @@ const { Client, GatewayIntentBits, Collection, Partials, REST, Routes, MessageFl
 const db = require('./utils/firebase');
 require("./telegram/shimonTelegram");
 
+// ✅ [תוספת 1] ייבוא המודול של הוואטסאפ (הוסף את השורה הזו למעלה)
+const { connectToWhatsApp } = require('./handlers/whatsappHandler');
+
 // --- CLIENT SETUP ---
 const client = new Client({
     intents: [
@@ -21,17 +24,15 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message, Partials.User]
 });
 
+// ... (שאר הקוד נשאר אותו דבר עד שמגיעים ל-client.once('ready')) ...
 client.db = db;
 global.client = client;
-
-// --- DYNAMIC HANDLER LOADING ---
 client.commands = new Collection();
 client.interactions = new Collection();
 client.dynamicInteractionHandlers = [];
 client.voiceConnections = new Collection();
 client.audioPlayers = new Collection();
 
-// Load Slash Commands
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 for (const file of commandFiles) {
@@ -45,7 +46,6 @@ for (const file of commandFiles) {
     }
 }
 
-// Improved Interaction Loader
 const interactionsPath = path.join(__dirname, 'interactions');
 if (fs.existsSync(interactionsPath)) {
     const loadHandlers = (dir) => {
@@ -72,7 +72,6 @@ if (fs.existsSync(interactionsPath)) {
     console.log(`💡 נטענו ${client.interactions.size} אינטראקציות סטטיות ו-${client.dynamicInteractionHandlers.length} דינאמיות.`);
 }
 
-// --- SLASH COMMAND REGISTRATION ---
 (async () => {
     const slashCommands = Array.from(client.commands.values()).map(cmd => cmd.data.toJSON());
     try {
@@ -96,16 +95,17 @@ client.once('ready', async () => {
         const { hardSyncPresenceOnReady } = require('./handlers/presenceTracker');
         const { setupVerificationMessage } = require('./handlers/verificationButton');
         const setupWelcomeImage = require('./handlers/welcomeImage');
-        // --- ✅ [שדרוג] ייבוא פונקציית השלמת הפערים ---
         const { runMissedBirthdayChecks } = require('./handlers/birthdayCongratulator');
 
         await hardSyncPresenceOnReady(client);
         await setupVerificationMessage(client);
         initializeCronJobs(client);
         setupWelcomeImage(client);
-
-        // --- ✅ [שדרוג] הפעלת בדיקת ההשלמה בעת עליית הבוט ---
         await runMissedBirthdayChecks(client);
+
+        // ✅ [תוספת 2] כאן אנחנו מפעילים את הוואטסאפ!
+        console.log('🔗 מפעיל מודול וואטסאפ...');
+        connectToWhatsApp(client);
 
         console.log("✅ All systems initialized successfully.");
     } catch (err) {
@@ -113,7 +113,7 @@ client.once('ready', async () => {
     }
 });
 
-// --- MAIN INTERACTION ROUTER ---
+// ... (כל שאר הקוד למטה נשאר זהה) ...
 const podcastManager = require('./handlers/podcastManager');
 
 client.on('interactionCreate', async interaction => {
@@ -162,7 +162,6 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// --- OTHER REAL-TIME EVENT LISTENERS ---
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const { trackGamePresence } = require('./handlers/presenceTracker');
 const { scanForConsoleAndVerify } = require('./handlers/verificationButton');
@@ -198,5 +197,4 @@ client.on('messageCreate', async message => {
     await smartChat(message);
 });
 
-// --- BOT LOGIN ---
 client.login(process.env.DISCORD_TOKEN);

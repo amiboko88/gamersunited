@@ -1,122 +1,135 @@
-require('dotenv').config();
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
-const { connectToWhatsApp, sendToMainGroup } = require('./whatsapp/index'); // ייבוא הפונקציות מוואטסאפ
-const { loadCommands } = require('./handlers/commandHandler');
-const { loadEvents } = require('./handlers/eventHandler');
-const { log } = require('./utils/logger');
-const express = require('express');
+const { makeWASocket, DisconnectReason } = require('@whiskeysockets/baileys');
+const { useFirestoreAuthState } = require('./auth');
+const { handleMedia } = require('./media');
+const { handleMessageLogic } = require('./logic');
+const qrcode = require('qrcode');
+const { AttachmentBuilder, EmbedBuilder } = require('discord.js');
+const { log } = require('../utils/logger'); 
 
-// --- הגדרות הניטור (לפי ה-IDs שנתת) ---
-const FIFO_VOICE_CHANNEL_ID = '1231453923387379783'; // הערוץ שבו בודקים נוכחות
-const WARZONE_APP_ID = '1372319014398726225'; // ה-ID של Call of Duty
+const STAFF_CHANNEL_ID = '881445829100060723'; // הערוץ שאליו נשלח ה-QR
+let sock;
+let isConnected = false;
+let retryCount = 0;
 
-const app = express();
-const PORT = process.env.PORT || 8080;
-
-// הגדרת הלקוח של דיסקורד עם כל ההרשאות הנדרשות
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildVoiceStates, // חובה בשביל לראות מי בערוץ קול
-        GatewayIntentBits.GuildPresences    // חובה בשביל לראות במה הם משחקים
-    ]
-});
-
-client.commands = new Collection();
-
-// --- שרת HTTP בסיסי (בשביל Railway) ---
-// זה מונע מ-Railway לכבות את הבוט ומאפשר לראות שהוא "חי"
-app.use(express.json());
-app.get('/', (req, res) => res.send('Shimon Bot is Alive 🤖'));
-app.post('/telegram', (req, res) => res.sendStatus(200)); // אם יש לך גם טלגרם
-app.listen(PORT, () => log(`🚀 Server listening on port ${PORT}`));
-
-// --- הפעלת שמעון ---
-(async () => {
-    // 1. טעינת פקודות ואירועים של דיסקורד
-    await loadCommands(client);
-    await loadEvents(client);
+// ✅ פונקציית עזר קריטית: חילוץ טקסט גם מהודעות נסתרות/זמניות
+function getMessageContent(msg) {
+    if (!msg.message) return null;
     
-    // 2. התחברות לדיסקורד
-    await client.login(process.env.DISCORD_TOKEN);
+    // פתיחת המעטפה של הודעות נסתרות (Ephemeral)
+    const content = msg.message.ephemeralMessage?.message || msg.message;
     
-    // 3. התחברות לוואטסאפ
-    connectToWhatsApp(client);
-})();
-
-// --- המוניטור של WARZONE ("העין הגדולה") ---
-let isGameSessionActive = false;
-
-function startWarzoneMonitor() {
-    log('[Warzone Monitor] 👀 העין הגדולה נפתחה - מאזין לערוץ FIFO...');
-    
-    // בדיקה כל דקה (60000ms)
-    setInterval(async () => {
-        try {
-            const guild = client.guilds.cache.first(); // מניח שהבוט נמצא בשרת אחד עיקרי
-            if (!guild) return;
-
-            const channel = guild.channels.cache.get(FIFO_VOICE_CHANNEL_ID);
-            
-            // בדיקות תקינות לערוץ
-            if (!channel) {
-                // log(`[Monitor Warning] ערוץ ${FIFO_VOICE_CHANNEL_ID} לא נמצא.`);
-                return;
-            }
-            if (!channel.isVoiceBased()) return;
-
-            // 1. בדיקת כמות אנשים בחדר (לפחות 3 כדי להחשיב כסשן)
-            const members = channel.members;
-            if (members.size < 3) {
-                if (isGameSessionActive) {
-                    log('[Monitor] סשן הסתיים (פחות מ-3 אנשים).');
-                    isGameSessionActive = false; // איפוס סטטוס כדי שנוכל להתריע שוב בעתיד
-                }
-                return;
-            }
-
-            // 2. בדיקה מי משחק WARZONE בפועל
-            let warzonePlayers = 0;
-            members.forEach(member => {
-                const activities = member.presence?.activities || [];
-                
-                // בדיקה כפולה: או לפי ה-ID המדויק שנתת, או לפי השם (לגיבוי)
-                const isPlaying = activities.some(act => 
-                    act.applicationId === WARZONE_APP_ID || 
-                    (act.name && act.name.toLowerCase().includes('call of duty')) ||
-                    (act.name && act.name.toLowerCase().includes('warzone'))
-                );
-                
-                if (isPlaying) warzonePlayers++;
-            });
-
-            // לוג דיבאג שקט (אופציונלי)
-            // console.log(`[Monitor Debug] בחדר: ${members.size} | משחקים COD: ${warzonePlayers}`);
-
-            // 3. ההחלטה: האם לשלוח התראה?
-            // התנאי: לפחות 2 שחקנים פעילים מתוך הנוכחים בחדר, והסשן לא הוכרז עדיין
-            if (warzonePlayers >= 2 && !isGameSessionActive) {
-                isGameSessionActive = true; // נועלים את הסטטוס
-                
-                const alertText = "🚨 **התראת מלחמה!**\nשמעון מזהה סשן WARZONE פעיל בחדר FIFO.\n\nחברים יקרים, נא לרשום דמג' (Damage) בסוף כל סיבוב.\nלדוגמה: *עמוס 2500*\nמי שלא רושם מקבל לאפה.";
-                
-                log('[Monitor] 🚨 זיהוי סשן! שולח לוואטסאפ...');
-                
-                // שליחה לקבוצת הוואטסאפ הראשית
-                await sendToMainGroup(alertText);
-            }
-
-        } catch (err) {
-            console.error('[Monitor Error]', err);
-        }
-    }, 60000); // רץ כל 60 שניות
+    // בדיקת כל סוגי הטקסט האפשריים
+    return content.conversation || 
+           content.extendedTextMessage?.text || 
+           content.imageMessage?.caption || 
+           content.videoMessage?.caption ||
+           null;
 }
 
-// הפעלת המוניטור רק כשהבוט מוכן ומחובר
-client.once('ready', () => {
-    log(`⚡️ Shimon is READY! Logged in as ${client.user.tag}`);
-    startWarzoneMonitor();
-});
+// ✅ פונקציה לייצוא: מאפשרת לקבצים אחרים (כמו המוניטור) לשלוח הודעות לקבוצה
+async function sendToMainGroup(text) {
+    const mainGroupId = process.env.WHATSAPP_MAIN_GROUP_ID; 
+
+    if (!sock || !isConnected) {
+        console.log('⚠️ WhatsApp send failed: Bot disconnected.');
+        return;
+    }
+    if (!mainGroupId) {
+        console.log('⚠️ WhatsApp send failed: No WHATSAPP_MAIN_GROUP_ID set in Env Vars.');
+        return;
+    }
+    try {
+        await sock.sendMessage(mainGroupId, { text: text });
+    } catch (err) {
+        console.error('❌ Send Error:', err.message);
+    }
+}
+
+async function connectToWhatsApp(discordClient) {
+    const { state, saveCreds } = await useFirestoreAuthState();
+
+    sock = makeWASocket({
+        printQRInTerminal: false, // אנחנו שולחים לדיסקורד, לא לטרמינל
+        auth: state,
+        browser: ["Shimon Bot", "Chrome", "1.0.0"],
+        syncFullHistory: false, // חוסך זיכרון
+        logger: require('pino')({ level: 'silent' }), // משתיק לוגים פנימיים של הספרייה
+        connectTimeoutMs: 60000, 
+        keepAliveIntervalMs: 10000,
+        getMessage: async () => { return { conversation: 'hello' } } // מונע קריסות נדירות
+    });
+
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
+
+        if (isConnected && qr) return;
+
+        // שליחת QR לדיסקורד
+        if (qr) {
+            log('[WhatsApp] 📸 New QR Code generated');
+            try {
+                const qrBuffer = await qrcode.toBuffer(qr);
+                const file = new AttachmentBuilder(qrBuffer, { name: 'qrcode.png' });
+                const channel = await discordClient.channels.fetch(STAFF_CHANNEL_ID);
+                if (channel) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('📱 נדרשת סריקה לחיבור וואטסאפ')
+                        .setDescription('סרוק את הקוד בטלפון כדי לחבר את שמעון.')
+                        .setColor('#25D366')
+                        .setImage('attachment://qrcode.png');
+                    await channel.send({ embeds: [embed], files: [file] });
+                }
+            } catch (err) { console.error('QR Error:', err); }
+        }
+
+        // ניהול חיבור וניתוק
+        if (connection === 'close') {
+            isConnected = false;
+            const statusCode = (lastDisconnect?.error)?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            
+            if (shouldReconnect || statusCode === 401) { 
+                if (retryCount < 5) {
+                    log(`[WhatsApp] 🔄 Reconnecting... (${retryCount + 1}/5)`);
+                    retryCount++;
+                    setTimeout(() => connectToWhatsApp(discordClient), 3000); 
+                } else {
+                    log('[WhatsApp] 🛑 Failed to reconnect.');
+                }
+            } else {
+                connectToWhatsApp(discordClient); 
+            }
+        } else if (connection === 'open') {
+            isConnected = true;
+            retryCount = 0; 
+            log('[WhatsApp] ✅ Connected!');
+        }
+    });
+
+    sock.ev.on('creds.update', saveCreds);
+
+    // טיפול בהודעות נכנסות
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+        const msg = messages[0];
+        if (!msg.message || msg.key.fromMe) return; 
+
+        // דיבאג שקט כדי לדעת שההודעה התקבלה
+        // console.log(`[WA DEBUG] Raw message received from: ${msg.key.remoteJid}`);
+
+        // חילוץ הטקסט (כולל תיקון הודעות נעלמות)
+        const text = getMessageContent(msg);
+        
+        if (!text) return; // אם אין טקסט (למשל סתם תמונה בלי כיתוב), מתעלמים
+
+        const senderJid = msg.key.remoteJid;
+
+        // 1. קודם בודקים מדיה (סאונד/סטיקרים)
+        const mediaHandled = await handleMedia(sock, senderJid, text);
+        if (mediaHandled) return; // אם שלחנו סטיקר, לא שולחים גם תשובה חכמה
+
+        // 2. אם לא הייתה מדיה, מעבירים למוח של שמעון
+        await handleMessageLogic(sock, msg, text);
+    });
+}
+
+module.exports = { connectToWhatsApp, sendToMainGroup };

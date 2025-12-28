@@ -1,4 +1,4 @@
-// 👇 המספר שלך (מתוקן: בלי 0 בהתחלה, בלי פלוס)
+// ✅ ה-LID שלך (המנהל)
 const ADMIN_NUMBER = '100772834480319'; 
 
 const { delay } = require('@whiskeysockets/baileys');
@@ -18,8 +18,8 @@ const BAD_WORDS = ['מניאק', 'זונה', 'שרמוטה', 'קוקסינל', '
 const userCooldowns = new Map();
 let lastBotReplyTime = 0;
 
-// --- 1. הפנקס השחור: איסוף עובדות ---
-async function analyzeAndStoreFacts(senderNumber, senderName, text) {
+// --- 1. הפנקס השחור ---
+async function analyzeAndStoreFacts(senderId, senderName, text) {
     if (text.length < 15) return; 
 
     try {
@@ -36,8 +36,8 @@ async function analyzeAndStoreFacts(senderNumber, senderName, text) {
         const fact = completion.choices[0]?.message?.content?.trim();
 
         if (fact && fact.length > 5 && !fact.includes("אין")) {
-            log(`[WhatsApp] 📝 Black Book entry for ${senderName}: ${fact}`);
-            await db.collection('whatsapp_users').doc(senderNumber).update({
+            log(`[WhatsApp] 📝 Black Book entry for ${senderName} (${senderId}): ${fact}`);
+            await db.collection('whatsapp_users').doc(senderId).update({
                 facts: admin.firestore.FieldValue.arrayUnion({
                     content: fact,
                     timestamp: new Date().toISOString(),
@@ -48,10 +48,10 @@ async function analyzeAndStoreFacts(senderNumber, senderName, text) {
     } catch (err) {}
 }
 
-// --- 2. מודיעין: תמונות וסטטוס ---
-async function updateUserIntelligence(sock, senderNumber, senderJid, senderName) {
+// --- 2. מודיעין ---
+async function updateUserIntelligence(sock, senderId, senderJidForProfile, senderName) {
     try {
-        const userRef = db.collection('whatsapp_users').doc(senderNumber);
+        const userRef = db.collection('whatsapp_users').doc(senderId);
         const doc = await userRef.get();
         const userData = doc.exists ? doc.data() : {};
 
@@ -60,20 +60,19 @@ async function updateUserIntelligence(sock, senderNumber, senderJid, senderName)
 
         if (Date.now() - lastUpdate > oneDay) {
             let profilePicUrl = null;
-            try { profilePicUrl = await sock.profilePictureUrl(senderJid, 'image').catch(() => null); } catch (e) {}
+            try { profilePicUrl = await sock.profilePictureUrl(senderJidForProfile, 'image').catch(() => null); } catch (e) {}
 
             let statusText = null;
             try {
-                const statusData = await sock.fetchStatus(senderJid).catch(() => null);
+                const statusData = await sock.fetchStatus(senderJidForProfile).catch(() => null);
                 statusText = statusData?.status || null;
             } catch (e) {}
 
             await userRef.set({
-                phoneNumber: senderNumber,
+                id: senderId,
                 displayName: senderName, 
                 profilePic: profilePicUrl || userData.profilePic || null,
                 aboutStatus: statusText || userData.aboutStatus || null,
-                facebookLink: userData.facebookLink || "", 
                 lastProfileScan: new Date().toISOString(),
                 lastMessageAt: new Date().toISOString(),
                 messageCount: admin.firestore.FieldValue.increment(1)
@@ -92,28 +91,29 @@ async function updateUserIntelligence(sock, senderNumber, senderJid, senderName)
 
 // --- 3. הלוגיקה הראשית ---
 async function handleMessageLogic(sock, msg, text) {
-    const senderJid = msg.key.remoteJid;
-    const senderNumber = senderJid.split('@')[0];
+    const chatJid = msg.key.remoteJid; 
+    const isGroup = chatJid.endsWith('@g.us');
+    
+    // זיהוי השולח האמיתי (קריטי לקבוצות!)
+    const senderFullJid = isGroup ? (msg.key.participant || msg.participant) : chatJid;
+    const senderId = senderFullJid ? senderFullJid.split('@')[0] : 'unknown';
 
-    // ✅ בדיקת הרשאות (חוסם פרטי לזרים)
-    const isGroup = senderJid.endsWith('@g.us');
-    const isAdmin = senderNumber === ADMIN_NUMBER;
+    // בדיקת מנהל (לפי ה-LID)
+    const isAdmin = senderId === ADMIN_NUMBER;
 
     if (!isGroup && !isAdmin) {
-        return; // התעלמות שקטה
+        return; 
     }
 
     const senderName = msg.pushName || "לא ידוע";
 
-    // איסוף מידע ברקע
-    const userData = await updateUserIntelligence(sock, senderNumber, senderJid, senderName);
-    analyzeAndStoreFacts(senderNumber, senderName, text);
+    const userData = await updateUserIntelligence(sock, senderId, senderFullJid, senderName);
+    analyzeAndStoreFacts(senderId, senderName, text);
 
     const now = Date.now();
     let shouldTrigger = false;
     let contextType = 'regular';
 
-    // בדיקת קללות
     const foundBadWord = BAD_WORDS.find(word => text.includes(word));
     if (foundBadWord) {
         if (Math.random() > 0.3) {
@@ -123,7 +123,6 @@ async function handleMessageLogic(sock, msg, text) {
         }
     }
 
-    // בדיקת שם הבוט
     if (text.toLowerCase().includes('שמעון') || text.toLowerCase().includes('shimon')) {
         shouldTrigger = true;
         contextType = 'regular';
@@ -131,21 +130,19 @@ async function handleMessageLogic(sock, msg, text) {
 
     if (!shouldTrigger) return;
 
-    // Cooldowns
     if (now - lastBotReplyTime < GLOBAL_COOLDOWN) return;
-    if ((now - (userCooldowns.get(senderNumber) || 0)) < COOLDOWN_TIME) {
+    if ((now - (userCooldowns.get(senderId) || 0)) < COOLDOWN_TIME) {
         log(`[WhatsApp] ⏳ ${senderName} is on cooldown.`);
         return;
     }
 
     log(`[WhatsApp] 💬 Replying to ${senderName}`);
-    userCooldowns.set(senderNumber, now);
+    userCooldowns.set(senderId, now);
     lastBotReplyTime = now;
 
-    await sock.sendPresenceUpdate('composing', senderJid);
+    await sock.sendPresenceUpdate('composing', chatJid);
     await delay(1500);
 
-    // הכנת המידע ל-AI
     const finalDisplayName = userData.nickname || senderName;
     const userFacts = userData.facts ? userData.facts.map(f => f.content).join(". ") : "";
 
@@ -161,7 +158,7 @@ async function handleMessageLogic(sock, msg, text) {
 
     const fakeDiscordMessage = {
         content: processedText,
-        author: { id: senderNumber, username: senderName, bot: false },
+        author: { id: senderId, username: senderName, bot: false },
         member: { 
             displayName: finalDisplayName, 
             permissions: { has: () => false }, 
@@ -173,10 +170,10 @@ async function handleMessageLogic(sock, msg, text) {
         reply: async (response) => {
             const replyText = typeof response === 'string' ? response : response.content;
             
-            // ✅ השינוי: הוספת ציטוט (Reply)
-            await sock.sendMessage(senderJid, { text: replyText }, { quoted: msg });
+            // שולח תשובה ל-chatJid (הקבוצה או הפרטי) עם ציטוט נקי
+            await sock.sendMessage(chatJid, { text: replyText }, { quoted: msg });
             
-            await sock.sendPresenceUpdate('paused', senderJid);
+            await sock.sendPresenceUpdate('paused', chatJid);
         }
     };
 

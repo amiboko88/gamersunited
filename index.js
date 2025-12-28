@@ -7,8 +7,9 @@ const { Client, GatewayIntentBits, Collection, Partials, REST, Routes, MessageFl
 const db = require('./utils/firebase');
 require("./telegram/shimonTelegram");
 
-// ✅ [תוספת 1] ייבוא המודול של הוואטסאפ (הוסף את השורה הזו למעלה)
-const { connectToWhatsApp } = require('./handlers/whatsappHandler');
+// ✅ חיבור למודול וואטסאפ והגשר
+const { connectToWhatsApp } = require('./whatsapp/index');
+const { handleVoiceAlerts, initDailySummary } = require('./whatsapp/bridge');
 
 // --- CLIENT SETUP ---
 const client = new Client({
@@ -24,7 +25,6 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message, Partials.User]
 });
 
-// ... (שאר הקוד נשאר אותו דבר עד שמגיעים ל-client.once('ready')) ...
 client.db = db;
 global.client = client;
 client.commands = new Collection();
@@ -103,9 +103,10 @@ client.once('ready', async () => {
         setupWelcomeImage(client);
         await runMissedBirthdayChecks(client);
 
-        // ✅ [תוספת 2] כאן אנחנו מפעילים את הוואטסאפ!
+        // ✅ הפעלת הוואטסאפ והסיכום היומי
         console.log('🔗 מפעיל מודול וואטסאפ...');
         connectToWhatsApp(client);
+        initDailySummary();
 
         console.log("✅ All systems initialized successfully.");
     } catch (err) {
@@ -113,7 +114,6 @@ client.once('ready', async () => {
     }
 });
 
-// ... (כל שאר הקוד למטה נשאר זהה) ...
 const podcastManager = require('./handlers/podcastManager');
 
 client.on('interactionCreate', async interaction => {
@@ -187,7 +187,12 @@ client.on('guildMemberRemove', async member => {
     await db.collection('memberTracking').doc(member.id).set({ status: 'left', leftAt: new Date().toISOString() }, { merge: true });
 });
 
-client.on('voiceStateUpdate', handleVoiceStateUpdate);
+// ✅ שינוי: הוספת האזנה לגשר של הוואטסאפ (המלשין)
+client.on('voiceStateUpdate', (oldState, newState) => {
+    handleVoiceStateUpdate(oldState, newState); // הלוגיקה הישנה שלך
+    handleVoiceAlerts(oldState, newState);      // הלוגיקה החדשה לוואטסאפ
+});
+
 client.on('presenceUpdate', (oldPresence, newPresence) => trackGamePresence(newPresence));
 client.on('messageCreate', async message => {
     if (message.author.bot) return;

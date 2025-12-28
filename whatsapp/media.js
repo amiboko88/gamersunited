@@ -17,7 +17,7 @@ const SOUND_TRIGGERS = {
 const STICKER_TRIGGERS = {
     'שמעון': 'shimon_logo.webp',
     'בוט': 'robot.webp',
-    'לייק': 'thumbs_up.webp'
+    'יוגי': 'yogi.webp'
 };
 
 const GIF_TRIGGERS = {

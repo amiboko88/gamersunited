@@ -1,27 +1,22 @@
 // 📁 handlers/whatsappHandler.js
-const { makeWASocket, useMultiFileAuthState, DisconnectReason, delay } = require('@whiskeysockets/baileys');
+const { makeWASocket, DisconnectReason, delay } = require('@whiskeysockets/baileys');
+const { useFirestoreAuthState } = require('./firebaseAuth'); // ✅ הייבוא החדש
 const qrcode = require('qrcode');
-const fs = require('fs');
-const path = require('path');
 const { AttachmentBuilder, EmbedBuilder, Collection } = require('discord.js');
 const { log } = require('../utils/logger'); 
 const { smartRespond } = require('./smartChat');
 
-const AUTH_DIR = path.join(__dirname, '..', 'wa_auth_info');
-if (!fs.existsSync(AUTH_DIR)) {
-    fs.mkdirSync(AUTH_DIR);
-}
-
 const STAFF_CHANNEL_ID = '881445829100060723'; 
 
 let sock;
-let isConnected = false; // ✅ דגל למניעת שליחת QR כשאנחנו כבר מחוברים
+let isConnected = false;
 
 async function connectToWhatsApp(discordClient) {
-    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+    // ✅ שימוש בפונקציה החדשה לחיבור ל-Firebase
+    const { state, saveCreds } = await useFirestoreAuthState();
 
     sock = makeWASocket({
-        printQRInTerminal: false, // ✅ ביטלנו את ההדפסה המלוכלכת בטרמינל
+        printQRInTerminal: false,
         auth: state,
         browser: ["Shimon Bot", "Chrome", "1.0.0"],
         syncFullHistory: false
@@ -30,7 +25,6 @@ async function connectToWhatsApp(discordClient) {
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
-        // אם אנחנו כבר מחוברים, תתעלם מ-QR שקופצים בטעות
         if (isConnected && qr) return;
 
         if (qr) {
@@ -42,7 +36,7 @@ async function connectToWhatsApp(discordClient) {
                 if (channel) {
                     const embed = new EmbedBuilder()
                         .setTitle('📱 נדרשת סריקה לחיבור וואטסאפ')
-                        .setDescription('סרוק את הקוד דרך WhatsApp Business בטלפון שלך.')
+                        .setDescription('סרוק את הקוד דרך WhatsApp Business בטלפון שלך.\nהחיבור יישמר בענן לנצח (Firebase).')
                         .setColor('#25D366')
                         .setImage('attachment://qrcode.png');
                     await channel.send({ embeds: [embed], files: [file] });
@@ -53,24 +47,26 @@ async function connectToWhatsApp(discordClient) {
         }
 
         if (connection === 'close') {
-            isConnected = false; // ✅ עדכון סטטוס
+            isConnected = false;
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+            // התעלמות משגיאות ניתוק זמניות (כמו הפעלה מחדש של השרת)
             if (shouldReconnect) {
                 log('[WhatsApp] 🔄 מנסה להתחבר מחדש...');
                 connectToWhatsApp(discordClient);
             } else {
                 log('[WhatsApp] 🛑 המשתמש התנתק יזום. נדרשת סריקה מחדש.');
+                // ב-Firebase אפשר למחוק את המסמך כדי לאפס, אבל לא חובה
             }
         } else if (connection === 'open') {
-            isConnected = true; // ✅ אנחנו מחוברים!
-            log('[WhatsApp] ✅ שמעון מחובר ומסונכרן!');
+            isConnected = true;
+            log('[WhatsApp] ✅ שמעון מחובר ומסונכרן (Firebase)!');
             
-            // הודעה לדיסקורד רק בפעם הראשונה
-            const channel = await discordClient.channels.fetch(STAFF_CHANNEL_ID);
-            if (channel) channel.send('✅ **שמעון מחובר לוואטסאפ!** המוח חובר בהצלחה.');
+            // בדיקה אם זה חיבור ראשוני או ריסטרט
+            // נשלח הודעה רק אם באמת היינו מנותקים הרבה זמן
         }
     });
 
+    // ✅ שמירה אוטומטית ל-Firebase בכל שינוי
     sock.ev.on('creds.update', saveCreds);
 
     // --- טיפול בהודעות ---
@@ -84,7 +80,6 @@ async function connectToWhatsApp(discordClient) {
 
         if (!text) return;
 
-        // בדיקה אם ההודעה מכילה "שמעון"
         const isTargetingBot = text.toLowerCase().includes('שמעון') || text.toLowerCase().includes('shimon');
 
         if (isTargetingBot) {
@@ -93,7 +88,6 @@ async function connectToWhatsApp(discordClient) {
             await sock.sendPresenceUpdate('composing', senderJid);
             await delay(1500); 
 
-            // יצירת אובייקט הודעה מדומה ל-SmartChat
             const fakeDiscordMessage = {
                 content: text,
                 author: { 

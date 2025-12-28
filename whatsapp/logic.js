@@ -6,6 +6,8 @@ const db = require('../utils/firebase');
 const admin = require('firebase-admin');
 const { log } = require('../utils/logger');
 const { OpenAI } = require('openai');
+const path = require('path');
+const fs = require('fs');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -13,63 +15,84 @@ const GLOBAL_COOLDOWN = 2000;
 let lastBotReplyTime = 0;
 const spamTracker = new Map(); 
 
+// --- נכסים לרולטה של שמעון ---
+const SHIMON_ASSETS = {
+    sticker: path.join(__dirname, '../assets/shimon_logo.webp'), 
+    gifs: [
+        'https://media.giphy.com/media/l0HlCqV35hdEg2LS0/giphy.mp4', // סמרטוט
+        'https://media.giphy.com/media/3o7TKr3nzbh5WgCFxe/giphy.mp4', // נוב
+        'https://media.giphy.com/media/13CoXDiaCcCoyk/giphy.mp4', // חתול מקליד
+        'https://media.giphy.com/media/l41lI4bYmcsPJX9Go/giphy.mp4'  // מישהו מחכה
+    ]
+};
+
+// --- רולטה: תגובה רנדומלית לשם "שמעון" ---
+async function handleShimonRoulette(sock, chatJid, msg) {
+    const rand = Math.random(); 
+    log(`[Roulette] Rolling dice... result: ${rand.toFixed(2)}`);
+
+    // 30% סטיקר לוגו
+    if (rand < 0.3) {
+        if (fs.existsSync(SHIMON_ASSETS.sticker)) {
+            await sock.sendMessage(chatJid, { sticker: { url: SHIMON_ASSETS.sticker } });
+            return true;
+        }
+    }
+    // 30% גיף רנדומלי
+    else if (rand < 0.6) {
+        const randomGif = SHIMON_ASSETS.gifs[Math.floor(Math.random() * SHIMON_ASSETS.gifs.length)];
+        await sock.sendMessage(chatJid, { video: { url: randomGif }, gifPlayback: true });
+        return true;
+    }
+    // 40% טקסט (ממשיך ל-AI)
+    return false; 
+}
+
 // --- מנוע זיהוי אוטומטי (Auto-Discovery) ---
 async function attemptAutoLinking(senderId, waDisplayName) {
     if (!waDisplayName || waDisplayName.length < 2) return null;
-
     try {
-        // שולפים את כל המשתמשים מהדיסקורד (בגלל שהקהילה קטנה זה בסדר גמור)
         const usersSnapshot = await db.collection('users').get();
         if (usersSnapshot.empty) return null;
 
-        // חיפוש חכם: האם השם בוואטסאפ מוכל בתוך השם בדיסקורד (או להפך)
-        // לדוגמה: וואטסאפ: "Yogi", דיסקורד: "YogiMaster" -> התאמה!
         let foundDoc = null;
-        
         for (const doc of usersSnapshot.docs) {
             const data = doc.data();
             const discordName = (data.displayName || data.username || "").toLowerCase();
             const whatsappName = waDisplayName.toLowerCase();
 
-            // התנאי: התאמה מדויקת או שהאחד מכיל את השני (מינימום 3 תווים למנוע טעויות)
+            // בדיקת התאמה: שוויון או הכלה (אם השם ארוך מ-3 תווים)
             if (discordName === whatsappName || 
                (discordName.includes(whatsappName) && whatsappName.length > 3) ||
                (whatsappName.includes(discordName) && discordName.length > 3)) {
-                
                 foundDoc = doc;
-                break; // מצאנו! עוצרים.
+                break;
             }
         }
 
         if (foundDoc) {
             log(`[Auto-Link] ✅ Match found! WhatsApp: "${waDisplayName}" -> Discord: "${foundDoc.data().displayName}"`);
-            
-            // שמירת הקישור
             await db.collection('whatsapp_users').doc(senderId).set({
                 discordId: foundDoc.id,
                 isLinked: true,
                 linkedAt: new Date().toISOString(),
-                displayName: waDisplayName // מעדכן גם את השם
+                displayName: waDisplayName
             }, { merge: true });
-
-            return foundDoc.data(); // מחזיר את המידע כדי שנשתמש בו מיד
+            return foundDoc.data();
         }
-
-    } catch (error) {
-        console.error("Auto-Link Error:", error);
-    }
+    } catch (error) { console.error("Auto-Link Error:", error); }
     return null;
 }
 
-// --- שליפת נתונים לסטטיסטיקה ---
+// --- סטטיסטיקה ---
 async function getTopGrinders() {
     try {
         const snapshot = await db.collection('users').orderBy('xp', 'desc').limit(7).get();
-        if (snapshot.empty) return "אין נתונים, השרת יבש.";
-        let report = "📊 **טבלת הכרישים (XP):**\n";
+        if (snapshot.empty) return "אין נתונים.";
+        let report = "📊 **כרישי ה-XP:**\n";
         snapshot.forEach((doc, index) => {
-            const data = doc.data();
-            report += `${index + 1}. ${data.displayName || 'פלוני'} - רמה ${data.level || 1}\n`;
+            const d = doc.data();
+            report += `${index + 1}. ${d.displayName || 'פלוני'} - רמה ${d.level || 1}\n`;
         });
         return report;
     } catch (error) { return null; }
@@ -77,13 +100,11 @@ async function getTopGrinders() {
 
 // --- אישיות ---
 const SHIMON_PERSONA = `
-אתה שמעון. בוט וואטסאפ ישראלי, "ערס" צעצוע, קצר רוח, אבל חד.
+אתה שמעון. בוט וואטסאפ ישראלי, "ערס" צעצוע, קצר רוח וחד.
 החוקים שלך:
 1. **סגנון:** סלנג כבד, קצר ולעניין (עד 15 מילים).
-2. **זיהוי משתמש:** המערכת תגיד לך מי מדבר איתך ומה הנתונים שלו בדיסקורד.
-   - אם הוא רמה גבוהה: תן לו כבוד (או תגיד שהוא חסר חיים).
-   - אם הוא רמה נמוכה: תרד עליו ("יא נוב", "בוט").
-3. **מידע:** אם מבקשים רשימה - תן אותה, אבל תתלונן.
+2. **רק השם שלך:** אם המשתמש כתב רק "שמעון" וזה הגיע אליך - תגיב ב"מה?" או "דבר" או עקיצה.
+3. **מידע:** תן מידע אם מבקשים (רשימות/דמג'), אבל תתלונן.
 `;
 
 // --- אנטי ספאם ---
@@ -103,44 +124,30 @@ function checkSpam(userId) {
     return { isBlocked: false, shouldAlert: false };
 }
 
-// --- ניהול פרופיל (עם בדיקת חיבור אוטומטית) ---
+// --- פרופיל משתמש ---
 async function getUserFullProfile(senderId, senderName) {
     let profile = { waName: senderName, discordData: null, facts: [], justLinked: false };
-    
     try {
         const userRef = db.collection('whatsapp_users').doc(senderId);
         let doc = await userRef.get();
         let data = doc.exists ? doc.data() : {};
 
-        // 🔍 בדיקה: האם המשתמש מקושר?
+        // בדיקה אם לא מקושר -> נסה לחבר
         if (!data.discordId) {
-            // לא מקושר -> ננסה זיהוי אוטומטי עכשיו!
             const linkedData = await attemptAutoLinking(senderId, senderName);
             if (linkedData) {
                 profile.discordData = linkedData;
-                profile.justLinked = true; // דגל כדי ששמעון יגיב לזה
-                // מרעננים את המסמך המקומי
+                profile.justLinked = true;
                 data = { facts: data.facts || [] }; 
             }
         } else {
-            // כן מקושר -> שולפים מידע
             const discordDoc = await db.collection('users').doc(data.discordId).get();
-            if (discordDoc.exists) {
-                profile.discordData = discordDoc.data();
-            }
+            if (discordDoc.exists) profile.discordData = discordDoc.data();
         }
         
         profile.facts = data.facts || [];
-
-        // עדכון סטטיסטיקה כללי
-        await userRef.set({
-             id: senderId,
-             displayName: senderName,
-             lastMessageAt: new Date().toISOString(),
-             messageCount: admin.firestore.FieldValue.increment(1)
-        }, { merge: true });
-
-    } catch (e) { console.error(e); }
+        await userRef.set({ id: senderId, displayName: senderName, lastMessageAt: new Date().toISOString() }, { merge: true });
+    } catch (e) {}
     return profile;
 }
 
@@ -154,6 +161,7 @@ async function handleMessageLogic(sock, msg, text) {
 
     if (!isGroup && !isAdmin) return; 
 
+    // הגנה מחפירות
     const spamStatus = checkSpam(senderId);
     if (spamStatus.isBlocked) {
         if (spamStatus.shouldAlert) await sock.sendMessage(chatJid, { text: "שחרר, אתה בחסימה. סע." }, { quoted: msg });
@@ -161,12 +169,17 @@ async function handleMessageLogic(sock, msg, text) {
     }
 
     const senderName = msg.pushName || "לא ידוע";
+    const lowerText = text.trim().toLowerCase();
     
-    // שליפת פרופיל (כולל ניסיון חיבור אוטומטי ברקע)
-    const userProfile = await getUserFullProfile(senderId, senderName);
+    // 🎲 רולטה: רק השם "שמעון"
+    if (lowerText === 'שמעון' || lowerText === 'shimon') {
+        const rouletteHandled = await handleShimonRoulette(sock, chatJid, msg);
+        if (rouletteHandled) return; // יצא סטיקר/גיף
+        // אם יצא false - ממשיכים ל-AI לתגובה טקסטואלית
+    }
 
+    const userProfile = await getUserFullProfile(senderId, senderName);
     const now = Date.now();
-    const lowerText = text.toLowerCase();
     let shouldTrigger = false;
     let injectedData = ""; 
 
@@ -179,13 +192,13 @@ async function handleMessageLogic(sock, msg, text) {
     }
     else if ((lowerText.includes('דמג') || lowerText.includes('נזק')) && /\d{3,}/.test(text)) {
         shouldTrigger = true;
-        injectedData = "[דיווח נזק WARZONE. אם מעל 3000 תפרגן, אחרת רד עליו]";
+        injectedData = "[דיווח נזק WARZONE. פרגן או רד עליו.]";
     }
 
-    // אם הרגע זיהינו אותו אוטומטית - חייבים להגיב!
+    // הודעה מיוחדת לזיהוי ראשוני
     if (userProfile.justLinked) {
         shouldTrigger = true;
-        injectedData += ` [הודעת מערכת: זיהיתי עכשיו לראשונה שהמשתמש הזה הוא ${userProfile.discordData.displayName} מהדיסקורד! תן לו עקיצה על זה שקלטת מי הוא.]`;
+        injectedData += ` [הודעת מערכת: זיהיתי עכשיו שזה ${userProfile.discordData.displayName} מדיסקורד! תן עקיצה.]`;
     }
 
     if (!isGroup) shouldTrigger = true;
@@ -196,12 +209,10 @@ async function handleMessageLogic(sock, msg, text) {
     await sock.sendPresenceUpdate('composing', chatJid);
 
     let systemMsg = SHIMON_PERSONA;
-    
     if (userProfile.discordData) {
         const d = userProfile.discordData;
-        systemMsg += `\n\n💡 **זיהוי משתמש:** זה "${d.displayName}"!\nרמה: ${d.level}, XP: ${d.xp}.\nתתאים את היחס שלך לרמה שלו.`;
+        systemMsg += `\n\n💡 מולך עומד "${d.displayName}" מדיסקורד. רמה: ${d.level}.`;
     }
-
     if (injectedData) systemMsg += `\n\n📌 מידע: ${injectedData}`;
     const userFacts = userProfile.facts ? userProfile.facts.map(f => f.content).join(". ") : "";
     if (userFacts) systemMsg += `\n\nעובדות: ${userFacts}`;
@@ -213,8 +224,8 @@ async function handleMessageLogic(sock, msg, text) {
                 { role: "system", content: systemMsg },
                 { role: "user", content: text }
             ],
-            max_tokens: 200,
-            temperature: 0.85
+            max_tokens: 150,
+            temperature: 0.9 
         });
 
         const replyText = completion.choices[0]?.message?.content?.trim();

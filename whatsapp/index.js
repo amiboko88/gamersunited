@@ -6,19 +6,15 @@ const qrcode = require('qrcode');
 const { AttachmentBuilder, EmbedBuilder } = require('discord.js');
 const { log } = require('../utils/logger'); 
 
-const STAFF_CHANNEL_ID = '881445829100060723'; // הערוץ שאליו נשלח ה-QR
+const STAFF_CHANNEL_ID = '881445829100060723'; 
 let sock;
 let isConnected = false;
 let retryCount = 0;
 
-// ✅ פונקציית עזר קריטית: חילוץ טקסט גם מהודעות נסתרות/זמניות
+// חילוץ טקסט מתקדם (כולל הודעות נעלמות)
 function getMessageContent(msg) {
     if (!msg.message) return null;
-    
-    // פתיחת המעטפה של הודעות נסתרות (Ephemeral)
     const content = msg.message.ephemeralMessage?.message || msg.message;
-    
-    // בדיקת כל סוגי הטקסט האפשריים
     return content.conversation || 
            content.extendedTextMessage?.text || 
            content.imageMessage?.caption || 
@@ -26,7 +22,7 @@ function getMessageContent(msg) {
            null;
 }
 
-// ✅ פונקציה לייצוא: מאפשרת לקבצים אחרים (כמו המוניטור) לשלוח הודעות לקבוצה
+// פונקציה לשליחת הודעות יזומה (עבור המוניטור של Warzone)
 async function sendToMainGroup(text) {
     const mainGroupId = process.env.WHATSAPP_MAIN_GROUP_ID; 
 
@@ -49,14 +45,14 @@ async function connectToWhatsApp(discordClient) {
     const { state, saveCreds } = await useFirestoreAuthState();
 
     sock = makeWASocket({
-        printQRInTerminal: false, // אנחנו שולחים לדיסקורד, לא לטרמינל
+        printQRInTerminal: false,
         auth: state,
         browser: ["Shimon Bot", "Chrome", "1.0.0"],
-        syncFullHistory: false, // חוסך זיכרון
-        logger: require('pino')({ level: 'silent' }), // משתיק לוגים פנימיים של הספרייה
+        syncFullHistory: false,
+        logger: require('pino')({ level: 'silent' }),
         connectTimeoutMs: 60000, 
         keepAliveIntervalMs: 10000,
-        getMessage: async () => { return { conversation: 'hello' } } // מונע קריסות נדירות
+        getMessage: async () => { return { conversation: 'hello' } } 
     });
 
     sock.ev.on('connection.update', async (update) => {
@@ -64,7 +60,6 @@ async function connectToWhatsApp(discordClient) {
 
         if (isConnected && qr) return;
 
-        // שליחת QR לדיסקורד
         if (qr) {
             log('[WhatsApp] 📸 New QR Code generated');
             try {
@@ -82,7 +77,6 @@ async function connectToWhatsApp(discordClient) {
             } catch (err) { console.error('QR Error:', err); }
         }
 
-        // ניהול חיבור וניתוק
         if (connection === 'close') {
             isConnected = false;
             const statusCode = (lastDisconnect?.error)?.output?.statusCode;
@@ -108,26 +102,20 @@ async function connectToWhatsApp(discordClient) {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // טיפול בהודעות נכנסות
     sock.ev.on('messages.upsert', async ({ messages }) => {
         const msg = messages[0];
         if (!msg.message || msg.key.fromMe) return; 
 
-        // דיבאג שקט כדי לדעת שההודעה התקבלה
-        // console.log(`[WA DEBUG] Raw message received from: ${msg.key.remoteJid}`);
-
-        // חילוץ הטקסט (כולל תיקון הודעות נעלמות)
         const text = getMessageContent(msg);
-        
-        if (!text) return; // אם אין טקסט (למשל סתם תמונה בלי כיתוב), מתעלמים
+        if (!text) return; 
 
         const senderJid = msg.key.remoteJid;
 
-        // 1. קודם בודקים מדיה (סאונד/סטיקרים)
+        // 1. קודם כל מדיה (סאונד/סטיקרים ספציפיים)
         const mediaHandled = await handleMedia(sock, senderJid, text);
-        if (mediaHandled) return; // אם שלחנו סטיקר, לא שולחים גם תשובה חכמה
+        if (mediaHandled) return; 
 
-        // 2. אם לא הייתה מדיה, מעבירים למוח של שמעון
+        // 2. אם לא מדיה, עובר למוח (רולטה + AI)
         await handleMessageLogic(sock, msg, text);
     });
 }

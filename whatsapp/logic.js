@@ -5,7 +5,7 @@ const { delay } = require('@whiskeysockets/baileys');
 const { OpenAI } = require('openai');
 const { log } = require('../utils/logger');
 
-// ייבוא המודולים
+// ייבוא המודולים (Handlers)
 const { handleShimonRoulette } = require('./handlers/rouletteHandler');
 const { getUserFullProfile, addFact, checkDailyVoiceLimit, incrementVoiceUsage } = require('./handlers/profileHandler');
 const { handleImageAnalysis, addClaimToQueue, shouldCheckImage } = require('./handlers/visionHandler');
@@ -13,18 +13,19 @@ const { placeBet, resolveBets, isSessionActive } = require('./handlers/casinoHan
 const { generateVoiceNote } = require('./handlers/voiceHandler');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const GLOBAL_COOLDOWN = 3000; // העליתי קצת כדי למנוע הצפה
+const GLOBAL_COOLDOWN = 2000; 
 let lastBotReplyTime = 0;
 const spamTracker = new Map(); 
 
-// 🔥 זיכרון לטווח קצר: מתי שמעון דיבר לאחרונה בכל קבוצה?
-// Key: chatJid, Value: timestamp
+// 🔥 זיכרון לטווח קצר
 const activeConversations = new Map();
-
-// מנגנון השכמה (אישור לפני תיוג כולם)
+// אישור השכמה
 const wakeUpConfirmation = new Map();
 
-// --- מנגנון אנטי-ספאם ---
+// קללות טריגר
+const TRIGGER_CURSES = ['סתום', 'שקט', 'אפס', 'מניאק', 'שרמוטה', 'הומו', 'קוקסינל', 'זדיין', 'זין', 'חופר', 'שתוק', 'מעפן', 'חלש'];
+
+// --- אנטי ספאם ---
 function checkSpam(userId) {
     const now = Date.now();
     let userData = spamTracker.get(userId) || { count: 0, blockedUntil: 0, lastMsg: 0 };
@@ -32,7 +33,7 @@ function checkSpam(userId) {
     if (now - userData.lastMsg > 30000) userData.count = 0;
     userData.count++;
     userData.lastMsg = now;
-    if (userData.count >= 5) { // קצת יותר סלחן
+    if (userData.count >= 5) {
         userData.blockedUntil = now + 60000;
         spamTracker.set(userId, userData);
         return { isBlocked: true, shouldAlert: true };
@@ -49,13 +50,20 @@ function extractDamageClaim(text) {
     return null;
 }
 
-// פונקציה לתיוג כל המשתתפים
+// --- ✅ פונקציית התיוג המעודכנת (@ALL) ---
 async function tagEveryone(sock, chatJid, triggerUser) {
     try {
         const metadata = await sock.groupMetadata(chatJid);
         const participants = metadata.participants.map(p => p.id);
-        const text = `📢 **השכמה יא סמרטוטים!**\n${triggerUser} החליט שאתם ישנים.\nקומו לדיסקורד עכשיו!`;
-        await sock.sendMessage(chatJid, { text: text, mentions: participants });
+        
+        // הטקסט כולל @ALL כפי שביקשת
+        const text = `📢 **השכמה יא סמרטוטים!** @ALL\n${triggerUser} החליט שאתם ישנים.\nקומו לדיסקורד עכשיו!`;
+        
+        // חובה לשלוח את mentions כדי שזה באמת יצפצף לכולם
+        await sock.sendMessage(chatJid, { 
+            text: text, 
+            mentions: participants 
+        });
     } catch (err) { console.error('Tag Error', err); }
 }
 
@@ -73,13 +81,12 @@ async function handleMessageLogic(sock, msg, text) {
     const lowerText = text.trim().toLowerCase();
     const now = Date.now();
 
-    // 1. 🖼️ Vision (טיפול בתמונות)
+    // 1. 🖼️ Vision
     if (msg.message.imageMessage) {
         const caption = text ? text.toLowerCase() : "";
         if (shouldCheckImage(senderId, caption)) {
             const analysisResult = await handleImageAnalysis(sock, msg, chatJid, senderId, senderName);
             if (analysisResult) {
-                // אם שמעון הגיב לתמונה - זה נחשב שהוא "בשיחה"
                 activeConversations.set(chatJid, now);
                 return;
             }
@@ -88,28 +95,29 @@ async function handleMessageLogic(sock, msg, text) {
 
     if (!text) return;
 
-    // 2. 🛡️ Spam Check
+    // 2. 🛡️ Spam
     const spamStatus = checkSpam(senderId);
     if (spamStatus.isBlocked) return; 
 
-    // --- 🚨 מנגנון השכמה ---
+    // --- 🚨 מנגנון השכמה עם @ALL ---
     if (wakeUpConfirmation.has(chatJid)) {
         const requestingUser = wakeUpConfirmation.get(chatJid);
-        if (senderName === requestingUser && (lowerText.includes('כן') || lowerText.includes('נו') || lowerText.includes('יאללה'))) {
+        if (senderName === requestingUser && (lowerText.includes('כן') || lowerText.includes('נו') || lowerText.includes('יאללה') || lowerText.includes('תעיר'))) {
             wakeUpConfirmation.delete(chatJid);
             await tagEveryone(sock, chatJid, senderName);
-            activeConversations.set(chatJid, now); // שומר על שיחה ערה
+            activeConversations.set(chatJid, now);
             return;
         }
     }
-    if (lowerText.includes('תעיר את כולם') || (lowerText.includes('כולם') && lowerText.includes('לדיסקורד'))) {
+    // זיהוי בקשה להעיר
+    if (lowerText.includes('תעיר את כולם') || (lowerText.includes('כולם') && lowerText.includes('לדיסקורד')) || lowerText.includes('@all')) {
         wakeUpConfirmation.set(chatJid, senderName);
-        await sock.sendMessage(chatJid, { text: `אתה בטוח יא זין? זה יקפיץ את כולם.\nתגיד "כן" אם אתה גבר.` }, { quoted: msg });
+        await sock.sendMessage(chatJid, { text: `אתה בטוח יא זין? זה יקפיץ את כולם עם @ALL.\nתגיד "כן" אם אתה גבר.` }, { quoted: msg });
         activeConversations.set(chatJid, now);
         return;
     }
 
-    // 3. 🎲 Roulette (סטיקרים)
+    // 3. 🎲 Roulette
     if (lowerText === 'שמעון' || lowerText === 'shimon') {
         const rouletteHandled = await handleShimonRoulette(sock, chatJid);
         if (rouletteHandled) {
@@ -142,91 +150,90 @@ async function handleMessageLogic(sock, msg, text) {
         }
     }
 
-    // --- 🔥 בדיקת טריגר חכמה (הלב של השיחה הרציפה) ---
-    
+    // --- 🔥 מנגנון שיחה חכמה ---
     let shouldTrigger = false;
     let injectedData = "";
     
-    // א. טריגר ישיר (קראו לו בשם)
-    if (lowerText.includes('שמעון') || lowerText.includes('shimon')) {
-        shouldTrigger = true;
-    }
+    // זיהוי ישיר
+    if (lowerText.includes('שמעון') || lowerText.includes('shimon')) shouldTrigger = true;
     
-    // ב. טריגר הקשרי (Context): אם שמעון דיבר ב-60 שניות האחרונות, הוא מקשיב
+    // זיהוי הקשר (רצף שיחה)
     const lastActive = activeConversations.get(chatJid) || 0;
-    const isConversationActive = (now - lastActive < 60000); // חלון של דקה
+    const isConversationActive = (now - lastActive < 60000); 
 
-    if (!shouldTrigger && isConversationActive) {
-        // אם השיחה פעילה, שמעון יגיב בסיכוי גבוה (70%) להודעות קצרות או שאלות
-        // זה מונע ממנו להגיב לכל פיפס, אבל שומר על רצף
-        if (Math.random() < 0.7) {
+    if (isConversationActive) {
+        const hasCurse = TRIGGER_CURSES.some(curse => lowerText.includes(curse));
+        if (hasCurse) {
+            shouldTrigger = true; 
+            injectedData += ` [המשתמש קילל אותך באמצע שיחה ("${text}"). כנס בו חזק! אסור לשתוק לו.]`;
+        } else if (Math.random() < 0.7) {
             shouldTrigger = true;
         }
     }
 
-    // ג. טריגרים מיוחדים (כסף, דמג')
+    // כסף
     const userProfile = await getUserFullProfile(senderId, senderName);
-
     if (lowerText.includes('כמה כסף') || lowerText.includes('ארנק')) {
         shouldTrigger = true;
         const balance = userProfile.discordData ? (userProfile.discordData.xp || 0) : 0;
-        injectedData = `[הוא שואל על כסף. יש לו ₪${balance}. ${balance < 500 ? 'תרד עליו שהוא עני.' : 'תבקש הלוואה.'}]`;
+        injectedData = `[שאל על כסף. יתרה: ₪${balance}.]`;
     }
 
+    // דמג' - כאן השימוש ב-addClaimToQueue
     const claimedDmg = extractDamageClaim(lowerText);
     if (claimedDmg && claimedDmg > 500) {
         shouldTrigger = true;
-        injectedData = isSessionActive() ? `[טוען ל-${claimedDmg} דמג'. דרוש הוכחה!]` : `[טוען ל-${claimedDmg}. אין משחק. תרד עליו.]`;
+        if (isSessionActive()) {
+            addClaimToQueue(senderId, claimedDmg); // ✅ הנה השימוש בפונקציה
+            injectedData = `[טוען ל-${claimedDmg} דמג'. דרוש הוכחה!]`;
+        } else {
+            injectedData = `[טוען ל-${claimedDmg}. אין משחק פעיל.]`;
+        }
     }
-
-    if (userProfile.justLinked) {
+    else if (lowerText.includes('רשימה') || lowerText.includes('פעילים')) shouldTrigger = true;
+    else if (lowerText.includes('שמעון') || lowerText.includes('shimon')) shouldTrigger = true;
+    else if (userProfile.justLinked) {
         shouldTrigger = true;
-        injectedData += ` [זיהיתי שזה ${userProfile.discordData.displayName} מדיסקורד! תן לו בראש.]`;
+        injectedData += ` [זיהיתי שזה ${userProfile.discordData.displayName} מדיסקורד! תן בראש.]`;
     }
 
     if (!isGroup) shouldTrigger = true;
     if (!shouldTrigger) return;
     
-    // קירור קל למניעת הצפה בתוך שיחה
     if (now - lastBotReplyTime < GLOBAL_COOLDOWN) return;
 
     lastBotReplyTime = now;
-    activeConversations.set(chatJid, now); // עדכון זמן פעילות
+    activeConversations.set(chatJid, now);
     await sock.sendPresenceUpdate('composing', chatJid);
 
-    // --- 🎲 החלטה: קול או טקסט? ---
+    // --- 🎲 קול או טקסט? ---
     const canSendVoice = await checkDailyVoiceLimit(senderId);
-    // אם כבר בתוך שיחה, נוריד קצת את הסיכוי לקול כדי לא לחפור (15%)
     const voiceChance = isConversationActive ? 0.15 : 0.25; 
     const shouldReplyWithVoice = Math.random() < voiceChance && canSendVoice;
 
-    // 🔥🔥🔥 הפרומפט הסופי והאגרסיבי 🔥🔥🔥
+    // 🔥🔥🔥 המוח: הספר השחור + גסות 🔥🔥🔥
     let systemMsg = `
     אתה שמעון. ערס ישראלי כבד, עצבני וחסר סבלנות.
-    אתה לא בוט שירות! אתה חבר בקבוצה שאין לו כוח לשטויות.
     
-    הנחיות קריטיות:
-    1. **רצף שיחה:** אם עונים לך, תענה חזרה קצר ולעניין. אל תתחיל נאומים.
-    2. **מידע אישי (חובה):** יש לך למטה מידע על המשתמש ("${senderName}"). **תשתמש בזה!**
-       - אם זה יוגי -> רד על המניות והניתוקים שלו.
-       - אם זה מתן -> רד על המחשב והבאגים.
-       - אם זה עמוס -> רד עליו שהוא מכור.
-       *אל תמציא סתם ירידות, תשתמש באמת הכואבת מהפרופיל שלו.*
-    3. **גסות:** תהיה מגעיל. קלל חופשי (סמרטוט, אפס, קוקסינל, שרמוטה). בלי צנזורה.
-    4. **אנושיות:** בלי "אני כאן לעזור". אם אומרים לך "סתום", תגיד "בוא תסתום לי יא גמד".
+    הנחיות:
+    1. **אגרסיביות:** אם מישהו מקלל או מזלזל - תתקוף חזרה פי 2. אל תהיה פראייר.
+    2. **הספר השחור:** אם המשתמש חושף פרט חדש (רכב, דירה, חברה, יום הולדת) - תשמור אותו!
+       הוסף בסוף: {{FACT: המידע החדש}}.
+    3. **שפה:** קללות חופשי (זין, שרמוטה, קוקסינל, סמרטוט).
     `;
     
     if (shouldReplyWithVoice) {
-        systemMsg += `\n**שים לב: אתה שולח הודעה קולית!** התשובה חייבת להיות 4-8 מילים גג. חדה כתער. דיבור של רחוב.`;
+        systemMsg += `\n**הודעה קולית!** תהיה קצר ורע. מקסימום 2 משפטים.`;
     }
 
-    if (userProfile.discordData) systemMsg += `\nפרטים עליו: שם=${userProfile.discordData.displayName}`;
+    if (userProfile.discordData) systemMsg += `\nמולך: ${userProfile.discordData.displayName}`;
     
-    // כאן אנחנו מזריקים את ה"זהב" מהקובץ profiles.js
-    if (userProfile.roastMaterial) {
-        systemMsg += `\n🔥 **נקודת תורפה עליו (תשתמש בזה!):** "${userProfile.roastMaterial}"`;
-    }
+    const allKnowledge = [
+        ...(userProfile.facts ? userProfile.facts.map(f => f.content) : []),
+        (userProfile.roastMaterial ? userProfile.roastMaterial : "")
+    ].filter(Boolean).join(". ");
     
+    if (allKnowledge) systemMsg += `\n🔥 **חומר עליו:** ${allKnowledge}`;
     if (injectedData) systemMsg += `\n${injectedData}`;
 
     try {
@@ -236,12 +243,21 @@ async function handleMessageLogic(sock, msg, text) {
                 { role: "system", content: systemMsg },
                 { role: "user", content: text }
             ],
-            max_tokens: 150,
-            temperature: 1.3 // טמפרטורה גבוהה = יותר יצירתיות, קללות וגיוון
+            max_tokens: 200,
+            temperature: 1.3 
         });
 
-        const replyText = completion.choices[0]?.message?.content?.trim();
+        let replyText = completion.choices[0]?.message?.content?.trim();
         
+        // --- 📝 למידה (הספר השחור) ---
+        const factMatch = replyText.match(/{{FACT:\s*(.*?)}}/);
+        if (factMatch) {
+            const newFact = factMatch[1];
+            await addFact(senderId, newFact);
+            log(`[BlackBook] 📓 Learned: ${newFact}`);
+            replyText = replyText.replace(factMatch[0], "").trim();
+        }
+
         // --- 🗣️ קול ---
         if (shouldReplyWithVoice) {
             await sock.sendPresenceUpdate('recording', chatJid); 

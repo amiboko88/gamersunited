@@ -7,7 +7,8 @@ const ASSETS_PATH = path.join(__dirname, '../assets');
 // הסרתי מפה את 'שמעון' כדי שהרולטה ב-logic תטפל בו
 const STICKER_TRIGGERS = {
     'קלי': 'kalimero.webp',
-    'יוגי': 'yogi.webp'
+    'יוגי': 'yogi.webp',
+    'עמר': 'amar.webp'
 };
 
 const SOUND_TRIGGERS = {

@@ -11,7 +11,6 @@ let sock;
 let isConnected = false;
 let retryCount = 0;
 
-// חילוץ טקסט מתקדם (כולל הודעות נעלמות)
 function getMessageContent(msg) {
     if (!msg.message) return null;
     const content = msg.message.ephemeralMessage?.message || msg.message;
@@ -22,8 +21,8 @@ function getMessageContent(msg) {
            null;
 }
 
-// פונקציה לשליחת הודעות יזומה (עבור המוניטור של Warzone)
-async function sendToMainGroup(text) {
+// ✅ [תיקון] הוספנו תמיכה ב-mentions כדי שהקזינו יוכל לתייג שחקנים
+async function sendToMainGroup(text, mentions = []) {
     const mainGroupId = process.env.WHATSAPP_MAIN_GROUP_ID; 
 
     if (!sock || !isConnected) {
@@ -35,7 +34,13 @@ async function sendToMainGroup(text) {
         return;
     }
     try {
-        await sock.sendMessage(mainGroupId, { text: text });
+        // המרת מספרי טלפון לפורמט פנימי של וואטסאפ לצורך תיוג
+        const mentionJids = mentions.map(phone => `${phone}@s.whatsapp.net`);
+
+        await sock.sendMessage(mainGroupId, { 
+            text: text,
+            mentions: mentionJids // הוספנו את זה!
+        });
     } catch (err) {
         console.error('❌ Send Error:', err.message);
     }
@@ -107,16 +112,13 @@ async function connectToWhatsApp(discordClient) {
         if (!msg.message || msg.key.fromMe) return; 
 
         const text = getMessageContent(msg);
-        if (!text) return; 
-
+        
         const senderJid = msg.key.remoteJid;
 
-        // 1. קודם כל מדיה (סאונד/סטיקרים ספציפיים)
-        const mediaHandled = await handleMedia(sock, senderJid, text);
+        const mediaHandled = await handleMedia(sock, senderJid, text || "");
         if (mediaHandled) return; 
 
-        // 2. אם לא מדיה, עובר למוח (רולטה + AI)
-        await handleMessageLogic(sock, msg, text);
+        await handleMessageLogic(sock, msg, text || "");
     });
 }
 

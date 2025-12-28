@@ -4,7 +4,7 @@ const { log } = require('../utils/logger');
 
 const ASSETS_PATH = path.join(__dirname, '../assets');
 
-// הסרתי מפה את 'שמעון' כדי שהרולטה ב-logic תטפל בו
+// ⚠️ שים לב: אין פה את 'שמעון'. זה מטופל ב-logic עכשיו.
 const STICKER_TRIGGERS = {
     'קלי': 'kalimero.webp',
     'יוגי': 'yogi.webp',

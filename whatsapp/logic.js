@@ -1,5 +1,5 @@
 // 👇 המספר שלך (מתוקן: בלי 0 בהתחלה, בלי פלוס)
-const ADMIN_NUMBER = '972526800647'; 
+const ADMIN_NUMBER = '100772834480319'; 
 
 const { delay } = require('@whiskeysockets/baileys');
 const { Collection } = require('discord.js');

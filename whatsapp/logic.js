@@ -1,4 +1,4 @@
-// 👇 המספר שלך
+// 👇 המספר שלך (מתוקן: בלי 0 בהתחלה, בלי פלוס)
 const ADMIN_NUMBER = '972526800647'; 
 
 const { delay } = require('@whiskeysockets/baileys');
@@ -18,6 +18,7 @@ const BAD_WORDS = ['מניאק', 'זונה', 'שרמוטה', 'קוקסינל', '
 const userCooldowns = new Map();
 let lastBotReplyTime = 0;
 
+// --- 1. הפנקס השחור: איסוף עובדות ---
 async function analyzeAndStoreFacts(senderNumber, senderName, text) {
     if (text.length < 15) return; 
 
@@ -35,7 +36,7 @@ async function analyzeAndStoreFacts(senderNumber, senderName, text) {
         const fact = completion.choices[0]?.message?.content?.trim();
 
         if (fact && fact.length > 5 && !fact.includes("אין")) {
-            log(`[WhatsApp] Black Book entry for ${senderName}: ${fact}`);
+            log(`[WhatsApp] 📝 Black Book entry for ${senderName}: ${fact}`);
             await db.collection('whatsapp_users').doc(senderNumber).update({
                 facts: admin.firestore.FieldValue.arrayUnion({
                     content: fact,
@@ -47,6 +48,7 @@ async function analyzeAndStoreFacts(senderNumber, senderName, text) {
     } catch (err) {}
 }
 
+// --- 2. מודיעין: תמונות וסטטוס ---
 async function updateUserIntelligence(sock, senderNumber, senderJid, senderName) {
     try {
         const userRef = db.collection('whatsapp_users').doc(senderNumber);
@@ -88,19 +90,22 @@ async function updateUserIntelligence(sock, senderNumber, senderJid, senderName)
     }
 }
 
+// --- 3. הלוגיקה הראשית ---
 async function handleMessageLogic(sock, msg, text) {
     const senderJid = msg.key.remoteJid;
     const senderNumber = senderJid.split('@')[0];
 
+    // ✅ בדיקת הרשאות (חוסם פרטי לזרים)
     const isGroup = senderJid.endsWith('@g.us');
     const isAdmin = senderNumber === ADMIN_NUMBER;
 
     if (!isGroup && !isAdmin) {
-        return; 
+        return; // התעלמות שקטה
     }
 
     const senderName = msg.pushName || "לא ידוע";
 
+    // איסוף מידע ברקע
     const userData = await updateUserIntelligence(sock, senderNumber, senderJid, senderName);
     analyzeAndStoreFacts(senderNumber, senderName, text);
 
@@ -108,15 +113,17 @@ async function handleMessageLogic(sock, msg, text) {
     let shouldTrigger = false;
     let contextType = 'regular';
 
+    // בדיקת קללות
     const foundBadWord = BAD_WORDS.find(word => text.includes(word));
     if (foundBadWord) {
         if (Math.random() > 0.3) {
             shouldTrigger = true;
             contextType = 'roast';
-            log(`[WhatsApp] Curse detected from ${senderName}: ${foundBadWord}`);
+            log(`[WhatsApp] 🤬 Curse detected from ${senderName}: ${foundBadWord}`);
         }
     }
 
+    // בדיקת שם הבוט
     if (text.toLowerCase().includes('שמעון') || text.toLowerCase().includes('shimon')) {
         shouldTrigger = true;
         contextType = 'regular';
@@ -124,19 +131,21 @@ async function handleMessageLogic(sock, msg, text) {
 
     if (!shouldTrigger) return;
 
+    // Cooldowns
     if (now - lastBotReplyTime < GLOBAL_COOLDOWN) return;
     if ((now - (userCooldowns.get(senderNumber) || 0)) < COOLDOWN_TIME) {
-        log(`[WhatsApp] ${senderName} is on cooldown.`);
+        log(`[WhatsApp] ⏳ ${senderName} is on cooldown.`);
         return;
     }
 
-    log(`[WhatsApp] Replying to ${senderName}`);
+    log(`[WhatsApp] 💬 Replying to ${senderName}`);
     userCooldowns.set(senderNumber, now);
     lastBotReplyTime = now;
 
     await sock.sendPresenceUpdate('composing', senderJid);
     await delay(1500);
 
+    // הכנת המידע ל-AI
     const finalDisplayName = userData.nickname || senderName;
     const userFacts = userData.facts ? userData.facts.map(f => f.content).join(". ") : "";
 
@@ -164,8 +173,7 @@ async function handleMessageLogic(sock, msg, text) {
         reply: async (response) => {
             const replyText = typeof response === 'string' ? response : response.content;
             
-            // ✅ השינוי: הוספת { quoted: msg }
-            // זה גורם לשמעון לעשות "Reply" להודעה המקורית
+            // ✅ השינוי: הוספת ציטוט (Reply)
             await sock.sendMessage(senderJid, { text: replyText }, { quoted: msg });
             
             await sock.sendPresenceUpdate('paused', senderJid);

@@ -11,6 +11,21 @@ let sock;
 let isConnected = false;
 let retryCount = 0;
 
+// פונקציית עזר לחילוץ טקסט מכל סוגי ההודעות (כולל נסתרות)
+function getMessageContent(msg) {
+    if (!msg.message) return null;
+    
+    // פתיחת המעטפה של הודעות נסתרות/זמניות
+    const content = msg.message.ephemeralMessage?.message || msg.message;
+    
+    // שליפת הטקסט (רגיל, מורחב, או כיתוב לתמונה)
+    return content.conversation || 
+           content.extendedTextMessage?.text || 
+           content.imageMessage?.caption || 
+           content.videoMessage?.caption ||
+           null;
+}
+
 async function sendToMainGroup(text) {
     const mainGroupId = process.env.WHATSAPP_MAIN_GROUP_ID; 
 
@@ -94,14 +109,24 @@ async function connectToWhatsApp(discordClient) {
         const msg = messages[0];
         if (!msg.message || msg.key.fromMe) return; 
 
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+        // ✅ לוג ראשוני: האם בכלל נקלטה הודעה? (לפני סינון)
+        // אם תראה את השורה הזו, סימן שהבוט חי
+        console.log(`[WA DEBUG] Raw message received from: ${msg.key.remoteJid}`);
+
+        // שימוש בפונקציה החדשה לחילוץ טקסט
+        const text = getMessageContent(msg);
         
-        // לוג שיעזור לך להעתיק את ה-ID ל-Railway
         if (msg.key.remoteJid.endsWith('@g.us')) {
-            console.log(`[WhatsApp Group ID] ההודעה נשלחה מקבוצה: ${msg.key.remoteJid}`);
+            // לוג שקט לזיהוי ID של קבוצות
+            // console.log(`[WhatsApp Group ID] ההודעה נשלחה מקבוצה: ${msg.key.remoteJid}`);
         }
 
-        if (!text) return;
+        if (!text) {
+            console.log(`[WA DEBUG] הודעה ריקה או ללא טקסט נתמך (אולי סטיקר או מדיה ללא כיתוב)`);
+            return;
+        }
+
+        console.log(`[WA DEBUG] טקסט זוהה: "${text}"`);
 
         const senderJid = msg.key.remoteJid;
 

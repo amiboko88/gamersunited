@@ -2,9 +2,8 @@ const axios = require('axios');
 const { log } = require('../../utils/logger');
 
 const API_KEY = process.env.ELEVEN_API_KEY; 
-const VOICE_ID = 'txHtK15K5KtX959ZtpRa'; // ה-ID של הקול המשוכפל שלך
+const VOICE_ID = 'txHtK15K5KtX959ZtpRa'; 
 
-// ✅ מודל Eleven v3 (Alpha) - המודל האקספרסיבי החדש
 const MODEL_ID = 'eleven_v3'; 
 
 const ELEVENLABS_URL = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`;
@@ -23,19 +22,21 @@ async function generateVoiceNote(text) {
             {
                 text: text,
                 model_id: MODEL_ID, 
-                // ✅ הגדרות נקיות לפי התמונה ששלחת
+                // ✅ תיקון קריטי לפי הלוג שלך: חייב להיות 0.0, 0.5 או 1.0 בלבד!
                 voice_settings: {
-                    stability: 0.35, 
-
+                    stability: 0.5, // 0.5 = Natural (הכי בטוח והכי אנושי)
+                    similarity_boost: 0.8, // חובה להוסיף את זה כדי שיישמע כמו הקול המקורי
+                    style: 0.0,
+                    use_speaker_boost: true
                 }
             },
             {
                 headers: {
                     'xi-api-key': API_KEY,
                     'Content-Type': 'application/json',
-                    'Accept': 'audio/mpeg' // דורשים קובץ MP3
+                    'Accept': 'audio/mpeg'
                 },
-                responseType: 'arraybuffer' // מקבלים את הקובץ הבינארי
+                responseType: 'arraybuffer'
             }
         );
 
@@ -43,7 +44,6 @@ async function generateVoiceNote(text) {
         return Buffer.from(response.data);
 
     } catch (error) {
-        // מציג שגיאה מפורטת מה-API כדי שנדע אם חסר משהו
         const errorMsg = error.response?.data 
             ? JSON.parse(Buffer.from(error.response.data).toString()) 
             : error.message;

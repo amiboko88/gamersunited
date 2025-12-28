@@ -1,11 +1,11 @@
-// 📁 handlers/whatsappHandler.js (שמעון החכם לוואטסאפ)
+// 📁 handlers/whatsappHandler.js
 const { makeWASocket, useMultiFileAuthState, DisconnectReason, delay } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode');
 const fs = require('fs');
 const path = require('path');
 const { AttachmentBuilder, EmbedBuilder, Collection } = require('discord.js');
 const { log } = require('../utils/logger'); 
-const { smartRespond } = require('./smartChat'); // מייבאים את המוח
+const { smartRespond } = require('./smartChat');
 
 const AUTH_DIR = path.join(__dirname, '..', 'wa_auth_info');
 if (!fs.existsSync(AUTH_DIR)) {
@@ -15,12 +15,13 @@ if (!fs.existsSync(AUTH_DIR)) {
 const STAFF_CHANNEL_ID = '881445829100060723'; 
 
 let sock;
+let isConnected = false; // ✅ דגל למניעת שליחת QR כשאנחנו כבר מחוברים
 
 async function connectToWhatsApp(discordClient) {
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
     sock = makeWASocket({
-        printQRInTerminal: true,
+        printQRInTerminal: false, // ✅ ביטלנו את ההדפסה המלוכלכת בטרמינל
         auth: state,
         browser: ["Shimon Bot", "Chrome", "1.0.0"],
         syncFullHistory: false
@@ -29,8 +30,11 @@ async function connectToWhatsApp(discordClient) {
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
+        // אם אנחנו כבר מחוברים, תתעלם מ-QR שקופצים בטעות
+        if (isConnected && qr) return;
+
         if (qr) {
-            log('[WhatsApp] 📸 QR Code חדש נוצר! שולח לדיסקורד...');
+            log('[WhatsApp] 📸 QR Code חדש נוצר (ממתין לסריקה)...');
             try {
                 const qrBuffer = await qrcode.toBuffer(qr);
                 const file = new AttachmentBuilder(qrBuffer, { name: 'qrcode.png' });
@@ -49,14 +53,19 @@ async function connectToWhatsApp(discordClient) {
         }
 
         if (connection === 'close') {
+            isConnected = false; // ✅ עדכון סטטוס
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) {
+                log('[WhatsApp] 🔄 מנסה להתחבר מחדש...');
                 connectToWhatsApp(discordClient);
             } else {
                 log('[WhatsApp] 🛑 המשתמש התנתק יזום. נדרשת סריקה מחדש.');
             }
         } else if (connection === 'open') {
+            isConnected = true; // ✅ אנחנו מחוברים!
             log('[WhatsApp] ✅ שמעון מחובר ומסונכרן!');
+            
+            // הודעה לדיסקורד רק בפעם הראשונה
             const channel = await discordClient.channels.fetch(STAFF_CHANNEL_ID);
             if (channel) channel.send('✅ **שמעון מחובר לוואטסאפ!** המוח חובר בהצלחה.');
         }
@@ -64,70 +73,55 @@ async function connectToWhatsApp(discordClient) {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // --- טיפול בהודעות חכם ---
+    // --- טיפול בהודעות ---
     sock.ev.on('messages.upsert', async ({ messages }) => {
         const msg = messages[0];
         if (!msg.message || msg.key.fromMe) return; 
 
         const senderJid = msg.key.remoteJid; 
-        const senderName = msg.pushName || senderJid.split('@')[0]; // שם השולח או המספר שלו
+        const senderName = msg.pushName || senderJid.split('@')[0];
         const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
 
         if (!text) return;
 
-        // טריגר: אם המילה "שמעון" מופיעה (או שאתה רוצה שהוא יענה להכל בפרטי?)
-        // כרגע מוגדר לענות רק אם קוראים לו בשם
+        // בדיקה אם ההודעה מכילה "שמעון"
         const isTargetingBot = text.toLowerCase().includes('שמעון') || text.toLowerCase().includes('shimon');
 
         if (isTargetingBot) {
             log(`[WhatsApp] 💬 הודעה מ-${senderName}: ${text}`);
 
-            // 1. שליחת חיווי "מקליד..." בוואטסאפ
             await sock.sendPresenceUpdate('composing', senderJid);
-            await delay(1500); // השהייה קטנה לאפקט ריאליסטי
+            await delay(1500); 
 
-            // 2. יצירת "הודעה מדומה" (Mock) שנראית כמו Discord Message
-            // זה עובד על SmartChat ומגרום לו לחשוב שהוא בדיסקורד
+            // יצירת אובייקט הודעה מדומה ל-SmartChat
             const fakeDiscordMessage = {
                 content: text,
                 author: { 
-                    id: senderJid, // משתמש במספר הטלפון כ-ID ייחודי
+                    id: senderJid, 
                     username: senderName,
                     bot: false 
                 },
                 member: {
                     displayName: senderName,
-                    permissions: { has: () => false }, // בוואטסאפ אין אדמינים כרגע
+                    permissions: { has: () => false },
                     roles: { cache: new Collection() }
                 },
                 channel: {
                     id: 'whatsapp_dm',
-                    messages: { 
-                        // כרגע אין היסטוריה בוואטסאפ, מחזיר מערך ריק
-                        fetch: async () => new Collection() 
-                    },
-                    sendTyping: async () => {} // כבר טיפלנו בזה למעלה
+                    messages: { fetch: async () => new Collection() },
+                    sendTyping: async () => {} 
                 },
-                attachments: new Collection(), // תמיכה בתמונות תהיה בהמשך
-                mentions: { has: () => true }, // כאילו תייגו אותו
+                attachments: new Collection(), 
+                mentions: { has: () => true }, 
                 
-                // הפונקציה הקריטית: איך שמעון עונה חזרה לוואטסאפ
                 reply: async (response) => {
-                    // SmartChat לפעמים מחזיר אובייקט או סטרינג
                     const replyText = typeof response === 'string' ? response : response.content;
-                    
-                    // שליחת התשובה לוואטסאפ
                     await sock.sendMessage(senderJid, { text: replyText });
-                    
-                    // מפסיק את ה"מקליד..."
                     await sock.sendPresenceUpdate('paused', senderJid);
                 }
             };
 
-            // 3. הפעלת המוח!
             try {
-                // שולחים את ההודעה המדומה למוח של שמעון
-                // פרמטר שני true = force (לעקוף מגבלות ערוצים כי זה וואטסאפ)
                 await smartRespond(fakeDiscordMessage, true);
             } catch (error) {
                 console.error('WhatsApp SmartChat Error:', error);

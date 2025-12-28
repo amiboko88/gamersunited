@@ -1,7 +1,8 @@
 const { makeWASocket, DisconnectReason } = require('@whiskeysockets/baileys');
 const { useFirestoreAuthState } = require('./auth');
 const { handleMedia } = require('./media');
-const { handleMessageLogic } = require('./logic');
+// ✅ ייבוא הפונקציה החדשה
+const { handleMessageLogic, checkIdleGroup } = require('./logic');
 const qrcode = require('qrcode');
 const { AttachmentBuilder, EmbedBuilder } = require('discord.js');
 const { log } = require('../utils/logger'); 
@@ -10,6 +11,8 @@ const STAFF_CHANNEL_ID = '881445829100060723';
 let sock;
 let isConnected = false;
 let retryCount = 0;
+// טיימר לבדיקת שתיקה
+let idleInterval = null; 
 
 function getMessageContent(msg) {
     if (!msg.message) return null;
@@ -21,7 +24,6 @@ function getMessageContent(msg) {
            null;
 }
 
-// ✅ [תיקון] הוספנו תמיכה ב-mentions כדי שהקזינו יוכל לתייג שחקנים
 async function sendToMainGroup(text, mentions = []) {
     const mainGroupId = process.env.WHATSAPP_MAIN_GROUP_ID; 
 
@@ -29,21 +31,15 @@ async function sendToMainGroup(text, mentions = []) {
         console.log('⚠️ WhatsApp send failed: Bot disconnected.');
         return;
     }
-    if (!mainGroupId) {
-        console.log('⚠️ WhatsApp send failed: No WHATSAPP_MAIN_GROUP_ID set in Env Vars.');
-        return;
-    }
+    if (!mainGroupId) return;
+    
     try {
-        // המרת מספרי טלפון לפורמט פנימי של וואטסאפ לצורך תיוג
         const mentionJids = mentions.map(phone => `${phone}@s.whatsapp.net`);
-
         await sock.sendMessage(mainGroupId, { 
             text: text,
-            mentions: mentionJids // הוספנו את זה!
+            mentions: mentionJids 
         });
-    } catch (err) {
-        console.error('❌ Send Error:', err.message);
-    }
+    } catch (err) { console.error('❌ Send Error:', err.message); }
 }
 
 async function connectToWhatsApp(discordClient) {
@@ -84,6 +80,8 @@ async function connectToWhatsApp(discordClient) {
 
         if (connection === 'close') {
             isConnected = false;
+            if (idleInterval) clearInterval(idleInterval); // ניקוי טיימר
+
             const statusCode = (lastDisconnect?.error)?.output?.statusCode;
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             
@@ -102,6 +100,12 @@ async function connectToWhatsApp(discordClient) {
             isConnected = true;
             retryCount = 0; 
             log('[WhatsApp] ✅ Connected!');
+            
+            // ✅ הפעלת המנגנון לבדיקת שתיקה (רץ כל 5 דקות)
+            if (idleInterval) clearInterval(idleInterval);
+            idleInterval = setInterval(() => {
+                checkIdleGroup(sock);
+            }, 5 * 60 * 1000); 
         }
     });
 
@@ -112,9 +116,7 @@ async function connectToWhatsApp(discordClient) {
         if (!msg.message || msg.key.fromMe) return; 
 
         const text = getMessageContent(msg);
-        
         const senderJid = msg.key.remoteJid;
-
         const mediaHandled = await handleMedia(sock, senderJid, text || "");
         if (mediaHandled) return; 
 

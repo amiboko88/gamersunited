@@ -63,8 +63,8 @@ async function handleMedia(sock, senderJid, text) {
                 // שיניתי ל-mimetype שתומך גם באנדרואיד
                 await sock.sendMessage(senderJid, { 
                     audio: { url: fullPath }, 
-                    mimetype: 'audio/mp4', 
-                    ptt: true 
+                    mimetype: 'audio/mpeg', // הפורמט הנכון ל-MP3
+                    ptt: false // <--- שים לב: זה מה שפותר את הבעיה באנדרואיד לקבצי MP3
                 });
                 return true; // עצרנו כאן, ה-AI לא יגיב
             }

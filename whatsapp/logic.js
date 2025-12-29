@@ -4,15 +4,19 @@ const ADMIN_NUMBER = '100772834480319';
 const { delay } = require('@whiskeysockets/baileys');
 const { OpenAI } = require('openai');
 const { log } = require('../utils/logger');
+const fs = require('fs'); // דרוש לשליחת התמונה
 
 // ייבוא המודולים
 const { handleShimonRoulette } = require('./handlers/rouletteHandler');
-const { getUserFullProfile, addFact, checkDailyVoiceLimit, incrementVoiceUsage } = require('./handlers/profileHandler');
+// ✅ ייבוא פונקציית ספירת ההודעות החדשה
+const { getUserFullProfile, addFact, checkDailyVoiceLimit, incrementVoiceUsage, incrementTotalMessages } = require('./handlers/profileHandler');
 const { handleImageAnalysis, addClaimToQueue, shouldCheckImage } = require('./handlers/visionHandler');
 const { placeBet, resolveBets, isSessionActive } = require('./handlers/casinoHandler');
 const { generateVoiceNote } = require('./handlers/voiceHandler'); 
 const { updateBirthday } = require('./handlers/waBirthdayHandler');
 const { generateSystemPrompt } = require('./persona'); 
+// ✅ ייבוא הצייר החדש
+const { generateProfileCard } = require('./handlers/profileRenderer');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const GLOBAL_COOLDOWN = 2000; 
@@ -24,7 +28,6 @@ const conversationHistory = new Map();
 const dailyMessageTracker = new Map(); 
 const MAX_DAILY_INTERACTIONS = 15;
 
-// --- 🛑 רשימת נפנופים ---
 const BRUSH_OFF_RESPONSES = [
     "שחרר ממני להיום, אין לי כוח אליך.",
     "די חפרת. נגמרה לי הסבלנות.",
@@ -34,45 +37,31 @@ const BRUSH_OFF_RESPONSES = [
     "דבר ללמפה."
 ];
 
-// --- 🧠 טריגרים חכמים (תומך גם במחרוזת וגם ב-Regex) ---
-
+// --- 🧠 טריגרים ---
 const TRIGGER_CURSES = ['סתום', 'שקט', 'אפס', 'מניאק', 'שרמוטה', 'הומו', 'קוקסינל', 'זדיין', 'זין', 'חופר', 'שתוק', 'מעפן', 'חלש', 'טמבל', 'חתיכת', 'זבל', 'כלב', 'בן זונה'];
-
 const TRIGGER_BATTLE = ['קורע', 'מפרק', 'משחק', 'לובי', 'סקוואד', 'ניצחון', 'ווין', 'win', 'נוב', 'בוט', 'חזק', 'חלש'];
 
-// ✅ רשימה משודרגת - תופסת שורשים
+// טריגרים לכרטיס פרופיל
+const TRIGGER_PROFILE = ['פרופיל', 'הכרטיס שלי', 'מי אני', 'סטטוס', 'profile', 'rank', 'כרטיס'];
+
 const TRIGGER_DISCORD = [
     'דיסקורד', 'וורזון', 'warzone', 'משחקים', 
-    'כנס',    // תופס: נכנס, תיכנס, כנסו, להיכנס
-    'צטרף',   // תופס: מצטרף, הצטרף, להצטרף
-    'עול',    // תופס: עולים, עולה
-    'גיע',    // תופס: מגיע, הגיע, מגיעים
-    /ב(\.|)?ו(\.|)?א/ // תופס: בוא, ב.ו.א, יבוא
+    'כנס', 'צטרף', 'עול', 'גיע', /ב(\.|)?ו(\.|)?א/
 ];
 
 const TRIGGER_INFO = ['איפה כולם', 'מי מחובר', 'כמה כסף', 'כמה xp', 'מצב טבלה', 'כמה בארנק', 'יתרה'];
 const TRIGGER_BET = ['שים', 'להמר', 'הימור', 'bet', 'שם']; 
 
-// פונקציית עזר לבדיקת טריגרים (תומכת גם בטקסט וגם ב-Regex)
 function hasTrigger(text, triggerList) {
     return triggerList.some(trigger => {
-        if (trigger instanceof RegExp) {
-            return trigger.test(text);
-        }
+        if (trigger instanceof RegExp) return trigger.test(text);
         return text.includes(trigger);
     });
 }
 
-// פונקציית ניקוי
 function cleanReply(text, senderName) {
     if (!text) return "";
-    let cleaned = text
-        .replace(/^שמעון:\s*/, '')      
-        .replace(/^Shimon:\s*/, '')     
-        .replace(/^Bot:\s*/, '')
-        .replace(/^"|"$/g, '')
-        .trim();
-
+    let cleaned = text.replace(/^שמעון:\s*/, '').replace(/^Shimon:\s*/, '').replace(/^Bot:\s*/, '').replace(/^"|"$/g, '').trim();
     if (senderName) {
         const nameRegex = new RegExp(`^${senderName}[,:-]?\\s*`, 'i');
         cleaned = cleaned.replace(nameRegex, '');
@@ -135,6 +124,9 @@ async function handleMessageLogic(sock, msg, text) {
     const lowerText = text.trim().toLowerCase();
     
     updateHistory(chatJid, 'user', senderName, text);
+    
+    // ✅ ספירת הודעות (חובה בשביל הפרופיל)
+    incrementTotalMessages(senderId);
 
     // 1. Vision
     if (msg.message.imageMessage) {
@@ -147,6 +139,40 @@ async function handleMessageLogic(sock, msg, text) {
 
     if (!text) return;
     if (checkSpam(senderId).isBlocked) return; 
+
+    // --- 🎫 כרטיס שחקן (פרופיל) 🎫 ---
+    const wordCount = lowerText.split(/\s+/).length;
+    if (hasTrigger(lowerText, TRIGGER_PROFILE) && wordCount <= 3) { 
+        await sock.sendPresenceUpdate('composing', chatJid);
+
+        let avatarUrl;
+        try {
+            avatarUrl = await sock.profilePictureUrl(senderFullJid, 'image');
+        } catch {
+            avatarUrl = null; 
+        }
+
+        const waUserRef = await getUserFullProfile(senderId, senderName);
+        
+        // שליפת הנתונים מהפרופיל שקיבלנו
+        const totalMessages = waUserRef.whatsappData?.totalMessages || 0; 
+        const balance = waUserRef.discordData?.xp || 0;
+
+        const cardPath = await generateProfileCard({
+            name: senderName,
+            avatarUrl: avatarUrl,
+            messageCount: totalMessages,
+            balance: balance
+        });
+
+        await sock.sendMessage(chatJid, { 
+            image: fs.readFileSync(cardPath),
+            caption: `💳 הכרטיס של **${senderName}**`
+        }, { quoted: msg });
+
+        try { fs.unlinkSync(cardPath); } catch (e) {}
+        return; 
+    }
 
     // 2. ימי הולדת
     if (lowerText.includes('יום הולדת') && (lowerText.includes('שלי') || lowerText.includes('ב-') || /\d/.test(lowerText))) {
@@ -188,7 +214,7 @@ async function handleMessageLogic(sock, msg, text) {
             const audioBuffer = await generateVoiceNote(textToSpeak);
             if (audioBuffer) await sock.sendMessage(chatJid, { 
                 audio: audioBuffer, 
-                mimetype: 'audio/ogg; codecs=opus', 
+                mimetype: 'audio/mp4', // ✅ אנדרואיד fix
                 ptt: true 
             }, { quoted: msg });
             return;
@@ -227,7 +253,6 @@ async function handleMessageLogic(sock, msg, text) {
     }
 
     if (!shouldTrigger) {
-        // ✅ שימוש בפונקציה החכמה שתומכת בשורשים
         if (hasTrigger(lowerText, TRIGGER_DISCORD)) {
             if (Math.random() < 0.7) { 
                 shouldTrigger = true;
@@ -330,15 +355,11 @@ async function handleMessageLogic(sock, msg, text) {
 
         updateHistory(chatJid, 'assistant', 'שמעון', replyText);
 
-        // --- 🎤 לוגיקת קול ---
         const canSendVoice = await checkDailyVoiceLimit(senderId);
         let voiceChance = 0.2;
 
         if (replyText.includes('!') || replyText.includes('מניאק') || triggerContext.includes('קללות')) voiceChance = 0.5;
-        
-        if (triggerContext.includes('מידע') || triggerContext.includes('יתרה') || triggerContext.includes('טכני')) {
-            voiceChance = 0; 
-        }
+        if (triggerContext.includes('מידע') || triggerContext.includes('יתרה') || triggerContext.includes('טכני')) voiceChance = 0;
 
         const shouldReplyWithVoice = Math.random() < voiceChance && canSendVoice;
 
@@ -348,7 +369,7 @@ async function handleMessageLogic(sock, msg, text) {
             if (audioBuffer) {
                 await sock.sendMessage(chatJid, { 
                     audio: audioBuffer, 
-                    mimetype: 'audio/ogg; codecs=opus', 
+                    mimetype: 'audio/mp4', // ✅ אנדרואיד fix
                     ptt: true 
                 }, { quoted: msg });
                 await incrementVoiceUsage(senderId);

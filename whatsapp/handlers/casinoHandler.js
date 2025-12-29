@@ -1,6 +1,9 @@
 const db = require('../../utils/firebase');
 const admin = require('firebase-admin');
 const { log } = require('../../utils/logger');
+const { OpenAI } = require('openai');
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 let activeSession = {
     isActive: false,
@@ -8,6 +11,41 @@ let activeSession = {
     players: [], 
     bets: []
 };
+
+// --- ניתוח הימור באמצעות AI ---
+async function parseBetWithAI(text) {
+    try {
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini", // מודל מהיר וזול לניתוח טקסט
+            messages: [
+                { 
+                    role: "system", 
+                    content: `
+                    אתה מנתח הימורים בקזינו וירטואלי. התפקיד שלך לחלץ נתונים ממשפטים בעברית.
+                    קלט: משפט של משתמש.
+                    פלט: JSON בלבד במבנה { "amount": number, "target": string, "isValid": boolean }.
+                    
+                    חוקים:
+                    1. זיהוי סכום: תמוך במספרים ("100") ובסלנג ("מאייה"=100, "אלפייה"=1000, "חמש מאות"=500).
+                    2. זיהוי יעד: על מי מהמרים.
+                    3. isValid: האם זה באמת הימור? "אני שם עליך זין" -> false. "שם 100 על יוגי" -> true.
+                    4. אם לא זוהה הימור ברור, isValid: false.
+                    ` 
+                },
+                { role: "user", content: text }
+            ],
+            temperature: 0, // אנחנו רוצים דיוק מתמטי, לא יצירתיות כאן
+            response_format: { type: "json_object" }
+        });
+
+        const result = JSON.parse(completion.choices[0].message.content);
+        return result;
+
+    } catch (e) {
+        console.error("AI Bet Parsing Error:", e);
+        return { isValid: false };
+    }
+}
 
 function startCasinoSession(playerNames) {
     if (activeSession.isActive) return false; 
@@ -30,18 +68,28 @@ function endCasinoSession() {
 }
 
 async function placeBet(senderId, senderName, text) {
+    // שלב 1: בדיקה אם בכלל יש משחק
     if (!activeSession.isActive) {
-        return "הקזינו סגור כרגע נשמה. שמור את השקלים.";
+        // בדיקה שטחית מהירה כדי לא לבזבז AI על סתם הודעות
+        if (text.includes('שים') || text.includes('שם') || text.includes('מהמר')) {
+            return "הקזינו סגור כרגע נשמה. חכה שיפתח שולחן.";
+        }
+        return null;
     }
 
-    const match = text.match(/שים\s+(\d+)\s+על\s+(.+)/);
-    if (!match) return null; 
-
-    const amount = parseInt(match[1]);
-    const target = match[2].trim();
+    // שלב 2: שליחה ל-AI לניתוח ההימור
+    const betData = await parseBetWithAI(text);
     
-    if (amount <= 0) return "מה זה? תביא כסף אמיתי או שתעוף מפה.";
+    if (!betData.isValid || !betData.amount || !betData.target) {
+        return null; // ה-AI החליט שזה לא הימור תקין
+    }
 
+    const amount = betData.amount;
+    const target = betData.target;
+    
+    if (amount <= 0) return "מה זה הסכום הזה? תביא כסף אמיתי.";
+
+    // שלב 3: בדיקת יתרה (Database)
     const userRef = db.collection('whatsapp_users').doc(senderId);
     const userDoc = await userRef.get();
     
@@ -56,11 +104,11 @@ async function placeBet(senderId, senderName, text) {
         }
     }
 
-    // ✅ שינוי לסימן שקל
     if (currentXP < amount) {
         return `בואנה יא תפרן, מאיפה תביא כסף? יש לך בבנק רק ₪${currentXP}.`;
     }
 
+    // שלב 4: רישום ההימור
     activeSession.bets.push({
         betterId: senderId,
         betterName: senderName,
@@ -69,7 +117,8 @@ async function placeBet(senderId, senderName, text) {
         discordId: discordId 
     });
 
-    return `רשמתי. שם ₪${amount} על ${target}. בהצלחה.`;
+    // מחזירים טקסט אישור (ה-Logic הראשי יכול לשנות את זה למשהו יותר צבעוני אם תרצה)
+    return `רשמתי. ₪${amount} על ${target}. בהצלחה.`;
 }
 
 async function resolveBets(winnerName) {
@@ -79,12 +128,12 @@ async function resolveBets(winnerName) {
     let winnersCount = 0;
 
     for (const bet of activeSession.bets) {
+        // בדיקה אם השם המנצח מוכל בתוך היעד (או להפך)
         if (winnerName.toLowerCase().includes(bet.target.toLowerCase()) || 
             bet.target.toLowerCase().includes(winnerName.toLowerCase())) {
             
             const winAmount = bet.amount * 2;
-            // ✅ שינוי לסימן שקל
-            report += `✅ ${bet.betterName} הימר על ${bet.target} ולקח ₪${winAmount}!\n`;
+            report += `✅ ${bet.betterName} לקח קופה של ₪${winAmount}! (הימר על ${bet.target})\n`;
             
             if (bet.discordId) {
                 await db.collection('users').doc(bet.discordId).update({
@@ -93,7 +142,6 @@ async function resolveBets(winnerName) {
             }
             winnersCount++;
         } else {
-            // ✅ שינוי לסימן שקל
             report += `❌ ${bet.betterName} הפסיד ₪${bet.amount} (הימר על ${bet.target}).\n`;
              if (bet.discordId) {
                 await db.collection('users').doc(bet.discordId).update({

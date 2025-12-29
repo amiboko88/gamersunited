@@ -1,77 +1,108 @@
 const { sendToMainGroup } = require('./index');
 const db = require('../utils/firebase');
-const cron = require('node-cron');
 const { OpenAI } = require('openai');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// מעקב אחרי זמני כניסה למניעת ספאם (Cooldown)
+// Key: discordUserId, Value: timestamp
 const voiceCooldowns = new Map();
 
 async function handleVoiceAlerts(oldState, newState) {
+    const member = newState.member || oldState.member;
+    if (!member || member.user.bot) return; // מתעלמים מבוטים
+
+    const now = Date.now();
+    const discordId = member.id;
+
+    // --- 🟢 תרחיש 1: כניסה לחדר (מתייגים בוואטסאפ) ---
     if (!oldState.channelId && newState.channelId) {
         const channel = newState.channel;
-        const member = newState.member;
         
-        if (member.user.bot) return;
-        if (channel.name.toLowerCase().includes('afk')) return;
-
-        const lastAlert = voiceCooldowns.get(channel.id) || 0;
-        const now = Date.now();
-        if (now - lastAlert < 15 * 60 * 1000) return;
-
-        voiceCooldowns.set(channel.id, now);
+        // בדיקת ספאם: האם המשתמש כבר קיבל התראה ב-2 הדקות האחרונות?
+        const lastAlert = voiceCooldowns.get(discordId) || 0;
+        if (now - lastAlert < 120000) {
+            console.log(`[Bridge] ⏳ Spam prevention active for ${member.displayName}`);
+            return; 
+        }
+        
+        voiceCooldowns.set(discordId, now);
 
         try {
+            // 1. מציאת מספר הטלפון של המשתמש לצורך תיוג
+            let whatsappPhone = null;
+            const userSnapshot = await db.collection('whatsapp_users')
+                .where('discordId', '==', discordId)
+                .limit(1)
+                .get();
+
+            if (!userSnapshot.empty) {
+                whatsappPhone = userSnapshot.docs[0].id; // זה ה-JID (מספר הטלפון)
+            }
+
+            // 2. יצירת ירידה קצרה עם AI
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
                 messages: [
                     { 
                         role: "system", 
-                        content: "אתה בוט ציני בשם שמעון. חבר בשם USER נכנס עכשיו לחדר CHANNEL בדיסקורד. תכתוב משפט אחד קצר, מצחיק ודוחק שמזמין את כולם בוואטסאפ להצטרף אליו. אל תשתמש במרכאות." 
+                        content: "אתה שמעון. חבר נכנס לדיסקורד. תכתוב משפט אחד קצר (3-6 מילים) של 'קבלת פנים' בסלנג ישראלי כבד. תהיה ציני." 
                     },
                     { 
                         role: "user", 
-                        content: `USER=${member.displayName}, CHANNEL=${channel.name}` 
+                        content: `המשתמש ${member.displayName} נכנס לחדר ${channel.name}.` 
                     }
                 ],
-                max_tokens: 60,
+                max_tokens: 50,
                 temperature: 0.8
             });
 
-            const funnyInvite = completion.choices[0]?.message?.content?.trim();
-            console.log(`[Bridge] 📢 Sending AI Alert for ${member.displayName}`);
-            await sendToMainGroup(`📢 **המלשין של שמעון:**\n${funnyInvite}`);
+            const aiText = completion.choices[0]?.message?.content?.trim() || "נכנס לחדר, יאללה בלאגן.";
+            
+            // 3. שליחה לקבוצה עם תיוג
+            const textToSend = `🎤 **${member.displayName}** נכנס לדיסקורד!\n${aiText}`;
+            
+            // שולחים למיין גרופ עם מערך של תיוגים (אם מצאנו את הטלפון)
+            await sendToMainGroup(textToSend, whatsappPhone ? [whatsappPhone] : []);
+            console.log(`[Bridge] ✅ Alert sent for ${member.displayName}`);
 
         } catch (error) {
-            console.error('❌ AI Alert Gen Error:', error.message);
-            await sendToMainGroup(`📢 **המלשין של שמעון:** ${member.displayName} נכנס ל-${channel.name}. בואו לארח לו חברה!`);
+            console.error('❌ Bridge Alert Error:', error.message);
+        }
+    }
+
+    // --- 🔴 תרחיש 2: יציאה מהחדר (בדיקת "לילה טוב נקבות") ---
+    else if (oldState.channelId && !newState.channelId) {
+        const channel = oldState.channel;
+        
+        // בודקים אם החדר התרוקן לגמרי (רק בני אדם)
+        const humansLeft = channel.members.filter(m => !m.user.bot).size;
+        
+        if (humansLeft === 0) {
+            // בדיקת שעות: האם עכשיו לילה? (00:00 עד 06:00)
+            const hour = new Date().getHours(); // שעון השרת (לוודא שזה מתאים לישראל, בדרך כלל UTC אז צריך להתאים)
+            // נניח שהשרת הוא UTC, אז ישראל זה +2/+3. ליתר ביטחון נבדוק טווח רחב או נשתמש ב-Date מתוקן.
+            // לצורך הפשטות נניח שאנחנו רוצים לזהות "לילה".
+            
+            // בדיקה פשוטה: אם השעה היא 22:00 עד 04:00 (UTC) זה לילה בישראל
+            // או פשוט נשלח תמיד כשהאחרון יוצא? ביקשת ספציפית לילה.
+            
+            // המרה לשעון ישראל
+            const israelTime = new Date(now + (2 * 60 * 60 * 1000)); // UTC+2 בערך
+            const ilHour = israelTime.getHours();
+
+            if (ilHour >= 0 && ilHour < 6) {
+                console.log('[Bridge] 🖕 Night mode triggered. Last user left.');
+                // שליחת אצבע משולשת
+                await sendToMainGroup("🖕"); 
+            }
         }
     }
 }
 
-function initDailySummary() {
-    cron.schedule('0 10 * * *', async () => {
-        console.log('[Bridge] 📰 Generating Daily Summary...');
-        try {
-            const snapshot = await db.collection('whatsapp_users')
-                .orderBy('messageCount', 'desc')
-                .limit(3)
-                .get();
-
-            if (snapshot.empty) return;
-
-            let summary = "📰 **הבוקר של שמעון - סיכום ביניים:**\n\n🏆 **החופרים של הקבוצה:**\n";
-            let i = 1;
-            snapshot.forEach(doc => {
-                const data = doc.data();
-                summary += `${i++}. ${data.displayName} - ${data.messageCount} הודעות\n`;
-            });
-            summary += "\n🤖 *האח הגדול רואה הכל.*";
-            
-            await sendToMainGroup(summary);
-        } catch (error) {
-            console.error('❌ Summary Error:', error);
-        }
-    });
+// ביטלנו את initDailySummary כי ביקשת למנוע חפירות
+function initDailySummary() { 
+    // ריק לבקשתך
 }
 
 module.exports = { handleVoiceAlerts, initDailySummary };

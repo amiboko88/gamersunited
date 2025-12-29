@@ -1,8 +1,7 @@
 const { makeWASocket, DisconnectReason } = require('@whiskeysockets/baileys');
 const { useFirestoreAuthState } = require('./auth');
 const { handleMedia } = require('./media');
-// ✅ ייבוא הפונקציה החדשה
-const { handleMessageLogic, checkIdleGroup } = require('./logic');
+const { handleMessageLogic } = require('./logic'); // מחקנו את checkIdleGroup
 const qrcode = require('qrcode');
 const { AttachmentBuilder, EmbedBuilder } = require('discord.js');
 const { log } = require('../utils/logger'); 
@@ -11,8 +10,6 @@ const STAFF_CHANNEL_ID = '881445829100060723';
 let sock;
 let isConnected = false;
 let retryCount = 0;
-// טיימר לבדיקת שתיקה
-let idleInterval = null; 
 
 function getMessageContent(msg) {
     if (!msg.message) return null;
@@ -24,6 +21,7 @@ function getMessageContent(msg) {
            null;
 }
 
+// ✅ פונקציית שליחה שתומכת בתיוגים אמיתיים
 async function sendToMainGroup(text, mentions = []) {
     const mainGroupId = process.env.WHATSAPP_MAIN_GROUP_ID; 
 
@@ -34,7 +32,11 @@ async function sendToMainGroup(text, mentions = []) {
     if (!mainGroupId) return;
     
     try {
-        const mentionJids = mentions.map(phone => `${phone}@s.whatsapp.net`);
+        // המרת המספרים לפורמט של וואטסאפ
+        const mentionJids = mentions.map(phone => 
+            phone.includes('@s.whatsapp.net') ? phone : `${phone}@s.whatsapp.net`
+        );
+
         await sock.sendMessage(mainGroupId, { 
             text: text,
             mentions: mentionJids 
@@ -80,8 +82,6 @@ async function connectToWhatsApp(discordClient) {
 
         if (connection === 'close') {
             isConnected = false;
-            if (idleInterval) clearInterval(idleInterval); // ניקוי טיימר
-
             const statusCode = (lastDisconnect?.error)?.output?.statusCode;
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             
@@ -100,12 +100,7 @@ async function connectToWhatsApp(discordClient) {
             isConnected = true;
             retryCount = 0; 
             log('[WhatsApp] ✅ Connected!');
-            
-            // ✅ הפעלת המנגנון לבדיקת שתיקה (רץ כל 5 דקות)
-            if (idleInterval) clearInterval(idleInterval);
-            idleInterval = setInterval(() => {
-                checkIdleGroup(sock);
-            }, 5 * 60 * 1000); 
+            // 🛑 ביטלנו את הטיימר של השכמת הבוקר (checkIdleGroup)
         }
     });
 
@@ -117,6 +112,7 @@ async function connectToWhatsApp(discordClient) {
 
         const text = getMessageContent(msg);
         const senderJid = msg.key.remoteJid;
+
         const mediaHandled = await handleMedia(sock, senderJid, text || "");
         if (mediaHandled) return; 
 

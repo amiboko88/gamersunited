@@ -4,7 +4,7 @@ const { log } = require('../utils/logger');
 
 const ASSETS_PATH = path.join(__dirname, '../assets');
 
-// ⚠️ שים לב: אין פה את 'שמעון'. זה מטופל ב-logic עכשיו.
+// סטיקרים נשארים כרגיל
 const STICKER_TRIGGERS = {
     'קלי': 'kalimero.webp',
     'יוגי': 'yogi.webp',
@@ -23,25 +23,50 @@ const GIF_TRIGGERS = {
     'בוכה': 'https://media.giphy.com/media/OPU6wzx8JrHna/giphy.mp4'
 };
 
+// 🛑 מילים שאם הן מופיעות ביחד עם "כסף", לא ננגן את הסאונד (כי זו כנראה שאלה לבוט)
+const MONEY_CONTEXT_BLOCKLIST = ['כמה', 'יש לי', 'ארנק', 'חשבון', 'יתרה', 'מצב', 'balance', 'xp', 'שלי'];
+
 async function handleMedia(sock, senderJid, text) {
     if (!text) return false;
     
     const cleanText = text.toLowerCase().replace(/[.,?!;]/g, '').trim();
     const wordCount = cleanText.split(/\s+/).length;
 
-    // 1. סאונד
+    // 1. סאונד (Soundboard)
     for (const [trigger, fileName] of Object.entries(SOUND_TRIGGERS)) {
         if (cleanText.includes(trigger)) {
+            
+            // 🔥 תיקון חכם למילה "כסף" 🔥
+            if (trigger === 'כסף') {
+                // בדיקה 1: האם זו שאלה טכנית? (כמה כסף יש לי?)
+                // אם המשפט מכיל מילה מהרשימה השחורה -> מדלגים על הסאונד ומעבירים ל-AI
+                if (MONEY_CONTEXT_BLOCKLIST.some(blockWord => cleanText.includes(blockWord))) {
+                    continue; 
+                }
+
+                // בדיקה 2: אורך המשפט
+                // אם זה משפט ארוך מידי (מעל 3 מילים) והוא לא שאלה טכנית, כנראה שזה סתם דיבור רגיל ולא צריך סאונד אפקט.
+                // ננגן רק אם זה: "כסף", "רוצה כסף", "איפה הכסף"
+                if (wordCount > 3) continue;
+            }
+
             const fullPath = path.join(ASSETS_PATH, fileName);
             if (!fs.existsSync(fullPath)) continue;
 
+            // תנאים כלליים לשאר הסאונדים
             const isPunchline = cleanText.endsWith(trigger);
-            const isShortContext = wordCount <= 7; 
+            // הקשחתי את התנאי: סאונד ינוגן רק במשפטים קצרים (עד 4 מילים) או כפאנץ' בסוף משפט
+            const isShortContext = wordCount <= 4; 
             
             if (isPunchline || isShortContext) {
                 log(`[WhatsApp] 🎵 Smart Trigger: "${trigger}"`);
-                await sock.sendMessage(senderJid, { audio: { url: fullPath }, mimetype: 'audio/mpeg', ptt: true });
-                return true; 
+                // שיניתי ל-mimetype שתומך גם באנדרואיד
+                await sock.sendMessage(senderJid, { 
+                    audio: { url: fullPath }, 
+                    mimetype: 'audio/ogg; codecs=opus', 
+                    ptt: true 
+                });
+                return true; // עצרנו כאן, ה-AI לא יגיב
             }
         }
     }
@@ -69,7 +94,7 @@ async function handleMedia(sock, senderJid, text) {
         }
     }
 
-    return false; 
+    return false; // לא נמצא מדיה, מעביר לטיפול ה-Logic
 }
 
 module.exports = { handleMedia };

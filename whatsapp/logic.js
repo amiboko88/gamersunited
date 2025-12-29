@@ -10,7 +10,6 @@ const { handleShimonRoulette } = require('./handlers/rouletteHandler');
 const { getUserFullProfile, addFact, checkDailyVoiceLimit, incrementVoiceUsage } = require('./handlers/profileHandler');
 const { handleImageAnalysis, addClaimToQueue, shouldCheckImage } = require('./handlers/visionHandler');
 const { placeBet, resolveBets, isSessionActive } = require('./handlers/casinoHandler');
-// ✅ משתמש בקובץ ElevenLabs שתיקנו למעלה
 const { generateVoiceNote } = require('./handlers/voiceHandler'); 
 const { updateBirthday } = require('./handlers/waBirthdayHandler');
 const { generateSystemPrompt } = require('./persona'); 
@@ -30,22 +29,41 @@ const BRUSH_OFF_RESPONSES = [
     "שחרר ממני להיום, אין לי כוח אליך.",
     "די חפרת. נגמרה לי הסבלנות.",
     "אין קליטה, תנסה מחר.",
-    "לך לדיסקורד, עזוב אותי בשקט.",
     "הבוט בהפסקת סיגריה. יאללה ביי.",
-    "שמענו אותך מספיק להיום.",
-    "תגיד, אין לך עבודה? שחרר.",
-    "עברת את המכסה היומית. שלם לי או שתשתוק.",
-    "דבר ללמפה.",
-    "וואלה יופי, מצא לו פראייר. ביי."
+    "עברת את המכסה היומית. ביי.",
+    "דבר ללמפה."
 ];
 
-// --- 📋 טריגרים ---
-const TRIGGER_CURSES = ['סתום', 'שקט', 'אפס', 'מניאק', 'שרמוטה', 'הומו', 'קוקסינל', 'זדיין', 'זין', 'חופר', 'שתוק', 'מעפן', 'חלש', 'טמבל', 'חתיכת', 'זבל', 'כלב', 'בן זונה'];
-const TRIGGER_BATTLE = ['קורע', 'מפרק', 'משחק', 'לובי', 'סקוואד', 'ניצחון', 'ווין', 'win', 'נוב', 'בוט', 'חזק', 'חלש'];
-const TRIGGER_DISCORD = ['עלייה', 'עולים', 'באים', 'דיסקורד', 'וורזון', 'warzone', 'מתי', 'משחקים', 'כנסו'];
-const TRIGGER_INFO = ['איפה כולם', 'מי מחובר', 'כמה כסף', 'כמה xp', 'מצב טבלה'];
+// --- 🧠 טריגרים חכמים (תומך גם במחרוזת וגם ב-Regex) ---
 
-// פונקציית ניקוי (מוחקת "שמעון:" ושם משתמש מההתחלה)
+const TRIGGER_CURSES = ['סתום', 'שקט', 'אפס', 'מניאק', 'שרמוטה', 'הומו', 'קוקסינל', 'זדיין', 'זין', 'חופר', 'שתוק', 'מעפן', 'חלש', 'טמבל', 'חתיכת', 'זבל', 'כלב', 'בן זונה'];
+
+const TRIGGER_BATTLE = ['קורע', 'מפרק', 'משחק', 'לובי', 'סקוואד', 'ניצחון', 'ווין', 'win', 'נוב', 'בוט', 'חזק', 'חלש'];
+
+// ✅ רשימה משודרגת - תופסת שורשים
+const TRIGGER_DISCORD = [
+    'דיסקורד', 'וורזון', 'warzone', 'משחקים', 
+    'כנס',    // תופס: נכנס, תיכנס, כנסו, להיכנס
+    'צטרף',   // תופס: מצטרף, הצטרף, להצטרף
+    'עול',    // תופס: עולים, עולה
+    'גיע',    // תופס: מגיע, הגיע, מגיעים
+    /ב(\.|)?ו(\.|)?א/ // תופס: בוא, ב.ו.א, יבוא
+];
+
+const TRIGGER_INFO = ['איפה כולם', 'מי מחובר', 'כמה כסף', 'כמה xp', 'מצב טבלה', 'כמה בארנק', 'יתרה'];
+const TRIGGER_BET = ['שים', 'להמר', 'הימור', 'bet', 'שם']; 
+
+// פונקציית עזר לבדיקת טריגרים (תומכת גם בטקסט וגם ב-Regex)
+function hasTrigger(text, triggerList) {
+    return triggerList.some(trigger => {
+        if (trigger instanceof RegExp) {
+            return trigger.test(text);
+        }
+        return text.includes(trigger);
+    });
+}
+
+// פונקציית ניקוי
 function cleanReply(text, senderName) {
     if (!text) return "";
     let cleaned = text
@@ -59,18 +77,14 @@ function cleanReply(text, senderName) {
         const nameRegex = new RegExp(`^${senderName}[,:-]?\\s*`, 'i');
         cleaned = cleaned.replace(nameRegex, '');
     }
-    
     return cleaned;
 }
 
 function checkDailyLimit(userId) {
     const today = new Date().toISOString().split('T')[0];
     let userData = dailyMessageTracker.get(userId) || { date: today, count: 0 };
-
     if (userData.date !== today) userData = { date: today, count: 0 };
-
     if (userData.count >= MAX_DAILY_INTERACTIONS) return { allowed: false };
-
     userData.count++;
     dailyMessageTracker.set(userId, userData);
     return { allowed: true };
@@ -174,7 +188,6 @@ async function handleMessageLogic(sock, msg, text) {
             const audioBuffer = await generateVoiceNote(textToSpeak);
             if (audioBuffer) await sock.sendMessage(chatJid, { 
                 audio: audioBuffer, 
-                // ✅ השינוי לאנדרואיד: PTT דורש OGG/Opus
                 mimetype: 'audio/ogg; codecs=opus', 
                 ptt: true 
             }, { quoted: msg });
@@ -182,7 +195,8 @@ async function handleMessageLogic(sock, msg, text) {
         }
     }
 
-    if (lowerText.includes('שים') && lowerText.includes('על')) {
+    // הימורים
+    if (TRIGGER_BET.some(w => lowerText.includes(w)) && lowerText.includes('על')) {
         const betResponse = await placeBet(senderId, senderName, lowerText);
         if (betResponse) {
             await sock.sendMessage(chatJid, { text: betResponse }, { quoted: msg });
@@ -190,7 +204,7 @@ async function handleMessageLogic(sock, msg, text) {
         }
     }
 
-    // --- טריגרים ---
+    // --- טריגרים ל-AI ---
     let shouldTrigger = false;
     let triggerContext = ""; 
 
@@ -207,18 +221,19 @@ async function handleMessageLogic(sock, msg, text) {
         triggerContext = `המשתמש תייג ${mentionedJids.length} אנשים. זה ספאם.`;
     }
 
-    if (TRIGGER_INFO.some(w => lowerText.includes(w))) {
+    if (hasTrigger(lowerText, TRIGGER_INFO)) {
         shouldTrigger = true;
-        triggerContext = "בקשת מידע (תהיה ענייני).";
+        triggerContext = "בקשת מידע טכני (תהיה ענייני, בלי קול).";
     }
 
     if (!shouldTrigger) {
-        if (TRIGGER_DISCORD.some(w => lowerText.includes(w))) {
+        // ✅ שימוש בפונקציה החכמה שתומכת בשורשים
+        if (hasTrigger(lowerText, TRIGGER_DISCORD)) {
             if (Math.random() < 0.7) { 
                 shouldTrigger = true;
                 triggerContext = "שיחה על דיסקורד/משחק.";
             }
-        } else if (TRIGGER_BATTLE.some(w => lowerText.includes(w))) {
+        } else if (hasTrigger(lowerText, TRIGGER_BATTLE)) {
             if (Math.random() < 0.6) {
                 shouldTrigger = true;
                 triggerContext = "אווירת תחרות.";
@@ -229,7 +244,7 @@ async function handleMessageLogic(sock, msg, text) {
     const isActiveConvo = conversationHistory.get(chatJid)?.length > 0;
     
     if (!shouldTrigger && isActiveConvo) {
-        if (TRIGGER_CURSES.some(w => lowerText.includes(w))) {
+        if (hasTrigger(lowerText, TRIGGER_CURSES)) {
             shouldTrigger = true;
             triggerContext = "קללות בשיחה.";
         }
@@ -242,13 +257,17 @@ async function handleMessageLogic(sock, msg, text) {
         }
     }
 
+    // --- הכנת נתונים ל-AI ---
     const userProfile = await getUserFullProfile(senderId, senderName);
     let injectedData = "";
 
-    if (lowerText.includes('כסף') || lowerText.includes('ארנק')) {
+    const casinoStatus = isSessionActive() ? "🟢 הקזינו פתוח!" : "🔴 הקזינו סגור.";
+    injectedData += ` [סטטוס קזינו: ${casinoStatus}]`;
+
+    if (lowerText.includes('כסף') || lowerText.includes('ארנק') || lowerText.includes('xp')) {
         shouldTrigger = true;
         const balance = userProfile.discordData ? (userProfile.discordData.xp || 0) : 0;
-        injectedData = `[מצב חשבון: ₪${balance}]`;
+        injectedData += ` [מצב חשבון: ₪${balance}]`;
         if (!triggerContext) triggerContext = "שאלה על יתרה.";
     }
 
@@ -262,10 +281,9 @@ async function handleMessageLogic(sock, msg, text) {
 
     if (!shouldTrigger) return;
     
-    // בדיקת Cooldown (אלא אם כן זו תגובה לקללה)
     if (!triggerContext.includes('קללות') && Date.now() - lastBotReplyTime < GLOBAL_COOLDOWN) return;
 
-    // --- ⛔ בדיקת מכסה יומית (Anti-Hafirot) ⛔ ---
+    // --- ⛔ בדיקת מכסה יומית ⛔ ---
     const limitCheck = checkDailyLimit(senderId);
     if (!limitCheck.allowed) {
         const brushOff = BRUSH_OFF_RESPONSES[Math.floor(Math.random() * BRUSH_OFF_RESPONSES.length)];
@@ -289,7 +307,7 @@ async function handleMessageLogic(sock, msg, text) {
         personalInfo, 
         contextString, 
         triggerContext, 
-        injectedData
+        injectedData 
     );
 
     try {
@@ -312,10 +330,15 @@ async function handleMessageLogic(sock, msg, text) {
 
         updateHistory(chatJid, 'assistant', 'שמעון', replyText);
 
+        // --- 🎤 לוגיקת קול ---
         const canSendVoice = await checkDailyVoiceLimit(senderId);
         let voiceChance = 0.2;
+
         if (replyText.includes('!') || replyText.includes('מניאק') || triggerContext.includes('קללות')) voiceChance = 0.5;
-        if (triggerContext.includes('מידע') || triggerContext.includes('יתרה')) voiceChance = 0.05;
+        
+        if (triggerContext.includes('מידע') || triggerContext.includes('יתרה') || triggerContext.includes('טכני')) {
+            voiceChance = 0; 
+        }
 
         const shouldReplyWithVoice = Math.random() < voiceChance && canSendVoice;
 
@@ -325,8 +348,6 @@ async function handleMessageLogic(sock, msg, text) {
             if (audioBuffer) {
                 await sock.sendMessage(chatJid, { 
                     audio: audioBuffer, 
-                    // ✅ השינוי לאנדרואיד: PTT דורש OGG/Opus
-                    // שימו לב: Baileys אמור לבצע המרה אם יש FFMPEG על השרת (Railway Railpack)
                     mimetype: 'audio/ogg; codecs=opus', 
                     ptt: true 
                 }, { quoted: msg });

@@ -5,6 +5,10 @@ const { handleMessageLogic } = require('./logic');
 const qrcode = require('qrcode');
 const { AttachmentBuilder, EmbedBuilder } = require('discord.js');
 const { log } = require('../utils/logger'); 
+const fs = require('fs'); 
+
+// ייבוא ה-Cron החדש
+const { startWhatsAppCron } = require('./cron');
 
 const STAFF_CHANNEL_ID = '881445829100060723'; 
 let sock;
@@ -21,11 +25,12 @@ function getMessageContent(msg) {
            null;
 }
 
-async function sendToMainGroup(text, mentions = []) {
+// ✅ פונקציה משודרגת: תומכת גם במדיה (תמונה/אודיו)
+async function sendToMainGroup(text, mentions = [], mediaPath = null) {
     const mainGroupId = process.env.WHATSAPP_MAIN_GROUP_ID; 
 
     if (!sock || !isConnected) {
-        console.log('⚠️ WhatsApp disconnected.');
+        console.log('⚠️ WhatsApp disconnected. Cannot send message.');
         return;
     }
     if (!mainGroupId) return;
@@ -35,7 +40,18 @@ async function sendToMainGroup(text, mentions = []) {
             phone.includes('@s.whatsapp.net') ? phone : `${phone}@s.whatsapp.net`
         );
 
-        await sock.sendMessage(mainGroupId, { text: text, mentions: mentionJids });
+        // אם יש מדיה (למשל תמונת MVP)
+        if (mediaPath && fs.existsSync(mediaPath)) {
+            const buffer = fs.readFileSync(mediaPath);
+            await sock.sendMessage(mainGroupId, { 
+                image: buffer, 
+                caption: text, 
+                mentions: mentionJids 
+            });
+        } else {
+            // הודעת טקסט רגילה
+            await sock.sendMessage(mainGroupId, { text: text, mentions: mentionJids });
+        }
     } catch (err) { console.error('Send Error:', err.message); }
 }
 
@@ -89,6 +105,9 @@ async function connectToWhatsApp(discordClient) {
             isConnected = true;
             retryCount = 0; 
             log('[WhatsApp] ✅ Connected!');
+            
+            // הפעלת התזמונים (ימי הולדת וכו')
+            startWhatsAppCron();
         }
     });
 

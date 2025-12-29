@@ -11,6 +11,8 @@ const { getUserFullProfile, addFact, checkDailyVoiceLimit, incrementVoiceUsage }
 const { handleImageAnalysis, addClaimToQueue, shouldCheckImage } = require('./handlers/visionHandler');
 const { placeBet, resolveBets, isSessionActive } = require('./handlers/casinoHandler');
 const { generateVoiceNote } = require('./handlers/voiceHandler');
+const { updateBirthday } = require('./handlers/waBirthdayHandler'); // הוספת ימי הולדת
+const { generateSystemPrompt } = require('./persona'); // התנ"ך
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const GLOBAL_COOLDOWN = 2000; 
@@ -18,10 +20,11 @@ let lastBotReplyTime = 0;
 const spamTracker = new Map(); 
 const conversationHistory = new Map();
 
-// --- 📋 טריגרים חכמים ---
-const TRIGGER_CURSES = ['סתום', 'שקט', 'אפס', 'מניאק', 'שרמוטה', 'הומו', 'קוקסינל', 'זדיין', 'זין', 'חופר', 'שתוק', 'מעפן', 'חלש'];
+// --- 📋 טריגרים ---
+const TRIGGER_CURSES = ['סתום', 'שקט', 'אפס', 'מניאק', 'שרמוטה', 'הומו', 'קוקסינל', 'זדיין', 'זין', 'חופר', 'שתוק', 'מעפן', 'חלש', 'טמבל'];
 const TRIGGER_BATTLE = ['קורע', 'מפרק', 'משחק', 'לובי', 'סקוואד', 'ניצחון', 'ווין', 'win', 'נוב', 'בוט', 'חזק', 'חלש'];
 const TRIGGER_DISCORD = ['עלייה', 'עולים', 'באים', 'דיסקורד', 'וורזון', 'warzone', 'מתי', 'משחקים', 'כנסו'];
+const TRIGGER_INFO = ['איפה כולם', 'מי מחובר', 'כמה כסף', 'כמה xp', 'מצב טבלה'];
 
 function checkSpam(userId) {
     const now = Date.now();
@@ -69,7 +72,7 @@ async function handleMessageLogic(sock, msg, text) {
     
     updateHistory(chatJid, 'user', senderName, text);
 
-    // 1. Vision
+    // 1. Vision (תמונות)
     if (msg.message.imageMessage) {
         const caption = text ? text.toLowerCase() : "";
         if (shouldCheckImage(senderId, caption)) {
@@ -81,24 +84,39 @@ async function handleMessageLogic(sock, msg, text) {
     if (!text) return;
     if (checkSpam(senderId).isBlocked) return; 
 
-    // 2. פקודות ידניות
+    // 2. זיהוי עדכון יום הולדת (לפני הכל)
+    if (lowerText.includes('יום הולדת') && (lowerText.includes('שלי') || lowerText.includes('ב-') || /\d/.test(lowerText))) {
+        try {
+            const dateExtraction = await openai.chat.completions.create({
+                model: "gpt-4o-mini",
+                messages: [
+                    { role: "system", content: "חלץ תאריך (DD/MM) מהטקסט. אם אין תאריך, החזר 'null'. דוגמה: 'ב-15 למאי' -> '15/05'" },
+                    { role: "user", content: text }
+                ],
+                temperature: 0
+            });
+            
+            const extractedDate = dateExtraction.choices[0].message.content.trim();
+            if (extractedDate !== 'null' && extractedDate.includes('/')) {
+                const response = await updateBirthday(senderId, extractedDate);
+                await sock.sendMessage(chatJid, { text: response }, { quoted: msg });
+                return; // עצרנו כאן
+            }
+        } catch (e) { console.error('Birthday Extract Error:', e); }
+    }
+
+    // 3. פקודות ישירות
     if (lowerText === 'שמעון' || lowerText === 'shimon') {
         const rouletteHandled = await handleShimonRoulette(sock, chatJid);
         if (rouletteHandled) return; 
     }
     
-    // השכמה ידנית (עם @ALL)
+    // השכמה ידנית
     if (lowerText.includes('תעיר את כולם') || lowerText.includes('@all')) {
          const metadata = await sock.groupMetadata(chatJid);
          const participants = metadata.participants.map(p => p.id);
          await sock.sendMessage(chatJid, { text: `📢 **יאללה תתעוררו!** @ALL\nמחכים לכם בדיסקורד.`, mentions: participants });
          return;
-    }
-    
-    // שאלה: איפה כולם? (פיצ'ר חדש)
-    if (lowerText.includes('איפה כולם') || lowerText.includes('מי מחובר')) {
-         // זה יטופל ב-bridge או שפשוט שמעון ידרבן. כרגע נשאיר ל-AI לענות צינית.
-         // (בשלב הבא נחבר את זה לבדיקה אמיתית בדיסקורד)
     }
 
     if (lowerText.startsWith('דבר ')) {
@@ -125,50 +143,58 @@ async function handleMessageLogic(sock, msg, text) {
 
     // א. קריאה ישירה / תיוג
     const mentionedJids = msg.message.extendedTextMessage?.contextInfo?.mentionedJid || [];
-    if (lowerText.includes('שמעון') || lowerText.includes('shimon')) {
+    const amIMentioned = mentionedJids.some(jid => jid.includes(sock.user?.id?.split(':')[0]));
+
+    if (lowerText.includes('שמעון') || lowerText.includes('shimon') || amIMentioned) {
         shouldTrigger = true;
-        triggerContext = "קראו לך בשם.";
+        triggerContext = "פנייה ישירה/תיוג.";
     }
 
     // ב. זיהוי ספאם תיוגים
     if (!shouldTrigger && mentionedJids.length > 3) {
         shouldTrigger = true;
-        triggerContext = `המשתמש תייג ${mentionedJids.length} אנשים. צא עליו.`;
+        triggerContext = `המשתמש תייג ${mentionedJids.length} אנשים. זה ספאם.`;
     }
 
-    // ג. מילות מפתח
+    // ג. שאלות אינפורמציה
+    if (TRIGGER_INFO.some(w => lowerText.includes(w))) {
+        shouldTrigger = true;
+        triggerContext = "בקשת מידע (תהיה ענייני).";
+    }
+
+    // ד. מילות מפתח
     if (!shouldTrigger) {
         if (TRIGGER_DISCORD.some(w => lowerText.includes(w))) {
             if (Math.random() < 0.7) { 
                 shouldTrigger = true;
-                triggerContext = "מנסים לארגן משחק. תדרבן אותם.";
+                triggerContext = "שיחה על דיסקורד/משחק.";
             }
         } else if (TRIGGER_BATTLE.some(w => lowerText.includes(w))) {
             if (Math.random() < 0.6) {
                 shouldTrigger = true;
-                triggerContext = "אווירת תחרות/טראש טוק. תצטרף ותעקוץ.";
+                triggerContext = "אווירת תחרות.";
             }
         }
     }
 
-    // ד. הקשר שיחה
+    // ה. הקשר שיחה
     const isActiveConvo = conversationHistory.get(chatJid)?.length > 0;
     if (!shouldTrigger && isActiveConvo) {
         if (TRIGGER_CURSES.some(w => lowerText.includes(w))) {
             shouldTrigger = true;
-            triggerContext = "מישהו מקלל בשיחה. אל תצא פראייר.";
+            triggerContext = "קללות בשיחה.";
         }
     }
 
-    // ה. כסף ודמג'
+    // ו. כסף ודמג'
     const userProfile = await getUserFullProfile(senderId, senderName);
     let injectedData = "";
 
     if (lowerText.includes('כסף') || lowerText.includes('ארנק')) {
         shouldTrigger = true;
         const balance = userProfile.discordData ? (userProfile.discordData.xp || 0) : 0;
-        injectedData = `[ארנק: ₪${balance}]`;
-        triggerContext = "שאלו על כסף.";
+        injectedData = `[מצב חשבון: ₪${balance}]`;
+        if (!triggerContext) triggerContext = "שאלה על יתרה.";
     }
 
     const claimedDmg = extractDamageClaim(lowerText);
@@ -185,7 +211,7 @@ async function handleMessageLogic(sock, msg, text) {
     lastBotReplyTime = Date.now();
     await sock.sendPresenceUpdate('composing', chatJid);
 
-    // הכנת הפרומפט
+    // --- בניית הפרומפט בעזרת התנ"ך ---
     const history = conversationHistory.get(chatJid) || [];
     const contextString = history.map(h => `${h.name}: ${h.content}`).join("\n");
     
@@ -194,42 +220,25 @@ async function handleMessageLogic(sock, msg, text) {
         (userProfile.roastMaterial ? userProfile.roastMaterial : "")
     ].filter(Boolean).join(". ");
 
-    const systemMsg = `
-    אתה שמעון. גיימר ישראלי וותיק, ציני וחד.
-    
-    הסיבה שהתערבת עכשיו: ${triggerContext}
-    
-    הנחיות למידה (הספר השחור):
-    1. **שמור רק מידע קבוע:** מקצוע, סוג רכב, עיר, שם בת זוג, תכונה בולטת (קמצן, מכור).
-    2. **התעלם מזבל:** אל תשמור "הוא עייף", "הוא רעב".
-    3. אם יש פרט קבוע חדש - הוסף בסוף: {{FACT: המידע}}.
-    
-    הנחיות התנהגות:
-    1. **אל תחזור על עצמך.**
-    2. **שפה:** סלנג ישראלי טבעי.
-    3. **יחס אישי:** השתמש במידע למטה כדי לעקוץ את ${senderName}.
-    
-    מידע עליו (מתוך התיק האישי):
-    ${personalInfo || "אין מידע מיוחד."}
-    ${injectedData}
-    
-    היסטוריה אחרונה:
-    ${contextString}
-    
-    תגובה (עד 2 משפטים):
-    `;
+    const systemMsg = generateSystemPrompt(
+        senderName, 
+        personalInfo, 
+        contextString, 
+        triggerContext, 
+        injectedData
+    );
 
     try {
         const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [{ role: "system", content: systemMsg }],
             max_tokens: 150,
-            temperature: 0.9
+            temperature: 0.9 
         });
 
         let replyText = completion.choices[0]?.message?.content?.trim();
         
-        // שמירת עובדות
+        // למידה (הספר השחור)
         const factMatch = replyText.match(/{{FACT:\s*(.*?)}}/);
         if (factMatch) {
             const newFact = factMatch[1];
@@ -240,8 +249,13 @@ async function handleMessageLogic(sock, msg, text) {
 
         updateHistory(chatJid, 'assistant', 'שמעון', replyText);
 
+        // החלטה על קול vs טקסט
         const canSendVoice = await checkDailyVoiceLimit(senderId);
-        const shouldReplyWithVoice = Math.random() < 0.2 && canSendVoice;
+        let voiceChance = 0.2;
+        if (replyText.includes('!') || replyText.includes('מניאק') || replyText.length < 20) voiceChance = 0.4;
+        if (triggerContext.includes('מידע') || triggerContext.includes('יתרה')) voiceChance = 0.05;
+
+        const shouldReplyWithVoice = Math.random() < voiceChance && canSendVoice;
 
         if (shouldReplyWithVoice) {
             await sock.sendPresenceUpdate('recording', chatJid); 

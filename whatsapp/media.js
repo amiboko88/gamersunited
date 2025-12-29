@@ -63,7 +63,7 @@ async function handleMedia(sock, senderJid, text) {
                 // שיניתי ל-mimetype שתומך גם באנדרואיד
                 await sock.sendMessage(senderJid, { 
                     audio: { url: fullPath }, 
-                    mimetype: 'audio/ogg; codecs=opus', 
+                    mimetype: 'audio/mp4', 
                     ptt: true 
                 });
                 return true; // עצרנו כאן, ה-AI לא יגיב

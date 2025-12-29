@@ -1,7 +1,7 @@
 const { makeWASocket, DisconnectReason } = require('@whiskeysockets/baileys');
 const { useFirestoreAuthState } = require('./auth');
 const { handleMedia } = require('./media');
-const { handleMessageLogic } = require('./logic'); // מחקנו את checkIdleGroup
+const { handleMessageLogic } = require('./logic');
 const qrcode = require('qrcode');
 const { AttachmentBuilder, EmbedBuilder } = require('discord.js');
 const { log } = require('../utils/logger'); 
@@ -21,27 +21,22 @@ function getMessageContent(msg) {
            null;
 }
 
-// ✅ פונקציית שליחה שתומכת בתיוגים אמיתיים
 async function sendToMainGroup(text, mentions = []) {
     const mainGroupId = process.env.WHATSAPP_MAIN_GROUP_ID; 
 
     if (!sock || !isConnected) {
-        console.log('⚠️ WhatsApp send failed: Bot disconnected.');
+        console.log('⚠️ WhatsApp disconnected.');
         return;
     }
     if (!mainGroupId) return;
     
     try {
-        // המרת המספרים לפורמט של וואטסאפ
         const mentionJids = mentions.map(phone => 
             phone.includes('@s.whatsapp.net') ? phone : `${phone}@s.whatsapp.net`
         );
 
-        await sock.sendMessage(mainGroupId, { 
-            text: text,
-            mentions: mentionJids 
-        });
-    } catch (err) { console.error('❌ Send Error:', err.message); }
+        await sock.sendMessage(mainGroupId, { text: text, mentions: mentionJids });
+    } catch (err) { console.error('Send Error:', err.message); }
 }
 
 async function connectToWhatsApp(discordClient) {
@@ -54,8 +49,7 @@ async function connectToWhatsApp(discordClient) {
         syncFullHistory: false,
         logger: require('pino')({ level: 'silent' }),
         connectTimeoutMs: 60000, 
-        keepAliveIntervalMs: 10000,
-        getMessage: async () => { return { conversation: 'hello' } } 
+        keepAliveIntervalMs: 10000
     });
 
     sock.ev.on('connection.update', async (update) => {
@@ -64,16 +58,14 @@ async function connectToWhatsApp(discordClient) {
         if (isConnected && qr) return;
 
         if (qr) {
-            log('[WhatsApp] 📸 New QR Code generated');
+            log('[WhatsApp] 📸 New QR');
             try {
                 const qrBuffer = await qrcode.toBuffer(qr);
                 const file = new AttachmentBuilder(qrBuffer, { name: 'qrcode.png' });
                 const channel = await discordClient.channels.fetch(STAFF_CHANNEL_ID);
                 if (channel) {
                     const embed = new EmbedBuilder()
-                        .setTitle('📱 נדרשת סריקה לחיבור וואטסאפ')
-                        .setDescription('סרוק את הקוד בטלפון כדי לחבר את שמעון.')
-                        .setColor('#25D366')
+                        .setTitle('סרוק לחיבור שמעון')
                         .setImage('attachment://qrcode.png');
                     await channel.send({ embeds: [embed], files: [file] });
                 }
@@ -87,11 +79,8 @@ async function connectToWhatsApp(discordClient) {
             
             if (shouldReconnect || statusCode === 401) { 
                 if (retryCount < 5) {
-                    log(`[WhatsApp] 🔄 Reconnecting... (${retryCount + 1}/5)`);
                     retryCount++;
                     setTimeout(() => connectToWhatsApp(discordClient), 3000); 
-                } else {
-                    log('[WhatsApp] 🛑 Failed to reconnect.');
                 }
             } else {
                 connectToWhatsApp(discordClient); 
@@ -100,7 +89,6 @@ async function connectToWhatsApp(discordClient) {
             isConnected = true;
             retryCount = 0; 
             log('[WhatsApp] ✅ Connected!');
-            // 🛑 ביטלנו את הטיימר של השכמת הבוקר (checkIdleGroup)
         }
     });
 

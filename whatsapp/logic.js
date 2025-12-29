@@ -16,11 +16,9 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const GLOBAL_COOLDOWN = 2000; 
 let lastBotReplyTime = 0;
 const spamTracker = new Map(); 
-
-// זיכרון שיחה
 const conversationHistory = new Map();
 
-// --- 📋 רשימות טריגרים חכמות ---
+// --- 📋 טריגרים חכמים ---
 const TRIGGER_CURSES = ['סתום', 'שקט', 'אפס', 'מניאק', 'שרמוטה', 'הומו', 'קוקסינל', 'זדיין', 'זין', 'חופר', 'שתוק', 'מעפן', 'חלש'];
 const TRIGGER_BATTLE = ['קורע', 'מפרק', 'משחק', 'לובי', 'סקוואד', 'ניצחון', 'ווין', 'win', 'נוב', 'בוט', 'חזק', 'חלש'];
 const TRIGGER_DISCORD = ['עלייה', 'עולים', 'באים', 'דיסקורד', 'וורזון', 'warzone', 'מתי', 'משחקים', 'כנסו'];
@@ -89,12 +87,18 @@ async function handleMessageLogic(sock, msg, text) {
         if (rouletteHandled) return; 
     }
     
-    // השכמה ידנית
+    // השכמה ידנית (עם @ALL)
     if (lowerText.includes('תעיר את כולם') || lowerText.includes('@all')) {
          const metadata = await sock.groupMetadata(chatJid);
          const participants = metadata.participants.map(p => p.id);
          await sock.sendMessage(chatJid, { text: `📢 **יאללה תתעוררו!** @ALL\nמחכים לכם בדיסקורד.`, mentions: participants });
          return;
+    }
+    
+    // שאלה: איפה כולם? (פיצ'ר חדש)
+    if (lowerText.includes('איפה כולם') || lowerText.includes('מי מחובר')) {
+         // זה יטופל ב-bridge או שפשוט שמעון ידרבן. כרגע נשאיר ל-AI לענות צינית.
+         // (בשלב הבא נחבר את זה לבדיקה אמיתית בדיסקורד)
     }
 
     if (lowerText.startsWith('דבר ')) {
@@ -115,48 +119,41 @@ async function handleMessageLogic(sock, msg, text) {
         }
     }
 
-    // --- 🔥 המוח שמחליט מתי להגיב 🔥 ---
+    // --- 🔥 מוח ה-AI שמחליט מתי להגיב 🔥 ---
     let shouldTrigger = false;
-    let triggerContext = ""; // כדי שה-AI ידע למה הערנו אותו
+    let triggerContext = ""; 
 
-    // א. קריאה ישירה / תיוג של שמעון
-    // בודקים גם תיוג ברמת הפרוטוקול
+    // א. קריאה ישירה / תיוג
     const mentionedJids = msg.message.extendedTextMessage?.contextInfo?.mentionedJid || [];
-    // (צריך לבדוק אם המספר של הבוט נמצא ברשימת התיוגים, אבל נסתמך גם על טקסט)
     if (lowerText.includes('שמעון') || lowerText.includes('shimon')) {
         shouldTrigger = true;
         triggerContext = "קראו לך בשם.";
     }
 
-    // ב. זיהוי ספאם תיוגים (יוגי משתולל)
+    // ב. זיהוי ספאם תיוגים
     if (!shouldTrigger && mentionedJids.length > 3) {
         shouldTrigger = true;
-        triggerContext = `המשתמש תייג ${mentionedJids.length} אנשים בבת אחת. תרד עליו שהוא ספאמר.`;
+        triggerContext = `המשתמש תייג ${mentionedJids.length} אנשים. צא עליו.`;
     }
 
-    // ג. מילות מפתח (רק אם לא קראו לו ישירות, ניתן סיכוי גבוה)
+    // ג. מילות מפתח
     if (!shouldTrigger) {
         if (TRIGGER_DISCORD.some(w => lowerText.includes(w))) {
-            // זיהוי ארגון משחק -> שמעון דוחף
             if (Math.random() < 0.7) { 
                 shouldTrigger = true;
-                triggerContext = "מנסים לארגן משחק/עלייה לדיסקורד. תדרבן אותם.";
+                triggerContext = "מנסים לארגן משחק. תדרבן אותם.";
             }
         } else if (TRIGGER_BATTLE.some(w => lowerText.includes(w))) {
-            // זיהוי תחרות/טראש טוק -> שמעון מצטרף לחגיגה
             if (Math.random() < 0.6) {
                 shouldTrigger = true;
-                triggerContext = "יש אווירה של תחרות/ירידות (Trash Talk). תצטרף ותעקוץ.";
+                triggerContext = "אווירת תחרות/טראש טוק. תצטרף ותעקוץ.";
             }
         }
     }
 
-    // ד. הקשר שיחה (אם הוא כבר דיבר, הוא ממשיך)
-    const lastAssistantMsg = conversationHistory.get(chatJid)?.filter(m => m.role === 'assistant').pop();
-    const isActiveConvo = conversationHistory.get(chatJid)?.length > 0; // פשטנו את זה
-    
+    // ד. הקשר שיחה
+    const isActiveConvo = conversationHistory.get(chatJid)?.length > 0;
     if (!shouldTrigger && isActiveConvo) {
-        // אם קיללו - תגובה בטוחה
         if (TRIGGER_CURSES.some(w => lowerText.includes(w))) {
             shouldTrigger = true;
             triggerContext = "מישהו מקלל בשיחה. אל תצא פראייר.";
@@ -202,13 +199,17 @@ async function handleMessageLogic(sock, msg, text) {
     
     הסיבה שהתערבת עכשיו: ${triggerContext}
     
-    הנחיות:
-    1. **אל תחזור על עצמך.** תהיה מגוון.
-    2. **שפה:** סלנג ישראלי טבעי.
-    3. **ספר שחור:** אם יש מידע חדש (עבודה, רכב, חברה) - הוסף בסוף: {{FACT: המידע}}.
-    4. **יחס אישי:** השתמש במידע למטה כדי לעקוץ את ${senderName}.
+    הנחיות למידה (הספר השחור):
+    1. **שמור רק מידע קבוע:** מקצוע, סוג רכב, עיר, שם בת זוג, תכונה בולטת (קמצן, מכור).
+    2. **התעלם מזבל:** אל תשמור "הוא עייף", "הוא רעב".
+    3. אם יש פרט קבוע חדש - הוסף בסוף: {{FACT: המידע}}.
     
-    מידע על ${senderName}:
+    הנחיות התנהגות:
+    1. **אל תחזור על עצמך.**
+    2. **שפה:** סלנג ישראלי טבעי.
+    3. **יחס אישי:** השתמש במידע למטה כדי לעקוץ את ${senderName}.
+    
+    מידע עליו (מתוך התיק האישי):
     ${personalInfo || "אין מידע מיוחד."}
     ${injectedData}
     

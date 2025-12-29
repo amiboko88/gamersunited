@@ -214,8 +214,8 @@ async function handleMessageLogic(sock, msg, text) {
             const audioBuffer = await generateVoiceNote(textToSpeak);
             if (audioBuffer) await sock.sendMessage(chatJid, { 
                 audio: audioBuffer, 
-                mimetype: 'audio/mp4', // ✅ אנדרואיד fix
-                ptt: true 
+                mimetype: 'audio/mpeg', // ✅ אנדרואיד fix
+                ptt: false 
             }, { quoted: msg });
             return;
         }
@@ -369,8 +369,8 @@ async function handleMessageLogic(sock, msg, text) {
             if (audioBuffer) {
                 await sock.sendMessage(chatJid, { 
                     audio: audioBuffer, 
-                    mimetype: 'audio/mp4', // ✅ אנדרואיד fix
-                    ptt: true 
+                    mimetype: 'audio/mpeg', // ✅ אנדרואיד fix
+                    ptt: false 
                 }, { quoted: msg });
                 await incrementVoiceUsage(senderId);
             } else {

@@ -14,6 +14,8 @@ const STAFF_CHANNEL_ID = '881445829100060723';
 let sock;
 let isConnected = false;
 let retryCount = 0;
+// ✅ משתנה חדש למניעת הפעלה כפולה של מתזמנים
+let isCronStarted = false; 
 
 function getMessageContent(msg) {
     if (!msg.message) return null;
@@ -25,7 +27,6 @@ function getMessageContent(msg) {
            null;
 }
 
-// ✅ פונקציה משודרגת: תומכת גם במדיה (תמונה/אודיו)
 async function sendToMainGroup(text, mentions = [], mediaPath = null) {
     const mainGroupId = process.env.WHATSAPP_MAIN_GROUP_ID; 
 
@@ -40,7 +41,6 @@ async function sendToMainGroup(text, mentions = [], mediaPath = null) {
             phone.includes('@s.whatsapp.net') ? phone : `${phone}@s.whatsapp.net`
         );
 
-        // אם יש מדיה (למשל תמונת MVP)
         if (mediaPath && fs.existsSync(mediaPath)) {
             const buffer = fs.readFileSync(mediaPath);
             await sock.sendMessage(mainGroupId, { 
@@ -49,7 +49,6 @@ async function sendToMainGroup(text, mentions = [], mediaPath = null) {
                 mentions: mentionJids 
             });
         } else {
-            // הודעת טקסט רגילה
             await sock.sendMessage(mainGroupId, { text: text, mentions: mentionJids });
         }
     } catch (err) { console.error('Send Error:', err.message); }
@@ -106,8 +105,11 @@ async function connectToWhatsApp(discordClient) {
             retryCount = 0; 
             log('[WhatsApp] ✅ Connected!');
             
-            // הפעלת התזמונים (ימי הולדת וכו')
-            startWhatsAppCron();
+            // ✅ תיקון: מפעיל את המתזמנים רק אם הם לא רצים כבר
+            if (!isCronStarted) {
+                startWhatsAppCron();
+                isCronStarted = true;
+            }
         }
     });
 

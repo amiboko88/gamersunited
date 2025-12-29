@@ -25,6 +25,22 @@ function getRank(msgCount) {
     return RANKS.slice().reverse().find(r => msgCount >= r.min) || RANKS[0];
 }
 
+// פונקציית עזר לציור מלבן מעוגל (אם לא קיים בסביבה)
+function drawRoundedRect(ctx, x, y, width, height, radius) {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+  ctx.fill();
+}
+
 async function generateProfileCard(userData) {
     const width = 800;
     const height = 400;
@@ -33,7 +49,6 @@ async function generateProfileCard(userData) {
 
     // 1. טעינת רקע (war_bg.jpg)
     try {
-        // מנסה למצוא jpg או png
         let bgPath = path.join(ASSETS_PATH, 'war_bg.jpg');
         if (!fs.existsSync(bgPath)) bgPath = path.join(ASSETS_PATH, 'war_bg.png');
 
@@ -41,7 +56,7 @@ async function generateProfileCard(userData) {
             const bg = await loadImage(bgPath);
             ctx.drawImage(bg, 0, 0, width, height);
         } else {
-            // גיבוי אם אין תמונה: גרדיאנט כהה
+            // גיבוי: גרדיאנט כהה
             const grd = ctx.createLinearGradient(0, 0, width, height);
             grd.addColorStop(0, '#0f0c29');
             grd.addColorStop(1, '#302b63');
@@ -53,19 +68,12 @@ async function generateProfileCard(userData) {
         ctx.fillRect(0, 0, width, height);
     }
 
-    // 2. שכבת כהות (Overlay) כדי שהטקסט יהיה קריא
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    // מצייר מלבן עם פינות עגולות (ידני או roundRect בגרסאות חדשות)
-    if (ctx.roundRect) {
-        ctx.beginPath();
-        ctx.roundRect(40, 40, width - 80, height - 80, 20);
-        ctx.fill();
-    } else {
-        ctx.fillRect(40, 40, width - 80, height - 80);
-    }
+    // 2. שכבת כהות מעוגלת (Overlay)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; // שחור חצי שקוף
+    drawRoundedRect(ctx, 30, 30, width - 60, height - 60, 30); // מסגרת מעוגלת גדולה
 
     // 3. תמונת פרופיל (עיגול)
-    const avatarX = 140;
+    const avatarX = 150;
     const avatarY = height / 2;
     const avatarRadius = 85;
 
@@ -76,37 +84,38 @@ async function generateProfileCard(userData) {
     ctx.clip();
 
     try {
-        // משתמש בתמונת ברירת מחדל אם אין URL
+        // משתמש בתמונת ברירת מחדל (logowa.webp) אם אין URL
         const avatarSrc = userData.avatarUrl || path.join(ASSETS_PATH, 'logowa.webp');
         const avatar = await loadImage(avatarSrc);
         ctx.drawImage(avatar, avatarX - avatarRadius, avatarY - avatarRadius, avatarRadius * 2, avatarRadius * 2);
     } catch (e) {
+        // אם גם לוגו ברירת המחדל נכשל - צבע אפור
         ctx.fillStyle = '#555';
         ctx.fill();
     }
     ctx.restore();
 
     // מסגרת זוהרת לאווטאר
+    const currentRank = getRank(userData.messageCount);
     ctx.beginPath();
     ctx.arc(avatarX, avatarY, avatarRadius, 0, Math.PI * 2, true);
     ctx.lineWidth = 6;
-    ctx.strokeStyle = getRank(userData.messageCount).color; // צבע המסגרת לפי הדרגה
+    ctx.strokeStyle = currentRank.color; // צבע המסגרת לפי הדרגה
     ctx.stroke();
 
     // 4. טקסטים
-    const textStartX = 270;
+    const textStartX = 280;
     ctx.textAlign = 'left';
 
-    // שם המשתמש
-    ctx.font = 'bold 45px sans-serif';
+    // שם המשתמש (מוקטן לתמיכה בעברית ארוכה)
+    ctx.font = 'bold 35px sans-serif'; 
     ctx.fillStyle = '#ffffff';
-    // חותך שם ארוך מידי
+    // חותך שם ארוך מידי (20 תווים במקום 15)
     let displayName = userData.name;
-    if (displayName.length > 15) displayName = displayName.substring(0, 15) + '...';
+    if (displayName.length > 20) displayName = displayName.substring(0, 18) + '..';
     ctx.fillText(displayName, textStartX, 120);
 
     // דרגה
-    const currentRank = getRank(userData.messageCount);
     ctx.font = 'bold 28px sans-serif';
     ctx.fillStyle = currentRank.color;
     ctx.fillText(`${currentRank.name.toUpperCase()}`, textStartX, 165);
@@ -118,17 +127,15 @@ async function generateProfileCard(userData) {
     ctx.fillText(`💬 הודעות: ${userData.messageCount.toLocaleString()}`, textStartX, 260);
 
     // 5. מד התקדמות (XP Bar)
-    // חישוב היעד הבא
     const nextRankIndex = RANKS.indexOf(currentRank) + 1;
-    const nextRank = RANKS[nextRankIndex] || { min: userData.messageCount * 1.5 }; // אם זה הדרגה הכי גבוהה
+    const nextRank = RANKS[nextRankIndex] || { min: userData.messageCount * 1.5 }; 
     
-    // חישוב אחוזים
     const prevRankMin = currentRank.min;
     const range = nextRank.min - prevRankMin;
     const progress = userData.messageCount - prevRankMin;
     let percentage = range === 0 ? 1 : (progress / range);
     if (percentage > 1) percentage = 1;
-    if (percentage < 0.02) percentage = 0.02; // שיראו קצת לפחות
+    if (percentage < 0.02) percentage = 0.02; 
 
     // ציור הבר
     const barX = textStartX;
@@ -136,13 +143,17 @@ async function generateProfileCard(userData) {
     const barWidth = 450;
     const barHeight = 25;
 
-    // רקע הבר
+    // רקע הבר (מעוגל)
     ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-    ctx.fillRect(barX, barY, barWidth, barHeight);
+    drawRoundedRect(ctx, barX, barY, barWidth, barHeight, 10);
 
-    // מילוי הבר
+    // מילוי הבר (מעוגל)
+    ctx.save();
+    drawRoundedRect(ctx, barX, barY, barWidth * percentage, barHeight, 10);
+    ctx.clip();
     ctx.fillStyle = currentRank.color;
     ctx.fillRect(barX, barY, barWidth * percentage, barHeight);
+    ctx.restore();
 
     // טקסט קטן מעל הבר
     ctx.fillStyle = '#aaaaaa';

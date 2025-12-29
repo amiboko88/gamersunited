@@ -2,43 +2,39 @@ const { createCanvas, loadImage, registerFont } = require('canvas');
 const path = require('path');
 const fs = require('fs');
 
-// הגדרת נתיבים
 const ASSETS_PATH = path.join(__dirname, '../../assets');
 const TEMP_PATH = path.join(__dirname, '../../temp');
 
-// וודא שתיקיית temp קיימת
+// --- 🛠️ טעינת פונט עברית (חובה!) 🛠️ ---
+// וודא שיש לך קובץ בשם 'bold.ttf' בתיקיית assets (למשל Rubik-Bold או Heebo-Bold)
+const fontPath = path.join(ASSETS_PATH, 'bold.ttf');
+if (fs.existsSync(fontPath)) {
+    registerFont(fontPath, { family: 'HebrewFont' });
+} else {
+    console.warn('⚠️ Font file missing! Hebrew might appear as squares.');
+}
+
 if (!fs.existsSync(TEMP_PATH)) fs.mkdirSync(TEMP_PATH, { recursive: true });
 
-// הגדרת דרגות לפי כמות הודעות
 const RANKS = [
-    { name: 'בוט מתחיל', min: 0, color: '#bdc3c7' },       // אפור
-    { name: 'טירון', min: 50, color: '#cd7f32' },          // ברונזה
-    { name: 'לוחם', min: 200, color: '#c0c0c0' },          // כסף
-    { name: 'מתנקש', min: 600, color: '#ffd700' },         // זהב
-    { name: 'קומנדו', min: 1200, color: '#00ffff' },       // טורקיז
-    { name: 'אגדה', min: 2500, color: '#ff00ff' },         // סגול ניאון
-    { name: 'Shimon Partner', min: 5000, color: '#e74c3c' } // אדום
+    { name: 'בוט מתחיל', min: 0, color: '#bdc3c7' },
+    { name: 'טירון', min: 50, color: '#cd7f32' },
+    { name: 'לוחם', min: 200, color: '#00ffcc' }, // טורקיז בוהק
+    { name: 'מתנקש', min: 600, color: '#ffd700' }, // זהב
+    { name: 'קומנדו', min: 1200, color: '#ff00ff' }, // מגנטה
+    { name: 'אגדה', min: 2500, color: '#ff3333' }  // אדום ניאון
 ];
 
 function getRank(msgCount) {
-    // מוצא את הדרגה הגבוהה ביותר שהמשתמש עבר את ה-min שלה
     return RANKS.slice().reverse().find(r => msgCount >= r.min) || RANKS[0];
 }
 
-// פונקציית עזר לציור מלבן מעוגל (אם לא קיים בסביבה)
+// פונקציית עזר לציור מלבן עם פינות עגולות
 function drawRoundedRect(ctx, x, y, width, height, radius) {
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + width - radius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-  ctx.lineTo(x + width, y + height - radius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-  ctx.lineTo(x + radius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-  ctx.lineTo(x, y + radius);
-  ctx.quadraticCurveTo(x, y, x + radius, y);
-  ctx.closePath();
-  ctx.fill();
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, radius);
+    ctx.closePath();
+    ctx.fill();
 }
 
 async function generateProfileCard(userData) {
@@ -47,33 +43,36 @@ async function generateProfileCard(userData) {
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // 1. טעינת רקע (war_bg.jpg)
+    // 1. רקע
     try {
         let bgPath = path.join(ASSETS_PATH, 'war_bg.jpg');
         if (!fs.existsSync(bgPath)) bgPath = path.join(ASSETS_PATH, 'war_bg.png');
-
         if (fs.existsSync(bgPath)) {
             const bg = await loadImage(bgPath);
             ctx.drawImage(bg, 0, 0, width, height);
         } else {
-            // גיבוי: גרדיאנט כהה
             const grd = ctx.createLinearGradient(0, 0, width, height);
-            grd.addColorStop(0, '#0f0c29');
-            grd.addColorStop(1, '#302b63');
+            grd.addColorStop(0, '#1a2a6c');
+            grd.addColorStop(1, '#b21f1f');
             ctx.fillStyle = grd;
             ctx.fillRect(0, 0, width, height);
         }
     } catch (e) {
-        ctx.fillStyle = '#111';
+        ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, width, height);
     }
 
-    // 2. שכבת כהות מעוגלת (Overlay)
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; // שחור חצי שקוף
-    drawRoundedRect(ctx, 30, 30, width - 60, height - 60, 30); // מסגרת מעוגלת גדולה
+    // 2. שכבת זכוכית כהה (Glassmorphism)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)'; // רקע כהה חצי שקוף
+    drawRoundedRect(ctx, 40, 40, width - 80, height - 80, 25);
+    
+    // קו מתאר זוהר למסגרת
+    ctx.strokeStyle = getRank(userData.messageCount).color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
 
-    // 3. תמונת פרופיל (עיגול)
-    const avatarX = 150;
+    // 3. תמונת פרופיל (מימין הפעם - או משמאל, נשאיר שמאל כדי שהטקסט יהיה מימין לשמאל בצורה יפה)
+    const avatarX = 140; 
     const avatarY = height / 2;
     const avatarRadius = 85;
 
@@ -82,88 +81,96 @@ async function generateProfileCard(userData) {
     ctx.arc(avatarX, avatarY, avatarRadius, 0, Math.PI * 2, true);
     ctx.closePath();
     ctx.clip();
-
     try {
-        // משתמש בתמונת ברירת מחדל (logowa.webp) אם אין URL
         const avatarSrc = userData.avatarUrl || path.join(ASSETS_PATH, 'logowa.webp');
         const avatar = await loadImage(avatarSrc);
         ctx.drawImage(avatar, avatarX - avatarRadius, avatarY - avatarRadius, avatarRadius * 2, avatarRadius * 2);
     } catch (e) {
-        // אם גם לוגו ברירת המחדל נכשל - צבע אפור
-        ctx.fillStyle = '#555';
+        ctx.fillStyle = '#333';
         ctx.fill();
     }
     ctx.restore();
 
-    // מסגרת זוהרת לאווטאר
-    const currentRank = getRank(userData.messageCount);
+    // טבעת זוהרת סביב התמונה
     ctx.beginPath();
-    ctx.arc(avatarX, avatarY, avatarRadius, 0, Math.PI * 2, true);
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = currentRank.color; // צבע המסגרת לפי הדרגה
+    ctx.arc(avatarX, avatarY, avatarRadius + 5, 0, Math.PI * 2, true);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = getRank(userData.messageCount).color;
     ctx.stroke();
 
-    // 4. טקסטים
-    const textStartX = 280;
-    ctx.textAlign = 'left';
+    // 4. טקסט ונתונים (RTL - יישור לימין)
+    const rightMargin = width - 80; // מתחילים מצד ימין
+    ctx.textAlign = 'right'; // טקסט מתיישר לימין
 
-    // שם המשתמש (מוקטן לתמיכה בעברית ארוכה)
-    ctx.font = 'bold 35px sans-serif'; 
+    // שם משתמש
+    ctx.shadowColor = "rgba(0,0,0,0.8)";
+    ctx.shadowBlur = 10;
+    ctx.font = 'bold 45px "HebrewFont", sans-serif'; 
     ctx.fillStyle = '#ffffff';
-    // חותך שם ארוך מידי (20 תווים במקום 15)
     let displayName = userData.name;
-    if (displayName.length > 20) displayName = displayName.substring(0, 18) + '..';
-    ctx.fillText(displayName, textStartX, 120);
+    if (displayName.length > 18) displayName = displayName.substring(0, 16) + '..';
+    ctx.fillText(displayName, rightMargin, 110);
 
     // דרגה
-    ctx.font = 'bold 28px sans-serif';
+    const currentRank = getRank(userData.messageCount);
+    ctx.font = '30px "HebrewFont", sans-serif';
     ctx.fillStyle = currentRank.color;
-    ctx.fillText(`${currentRank.name.toUpperCase()}`, textStartX, 165);
+    ctx.fillText(currentRank.name, rightMargin, 155);
 
-    // נתונים (כסף והודעות)
-    ctx.fillStyle = '#dddddd';
-    ctx.font = '24px sans-serif';
-    ctx.fillText(`💳 ארנק: ₪${userData.balance.toLocaleString()}`, textStartX, 220);
-    ctx.fillText(`💬 הודעות: ${userData.messageCount.toLocaleString()}`, textStartX, 260);
+    // קו מפריד דק
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.fillRect(rightMargin - 300, 175, 300, 2);
 
-    // 5. מד התקדמות (XP Bar)
+    // נתונים גדולים
+    // XP / הודעות
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 60px "HebrewFont", sans-serif';
+    ctx.fillText(userData.messageCount.toLocaleString(), rightMargin, 240);
+    
+    ctx.fillStyle = '#aaaaaa';
+    ctx.font = '22px "HebrewFont", sans-serif';
+    ctx.fillText('הודעות', rightMargin, 270);
+
+    // כסף
+    ctx.fillStyle = '#00ffcc'; // צבע כסף ניאון
+    ctx.font = 'bold 60px "HebrewFont", sans-serif';
+    // הזזת ה-X שמאלה כדי שלא יעלה על ההודעות
+    const moneyX = rightMargin - 200; 
+    ctx.fillText(`₪${userData.balance.toLocaleString()}`, moneyX, 240);
+    
+    ctx.fillStyle = '#aaaaaa';
+    ctx.font = '22px "HebrewFont", sans-serif';
+    ctx.fillText('ארנק', moneyX, 270);
+
+    // 5. XP Bar למטה
     const nextRankIndex = RANKS.indexOf(currentRank) + 1;
     const nextRank = RANKS[nextRankIndex] || { min: userData.messageCount * 1.5 }; 
-    
-    const prevRankMin = currentRank.min;
-    const range = nextRank.min - prevRankMin;
-    const progress = userData.messageCount - prevRankMin;
+    const range = nextRank.min - currentRank.min;
+    const progress = userData.messageCount - currentRank.min;
     let percentage = range === 0 ? 1 : (progress / range);
     if (percentage > 1) percentage = 1;
-    if (percentage < 0.02) percentage = 0.02; 
 
-    // ציור הבר
-    const barX = textStartX;
-    const barY = 300;
-    const barWidth = 450;
-    const barHeight = 25;
+    const barX = 260; // מתחיל אחרי התמונה
+    const barY = 320;
+    const barWidth = 460;
+    const barHeight = 15;
 
-    // רקע הבר (מעוגל)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-    drawRoundedRect(ctx, barX, barY, barWidth, barHeight, 10);
+    // רקע הבר
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    drawRoundedRect(ctx, barX, barY, barWidth, barHeight, 8);
 
-    // מילוי הבר (מעוגל)
-    ctx.save();
-    drawRoundedRect(ctx, barX, barY, barWidth * percentage, barHeight, 10);
-    ctx.clip();
+    // מילוי הבר
     ctx.fillStyle = currentRank.color;
-    ctx.fillRect(barX, barY, barWidth * percentage, barHeight);
-    ctx.restore();
+    drawRoundedRect(ctx, barX, barY, barWidth * percentage, barHeight, 8);
 
-    // טקסט קטן מעל הבר
-    ctx.fillStyle = '#aaaaaa';
-    ctx.font = '16px sans-serif';
-    ctx.textAlign = 'right';
-    ctx.fillText(`${userData.messageCount} / ${nextRank.min} XP`, barX + barWidth, barY - 8);
+    // טקסט התקדמות
+    ctx.font = '16px "HebrewFont", sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.fillText(`XP ${userData.messageCount} / ${nextRank.min}`, barX + (barWidth / 2), barY + 35);
 
-    // שמירה לקובץ
-    const outputPath = path.join(TEMP_PATH, `profile_${Date.now()}.png`);
     const buffer = canvas.toBuffer('image/png');
+    const outputPath = path.join(TEMP_PATH, `profile_${Date.now()}.png`);
     fs.writeFileSync(outputPath, buffer);
 
     return outputPath;

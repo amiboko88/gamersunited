@@ -5,7 +5,7 @@ const axios = require('axios'); // חובה לטובת הורדת הפונט
 
 const ASSETS_PATH = path.join(__dirname, '../../assets');
 const TEMP_PATH = path.join(__dirname, '../../temp');
-const FONT_PATH = path.join(ASSETS_PATH, 'bold.ttf');
+const FONT_PATH = path.join(ASSETS_PATH, 'Heebo-Bold.ttf');
 // קישור לפונט Heebo Bold (פונט מודרני שתומך בעברית מצוין)
 const FONT_URL = 'https://github.com/google/fonts/raw/main/ofl/heebo/Heebo-Bold.ttf';
 

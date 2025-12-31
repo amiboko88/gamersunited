@@ -14,7 +14,7 @@ const STAFF_CHANNEL_ID = '881445829100060723';
 let sock;
 let isConnected = false;
 let retryCount = 0;
-// ✅ משתנה חדש למניעת הפעלה כפולה של מתזמנים
+// משתנה למניעת הפעלה כפולה של מתזמנים
 let isCronStarted = false; 
 
 function getMessageContent(msg) {
@@ -55,6 +55,7 @@ async function sendToMainGroup(text, mentions = [], mediaPath = null) {
 }
 
 async function connectToWhatsApp(discordClient) {
+    // שימוש ב-Auth שלך (Firestore) - שמרנו על זה!
     const { state, saveCreds } = await useFirestoreAuthState();
 
     sock = makeWASocket({
@@ -72,6 +73,7 @@ async function connectToWhatsApp(discordClient) {
 
         if (isConnected && qr) return;
 
+        // לוגיקת QR לדיסקורד - שמרנו על זה!
         if (qr) {
             log('[WhatsApp] 📸 New QR');
             try {
@@ -92,9 +94,12 @@ async function connectToWhatsApp(discordClient) {
             const statusCode = (lastDisconnect?.error)?.output?.statusCode;
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             
+            log(`[WhatsApp] ❌ Connection closed (${statusCode}), reconnecting: ${shouldReconnect}`);
+
             if (shouldReconnect || statusCode === 401) { 
                 if (retryCount < 5) {
                     retryCount++;
+                    // מעבירים את discordClient גם בחיבור מחדש
                     setTimeout(() => connectToWhatsApp(discordClient), 3000); 
                 }
             } else {
@@ -105,15 +110,27 @@ async function connectToWhatsApp(discordClient) {
             retryCount = 0; 
             log('[WhatsApp] ✅ Connected!');
             
-            // ✅ תיקון: מפעיל את המתזמנים רק אם הם לא רצים כבר
-            if (!isCronStarted) {
-                startWhatsAppCron();
+            // ✅ התיקון הקריטי: מעבירים את discordClient לקרון!
+            if (!isCronStarted && discordClient) {
+                log('[WhatsApp] ⏳ Starting Cron jobs with Discord link...');
+                startWhatsAppCron(discordClient); // <--- הנה התיקון
                 isCronStarted = true;
+            } else if (!discordClient) {
+                log('[WhatsApp] ⚠️ Warning: Discord Client missing in connectToWhatsApp!');
             }
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
+
+    // 🔥 תוספת: דחיית שיחות (כדי שלא יציקו לבוט)
+    sock.ev.on('call', async (node) => {
+        const { id, from, status } = node[0];
+        if (status === 'offer') {
+            await sock.rejectCall(id, from);
+            // לוג שקט, לא חובה
+        }
+    });
 
     sock.ev.on('messages.upsert', async ({ messages }) => {
         const msg = messages[0];
@@ -122,6 +139,7 @@ async function connectToWhatsApp(discordClient) {
         const text = getMessageContent(msg);
         const senderJid = msg.key.remoteJid;
 
+        // ה-handler שלך למדיה - שמרנו עליו!
         const mediaHandled = await handleMedia(sock, senderJid, text || "");
         if (mediaHandled) return; 
 

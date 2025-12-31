@@ -1,6 +1,16 @@
 const db = require('../../utils/firebase');
 const admin = require('firebase-admin');
 
+// 🔥 הגדרת הדרגות והפרסים
+const RANKS = [
+    { name: 'בוט מתחיל', min: 0, reward: 0 },
+    { name: 'טירון', min: 50, reward: 150 },      // פרס צנוע
+    { name: 'לוחם', min: 200, reward: 400 },
+    { name: 'מתנקש', min: 600, reward: 1000 },
+    { name: 'קומנדו', min: 1200, reward: 2500 },
+    { name: 'אגדה', min: 2500, reward: 5000 }     // פרס ענק
+];
+
 // טעינת הפרופילים הסטטיים (גיבוי)
 let playerProfiles = {};
 try {
@@ -155,16 +165,57 @@ async function incrementVoiceUsage(senderId) {
     } catch (e) {}
 }
 
-// ✅ פונקציה חדשה: ספירת הודעות כללית לחישוב דרגות
+// ✅ פונקציה משודרגת: ספירת הודעות + בדיקת עליית רמה
 async function incrementTotalMessages(senderId) {
     try {
         const userRef = db.collection('whatsapp_users').doc(senderId);
-        await userRef.set({
-            totalMessages: admin.firestore.FieldValue.increment(1),
-            lastActive: new Date().toISOString()
-        }, { merge: true });
+        
+        // טרנזקציה כדי לוודא שאנחנו תופסים את המספר המדויק בזמן אמת
+        const result = await db.runTransaction(async (t) => {
+            const doc = await t.get(userRef);
+            if (!doc.exists) return null; // אם המשתמש לא קיים עדיין (נדיר, כי הוא נוצר בהודעה הראשונה)
+
+            const data = doc.data();
+            const currentMsgs = (data.totalMessages || 0) + 1;
+            
+            // עדכון מונה ההודעות
+            t.set(userRef, {
+                totalMessages: currentMsgs,
+                lastActive: new Date().toISOString()
+            }, { merge: true });
+
+            // בדיקת עליית רמה
+            // אנחנו בודקים אם המספר הנוכחי *בדיוק* שווה למינימום של דרגה כלשהי
+            const newRank = RANKS.find(r => r.min === currentMsgs);
+            
+            if (newRank && newRank.min > 0) { // מדלגים על רמה 0
+                // יש עליית רמה! נותנים כסף
+                // אם מקושר לדיסקורד - מעדכנים שם, אחרת בוואטסאפ
+                let targetRef = userRef;
+                if (data.discordId) {
+                    targetRef = db.collection('users').doc(data.discordId);
+                }
+
+                t.update(targetRef, {
+                    xp: admin.firestore.FieldValue.increment(newRank.reward)
+                });
+
+                return { 
+                    leveledUp: true, 
+                    rankName: newRank.name, 
+                    reward: newRank.reward,
+                    totalMessages: currentMsgs
+                };
+            }
+            
+            return { leveledUp: false };
+        });
+
+        return result;
+
     } catch (e) {
         console.error('Error updating msg count:', e);
+        return null;
     }
 }
 
@@ -173,5 +224,6 @@ module.exports = {
     addFact, 
     checkDailyVoiceLimit, 
     incrementVoiceUsage,
-    incrementTotalMessages // ייצוא החדש
+    incrementTotalMessages,
+    attemptAutoLinking
 };

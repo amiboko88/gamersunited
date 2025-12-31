@@ -1,113 +1,126 @@
-// ✅ ה-LID שלך (המנהל)
+// ✅ הגדרות בסיס
 const ADMIN_NUMBER = '100772834480319'; 
-
-const { delay } = require('@whiskeysockets/baileys');
 const { OpenAI } = require('openai');
+const fs = require('fs');
+const path = require('path');
 const { log } = require('../utils/logger');
-const fs = require('fs'); // דרוש לשליחת התמונה
+const db = require('../utils/firebase');
+const admin = require('firebase-admin');
 
-// ייבוא המודולים
+// ✅ ייבוא המודולים
 const { handleShimonRoulette } = require('./handlers/rouletteHandler');
-// ✅ ייבוא פונקציית ספירת ההודעות החדשה
+// getUserFullProfile - הפונקציה הזו אחראית על המיפוי בין טלפון לדיסקורד ID
 const { getUserFullProfile, addFact, checkDailyVoiceLimit, incrementVoiceUsage, incrementTotalMessages } = require('./handlers/profileHandler');
-const { handleImageAnalysis, addClaimToQueue, shouldCheckImage } = require('./handlers/visionHandler');
-const { placeBet, resolveBets, isSessionActive } = require('./handlers/casinoHandler');
+const { handleImageAnalysis, shouldCheckImage } = require('./handlers/visionHandler');
+const { placeBet, isSessionActive } = require('./handlers/casinoHandler');
+// זה משתמש ב-ElevenLabs (כמו שהיה מוגדר אצלך במקור)
 const { generateVoiceNote } = require('./handlers/voiceHandler'); 
-const { updateBirthday } = require('./handlers/waBirthdayHandler');
-const { generateSystemPrompt } = require('./persona'); 
-// ✅ ייבוא הצייר החדש
 const { generateProfileCard } = require('./handlers/profileRenderer');
+const { isSystemActive } = require('./utils/timeHandler'); 
+const { generateSystemPrompt } = require('./persona'); 
+
+// ✅ טעינת פרופילים אישיים (מהנתיב הנכון: data/profiles.js)
+let userPersonalities = {};
+try {
+    const profilesPath = path.join(__dirname, '../../data/profiles.js'); 
+    if (fs.existsSync(profilesPath)) {
+        const loaded = require(profilesPath);
+        userPersonalities = loaded.playerProfiles || loaded;
+        log(`[Logic] ✅ Loaded profiles for ${Object.keys(userPersonalities).length} users.`);
+    } else {
+        log(`[Logic] ⚠️ Profiles file not found at: ${profilesPath}`);
+    }
+} catch (e) { console.error("Could not load profiles.js", e); }
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const GLOBAL_COOLDOWN = 2000; 
-let lastBotReplyTime = 0;
 
 // מעקבים
-const spamTracker = new Map(); 
 const conversationHistory = new Map();
-const dailyMessageTracker = new Map(); 
-const MAX_DAILY_INTERACTIONS = 15;
+const lastInteractionTime = new Map();
 
-const BRUSH_OFF_RESPONSES = [
-    "שחרר ממני להיום, אין לי כוח אליך.",
-    "די חפרת. נגמרה לי הסבלנות.",
-    "אין קליטה, תנסה מחר.",
-    "הבוט בהפסקת סיגריה. יאללה ביי.",
-    "עברת את המכסה היומית. ביי.",
-    "דבר ללמפה."
+// --- 🤬 טריגרים ---
+const TRIGGER_CURSES = [
+    'סתום', 'אפס', 'מניאק', 'שרמוטה', 'הומו', 'קוקסינל', 'זדיין', 'זין', 'חופר', 
+    'שתוק', 'טמבל', 'זבל', 'כלב', 'בן זונה', 'דבע', 'אהבל', 'מפגר', 'אידיוט', 
+    'כוסעמק', 'שמן', 'מכוער', 'חלאס', 'סע סע', 'תנוח', 'ילד כאפות', 'בוט מסריח'
 ];
 
-// --- 🧠 טריגרים ---
-const TRIGGER_CURSES = ['סתום', 'שקט', 'אפס', 'מניאק', 'שרמוטה', 'הומו', 'קוקסינל', 'זדיין', 'זין', 'חופר', 'שתוק', 'מעפן', 'חלש', 'טמבל', 'חתיכת', 'זבל', 'כלב', 'בן זונה'];
-const TRIGGER_BATTLE = ['קורע', 'מפרק', 'משחק', 'לובי', 'סקוואד', 'ניצחון', 'ווין', 'win', 'נוב', 'בוט', 'חזק', 'חלש'];
+const TRIGGER_BET = [
+    'שים', 'להמר', 'הימור', 'bet', 'שם', 'משים', 'נכנס', 'אול אין', 'all in', 'זורק', 'הימורים'
+]; 
 
-// טריגרים לכרטיס פרופיל
-const TRIGGER_PROFILE = ['פרופיל', 'הכרטיס שלי', 'מי אני', 'סטטוס', 'profile', 'rank', 'כרטיס'];
-
-const TRIGGER_DISCORD = [
-    'דיסקורד', 'וורזון', 'warzone', 'משחקים', 
-    'כנס', 'צטרף', 'עול', 'גיע', /ב(\.|)?ו(\.|)?א/
+const TRIGGER_PROFILE = [
+    'פרופיל', 'כרטיס', 'סטטוס', 'מי אני', 'דרגה', 'כמה כסף', 'הארנק שלי', 'כמה xp', 'מצב חשבון', 'נתונים'
 ];
 
-const TRIGGER_INFO = ['איפה כולם', 'מי מחובר', 'כמה כסף', 'כמה xp', 'מצב טבלה', 'כמה בארנק', 'יתרה'];
-const TRIGGER_BET = ['שים', 'להמר', 'הימור', 'bet', 'שם']; 
+const NICE_WORDS = [
+    'תודה', 'אלוף', 'עזרת', 'מלך', 'גבר', 'מעריך', 'אח יקר', 'שיחקת אותה', 
+    'גדול', 'אוהב אותך', 'נסיך', 'חזק', 'תותח', 'וואלה תודה'
+];
 
-function hasTrigger(text, triggerList) {
-    return triggerList.some(trigger => {
-        if (trigger instanceof RegExp) return trigger.test(text);
-        return text.includes(trigger);
-    });
+// --- 😴 תגובות דינמיות לשעות מתות ---
+const OFFLINE_RESPONSES = {
+    Shabbat: [
+        "שבת היום יא כופר. נדבר במוצ\"ש.",
+        "אני שומר, נשמה. שחרר אותי עד הערב.",
+        "אין מענה בשבת. לך לבית כנסת.",
+        "שבת שלום. תנוח קצת מהמסך."
+    ],
+    Night: [
+        "3 בלילה, אתה אמיתי? תן לישון.",
+        "חלאס עם ההתראות, אנשים ישנים פה.",
+        "אין קבלת קהל בשעות האלה. לילה טוב.",
+        "מה אתה ער? לך לישון יא הזוי."
+    ],
+    Siesta: [
+        "אני בשנ\"צ. דבר איתי ב-16:00.",
+        "ששש... אסור להפריע בין 2 ל-4.",
+        "הלכתי לאכול צהריים. תשאיר הודעה.",
+        "עיניים נעצמות. נדבר אח\"כ."
+    ]
+};
+
+function getRandomOfflineReply(reason) {
+    const responses = OFFLINE_RESPONSES[reason] || ["לא זמין כרגע."];
+    return responses[Math.floor(Math.random() * responses.length)];
 }
 
-function cleanReply(text, senderName) {
-    if (!text) return "";
-    let cleaned = text.replace(/^שמעון:\s*/, '').replace(/^Shimon:\s*/, '').replace(/^Bot:\s*/, '').replace(/^"|"$/g, '').trim();
-    if (senderName) {
-        const nameRegex = new RegExp(`^${senderName}[,:-]?\\s*`, 'i');
-        cleaned = cleaned.replace(nameRegex, '');
+// ✅ פונקציה חכמה לשליפת ירידות (לפי Discord ID מהדאטה בייס)
+function getPersonalRoastData(senderName, discordId) {
+    // עדיפות 1: זיהוי ודאי לפי ID מדיסקורד
+    if (discordId && userPersonalities[discordId]) {
+        // מחליף את הפלייסהולדר {userName} בשם האמיתי
+        return userPersonalities[discordId].map(line => line.replace(/{userName}/g, senderName));
     }
-    return cleaned;
-}
-
-function checkDailyLimit(userId) {
-    const today = new Date().toISOString().split('T')[0];
-    let userData = dailyMessageTracker.get(userId) || { date: today, count: 0 };
-    if (userData.date !== today) userData = { date: today, count: 0 };
-    if (userData.count >= MAX_DAILY_INTERACTIONS) return { allowed: false };
-    userData.count++;
-    dailyMessageTracker.set(userId, userData);
-    return { allowed: true };
-}
-
-function checkSpam(userId) {
-    const now = Date.now();
-    let userData = spamTracker.get(userId) || { count: 0, blockedUntil: 0, lastMsg: 0 };
-    if (now < userData.blockedUntil) return { isBlocked: true, shouldAlert: false };
-    if (now - userData.lastMsg > 30000) userData.count = 0;
-    userData.count++;
-    userData.lastMsg = now;
-    if (userData.count >= 6) {
-        userData.blockedUntil = now + 60000;
-        spamTracker.set(userId, userData);
-        return { isBlocked: true, shouldAlert: true };
+    
+    // עדיפות 2: חיפוש לפי שם (למשל "יוגי" בתוך השם בוואטסאפ)
+    const nameKey = Object.keys(userPersonalities).find(key => senderName.toLowerCase().includes(key));
+    if (nameKey) {
+        return userPersonalities[nameKey].map(line => line.replace(/{userName}/g, senderName));
     }
-    spamTracker.set(userId, userData);
-    return { isBlocked: false, shouldAlert: false };
-}
 
-function updateHistory(chatJid, role, name, text) {
-    let history = conversationHistory.get(chatJid) || [];
-    history.push({ role, name, content: text });
-    if (history.length > 8) history.shift(); 
-    conversationHistory.set(chatJid, history);
-}
-
-function extractDamageClaim(text) {
-    if (text.includes('דמג') || text.includes('נזק') || text.includes('dmg')) {
-        const match = text.match(/(\d{3,})/); 
-        if (match) return parseInt(match[1]);
+    // ברירת מחדל: ירידות כלליות
+    if (userPersonalities.default) {
+        return userPersonalities.default.map(line => line.replace(/{userName}/g, senderName));
     }
-    return null;
+    
+    return [];
+}
+
+async function rewardKindness(senderId, text) {
+    if (NICE_WORDS.some(w => text.includes(w)) && text.length > 5) {
+        if (Math.random() < 0.25) { 
+            try {
+                await db.collection('whatsapp_users').doc(senderId).set({
+                    xp: admin.firestore.FieldValue.increment(50) 
+                }, { merge: true });
+            } catch (e) {}
+        }
+    }
+}
+
+function cleanReply(text) {
+    return text.replace(/^שמעון:\s*/, '').replace(/^Shimon:\s*/, '').replace(/"/g, '').trim();
 }
 
 // --- הלוגיקה הראשית ---
@@ -116,47 +129,53 @@ async function handleMessageLogic(sock, msg, text) {
     const isGroup = chatJid.endsWith('@g.us');
     const senderFullJid = isGroup ? (msg.key.participant || msg.participant) : chatJid;
     const senderId = senderFullJid ? senderFullJid.split('@')[0] : 'unknown';
-    const isAdmin = senderId === ADMIN_NUMBER;
-
-    if (!isGroup && !isAdmin) return; 
-
     const senderName = msg.pushName || "פלוני";
     const lowerText = text.trim().toLowerCase();
-    
-    updateHistory(chatJid, 'user', senderName, text);
-    
-    // ✅ ספירת הודעות (חובה בשביל הפרופיל)
-    incrementTotalMessages(senderId);
 
-    // 1. Vision
-    if (msg.message.imageMessage) {
-        const caption = text ? text.toLowerCase() : "";
-        if (shouldCheckImage(senderId, caption)) {
-            const analysisResult = await handleImageAnalysis(sock, msg, chatJid, senderId, senderName);
-            if (analysisResult) return; 
+    // 1. 🛑 בדיקת שעות פעילות
+    const sysStatus = isSystemActive();
+    if (!sysStatus.active) {
+        const lastTime = lastInteractionTime.get(senderId) || 0;
+        // עונה פעם ב-30 דקות למשתמש בשעות מתות, ורק אם תייגו
+        if (Date.now() - lastTime > 30 * 60 * 1000) {
+            if (lowerText.includes('@') || lowerText.includes('שמעון')) {
+                const reply = getRandomOfflineReply(sysStatus.reason);
+                await sock.sendMessage(chatJid, { text: reply }, { quoted: msg });
+                lastInteractionTime.set(senderId, Date.now());
+            }
         }
+        return; 
+    }
+
+    incrementTotalMessages(senderId); 
+
+    // 2. 🎡 רולטה רוסית
+    if (lowerText.includes('רולטה') || lowerText.includes('roulette')) {
+        const triggered = await handleShimonRoulette(sock, chatJid, senderId, senderName, isGroup, msg);
+        if (triggered) return; 
+    }
+
+    // 3. 📸 Vision
+    if (msg.message.imageMessage && shouldCheckImage(senderId, lowerText)) {
+        await handleImageAnalysis(sock, msg, chatJid, senderId, senderName);
+        return;
     }
 
     if (!text) return;
-    if (checkSpam(senderId).isBlocked) return; 
 
-    // --- 🎫 כרטיס שחקן (פרופיל) 🎫 ---
-    const wordCount = lowerText.split(/\s+/).length;
-    if (hasTrigger(lowerText, TRIGGER_PROFILE) && wordCount <= 3) { 
+    // 4. 🎫 כרטיס פרופיל
+    if (TRIGGER_PROFILE.some(t => lowerText.includes(t)) && lowerText.split(' ').length < 4) {
         await sock.sendPresenceUpdate('composing', chatJid);
-
-        let avatarUrl;
-        try {
-            avatarUrl = await sock.profilePictureUrl(senderFullJid, 'image');
-        } catch {
-            avatarUrl = null; 
-        }
-
-        const waUserRef = await getUserFullProfile(senderId, senderName);
         
-        // שליפת הנתונים מהפרופיל שקיבלנו
+        let avatarUrl;
+        try { avatarUrl = await sock.profilePictureUrl(senderFullJid, 'image'); } catch { avatarUrl = null; }
+
+        // שליפת נתונים מהירה (כולל קישור לדיסקורד)
+        const waUserRef = await getUserFullProfile(senderId, senderName);
         const totalMessages = waUserRef.whatsappData?.totalMessages || 0; 
-        const balance = waUserRef.discordData?.xp || 0;
+        
+        // עדיפות ל-XP מהדיסקורד, אם לא קיים אז מהוואטסאפ
+        const balance = waUserRef.discordData?.xp || waUserRef.whatsappData?.xp || 0;
 
         const cardPath = await generateProfileCard({
             name: senderName,
@@ -171,180 +190,71 @@ async function handleMessageLogic(sock, msg, text) {
         }, { quoted: msg });
 
         try { fs.unlinkSync(cardPath); } catch (e) {}
+        return;
+    }
+
+    // 5. 🎰 הימורים
+    if (TRIGGER_BET.some(w => lowerText.includes(w)) && lowerText.includes('על')) {
+        const betRes = await placeBet(senderId, senderName, lowerText);
+        if (betRes) await sock.sendMessage(chatJid, { text: betRes }, { quoted: msg });
+        return;
+    }
+
+    // --- 🤖 מנוע ה-AI ---
+
+    const isReply = msg.message.extendedTextMessage?.contextInfo?.participant?.includes(sock.user.id.split(':')[0]);
+    const isMention = lowerText.includes('@') && msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.some(id => id.includes(sock.user.id.split(':')[0]));
+    const isDirectQuestion = lowerText.startsWith('שמעון,'); 
+    const isCurse = TRIGGER_CURSES.some(w => lowerText.includes(w)) && (lowerText.includes('שמעון') || isReply);
+    
+    // מניעת ספאם: עונה רק אם פנו אליו או קיללו אותו
+    if (!isReply && !isMention && !isDirectQuestion && !isCurse) {
+        await rewardKindness(senderId, lowerText); 
         return; 
     }
 
-    // 2. ימי הולדת
-    if (lowerText.includes('יום הולדת') && (lowerText.includes('שלי') || lowerText.includes('ב-') || /\d/.test(lowerText))) {
-        try {
-            const dateExtraction = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
-                messages: [
-                    { role: "system", content: "חלץ תאריך (DD/MM) מהטקסט. אם אין תאריך, החזר 'null'. דוגמה: 'ב-15 למאי' -> '15/05'" },
-                    { role: "user", content: text }
-                ],
-                temperature: 0
-            });
-            const extractedDate = dateExtraction.choices[0].message.content.trim();
-            if (extractedDate !== 'null' && extractedDate.includes('/')) {
-                const response = await updateBirthday(senderId, extractedDate);
-                await sock.sendMessage(chatJid, { text: response }, { quoted: msg });
-                return; 
-            }
-        } catch (e) { console.error('Birthday Extract Error:', e); }
-    }
-
-    // 3. פקודות ידניות
-    if (lowerText === 'שמעון' || lowerText === 'shimon') {
-        const rouletteHandled = await handleShimonRoulette(sock, chatJid);
-        if (rouletteHandled) return; 
-    }
-    
-    if (lowerText.includes('תעיר את כולם') || lowerText.includes('@all')) {
-         const metadata = await sock.groupMetadata(chatJid);
-         const participants = metadata.participants.map(p => p.id);
-         await sock.sendMessage(chatJid, { text: `📢 **יאללה תתעוררו!** @ALL\nמחכים לכם בדיסקורד.`, mentions: participants });
-         return;
-    }
-
-    if (lowerText.startsWith('דבר ')) {
-        const textToSpeak = text.substring(4).trim();
-        if (textToSpeak.length > 2) {
-            await sock.sendPresenceUpdate('recording', chatJid);
-            const audioBuffer = await generateVoiceNote(textToSpeak);
-            if (audioBuffer) await sock.sendMessage(chatJid, { 
-                audio: audioBuffer, 
-                mimetype: 'audio/mpeg', // ✅ אנדרואיד fix
-                ptt: false 
-            }, { quoted: msg });
-            return;
-        }
-    }
-
-    // הימורים
-    if (TRIGGER_BET.some(w => lowerText.includes(w)) && lowerText.includes('על')) {
-        const betResponse = await placeBet(senderId, senderName, lowerText);
-        if (betResponse) {
-            await sock.sendMessage(chatJid, { text: betResponse }, { quoted: msg });
-            return; 
-        }
-    }
-
-    // --- טריגרים ל-AI ---
-    let shouldTrigger = false;
-    let triggerContext = ""; 
-
-    const mentionedJids = msg.message.extendedTextMessage?.contextInfo?.mentionedJid || [];
-    const amIMentioned = mentionedJids.some(jid => jid.includes(sock.user?.id?.split(':')[0]));
-
-    if (lowerText.includes('שמעון') || lowerText.includes('shimon') || amIMentioned) {
-        shouldTrigger = true;
-        triggerContext = "פנייה ישירה/תיוג.";
-    }
-
-    if (!shouldTrigger && mentionedJids.length > 3) {
-        shouldTrigger = true;
-        triggerContext = `המשתמש תייג ${mentionedJids.length} אנשים. זה ספאם.`;
-    }
-
-    if (hasTrigger(lowerText, TRIGGER_INFO)) {
-        shouldTrigger = true;
-        triggerContext = "בקשת מידע טכני (תהיה ענייני, בלי קול).";
-    }
-
-    if (!shouldTrigger) {
-        if (hasTrigger(lowerText, TRIGGER_DISCORD)) {
-            if (Math.random() < 0.7) { 
-                shouldTrigger = true;
-                triggerContext = "שיחה על דיסקורד/משחק.";
-            }
-        } else if (hasTrigger(lowerText, TRIGGER_BATTLE)) {
-            if (Math.random() < 0.6) {
-                shouldTrigger = true;
-                triggerContext = "אווירת תחרות.";
-            }
-        }
-    }
-
-    const isActiveConvo = conversationHistory.get(chatJid)?.length > 0;
-    
-    if (!shouldTrigger && isActiveConvo) {
-        if (hasTrigger(lowerText, TRIGGER_CURSES)) {
-            shouldTrigger = true;
-            triggerContext = "קללות בשיחה.";
-        }
-        const lastMsg = conversationHistory.get(chatJid).slice(-2)[0];
-        if (!shouldTrigger && lastMsg && lastMsg.role === 'assistant' && text.length < 15) {
-            if (Math.random() < 0.8) {
-                shouldTrigger = true;
-                triggerContext = "תגובה קצרה מיד אחרי שדיברת.";
-            }
-        }
-    }
-
-    // --- הכנת נתונים ל-AI ---
-    const userProfile = await getUserFullProfile(senderId, senderName);
-    let injectedData = "";
-
-    const casinoStatus = isSessionActive() ? "🟢 הקזינו פתוח!" : "🔴 הקזינו סגור.";
-    injectedData += ` [סטטוס קזינו: ${casinoStatus}]`;
-
-    if (lowerText.includes('כסף') || lowerText.includes('ארנק') || lowerText.includes('xp')) {
-        shouldTrigger = true;
-        const balance = userProfile.discordData ? (userProfile.discordData.xp || 0) : 0;
-        injectedData += ` [מצב חשבון: ₪${balance}]`;
-        if (!triggerContext) triggerContext = "שאלה על יתרה.";
-    }
-
-    const claimedDmg = extractDamageClaim(lowerText);
-    if (claimedDmg) {
-        shouldTrigger = true;
-        injectedData += ` [טוען ל-${claimedDmg} דמג'.]`;
-        if (isSessionActive()) addClaimToQueue(senderId, claimedDmg);
-        triggerContext = "דיווח דמג'.";
-    }
-
-    if (!shouldTrigger) return;
-    
-    if (!triggerContext.includes('קללות') && Date.now() - lastBotReplyTime < GLOBAL_COOLDOWN) return;
-
-    // --- ⛔ בדיקת מכסה יומית ⛔ ---
-    const limitCheck = checkDailyLimit(senderId);
-    if (!limitCheck.allowed) {
-        const brushOff = BRUSH_OFF_RESPONSES[Math.floor(Math.random() * BRUSH_OFF_RESPONSES.length)];
-        await sock.sendMessage(chatJid, { text: brushOff }, { quoted: msg });
-        return;
-    }
-    
-    lastBotReplyTime = Date.now();
     await sock.sendPresenceUpdate('composing', chatJid);
+
+    // ✅ שליפת ה"תיק האישי"
+    const userProfile = await getUserFullProfile(senderId, senderName);
+    // userProfile.discordId מגיע מהמיפוי שעשינו ב-profileHandler
+    const personalRoasts = getPersonalRoastData(senderName, userProfile.discordId);
+    
+    const randomRoast = personalRoasts.length > 0 
+        ? personalRoasts[Math.floor(Math.random() * personalRoasts.length)] 
+        : "";
+
+    // הקשר ל-AI
+    const injectedContext = `
+    [משתמש]: ${senderName}
+    [חומר רקע עליו]: ${randomRoast}
+    [סיטואציה]: ${isCurse ? "תקיפה מילולית. תגיב באגרסיביות." : "שיחה רגילה."}
+    [הנחיה]: 6 מילים גג. בלי חפירות.
+    [קזינו]: ${isSessionActive() ? "פתוח" : "סגור"}
+    `;
 
     const history = conversationHistory.get(chatJid) || [];
     const contextString = history.map(h => `${h.name}: ${h.content}`).join("\n");
-    
-    const personalInfo = [
-        ...(userProfile.facts ? userProfile.facts.map(f => f.content) : []),
-        (userProfile.roastMaterial ? userProfile.roastMaterial : "")
-    ].filter(Boolean).join(". ");
 
     const systemMsg = generateSystemPrompt(
-        senderName, 
-        personalInfo, 
-        contextString, 
-        triggerContext, 
-        injectedData 
+        senderName,
+        randomRoast, 
+        contextString,
+        injectedContext,
+        "" 
     );
 
     try {
         const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [{ role: "system", content: systemMsg }],
-            max_tokens: 150,
-            temperature: 0.95 
+            max_tokens: 120, 
+            temperature: 1.0 
         });
 
-        let replyText = cleanReply(completion.choices[0]?.message?.content, senderName);
-        
+        let replyText = cleanReply(completion.choices[0].message.content);
+
+        // שמירת עובדות חדשות
         const factMatch = replyText.match(/{{FACT:\s*(.*?)}}/);
         if (factMatch) {
             const newFact = factMatch[1];
@@ -353,25 +263,24 @@ async function handleMessageLogic(sock, msg, text) {
             replyText = replyText.replace(factMatch[0], "").trim();
         }
 
-        updateHistory(chatJid, 'assistant', 'שמעון', replyText);
-
-        const canSendVoice = await checkDailyVoiceLimit(senderId);
-        let voiceChance = 0.2;
-
-        if (replyText.includes('!') || replyText.includes('מניאק') || triggerContext.includes('קללות')) voiceChance = 0.5;
-        if (triggerContext.includes('מידע') || triggerContext.includes('יתרה') || triggerContext.includes('טכני')) voiceChance = 0;
-
-        const shouldReplyWithVoice = Math.random() < voiceChance && canSendVoice;
-
-        if (shouldReplyWithVoice) {
-            await sock.sendPresenceUpdate('recording', chatJid); 
-            const audioBuffer = await generateVoiceNote(replyText);
+        // 🔊 לוגיקת וויס (ElevenLabs)
+        const voiceChance = isCurse ? 0.95 : 0.05; 
+        const canVoice = await checkDailyVoiceLimit(senderId);
+        
+        if (canVoice && Math.random() < voiceChance) {
+            await sock.sendPresenceUpdate('recording', chatJid);
+            
+            // ✅ קריאה ל-VoiceHandler הקיים (ElevenLabs)
+            // אנחנו לא מעבירים לו פרמטרים של OpenAI, הוא עובד עצמאית
+            const audioBuffer = await generateVoiceNote(replyText); 
+            
             if (audioBuffer) {
                 await sock.sendMessage(chatJid, { 
                     audio: audioBuffer, 
-                    mimetype: 'audio/mpeg', // ✅ אנדרואיד fix
+                    mimetype: 'audio/mpeg', // הפתרון לאנדרואיד
                     ptt: false 
                 }, { quoted: msg });
+                
                 await incrementVoiceUsage(senderId);
             } else {
                 await sock.sendMessage(chatJid, { text: replyText }, { quoted: msg });
@@ -379,10 +288,16 @@ async function handleMessageLogic(sock, msg, text) {
         } else {
             await sock.sendMessage(chatJid, { text: replyText }, { quoted: msg });
         }
-        
-        await sock.sendPresenceUpdate('paused', chatJid);
 
-    } catch (error) { console.error('AI Error:', error); }
+        // עדכון היסטוריה
+        history.push({ name: senderName, content: text });
+        history.push({ name: 'שמעון', content: replyText });
+        if (history.length > 8) history.shift();
+        conversationHistory.set(chatJid, history);
+
+    } catch (e) {
+        log(`Error in logic: ${e.message}`);
+    }
 }
 
 module.exports = { handleMessageLogic };

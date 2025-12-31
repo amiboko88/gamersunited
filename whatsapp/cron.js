@@ -1,18 +1,98 @@
 const cron = require('node-cron');
-const { checkDailyBirthdays, nagMissingBirthdays } = require('./handlers/waBirthdayHandler');
+const { sendToMainGroup } = require('./index');
+const db = require('../utils/firebase');
+const admin = require('firebase-admin');
+const { log } = require('../utils/logger');
+const { updateDiscordCache } = require('./utils/discordCache');
+const { generateProfileCard } = require('./handlers/profileRenderer'); // משתמש בצייר שלנו ל-MVP
+const { OpenAI } = require('openai');
+const fs = require('fs');
 
-function startWhatsAppCron() {
-    console.log('[Cron] ⏳ Starting WhatsApp schedulers...');
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    // 1. בדיקת ימי הולדת - כל יום ב-09:00 בבוקר
-    cron.schedule('0 9 * * *', () => {
-        checkDailyBirthdays();
-    }, { timezone: "Asia/Jerusalem" });
+function startWhatsAppSchedulers(discordClient) {
+    log('[Cron] ⏳ Starting WhatsApp schedulers...');
 
-    // 2. הצקה למשתמשים ללא תאריך - ב-1 לחודש ב-18:00
-    cron.schedule('0 18 1 * *', () => {
-        nagMissingBirthdays();
-    }, { timezone: "Asia/Jerusalem" });
+    // 1. עדכון Cache דיסקורד כל 15 דקות (מונע Timeout)
+    cron.schedule('*/15 * * * *', async () => {
+        await updateDiscordCache(discordClient);
+    });
+
+    // 2. סיכום שבועי + MVP (כל מוצ"ש ב-21:00)
+    cron.schedule('0 21 * * 6', async () => {
+        log('[Cron] 🏆 Starting Weekly MVP calculation...');
+        await announceWeeklyMVP();
+    });
+
+    // 3. איפוס מכסות יומיות (כל לילה ב-00:00)
+    cron.schedule('0 0 * * *', async () => {
+        try {
+            const snapshot = await db.collection('whatsapp_users').get();
+            const batch = db.batch();
+            snapshot.docs.forEach(doc => {
+                batch.update(doc.ref, { dailyVoiceCount: 0 });
+            });
+            await batch.commit();
+            log('[Cron] 🔄 Daily voice quotas reset.');
+        } catch (e) {
+            log(`[Cron] ❌ Error resetting quotas: ${e.message}`);
+        }
+    });
 }
 
-module.exports = { startWhatsAppCron };
+async function announceWeeklyMVP() {
+    try {
+        // מציאת המנצח (לפי XP או כמות הודעות)
+        // לצורך הדוגמה נשתמש בשדה xp ב-users (שמשותף לדיסקורד)
+        const snapshot = await db.collection('users').orderBy('xp', 'desc').limit(1).get();
+        
+        if (snapshot.empty) return;
+
+        const winnerDoc = snapshot.docs[0];
+        const winnerData = winnerDoc.data();
+        const winnerId = winnerDoc.id;
+        const winnerName = winnerData.displayName || winnerData.username || "Unknown Soldier";
+
+        // 1. תגמול כספי (1000 ש"ח)
+        const REWARD_AMOUNT = 1000;
+        await db.collection('users').doc(winnerId).update({
+            xp: admin.firestore.FieldValue.increment(REWARD_AMOUNT)
+        });
+
+        // 2. יצירת כרטיס MVP (משתמש בצייר הקיים)
+        // אנחנו נשלח פרמטרים שיראו שזה MVP (אולי בעתיד נוסיף כתר לצייר)
+        const cardPath = await generateProfileCard({
+            name: winnerName,
+            avatarUrl: winnerData.avatarUrl, // וודא שיש שדה כזה או דומה
+            messageCount: winnerData.totalMessages || 0,
+            balance: (winnerData.xp || 0) + REWARD_AMOUNT // מציג כבר את הסכום המעודכן
+        });
+
+        // 3. שמעון מברך (בסגנון שלו)
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [{
+                role: "system",
+                content: `אתה שמעון. ${winnerName} זכה ב-MVP השבועי וקיבל 1000 שקל. 
+                תפרגן לו, אבל תזהיר אותו שלא יבזבז את זה על סקינים של לוזרים. קצר ושנון.`
+            }]
+        });
+        
+        const shimonMsg = completion.choices[0].message.content;
+
+        // 4. שליחה לקבוצה
+        const caption = `🏆 **ה-MVP השבועי: ${winnerName}**\n` +
+                        `💰 זכייה: **₪${REWARD_AMOUNT}**\n\n` +
+                        `🎤 שמעון: "${shimonMsg}"`;
+
+        await sendToMainGroup(caption, [], cardPath);
+
+        // ניקוי
+        try { fs.unlinkSync(cardPath); } catch (e) {}
+
+    } catch (error) {
+        log(`[Cron] ❌ MVP Error: ${error.message}`);
+    }
+}
+
+module.exports = { startWhatsAppCron: startWhatsAppSchedulers };

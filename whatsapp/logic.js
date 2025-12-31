@@ -22,7 +22,7 @@ const { generateSystemPrompt } = require('./persona');
 // ✅ טעינת פרופילים אישיים (מהנתיב הנכון: data/profiles.js)
 let userPersonalities = {};
 try {
-    const profilesPath = path.join(__dirname, '../../data/profiles.js'); 
+    const profilesPath = path.join(__dirname, '/../data/profiles.js'); 
     if (fs.existsSync(profilesPath)) {
         const loaded = require(profilesPath);
         userPersonalities = loaded.playerProfiles || loaded;

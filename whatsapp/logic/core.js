@@ -2,11 +2,13 @@ const { log } = require('../../utils/logger');
 const { isSystemActive } = require('../utils/timeHandler');
 const { incrementTotalMessages } = require('../handlers/profileHandler');
 
+// מודולים
 const intentAnalyzer = require('./intent');
 const socialEngine = require('./social');
 const gamersEngine = require('./gamers');
 const memoryEngine = require('./memory');
 const casinoLogic = require('./casino');
+const bufferSystem = require('./buffer'); // 🔥 המערכת החדשה
 
 const { generateProfileCard } = require('../handlers/profileRenderer');
 const { getUserFullProfile } = require('../handlers/profileHandler');
@@ -14,31 +16,51 @@ const fs = require('fs');
 
 const PROFILE_KEYWORDS = ['פרופיל', 'כרטיס', 'סטטוס', 'דרגה', 'כמה כסף', 'ארנק', 'xp', 'מצב חשבון'];
 
+/**
+ * שער הכניסה החדש - הכל עובר דרך הבאפר
+ */
 async function handleMessageLogic(sock, msg, text) {
     const chatJid = msg.key.remoteJid;
     const senderFullJid = msg.key.participant || msg.participant || chatJid;
     const senderId = senderFullJid.split('@')[0];
+
+    // הכנסה לתור ההמתנה
+    // ברגע שהטיימר יסתיים, הפונקציה executeCoreLogic תופעל עם כל המידע המאוחד
+    bufferSystem.addToBuffer(senderId, msg, text, (finalMsg, combinedText, mediaMsg) => {
+        executeCoreLogic(sock, finalMsg, combinedText, mediaMsg, senderId);
+    });
+}
+
+/**
+ * 🧠 המוח האמיתי - רץ רק אחרי שהמשתמש סיים להקליד
+ * @param {object} mediaMsg - הודעת המדיה (אם הייתה כזו בסשן)
+ */
+async function executeCoreLogic(sock, msg, text, mediaMsg, senderId) {
+    const chatJid = msg.key.remoteJid;
     const senderName = msg.pushName || "פלוני";
     const lowerText = text.trim().toLowerCase();
     
+    // 1. למידה פסיבית (על הטקסט המלא והמאוחד!)
     memoryEngine.learn(senderId, text); 
 
+    // 2. עדכון סטטיסטיקות
     const levelData = await incrementTotalMessages(senderId, senderName);
     if (levelData && levelData.leveledUp) {
         await socialEngine.celebrateLevelUp(sock, chatJid, senderId, senderName, levelData);
     }
 
+    // 3. פרופיל מהיר (עוקף AI)
     if (PROFILE_KEYWORDS.some(k => lowerText.includes(k)) && lowerText.split(' ').length <= 4) {
         await handleProfileRequest(sock, chatJid, senderId, senderName, msg);
         return;
     }
 
-    // ניתוח כוונות + סנטימנט
+    // 4. ניתוח כוונות + סנטימנט (על המשפט המלא!)
     const intentData = await intentAnalyzer.analyze(text, senderName);
-    log(`[Core] 🧠 Intent: ${intentData.category} | Sentiment: ${intentData.sentiment} | Score: ${intentData.interestScore}`);
+    log(`[Core] 🧠 Processed Batch | Intent: ${intentData.category} | Sentiment: ${intentData.sentiment} | Score: ${intentData.interestScore}`);
 
+    // 5. בדיקת שעות פעילות
     const sysStatus = isSystemActive();
-    
     if (!sysStatus.active) {
         if (text.includes('@') || intentData.interestScore > 85) {
             await socialEngine.handleOfflineInteraction(sock, chatJid, senderName, senderId, sysStatus.reason, text);
@@ -48,11 +70,20 @@ async function handleMessageLogic(sock, msg, text) {
         return;
     }
 
-    if (msg.message.imageMessage) {
-        await gamersEngine.processImage(sock, msg, chatJid, senderId, senderName);
+    // 6. ניתוב למנועים
+
+    // 📸 טיפול בתמונה (אם הייתה אחת בתוך רצף ההודעות)
+    // אנחנו שולחים את הטקסט המאוחד כ-Caption לתמונה!
+    if (mediaMsg) {
+        // מזייפים אובייקט הודעה כדי ש-processImage יחשוב שהטקסט צמוד לתמונה
+        if (!mediaMsg.message.imageMessage.caption) {
+            mediaMsg.message.imageMessage.caption = text;
+        }
+        await gamersEngine.processImage(sock, mediaMsg, chatJid, senderId, senderName);
         return;
     }
 
+    // 🎰 קזינו
     if (intentData.category === 'GAMBLING' || intentData.category === 'CASINO_ROULETTE') {
         if (text.includes('רולטה')) {
             await socialEngine.sendQuickReply(sock, chatJid, senderId, senderName, "תחזיק חזק...", "מאיים");
@@ -64,7 +95,7 @@ async function handleMessageLogic(sock, msg, text) {
         return;
     }
 
-    // 🔥 כאן השינוי: מעבירים את intentData.sentiment לכולם!
+    // 🤝 מנוע חברתי (עם הסנטימנט)
     switch (intentData.category) {
         case 'GAMING_INVITE':
             await socialEngine.handleGameInvite(sock, chatJid, senderId, senderName, text, intentData.sentiment);
@@ -74,7 +105,6 @@ async function handleMessageLogic(sock, msg, text) {
             break;
         case 'TRASH_TALK':
         case 'INSULT_BOT':
-            // בקללות הסנטימנט תמיד שלילי, אבל נעביר בכל זאת
             await socialEngine.handleToxicResponse(sock, chatJid, msg, senderId, senderName, text);
             break;
         case 'PRAISE':

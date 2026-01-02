@@ -8,34 +8,78 @@ const fs = require('fs');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-async function generateAiReply(senderName, senderId, context, mood) {
+/**
+ * 🎭 המטריצה הרגשית - גרסה מתוקנת ומוקפדת
+ */
+function determineStyle(mood, sentiment, category) {
+    // 🔥 תיקון קריטי: אם המשתמש מבקש עזרה, שוברים דיסטנס ונהיים פרקטיים
+    if (category === 'HELP_REQUEST') {
+        return `
+        🧠 מצב: "האח הגדול שמבין בהכל".
+        הוראות:
+        1. תן תשובה פרקטית ואמיתית! (שמות של חנויות בישראל: KSP, Ivory, Zap, מחסני חשמל).
+        2. אל תמציא חנויות כמו "וידאו" או "ברווז".
+        3. תהיה מועיל. תגיד לו איפה בודקים.
+        4. הסגנון: "שמע יא גבר, אל תהיה פראייר, כנס לזאפ..."
+        `;
+    }
+
+    if (sentiment === 'POSITIVE') {
+        return `
+        🌟 מצב: "אח יקר".
+        הוראות: תענה בפרגון, כבוד, מילים חמות (נשמה, מלך). תעשה מה שהוא מבקש.
+        `;
+    } 
+    
+    else if (sentiment === 'NEGATIVE') {
+        return `
+        🔥 מצב: "תקיפה".
+        הוראות: כנס בו. סלנג תוקפני, ירידות אישיות, אל תהיה פראייר.
+        `;
+    }
+
+    else {
+        return `
+        😐 מצב: "שכונה ענייני".
+        הוראות: קצר, קולע, סלנג קליל. בלי חפירות.
+        `;
+    }
+}
+
+async function generateAiReply(senderName, senderId, context, mood, sentiment = 'NEUTRAL', category = 'SOCIAL') {
     const roast = await memoryEngine.getRoast(senderName, senderId);
     
-    // הוספת הנחיית "אנטי-בוט" חריפה
-    const styleInstruction = `
-    הנחיות קריטיות לשפה:
-    1. דבר עברית "שכונה" (סלנג, קיצורים, בלי מילים גבוהות).
-    2. לעולם אל תשתמש במבנה "מי לאחר" או "על הכסף" בצורה עילגת. תגיד "מי שמאחר", "על הכסף".
-    3. אם שם המשתמש באנגלית (כמו Amos), כתוב אותו בעברית נכונה (עמוס) ולא פונטית (אמוס).
-    4. אל תהיה רשמי. תהיה גס, ישיר, ומצחיק.
+    // קביעת הסגנון לפי הקטגוריה והרגש
+    const emotionalInstructions = determineStyle(mood, sentiment, category);
+
+    const baseInstructions = `
+    כללי ברזל לשפה:
+    1. דבר עברית טבעית (סלנג ישראלי עדכני). אסור להמציא מילים בג'יבריש (כמו "וועלתיסונא").
+    2. אם שם המשתמש באנגלית, תכתוב אותו בעברית (Amos -> עמוס).
+    3. תהיה חכם. אל תדבר שטויות שלא קשורות לשאלה.
     `;
 
-    const systemMsg = generateSystemPrompt(senderName, roast, "", context, `מצב רוח: ${mood}. ${styleInstruction}`);
+    const systemMsg = generateSystemPrompt(senderName, roast, "", context, `מצב רוח: ${mood}.\n${emotionalInstructions}\n${baseInstructions}`);
     
+    // אם זו בקשת עזרה, נוריד את הטמפרטורה כדי שיהיה מדויק ולא ימציא שטויות
+    const temp = category === 'HELP_REQUEST' ? 0.5 : 0.8;
+
     const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [{ role: "system", content: systemMsg }],
-        max_tokens: 120, // הגדלתי קצת שיהיה לו מקום להתבטא
-        temperature: 1.0 // יצירתיות גבוהה יותר
+        max_tokens: 150,
+        temperature: temp 
     });
     return completion.choices[0].message.content;
 }
 
+// --- הנדלרים ---
+
 async function handleOfflineInteraction(sock, chatJid, senderName, senderId, reason, text) {
     const reasonText = reason === 'Shabbat' ? 'שבת/חג' : (reason === 'Night' ? 'אמצע הלילה' : 'שנ"צ');
     const reply = await generateAiReply(senderName, senderId, 
-        `אתה לא זמין בגלל ${reasonText}. המשתמש כותב: "${text}". תעיף אותו לישון/לבית כנסת.`, 
-        "עייף ועצבני"
+        `אתה לא זמין (${reasonText}). המשתמש כותב: "${text}".`, 
+        "עייף", "NEUTRAL", "SOCIAL"
     );
     await sock.sendMessage(chatJid, { text: reply });
 }
@@ -43,8 +87,8 @@ async function handleOfflineInteraction(sock, chatJid, senderName, senderId, rea
 async function handleToxicResponse(sock, chatJid, msg, senderId, senderName, text) {
     await sock.sendPresenceUpdate('recording', chatJid);
     const reply = await generateAiReply(senderName, senderId, 
-        `המשתמש לכלך עליך: "${text}". כנס בו חזק. רד לפסים אישיים. קלל את האמא/אחות/יכולות משחק שלו.`, 
-        "רעיל ואכזרי"
+        `המשתמש קילל אותך: "${text}".`, 
+        "רעיל", "NEGATIVE", "TRASH_TALK"
     );
     
     if (Math.random() < 0.8) {
@@ -58,37 +102,32 @@ async function handleToxicResponse(sock, chatJid, msg, senderId, senderName, tex
     await sock.sendMessage(chatJid, { text: reply }, { quoted: msg });
 }
 
-async function handleHelpRequest(sock, chatJid, msg, senderId, senderName, text) {
+async function handleHelpRequest(sock, chatJid, msg, senderId, senderName, text, sentiment) {
+    // בבקשת עזרה, אנחנו מעבירים את הקטגוריה HELP_REQUEST כדי להפעיל את המצב החכם
     const reply = await generateAiReply(senderName, senderId, 
-        `המשתמש שאל שאלה: "${text}". תענה לו כמו "אח גדול" שיודע הכל אבל חסר סבלנות לשאלות קיטבג.`, 
-        "עוזר ומנשא"
+        `המשתמש שאל: "${text}". תן המלצה אמיתית ופרקטית (חנויות, אתרים, פתרונות). אל תמרח אותו.`, 
+        "מומחה", 
+        sentiment, 
+        "HELP_REQUEST"
     );
     await sock.sendMessage(chatJid, { text: reply }, { quoted: msg });
 }
 
-// 🔥 התיקון הגדול בהזמנות משחק
-async function handleGameInvite(sock, chatJid, senderId, senderName, text) {
+async function handleGameInvite(sock, chatJid, senderId, senderName, text, sentiment) {
     let context = "";
-    let mood = "";
-
-    // בדיקה אם ההזמנה מכוונת לשמעון אישית
-    if (text.includes('אותך') || text.includes('איתי') || text.includes('בא לך') || text.includes('תשחק')) {
-        context = `המשתמש הזמין אותך לשחק איתו ("${text}"). תרד עליו שאתה בוט ושאין לך זמן לנובים כמוהו. תגיד לו ללכת לחפש חברים אמיתיים.`;
-        mood = "מזלזל";
+    if (text.includes('אותך') || text.includes('איתי')) {
+        context = `הזמנה אישית לשחק: "${text}".`;
     } else {
-        // הזמנה לקבוצה
-        context = `המשתמש מזמין את כולם לשחק. תצרח על כולם להיכנס לדיסקורד ואיים בקנסות למי שמאחר. תהיה מדרבן אבל אגרסיבי.`;
-        mood = "מבצעי/רס\"ר";
+        context = `הזמנה לקבוצה: "${text}".`;
     }
-
-    const reply = await generateAiReply(senderName, senderId, context, mood);
+    const reply = await generateAiReply(senderName, senderId, context, "גיימר", sentiment, "GAMING_INVITE");
     await sock.sendMessage(chatJid, { text: reply });
 }
 
-async function handleGeneralChat(sock, chatJid, msg, senderId, senderName, text, category) {
+async function handleGeneralChat(sock, chatJid, msg, senderId, senderName, text, category, sentiment) {
     await sock.sendPresenceUpdate('composing', chatJid);
-    const mood = category === 'PRAISE' ? "מבסוט רצח (אגו)" : "ציני ומשועמם";
-    const reply = await generateAiReply(senderName, senderId, `סתם דיבורים: "${text}". תגיב קצר, בשפה של רחוב.`, mood);
+    const finalSentiment = category === 'PRAISE' ? 'POSITIVE' : sentiment;
+    const reply = await generateAiReply(senderName, senderId, `דיבור כללי: "${text}".`, "זורם", finalSentiment, category);
     await sock.sendMessage(chatJid, { text: reply }, { quoted: msg });
 }
 
@@ -99,9 +138,7 @@ async function celebrateLevelUp(sock, chatJid, senderId, senderName, levelData) 
         messageCount: levelData.totalMessages,
         balance: levelData.reward
     });
-
-    const aiText = await generateAiReply(senderName, senderId, `המשתמש עלה לדרגה ${levelData.rankName}. תן לו בראש שלא יתלהב יותר מדי.`, "חגיגי וציני");
-    
+    const aiText = await generateAiReply(senderName, senderId, `עלה לדרגה ${levelData.rankName}.`, "חגיגי", "POSITIVE", "SOCIAL");
     await sock.sendMessage(chatJid, { 
         image: fs.readFileSync(cardPath),
         caption: `🆙 **LEVEL UP!**\n${aiText}`,
@@ -111,16 +148,11 @@ async function celebrateLevelUp(sock, chatJid, senderId, senderName, levelData) 
 }
 
 async function sendQuickReply(sock, chatJid, senderId, senderName, context, mood) {
-    const reply = await generateAiReply(senderName, senderId, context, mood);
+    const reply = await generateAiReply(senderName, senderId, context, mood, "NEUTRAL", "SOCIAL");
     await sock.sendMessage(chatJid, { text: reply });
 }
 
 module.exports = { 
-    handleToxicResponse, 
-    handleHelpRequest, 
-    handleGameInvite, 
-    handleGeneralChat, 
-    celebrateLevelUp, 
-    sendQuickReply,
-    handleOfflineInteraction 
+    handleToxicResponse, handleHelpRequest, handleGameInvite, 
+    handleGeneralChat, celebrateLevelUp, sendQuickReply, handleOfflineInteraction 
 };

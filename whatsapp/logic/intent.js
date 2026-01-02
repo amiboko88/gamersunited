@@ -9,27 +9,35 @@ async function analyze(text, senderName) {
                 {
                     role: "system",
                     content: `
-                    תפקידך לסווג הודעות בקבוצת גיימרים עבור הבוט "שמעון".
-                    החזר JSON בלבד: { "category": string, "interestScore": number (0-100) }
+                    תפקידך לסווג הודעות עבור הבוט "שמעון".
+                    החזר JSON בלבד: { 
+                        "category": string, 
+                        "interestScore": number (0-100),
+                        "sentiment": "POSITIVE" | "NEUTRAL" | "NEGATIVE" 
+                    }
                     
                     קטגוריות:
                     - GAMING_INVITE: הזמנה למשחק, "מי עולה", "בואו לדיסקורד". (Score: 90)
-                    - TRASH_TALK: קללות, ירידות, ריבים. (Score: 85)
-                    - INSULT_BOT: קללות ישירות לבוט/שמעון. (Score: 100)
-                    - HELP_REQUEST: שאלה טכנית, מחפש המלצה, צריך עזרה. (Score: 80)
+                    - TRASH_TALK: ירידות, צחוקים גסים, קללות הדדיות. (Score: 85)
+                    - INSULT_BOT: קללות המכוונות ספציפית לשמעון/לבוט. (Score: 100)
+                    - HELP_REQUEST: שאלה טכנית, שאלה על הבוט ("איך בודקים רמה"), חיפוש מידע. (Score: 80)
                     - GAMBLING: מילים כמו "שם כסף", "הימור", "בט". (Score: 95)
                     - CASINO_ROULETTE: המילה "רולטה". (Score: 100)
-                    - PRAISE: מחמאות לשמעון. (Score: 70)
-                    - SOCIAL: סתם דיבורים, צחוקים, "חחח". (Score: 20)
+                    - PRAISE: מחמאות לשמעון ("שמעון יא מלך"). (Score: 70)
+                    - SOCIAL: סתם דיבורים, שאלות כלליות ("מה קורה?"), "חחח". (Score: 20)
                     
                     אם ההודעה מכילה תיוג @שמעון - הציון חייב להיות 100.
+                    SENTIMENT GUIDELINES:
+                    - שאלה מנומסת ("איזה רמה אני?") -> NEUTRAL
+                    - מחמאה/אהבה -> POSITIVE
+                    - קללה/עצבים -> NEGATIVE
                     `
                 },
                 { role: "user", content: `הודעה מאת ${senderName}: "${text}"` }
             ],
             response_format: { type: "json_object" },
             temperature: 0.5,
-            max_tokens: 100
+            max_tokens: 120
         });
 
         const result = JSON.parse(completion.choices[0].message.content);
@@ -40,8 +48,7 @@ async function analyze(text, senderName) {
         return result;
     } catch (e) {
         console.error("Intent Error:", e);
-        // Fallback
-        return { category: 'SOCIAL', interestScore: 10 }; 
+        return { category: 'SOCIAL', interestScore: 10, sentiment: 'NEUTRAL' }; 
     }
 }
 

@@ -2,19 +2,13 @@ const { log } = require('../../utils/logger');
 const { isSystemActive } = require('../utils/timeHandler');
 const { incrementTotalMessages } = require('../handlers/profileHandler');
 
-// מודולים
+// מודולים לוגיים
 const intentAnalyzer = require('./intent');
 const socialEngine = require('./social');
 const gamersEngine = require('./gamers');
 const memoryEngine = require('./memory');
 const casinoLogic = require('./casino');
-const bufferSystem = require('./buffer'); // 🔥 המערכת החדשה
-
-const { generateProfileCard } = require('../handlers/profileRenderer');
-const { getUserFullProfile } = require('../handlers/profileHandler');
-const fs = require('fs');
-
-const PROFILE_KEYWORDS = ['פרופיל', 'כרטיס', 'סטטוס', 'דרגה', 'כמה כסף', 'ארנק', 'xp', 'מצב חשבון'];
+const bufferSystem = require('./buffer'); // המערכת למניעת ספאם
 
 /**
  * שער הכניסה החדש - הכל עובר דרך הבאפר
@@ -24,23 +18,21 @@ async function handleMessageLogic(sock, msg, text) {
     const senderFullJid = msg.key.participant || msg.participant || chatJid;
     const senderId = senderFullJid.split('@')[0];
 
-    // הכנסה לתור ההמתנה
-    // ברגע שהטיימר יסתיים, הפונקציה executeCoreLogic תופעל עם כל המידע המאוחד
+    // שליחה לחדר ההמתנה (Buffer)
+    // רק כשהמשתמש מסיים להקליד, הפונקציה executeCoreLogic תופעל
     bufferSystem.addToBuffer(senderId, msg, text, (finalMsg, combinedText, mediaMsg) => {
         executeCoreLogic(sock, finalMsg, combinedText, mediaMsg, senderId);
     });
 }
 
 /**
- * 🧠 המוח האמיתי - רץ רק אחרי שהמשתמש סיים להקליד
- * @param {object} mediaMsg - הודעת המדיה (אם הייתה כזו בסשן)
+ * 🧠 המוח האמיתי - רץ רק אחרי שהבאפר משחרר את ההודעה
  */
 async function executeCoreLogic(sock, msg, text, mediaMsg, senderId) {
     const chatJid = msg.key.remoteJid;
     const senderName = msg.pushName || "פלוני";
-    const lowerText = text.trim().toLowerCase();
     
-    // 1. למידה פסיבית (על הטקסט המלא והמאוחד!)
+    // 1. למידה פסיבית (על הטקסט המלא!)
     memoryEngine.learn(senderId, text); 
 
     // 2. עדכון סטטיסטיקות
@@ -49,17 +41,11 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId) {
         await socialEngine.celebrateLevelUp(sock, chatJid, senderId, senderName, levelData);
     }
 
-    // 3. פרופיל מהיר (עוקף AI)
-    if (PROFILE_KEYWORDS.some(k => lowerText.includes(k)) && lowerText.split(' ').length <= 4) {
-        await handleProfileRequest(sock, chatJid, senderId, senderName, msg);
-        return;
-    }
-
-    // 4. ניתוח כוונות + סנטימנט (על המשפט המלא!)
+    // 3. ניתוח כוונות + סנטימנט
     const intentData = await intentAnalyzer.analyze(text, senderName);
     log(`[Core] 🧠 Processed Batch | Intent: ${intentData.category} | Sentiment: ${intentData.sentiment} | Score: ${intentData.interestScore}`);
 
-    // 5. בדיקת שעות פעילות
+    // 4. בדיקת שעות פעילות
     const sysStatus = isSystemActive();
     if (!sysStatus.active) {
         if (text.includes('@') || intentData.interestScore > 85) {
@@ -70,20 +56,18 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId) {
         return;
     }
 
-    // 6. ניתוב למנועים
+    // 5. ניתוב למנועים המומחים
 
-    // 📸 טיפול בתמונה (אם הייתה אחת בתוך רצף ההודעות)
-    // אנחנו שולחים את הטקסט המאוחד כ-Caption לתמונה!
+    // אם יש תמונה ברצף ההודעות - גיימרים מטפל בה
     if (mediaMsg) {
-        // מזייפים אובייקט הודעה כדי ש-processImage יחשוב שהטקסט צמוד לתמונה
         if (!mediaMsg.message.imageMessage.caption) {
-            mediaMsg.message.imageMessage.caption = text;
+            mediaMsg.message.imageMessage.caption = text; // מצמידים את הטקסט לתמונה
         }
         await gamersEngine.processImage(sock, mediaMsg, chatJid, senderId, senderName);
         return;
     }
 
-    // 🎰 קזינו
+    // קזינו
     if (intentData.category === 'GAMBLING' || intentData.category === 'CASINO_ROULETTE') {
         if (text.includes('רולטה')) {
             await socialEngine.sendQuickReply(sock, chatJid, senderId, senderName, "תחזיק חזק...", "מאיים");
@@ -95,8 +79,11 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId) {
         return;
     }
 
-    // 🤝 מנוע חברתי (עם הסנטימנט)
+    // חברתי ופרופיל
     switch (intentData.category) {
+        case 'PROFILE': // הטיפול החדש בפרופיל
+            await socialEngine.handleSmartProfileRequest(sock, chatJid, msg, senderId, senderName);
+            break;
         case 'GAMING_INVITE':
             await socialEngine.handleGameInvite(sock, chatJid, senderId, senderName, text, intentData.sentiment);
             break;
@@ -112,30 +99,6 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId) {
             await socialEngine.handleGeneralChat(sock, chatJid, msg, senderId, senderName, text, intentData.category, intentData.sentiment);
             break;
     }
-}
-
-async function handleProfileRequest(sock, chatJid, senderId, senderName, msg) {
-    await sock.sendPresenceUpdate('composing', chatJid);
-    let avatarUrl;
-    try { avatarUrl = await sock.profilePictureUrl(msg.key.remoteJid, 'image'); } catch { avatarUrl = null; }
-
-    const waUserRef = await getUserFullProfile(senderId, senderName);
-    const totalMessages = waUserRef.whatsappData?.totalMessages || 0; 
-    const balance = waUserRef.discordData?.xp || waUserRef.whatsappData?.xp || 0;
-
-    const cardPath = await generateProfileCard({
-        name: senderName,
-        avatarUrl: avatarUrl,
-        messageCount: totalMessages,
-        balance: balance
-    });
-
-    await sock.sendMessage(chatJid, { 
-        image: fs.readFileSync(cardPath),
-        caption: `💳 הכרטיס של **${senderName}**`
-    }, { quoted: msg });
-
-    try { fs.unlinkSync(cardPath); } catch (e) {}
 }
 
 module.exports = { handleMessageLogic };

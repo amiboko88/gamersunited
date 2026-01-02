@@ -4,6 +4,7 @@ const memoryEngine = require('./memory');
 const { OpenAI } = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+
 async function handleBetRequest(sock, chatJid, senderId, senderName, text) {
     // זיהוי שאלות אינפורמטיביות על הקזינו
     if (text.includes('מתי') && (text.includes('נפתח') || text.includes('נסגר'))) {

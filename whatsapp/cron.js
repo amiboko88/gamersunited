@@ -7,6 +7,7 @@ const { generateProfileCard } = require('./handlers/profileRenderer');
 const { OpenAI } = require('openai');
 const fs = require('fs');
 
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // משתנה לשמירת הפונקציה לשליחת הודעות

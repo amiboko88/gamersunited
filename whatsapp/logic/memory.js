@@ -2,6 +2,7 @@ const db = require('../../utils/firebase');
 const admin = require('firebase-admin');
 const { OpenAI } = require('openai');
 
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // מטמון זיכרון לביצועים מהירים (כדי לא לפנות ל-DB על כל הודעה)

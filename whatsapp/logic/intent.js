@@ -17,18 +17,18 @@ async function analyze(text, senderName) {
                     }
                     
                     קטגוריות:
+                    - PROFILE: שאלות על כסף, דרגה, XP, "כמה יש לי", "תראה ארנק". (Score: 100)
                     - GAMING_INVITE: הזמנה למשחק, "מי עולה", "בואו לדיסקורד". (Score: 90)
                     - TRASH_TALK: ירידות, צחוקים גסים, קללות הדדיות. (Score: 85)
                     - INSULT_BOT: קללות המכוונות ספציפית לשמעון/לבוט. (Score: 100)
-                    - HELP_REQUEST: שאלה טכנית, שאלה על הבוט ("איך בודקים רמה"), חיפוש מידע. (Score: 80)
+                    - HELP_REQUEST: שאלה טכנית, מחפש המלצה, צריך עזרה. (Score: 80)
                     - GAMBLING: מילים כמו "שם כסף", "הימור", "בט". (Score: 95)
                     - CASINO_ROULETTE: המילה "רולטה". (Score: 100)
                     - PRAISE: מחמאות לשמעון ("שמעון יא מלך"). (Score: 70)
                     - SOCIAL: סתם דיבורים, שאלות כלליות ("מה קורה?"), "חחח". (Score: 20)
                     
-                    אם ההודעה מכילה תיוג @שמעון - הציון חייב להיות 100.
                     SENTIMENT GUIDELINES:
-                    - שאלה מנומסת ("איזה רמה אני?") -> NEUTRAL
+                    - שאלה מנומסת/ניטרלית -> NEUTRAL
                     - מחמאה/אהבה -> POSITIVE
                     - קללה/עצבים -> NEGATIVE
                     `
@@ -41,10 +41,7 @@ async function analyze(text, senderName) {
         });
 
         const result = JSON.parse(completion.choices[0].message.content);
-        
-        // תיקון ציונים ידני במקרים מיוחדים
         if (text.includes('@שמעון') || text.includes('שמעון,')) result.interestScore = 100;
-        
         return result;
     } catch (e) {
         console.error("Intent Error:", e);

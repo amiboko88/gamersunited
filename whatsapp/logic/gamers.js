@@ -29,4 +29,5 @@ async function processImage(sock, msg, chatJid, senderId, senderName) {
     }
 }
 
+
 module.exports = { processImage };

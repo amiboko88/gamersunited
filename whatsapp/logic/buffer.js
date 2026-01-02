@@ -1,8 +1,3 @@
-/**
- * 🧠 Shimon's Smart Buffer
- * מנגנון השהייה ואיגוד הודעות למניעת ספאם והבנת הקשר מלא.
- */
-
 const { log } = require('../../utils/logger');
 
 // מפה שמחזיקה את המשתמשים שמקלידים כרגע

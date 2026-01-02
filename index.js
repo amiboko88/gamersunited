@@ -1,11 +1,13 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { Client, GatewayIntentBits, Collection, Partials, REST, Routes, MessageFlags } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, Partials, REST, Routes, MessageFlags, ActivityType } = require('discord.js');
 const express = require('express'); 
-const { connectToWhatsApp, sendToMainGroup } = require('./whatsapp/index');
-const { startCasinoSession, endCasinoSession } = require('./whatsapp/handlers/casinoHandler');
+
+// --- חיבורים חיצוניים ---
+const { connectToWhatsApp } = require('./whatsapp/index');
 const db = require('./utils/firebase');
+const { ensureUserExists } = require('./utils/userUtils'); // ✅ התשתית המאוחדת
 
 // --- SERVER SETUP (RAILWAY HEALTH CHECK) --- 
 const app = express();
@@ -26,25 +28,27 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.DirectMessages
     ],
-    partials: [Partials.Channel, Partials.Message, Partials.User]
+    partials: [Partials.Channel, Partials.Message, Partials.User, Partials.GuildMember]
 });
 
 client.db = db;
 global.client = client;
 
-// --- DYNAMIC HANDLER LOADING ---
+// --- DYNAMIC HANDLER LOADING (כמו בקוד המקורי שלך) ---
 client.commands = new Collection();
 client.interactions = new Collection();
 client.dynamicInteractionHandlers = [];
 
 // Load Slash Commands
 const commandsPath = path.join(__dirname, 'commands');
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-for (const file of commandFiles) {
-    try {
-        const command = require(path.join(commandsPath, file));
-        if (command?.data?.name) client.commands.set(command.data.name, command);
-    } catch(err) { console.warn(`⚠️ Error loading command ${file}: ${err.message}`); }
+if (fs.existsSync(commandsPath)) {
+    const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+    for (const file of commandFiles) {
+        try {
+            const command = require(path.join(commandsPath, file));
+            if (command?.data?.name) client.commands.set(command.data.name, command);
+        } catch(err) { console.warn(`⚠️ Error loading command ${file}: ${err.message}`); }
+    }
 }
 
 // Interaction Loader
@@ -80,118 +84,29 @@ if (fs.existsSync(interactionsPath)) {
     } catch (err) { console.error('❌ Slash command error:', err); }
 })();
 
-// --- 🔥 WARZONE MONITOR (העין הגדולה) ---
-const WARZONE_APP_ID = '1372319014398726225'; 
-let activeSessionPlayers = []; 
 
-async function startWarzoneMonitor() {
-    console.log('[Warzone Monitor] 👀 Scanning for active games...');
-    
-    setInterval(async () => {
-        try {
-            const guild = client.guilds.cache.first();
-            if (!guild) return;
-
-            // 1. סריקת כל ערוצי הקול בשרת
-            const voiceChannels = guild.channels.cache.filter(c => c.isVoiceBased());
-            
-            let currentPlayers = [];
-            let currentDiscordIds = [];
-
-            // מי משחק כרגע?
-            voiceChannels.forEach(channel => {
-                channel.members.forEach(member => {
-                    const activities = member.presence?.activities || [];
-                    const isPlaying = activities.some(act => 
-                        act.applicationId === WARZONE_APP_ID || 
-                        (act.name && (act.name.toLowerCase().includes('call of duty') || act.name.toLowerCase().includes('warzone')))
-                    );
-
-                    if (isPlaying) {
-                        currentPlayers.push(member.displayName);
-                        currentDiscordIds.push(member.id);
-                    }
-                });
-            });
-
-            const playerCount = currentPlayers.length;
-
-            // --- תרחיש A: פתיחת סשן (3 שחקנים ומעלה) ---
-            if (playerCount >= 3 && activeSessionPlayers.length === 0) {
-                console.log('[Monitor] 🎰 Starting new session!');
-                
-                // מציאת טלפונים לתיוג
-                let phoneNumbersToTag = [];
-                for (const discordId of currentDiscordIds) {
-                    const snapshot = await db.collection('whatsapp_users').where('discordId', '==', discordId).get();
-                    if (!snapshot.empty) phoneNumbersToTag.push(snapshot.docs[0].id);
-                }
-
-                startCasinoSession(currentPlayers);
-                activeSessionPlayers = currentDiscordIds; 
-
-                const mentionsText = phoneNumbersToTag.map(p => `@${p}`).join(' ');
-                const alertText = `🚨 **סשן WARZONE נפתח!**\nהלוחמים: ${currentPlayers.join(', ')}\n${mentionsText}\n\n💸 **הקזינו נפתח!**\nמי מסיים מקום ראשון בדמג'?\nהימרו עכשיו! (לדוגמה: "שמעון שים 100 על יוגי")`;
-                
-                await sendToMainGroup(alertText, phoneNumbersToTag);
-            }
-
-            // --- תרחיש B: סגירת סשן (כולם יצאו או נשאר רק 1) ---
-            else if (playerCount < 2 && activeSessionPlayers.length > 0) {
-                console.log('[Monitor] 🛑 Session ended.');
-                
-                // זיהוי מי שיחק לאחרונה
-                let phoneNumbersToTag = [];
-                for (const discordId of activeSessionPlayers) {
-                    const snapshot = await db.collection('whatsapp_users').where('discordId', '==', discordId).get();
-                    if (!snapshot.empty) phoneNumbersToTag.push(snapshot.docs[0].id);
-                }
-
-                // בדיקת שעה (האם לילה?)
-                const now = new Date();
-                // תיקון אזור זמן לישראל (אם השרת בחו"ל)
-                const israelTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Jerusalem"}));
-                const hour = israelTime.getHours();
-                
-                let endText = "";
-                
-                // אם השעה בין 00:00 ל-06:00 בבוקר
-                if (hour >= 0 && hour < 6) {
-                    endText = `🛑 **כולם התנתקו...**\nברחתם אה? חלשים אתם... לילה טוב נקבות. 👙\n(הקזינו נסגר להלילה)`;
-                } else {
-                    endText = `🛑 **הסשן נגמר!**\nהלו? לא שלחתם תמונה! 😡\nאם היה משחק טוב תשלחו צילום מסך עכשיו או תכתבו ידנית ("עשיתי 2500"), אחרת ה-XP הולך לפח.`;
-                }
-
-                await sendToMainGroup(endText, phoneNumbersToTag);
-                
-                endCasinoSession();
-                activeSessionPlayers = [];
-            }
-
-        } catch (err) {
-            console.error('[Monitor Error]', err);
-        }
-    }, 60000); 
-}
-
-// --- BOT READY ---
+// --- BOT READY EVENT ---
 client.once('ready', async () => {
     console.log(`⚡️ Shimon is READY! Logged in as ${client.user.tag}`);
+    client.user.setActivity('על הגיימרים 🎮', { type: ActivityType.Watching });
+
     try {
+        // טעינת מודולים לוגיים (Handlers)
         const { initializeCronJobs } = require('./handlers/botLifecycle');
         const { hardSyncPresenceOnReady } = require('./handlers/presenceTracker');
         const { setupVerificationMessage } = require('./handlers/verificationButton');
         const setupWelcomeImage = require('./handlers/welcomeImage');
         const { runMissedBirthdayChecks } = require('./handlers/birthdayCongratulator');
 
+        // הפעלת שירותים
         await hardSyncPresenceOnReady(client);
         await setupVerificationMessage(client);
         initializeCronJobs(client);
         setupWelcomeImage(client);
         await runMissedBirthdayChecks(client);
 
-        startWarzoneMonitor(); // מפעיל את העין הגדולה
-        connectToWhatsApp(client); // מחבר את הוואטסאפ
+        // חיבור וואטסאפ (ללא המוניטור, הוא עבר לתיקייה שלו)
+        connectToWhatsApp(client); 
 
         console.log("✅ All systems initialized successfully.");
     } catch (err) {
@@ -199,11 +114,12 @@ client.once('ready', async () => {
     }
 });
 
-// --- INTERACTIONS ---
+// --- INTERACTIONS EVENT ---
 const podcastManager = require('./handlers/podcastManager');
 
 client.on('interactionCreate', async interaction => {
     try {
+        // בדיקת פודקאסט (חסימת פקודות מסוימות)
         if (interaction.isCommand() && interaction.guildId) {
             if (podcastManager.getPodcastStatus()) {
                 const commandName = interaction.commandName;
@@ -213,6 +129,7 @@ client.on('interactionCreate', async interaction => {
             }
         }
 
+        // טיפול בפקודות (Command & Autocomplete)
         if (interaction.isCommand() || interaction.isAutocomplete()) {
             const command = client.commands.get(interaction.commandName);
             if (!command) return;
@@ -225,6 +142,7 @@ client.on('interactionCreate', async interaction => {
             return;
         }
 
+        // טיפול באינטראקציות כלליות (Buttons, Modals, Selects)
         let handler;
         if (interaction.customId) {
             handler = client.interactions.get(interaction.customId);
@@ -239,7 +157,7 @@ client.on('interactionCreate', async interaction => {
         }
     } catch (error) {
         console.error('❌ Interaction Error:', error);
-        const replyOptions = { content: '❌ אירעה שגיאה בביצוע הפעולה.', flags: MessageFlags.Ephemeral };
+        const replyOptions = { content: '❌ אירעה שגיאה בביצוע הפעולה.', ephemeral: true }; // Flags הוחלף ל-ephemeral פשוט
         if (interaction.replied || interaction.deferred) {
             await interaction.followUp(replyOptions).catch(() => {});
         } else {
@@ -248,38 +166,71 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// --- EVENTS ---
+// --- DISCORD EVENTS & HANDLERS ---
 const { handleVoiceStateUpdate } = require('./handlers/voiceHandler');
 const { trackGamePresence } = require('./handlers/presenceTracker');
 const { scanForConsoleAndVerify } = require('./handlers/verificationButton');
 const statTracker = require('./handlers/statTracker');
 const { handleXPMessage } = require('./handlers/engagementManager');
-const { handleSpam } = require('./handlers/antispam');
+const { handleSpam } = require('./handlers/antiSpam'); // שים לב לנתיב
 const smartChat = require('./handlers/smartChat');
 
+// 👤 הצטרפות חבר - מעודכן ל-Unified DB
 client.on('guildMemberAdd', async member => {
     try {
-        await db.collection('memberTracking').doc(member.id).set({ guildId: member.guild.id, joinedAt: new Date().toISOString(), status: 'active' }, { merge: true });
+        // 1. יצירת משתמש ב-Unified DB
+        await ensureUserExists(member.id, member.displayName);
+        
+        // 2. עדכון פרטי מעקב (במקום memberTracking הישן)
+        await db.collection('users').doc(member.id).set({
+            tracking: {
+                guildId: member.guild.id,
+                joinedAt: new Date().toISOString(),
+                status: 'active'
+            },
+            identity: {
+                displayName: member.displayName,
+                fullName: member.user.username,
+                discordId: member.id
+            }
+        }, { merge: true });
+
+        // 3. שליחת הודעת אימות
         const verificationChannelId = process.env.VERIFICATION_CHANNEL_ID;
         if(verificationChannelId) {
             await member.send(`במידה והסתבכת — פשוט לחץ על הלינק הבא:\n\nhttps://discord.com/channels/${member.guild.id}/${verificationChannelId}\n\nזה יוביל אותך ישירות לאימות וכניסה מלאה לשרת 👋`).catch(err => console.warn(`⚠️ Cannot send DM to ${member.user.tag}`));
         }
+        
+        // 4. סריקת קונסולות
         setTimeout(() => scanForConsoleAndVerify(member), 30000);
+
     } catch (error) { console.error('GuildMemberAdd Error:', error); }
 });
 
+// 👋 עזיבת חבר - מעודכן ל-Unified DB
 client.on('guildMemberRemove', async member => {
-    await db.collection('memberTracking').doc(member.id).set({ status: 'left', leftAt: new Date().toISOString() }, { merge: true });
+    try {
+        await db.collection('users').doc(member.id).set({
+            tracking: {
+                status: 'left',
+                leftAt: new Date().toISOString()
+            }
+        }, { merge: true });
+    } catch (e) { console.error('GuildMemberRemove Error:', e); }
 });
 
+// שאר האירועים נשארים זהים
 client.on('voiceStateUpdate', handleVoiceStateUpdate);
 client.on('presenceUpdate', (oldPresence, newPresence) => trackGamePresence(newPresence));
+
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
-    await statTracker.trackMessage(message);
-    await handleXPMessage(message);
+    
+    // סדר הפעולות: מעקב -> XP -> ספאם -> צ'אט
+    await statTracker.trackMessage(message); // כותב ל-Unified DB (Users)
+    await handleXPMessage(message);          // כותב ל-Unified DB (Users)
     await handleSpam(message);
-    await smartChat(message);
+    await smartChat.handleSmartReply(message); // הנחה שזה export בשם handleSmartReply או הפונקציה עצמה
 });
 
 client.login(process.env.DISCORD_TOKEN);

@@ -7,6 +7,7 @@ const {
     trackJoinDuration,
     trackActiveHour
 } = require('./statTracker');
+const { getUserRef } = require('../utils/userUtils'); // ✅ השינוי היחיד: חיבור למערכת החדשה
 const db = require('../utils/firebase');
 const podcastManager = require('./podcastManager');
 const ttsTester = require('./ttsTester');
@@ -28,111 +29,125 @@ let voiceCounterTimeout = null;
 let debounceTimeout = null;
 
 async function updateVoiceCounterChannel(guild) {
-    if (!guild || !guild.channels) return;
-    const totalMembersInVoice = guild.channels.cache
-        .filter(c => c.parentId === COUNTER_CATEGORY_ID && c.type === ChannelType.GuildVoice)
-        .reduce((acc, channel) => acc + channel.members.filter(m => !m.user.bot).size, 0);
-
-    let counterChannel = guild.channels.cache.find(c => c.name.startsWith(COUNTER_CHANNEL_PREFIX));
-    if (totalMembersInVoice > 0 && voiceCounterTimeout) {
-        clearTimeout(voiceCounterTimeout);
-        voiceCounterTimeout = null;
-    }
-    if (totalMembersInVoice > 0) {
-        const newName = `${COUNTER_CHANNEL_PREFIX} ${totalMembersInVoice}`;
-        if (counterChannel) {
-            if (counterChannel.name !== newName) await counterChannel.setName(newName).catch(err => log(`⚠️ שגיאה בעדכון שם ערוץ המונה: ${err.message}`));
-        } else {
-            try {
-                await guild.channels.create({
-                    name: newName, type: ChannelType.GuildVoice, parent: COUNTER_CATEGORY_ID, position: 0,
-                    permissionOverwrites: [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.Connect], allow: [PermissionFlagsBits.ViewChannel] }]
-                });
-            } catch (err) { log(`⚠️ שגיאה ביצירת ערוץ המונה: ${err.message}`); }
+    if (!guild) return;
+    
+    // ספירת משתמשים (לא בוטים)
+    let totalUsers = 0;
+    guild.channels.cache.forEach(c => {
+        if (c.type === ChannelType.GuildVoice && c.id !== guild.afkChannelId) {
+            totalUsers += c.members.filter(m => !m.user.bot).size;
         }
-    } else if (counterChannel && !voiceCounterTimeout) {
-        const channelIdToDelete = counterChannel.id;
-        log(`[COUNTER] מתחיל טיימר של ${COUNTER_DELETE_AFTER_MINUTES} דקות למחיקה.`);
-        voiceCounterTimeout = setTimeout(async () => {
-            const channel = await guild.channels.fetch(channelIdToDelete).catch(() => null);
-            if (channel) await channel.delete().catch(err => log(`⚠️ שגיאה במחיקת ערוץ המונה: ${err.message}`));
-            voiceCounterTimeout = null;
-        }, COUNTER_DELETE_AFTER_MINUTES * 60 * 1000);
-    }
-}
+    });
 
-function scheduleVoiceCounterUpdate(guild) {
-    if (debounceTimeout) clearTimeout(debounceTimeout);
-    debounceTimeout = setTimeout(() => { updateVoiceCounterChannel(guild); }, 2000);
+    const category = guild.channels.cache.get(COUNTER_CATEGORY_ID);
+    if (!category) return;
+
+    const channelName = `${COUNTER_CHANNEL_PREFIX} ${totalUsers}`;
+    const existingChannel = category.children.cache.find(c => c.name.startsWith(COUNTER_CHANNEL_PREFIX));
+
+    try {
+        if (existingChannel) {
+            if (existingChannel.name !== channelName) {
+                await existingChannel.setName(channelName);
+                log(`[VoiceCounter] עודכן ל: ${totalUsers}`);
+            }
+        } else {
+            await guild.channels.create({
+                name: channelName,
+                type: ChannelType.GuildVoice,
+                parent: CATEGORY_ID,
+                permissionOverwrites: [{
+                    id: guild.id,
+                    deny: [PermissionFlagsBits.Connect], 
+                    allow: [PermissionFlagsBits.ViewChannel]
+                }]
+            });
+            log(`[VoiceCounter] נוצר ערוץ חדש: ${totalUsers}`);
+        }
+    } catch (err) {
+        // התעלמות משגיאות Rate Limit רגילות
+    }
 }
 
 async function handleVoiceStateUpdate(oldState, newState) {
-    const guild = newState.guild || oldState.guild;
-    if (!guild) return;
-    scheduleVoiceCounterUpdate(guild);
-    if (newState.member?.user.bot) return;
+    const member = newState.member;
+    const userId = member.id;
+    const guild = member.guild;
+    const oldChannel = oldState.channel;
+    const newChannel = newState.channel;
+    const now = Date.now();
 
-    const member = newState.member, userId = member.id, oldChannel = oldState.channel, newChannel = newState.channel, now = Date.now();
-    
-    // --- 1. ערוץ טסט ---
-    if (TTS_TEST_CHANNEL_ID) {
-        if (!oldChannel && newChannel && newChannel.id === TTS_TEST_CHANNEL_ID) {
-            if (member.permissions.has(PermissionFlagsBits.Administrator)) {
-                log(`[TTS_TESTER] מזהה כניסת אדמין (${member.displayName}) לערוץ הבדיקות. מפעיל בדיקה...`);
-                await ttsTester.runTTSTest(member);
-            }
-            return;
-        }
-        if (oldChannel && !newChannel && oldChannel.id === TTS_TEST_CHANNEL_ID) {
-             log(`[TTS_TESTER] מזהה יציאת (${member.displayName}) מערוץ הבדיקות.`);
-             return;
-        }
-    }
-    
-    // --- 2. ערוץ AFK ---
-    if (newChannel?.id === guild.afkChannelId || oldChannel?.id === guild.afkChannelId) return;
+    if (member.user.bot) return;
 
-    // --- 3. FIFO ---
-    const fifoRole = guild.roles.cache.find(r => r.name === FIFO_ROLE_NAME);
-    if (fifoRole && FIFO_CHANNEL_ID) {
-        try {
-            const hasRole = member.roles.cache.has(fifoRole.id);
-            if (newChannel?.id === FIFO_CHANNEL_ID && !hasRole) await member.roles.add(fifoRole);
-            if (oldChannel?.id === FIFO_CHANNEL_ID && newChannel?.id !== FIFO_CHANNEL_ID && hasRole) await member.roles.remove(fifoRole);
-        } catch (err) { log(`⚠️ שגיאה בניהול תפקיד FIFO:`, err.message); }
+    // --- 1. עדכון מונה המשתמשים (עם Debounce) ---
+    if (debounceTimeout) clearTimeout(debounceTimeout);
+    debounceTimeout = setTimeout(() => updateVoiceCounterChannel(guild), 5000);
+
+    // --- 2. בדיקת פודקאסט (האם להשתיק התראות אחרות?) ---
+    const isPodcastActive = await podcastManager.handleVoiceStateUpdate(oldState, newState);
+    if (isPodcastActive) return; 
+
+    // --- 3. TTS Tester (בדיקות סאונד) ---
+    if (newChannel?.id === TTS_TEST_CHANNEL_ID && oldChannel?.id !== TTS_TEST_CHANNEL_ID) {
+        await ttsTester.runTTSTest(member);
+        return; 
     }
 
-    // --- 4. סטטיסטיקות ---
+    // --- 4. סטטיסטיקות כניסה/יציאה (מעודכן ל-DB החדש) ---
+    
+    // כניסה לערוץ
     if (!oldChannel && newChannel) {
         joinTimestamps.set(userId, now);
-        await trackJoinCount(userId); await trackActiveHour(userId);
+        await trackJoinCount(userId);
+        await trackActiveHour(userId);
+        
+        // ✅ עדכון סטטוס ב-Master Record
+        const userRef = await getUserRef(userId, 'discord');
+        await userRef.set({ 
+            meta: { lastSeen: new Date().toISOString() },
+            tracking: { status: 'active' }
+        }, { merge: true });
     }
-    if (oldChannel && !newChannel) {
+
+    // יציאה מערוץ או מעבר ערוץ
+    if (oldChannel && (!newChannel || oldChannel.id !== newChannel.id)) {
         const joinedAt = joinTimestamps.get(userId);
         if (joinedAt) {
             const durationMs = now - joinedAt;
+            // שומרים רק אם היה מעל דקה
             if (durationMs > 60000) {
                 const minutes = Math.round(durationMs / 60000);
-                await updateVoiceActivity(userId, minutes, db); await trackVoiceMinutes(userId, minutes); await trackJoinDuration(userId, minutes);
-                await db.collection('memberTracking').doc(userId).set({ lastActivity: new Date().toISOString() }, { merge: true });
+                
+                // עדכון בכל המקומות הנדרשים (StatTracker מטפל ב-Master DB)
+                await updateVoiceActivity(userId, minutes); 
+                await trackVoiceMinutes(userId, minutes); 
+                await trackJoinDuration(userId, minutes);
+                
+                // ✅ עדכון זמן פעילות אחרון
+                const userRef = await getUserRef(userId, 'discord');
+                await userRef.set({ 
+                    meta: { lastSeen: new Date().toISOString() }
+                }, { merge: true });
             }
-            joinTimestamps.delete(userId);
+            joinTimestamps.delete(userId); // מאפסים כדי להתחיל ספירה מחדש אם עבר ערוץ
         }
     }
     
-    // --- 5. לוגיקת הניגון המשולבת (Blending) ---
-    if (oldChannel?.id !== newChannel?.id) {
-        // ✅ [שדרוג] אם זה ערוץ BF6 - נגן את ה-Theme קודם כל!
-        // הוספה לתור: ה-Theme יכנס ראשון
-        if (newChannel?.id === BF6_VOICE_CHANNEL_ID) {
+    // אם עבר ערוץ - מתחילים ספירה חדשה מיד
+    if (newChannel && oldChannel && newChannel.id !== oldChannel.id) {
+        joinTimestamps.set(userId, now);
+    }
+    
+    // --- 5. לוגיקת הניגון המשולבת (BF6) ---
+    if (newChannel && oldChannel?.id !== newChannel.id) {
+        if (newChannel.id === BF6_VOICE_CHANNEL_ID) {
             log(`[BF6] מזהה כניסה לערוץ BF6. מפעיל Theme...`);
             await bf6Announcer.playBf6Theme(newChannel, member);
         }
-
-        // ✅ [שדרוג] מיד לאחר מכן, נסה להוסיף את הפודקאסט לתור
-        // מכיוון שיש לנו voiceQueue מאוחד, הם יתנגנו אחד אחרי השני!
-        await podcastManager.handleVoiceStateUpdate(oldState, newState);
     }
 }
 
-module.exports = { handleVoiceStateUpdate, updateVoiceCounterChannel };
+module.exports = { 
+    handleVoiceStateUpdate,
+    updateVoiceCounterChannel 
+};

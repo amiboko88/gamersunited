@@ -1,6 +1,7 @@
-// 📁 handlers/statTracker.js
+// 📁 handlers/statTracker.js (מעודכן ל-Unified DB)
 const db = require('../utils/firebase');
 const admin = require('firebase-admin');
+const { getUserRef } = require('../utils/userUtils'); // שימוש בתשתית החדשה
 
 // 🎚️ טבלת משקלים לכל פעולה לצבירת XP
 const xpWeights = {
@@ -23,111 +24,78 @@ function getXpReward(field, amount = 1) {
   return (xpWeights[field] || 1) * amount;
 }
 
-// 🧠 עדכון חכם לסטטיסטיקות ו־XP
+// 🧠 עדכון חכם לסטטיסטיקות ו־XP - ישירות למאגר המאוחד
 async function incrementStat(userId, field, amount = 1) {
-  const userRef = db.collection('userStats').doc(userId);
-  const weekRef = db.collection('weeklyStats').doc(userId);
-  const incrementObj = { [field]: admin.firestore.FieldValue.increment(amount) };
+  try {
+      // שימוש בפונקציית העזר כדי לקבל את המיקום הנכון ב-users
+      const userRef = await getUserRef(userId, 'discord');
+      const weekRef = db.collection('weeklyStats').doc(userId); // זה נשאר נפרד, וזה בסדר
 
-  // ודא קיום המסמך
-  await Promise.all([
-    userRef.set({}, { merge: true }),
-    weekRef.set({}, { merge: true })
-  ]);
+      // עדכון הסטטיסטיקה הגלובלית בתוך האובייקט stats
+      const updates = {
+          [`stats.${field}`]: admin.firestore.FieldValue.increment(amount),
+          'meta.lastSeen': new Date().toISOString()
+      };
 
-  // עדכון ערך סטטיסטי
-  await Promise.all([
-    userRef.update(incrementObj),
-    weekRef.update(incrementObj)
-  ]);
+      // חישוב ועדכון XP באותו הזמן (בתוך economy)
+      const xpToAdd = getXpReward(field, amount);
+      if (xpToAdd > 0) {
+          updates['economy.xp'] = admin.firestore.FieldValue.increment(xpToAdd);
+      }
 
-  // עדכון XP
-  const xp = getXpReward(field, amount);
-  await Promise.all([
-    userRef.update({ xpGained: admin.firestore.FieldValue.increment(xp) }),
-    weekRef.update({ xpThisWeek: admin.firestore.FieldValue.increment(xp) })
-  ]);
-}
+      await Promise.all([
+          userRef.set(updates, { merge: true }),
+          weekRef.set({ [field]: admin.firestore.FieldValue.increment(amount) }, { merge: true })
+      ]);
 
-// 🔧 עדכון ישיר לשדה
-async function setStat(userId, field, value) {
-  const userRef = db.collection('userStats').doc(userId);
-  await userRef.set({ [field]: value }, { merge: true });
-}
-
-// 📊 חישוב ממוצע מדויק
-function calcNewAverage(currentAvg, totalCount, newValue) {
-  return parseFloat(((currentAvg * (totalCount - 1) + newValue) / totalCount).toFixed(2));
-}
-// 📩 הודעות טקסט
-module.exports.trackMessage = async message => {
-  if (!message.author || message.author.bot) return;
-  const userId = message.author.id;
-
-  await incrementStat(userId, 'messagesSent');
-
-  // עדכון פעילות כללית
-  await db.collection('memberTracking').doc(userId).set({
-    lastActivity: new Date().toISOString(),
-    activityWeight: admin.firestore.FieldValue.increment(1)
-  }, { merge: true });
-
-  // ממוצע מילים להודעה
-  const words = message.content.trim().split(/\s+/).length;
-  const ref = db.collection('userStats').doc(userId);
-  const doc = await ref.get();
-  const stats = doc.exists ? doc.data() : {};
-  const currentAvg = stats.avgWordsPerMessage || 0;
-  const messages = (stats.messagesSent || 0) + 1;
-  const newAvg = calcNewAverage(currentAvg, messages, words);
-  await setStat(userId, 'avgWordsPerMessage', newAvg);
-
-  if (message.attachments.size > 0) await incrementStat(userId, 'mediaShared');
-  if (message.content.includes('http') || message.content.includes('www.')) {
-    await incrementStat(userId, 'linksShared');
+  } catch (error) {
+      console.error(`❌ שגיאה בעדכון סטטיסטיקה ל-${userId}:`, error);
   }
-};
+}
 
-// 🟢 Slash commands
-module.exports.trackSlash = async interaction => {
-  if (!interaction.user || interaction.user.bot) return;
-  await incrementStat(interaction.user.id, 'slashUsed');
-};
-
-// 🔊 שימוש בסאונד
-module.exports.trackSoundUse = async userId => {
-  await incrementStat(userId, 'soundsUsed');
-};
-
-// 🤖 תגובות בוט חכמות
-module.exports.trackSmartReply = async userId => {
-  await incrementStat(userId, 'smartReplies');
-};
-
-// 📅 RSVP
-module.exports.trackRsvp = async userId => {
-  await incrementStat(userId, 'rsvpCount');
-};
-
-// 🗣️ דקות קול
+// 🎤 מעקב דקות קוליות
 module.exports.trackVoiceMinutes = async (userId, minutes) => {
   await incrementStat(userId, 'voiceMinutes', minutes);
 };
 
-// 🔁 כניסות לערוץ קול
+// 💬 מעקב הודעות
+module.exports.trackMessage = async userId => {
+  await incrementStat(userId, 'messagesSent');
+};
+
+// 🤖 מעקב פקודות
+module.exports.trackCommand = async userId => {
+  await incrementStat(userId, 'slashUsed');
+};
+
+// 🔊 מעקב סאונדבורד
+module.exports.trackSoundUse = async userId => {
+  await incrementStat(userId, 'soundsUsed');
+};
+
+// 🚪 מעקב כניסות לחדר
 module.exports.trackJoinCount = async userId => {
   await incrementStat(userId, 'timesJoinedVoice');
 };
 
-// 🧮 חישוב ממוצע זמן שהייה
+// ⌛ ממוצע זמן בחדר
 module.exports.trackJoinDuration = async (userId, durationMinutes) => {
-  const ref = db.collection('userStats').doc(userId);
-  const doc = await ref.get();
-  const data = doc.exists ? doc.data() : {};
-  const totalSessions = (data.timesJoinedVoice || 0) + 1;
-  const currentAvg = data.averageJoinDuration || durationMinutes;
-  const newAvg = calcNewAverage(currentAvg, totalSessions, durationMinutes);
-  await setStat(userId, 'averageJoinDuration', newAvg);
+  try {
+      const userRef = await getUserRef(userId, 'discord');
+      const doc = await userRef.get();
+      
+      const stats = doc.data()?.stats || {};
+      const totalSessions = (stats.timesJoinedVoice || 0); 
+      
+      const currentAvg = stats.averageJoinDuration || durationMinutes;
+      const newAvg = totalSessions > 0 
+          ? ((currentAvg * (totalSessions - 1)) + durationMinutes) / totalSessions 
+          : durationMinutes;
+
+      await userRef.update({
+          'stats.averageJoinDuration': Math.round(newAvg * 10) / 10 
+      });
+  } catch (e) { /* התעלמות אם אין מסמך */ }
 };
 
 // 🔇 השתקות
@@ -142,8 +110,11 @@ module.exports.trackNicknameChange = async userId => {
 
 // ⏰ עדכון שעת פעילות
 module.exports.trackActiveHour = async userId => {
-  const hour = new Date().getHours();
-  await setStat(userId, 'mostActiveHour', hour);
+  try {
+      const hour = new Date().getHours();
+      const userRef = await getUserRef(userId, 'discord');
+      await userRef.set({ 'stats.mostActiveHour': hour }, { merge: true });
+  } catch (e) {}
 };
 
 // 🎙️ השתתפות בפודקאסט
@@ -151,19 +122,22 @@ module.exports.trackPodcast = async userId => {
   await incrementStat(userId, 'podcastAppearances');
 };
 
-// 🎮 נתוני זמן לפי משחק
-async function updateGameStats(userId, gameName, minutes, db) {
+// 🎮 נתוני זמן לפי משחק (נשאר בקולקשן נפרד gameStats - זה תקין)
+async function updateGameStats(userId, gameName, minutes) {
   try {
     if (!gameName) return;
     const ref = db.collection('gameStats').doc(userId);
-    const doc = await ref.get();
-    const current = doc.exists ? doc.data() : {};
-    const existing = (current?.[gameName] && current[gameName].minutes) || 0;
-    await ref.set({
-      [gameName]: { minutes: existing + minutes }
-    }, { merge: true });
+    const safeGameName = gameName.replace(/[\/\.]/g, ''); 
+    
+    const updateData = {
+        [`games.${safeGameName}.minutes`]: admin.firestore.FieldValue.increment(minutes),
+        [`games.${safeGameName}.lastPlayed`]: new Date().toISOString()
+    };
+
+    await ref.set(updateData, { merge: true });
   } catch (err) {
-    console.warn(`⚠️ updateGameStats נכשל עבור ${userId}: ${err.message}`);
+    console.error(`⚠️ שגיאה בעדכון משחק ${gameName}:`, err.message);
   }
 }
+
 module.exports.updateGameStats = updateGameStats;

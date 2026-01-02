@@ -9,15 +9,16 @@ const gamersEngine = require('./gamers');
 const memoryEngine = require('./memory');
 const casinoLogic = require('./casino');
 
-// הנדלרים ספציפיים שעדיין בשימוש ישיר ע"י ה-Core
-const { generateProfileCard, getUserFullProfile } = require('../handlers/profileRenderer');
+// 🔥 התיקון: הפרדת הייבוא לקבצים הנכונים
+const { generateProfileCard } = require('../handlers/profileRenderer'); // הצייר
+const { getUserFullProfile } = require('../handlers/profileHandler');   // מנהל הנתונים
 const fs = require('fs');
 
 // מילות מפתח לפרופיל
 const PROFILE_KEYWORDS = ['פרופיל', 'כרטיס', 'סטטוס', 'דרגה', 'כמה כסף', 'ארנק', 'xp', 'מצב חשבון'];
 
 /**
- * המוח הראשי - Core Logic V3.2 (FIXED)
+ * המוח הראשי - Core Logic V3.3 (Fixed Import)
  */
 async function handleMessageLogic(sock, msg, text) {
     const chatJid = msg.key.remoteJid;
@@ -29,19 +30,19 @@ async function handleMessageLogic(sock, msg, text) {
     // 1. למידה פסיבית
     memoryEngine.learn(senderId, text); 
 
-    // 2. עדכון סטטיסטיקות + בדיקת עליית רמה
+    // 2. עדכון סטטיסטיקות
     const levelData = await incrementTotalMessages(senderId, senderName);
     if (levelData && levelData.leveledUp) {
         await socialEngine.celebrateLevelUp(sock, chatJid, senderId, senderName, levelData);
     }
 
-    // 3. קיצור דרך לכרטיס פרופיל
+    // 3. פרופיל מהיר
     if (PROFILE_KEYWORDS.some(k => lowerText.includes(k)) && lowerText.split(' ').length <= 4) {
         await handleProfileRequest(sock, chatJid, senderId, senderName, msg);
         return;
     }
 
-    // 4. ניתוח כוונות (AI)
+    // 4. ניתוח כוונות
     const intentData = await intentAnalyzer.analyze(text, senderName);
     log(`[Core] 🧠 Intent: ${intentData.category} | Score: ${intentData.interestScore}`);
 
@@ -57,15 +58,13 @@ async function handleMessageLogic(sock, msg, text) {
         return;
     }
 
-    // 6. ניתוב למנועים המומחים
+    // 6. ניתוב למנועים
 
-    // 📸 מנוע גיימינג (תמונות)
     if (msg.message.imageMessage) {
         await gamersEngine.processImage(sock, msg, chatJid, senderId, senderName);
         return;
     }
 
-    // 🎰 קזינו והימורים
     if (intentData.category === 'GAMBLING' || intentData.category === 'CASINO_ROULETTE') {
         if (text.includes('רולטה')) {
             await socialEngine.sendQuickReply(sock, chatJid, senderId, senderName, "תחזיק חזק...", "מאיים");
@@ -77,13 +76,12 @@ async function handleMessageLogic(sock, msg, text) {
         return;
     }
 
-    // 🤝 מנוע חברתי
     switch (intentData.category) {
         case 'GAMING_INVITE':
-            await socialEngine.handleGameInvite(sock, chatJid, senderId, senderName);
+            // 🔥 מעבירים גם את הטקסט כדי להבין הקשר (אם זה 1 על 1 או לכולם)
+            await socialEngine.handleGameInvite(sock, chatJid, senderId, senderName, text);
             break;
         case 'HELP_REQUEST':
-            // 🔥 תוקן: מעבירים את msg
             await socialEngine.handleHelpRequest(sock, chatJid, msg, senderId, senderName, text);
             break;
         case 'TRASH_TALK':
@@ -92,7 +90,6 @@ async function handleMessageLogic(sock, msg, text) {
             break;
         case 'PRAISE':
         case 'SOCIAL':
-            // 🔥 תוקן: מעבירים את msg
             await socialEngine.handleGeneralChat(sock, chatJid, msg, senderId, senderName, text, intentData.category);
             break;
     }
@@ -103,6 +100,7 @@ async function handleProfileRequest(sock, chatJid, senderId, senderName, msg) {
     let avatarUrl;
     try { avatarUrl = await sock.profilePictureUrl(msg.key.remoteJid, 'image'); } catch { avatarUrl = null; }
 
+    // עכשיו הפונקציה מיובאת נכון ולא תקרוס
     const waUserRef = await getUserFullProfile(senderId, senderName);
     const totalMessages = waUserRef.whatsappData?.totalMessages || 0; 
     const balance = waUserRef.discordData?.xp || waUserRef.whatsappData?.xp || 0;

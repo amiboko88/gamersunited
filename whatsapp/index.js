@@ -1,7 +1,7 @@
 const { makeWASocket, DisconnectReason } = require('@whiskeysockets/baileys');
 const { useFirestoreAuthState } = require('./auth');
 const { handleMedia } = require('./media');
-const { handleMessageLogic } = require('./logic');
+const { handleMessageLogic } = require('./logic/core');
 const qrcode = require('qrcode');
 const { AttachmentBuilder, EmbedBuilder } = require('discord.js');
 const { log } = require('../utils/logger'); 

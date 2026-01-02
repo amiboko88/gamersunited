@@ -4,142 +4,84 @@ const admin = require('firebase-admin');
 // 🔥 הגדרת הדרגות והפרסים
 const RANKS = [
     { name: 'בוט מתחיל', min: 0, reward: 0 },
-    { name: 'טירון', min: 50, reward: 150 },      // פרס צנוע
+    { name: 'טירון', min: 50, reward: 150 },
     { name: 'לוחם', min: 200, reward: 400 },
     { name: 'מתנקש', min: 600, reward: 1000 },
     { name: 'קומנדו', min: 1200, reward: 2500 },
-    { name: 'אגדה', min: 2500, reward: 5000 }     // פרס ענק
+    { name: 'אגדה', min: 2500, reward: 5000 }
 ];
 
-// טעינת הפרופילים הסטטיים (גיבוי)
+// טעינת פרופילים סטטיים
 let playerProfiles = {};
 try {
     const loaded = require('../../data/profiles');
     playerProfiles = loaded.playerProfiles || loaded; 
-} catch (e) {
-    console.warn("⚠️ data/profiles.js not found.");
-}
+} catch (e) {}
 
 async function attemptAutoLinking(senderId, waDisplayName) {
     if (!waDisplayName || waDisplayName.length < 2) return null;
     try {
         const usersSnapshot = await db.collection('users').get();
-        if (usersSnapshot.empty) return null;
-        
         let foundDoc = null;
         for (const doc of usersSnapshot.docs) {
             const data = doc.data();
             const discordName = (data.displayName || data.username || "").toLowerCase();
             const whatsappName = waDisplayName.toLowerCase();
-            
-            if (discordName === whatsappName || 
-               (discordName.includes(whatsappName) && whatsappName.length > 3) ||
-               (whatsappName.includes(discordName) && discordName.length > 3)) {
+            if (discordName === whatsappName || (whatsappName.includes(discordName) && discordName.length > 3)) {
                 foundDoc = doc; break;
             }
         }
-        
         if (foundDoc) {
             await db.collection('whatsapp_users').doc(senderId).set({
                 discordId: foundDoc.id, 
                 isLinked: true, 
                 linkedAt: new Date().toISOString(), 
-                displayName: waDisplayName,
+                displayName: waDisplayName, // הנה השם!
                 masterRecordLocation: `users/${foundDoc.id}`
             }, { merge: true });
             
             await db.collection('users').doc(foundDoc.id).set({
                 platforms: { whatsapp: senderId }
             }, { merge: true });
-
             return foundDoc.data();
         }
-    } catch (error) { console.error("AutoLink Error:", error); }
+    } catch (error) {}
     return null;
 }
 
-// --- 🔥 שליפת הפרופיל המלא + סטטיסטיקות ---
 async function getUserFullProfile(senderId, senderName) {
-    let profile = { 
-        waName: senderName, 
-        discordData: null, 
-        facts: [], 
-        roastMaterial: null, 
-        justLinked: false,
-        discordId: null,
-        whatsappData: null // הוספנו את זה
-    };
-
+    let profile = { waName: senderName, discordData: null, facts: [], roastMaterial: null, whatsappData: null };
     try {
         const userRef = db.collection('whatsapp_users').doc(senderId);
         let doc = await userRef.get();
         let data = doc.exists ? doc.data() : {};
+        profile.whatsappData = data;
         
-        profile.whatsappData = data; // שמירת הנתונים הגולמיים (כולל totalMessages)
         let discordId = data.discordId;
-
         if (!discordId) {
             const linkedData = await attemptAutoLinking(senderId, senderName);
             if (linkedData) {
                 profile.discordData = linkedData;
-                profile.justLinked = true;
                 discordId = linkedData.id; 
-                doc = await userRef.get(); 
-                data = doc.data();
-                profile.whatsappData = data;
             }
         } else {
             const discordDoc = await db.collection('users').doc(discordId).get();
-            if (discordDoc.exists) {
-                profile.discordData = discordDoc.data();
-            }
-        }
-        
-        profile.discordId = discordId;
-
-        if (profile.discordData && profile.discordData.facts) {
-            profile.facts = profile.discordData.facts;
+            if (discordDoc.exists) profile.discordData = discordDoc.data();
         }
 
+        // שליפת עובדות (מהמאסטר רקורד)
+        if (profile.discordData && profile.discordData.facts) profile.facts = profile.discordData.facts;
+        else if (data.facts) profile.facts = data.facts;
+
+        // רוסטים
         if (playerProfiles) {
             let roasts = [];
-            if (discordId && playerProfiles[discordId]) {
-                roasts = playerProfiles[discordId];
-            } else if (playerProfiles.default) {
-                roasts = playerProfiles.default;
-            }
-            if (roasts.length > 0) {
-                profile.roastMaterial = roasts[Math.floor(Math.random() * roasts.length)].replace('{userName}', senderName);
-            }
+            if (discordId && playerProfiles[discordId]) roasts = playerProfiles[discordId];
+            else if (playerProfiles.default) roasts = playerProfiles.default;
+            if (roasts.length > 0) profile.roastMaterial = roasts[Math.floor(Math.random() * roasts.length)].replace('{userName}', senderName);
         }
-    } catch (e) { console.error("GetProfile Error:", e); }
-    
+    } catch (e) {}
     return profile;
-}
-
-async function addFact(senderId, fact) {
-    if (!fact) return;
-    try {
-        const userRef = db.collection('whatsapp_users').doc(senderId);
-        const doc = await userRef.get();
-        let targetRef = userRef;
-        if (doc.exists && doc.data().discordId) {
-            targetRef = db.collection('users').doc(doc.data().discordId);
-        }
-        await targetRef.update({
-            facts: admin.firestore.FieldValue.arrayUnion({ 
-                content: fact, 
-                timestamp: new Date().toISOString(),
-                source: 'shimon_bot' 
-            })
-        }, { merge: true });
-    } catch (error) {
-        try {
-            await db.collection('whatsapp_users').doc(senderId).set({
-                facts: admin.firestore.FieldValue.arrayUnion({ content: fact, timestamp: new Date().toISOString() })
-            }, { merge: true });
-        } catch (e) {}
-    }
 }
 
 async function checkDailyVoiceLimit(senderId) {
@@ -148,9 +90,7 @@ async function checkDailyVoiceLimit(senderId) {
         const userRef = db.collection('whatsapp_users').doc(senderId);
         const doc = await userRef.get();
         if (!doc.exists) return true;
-        const data = doc.data();
-        if (data.voiceUsageDate !== todayStr) return true;
-        return (data.dailyVoiceCount || 0) < 3;
+        return (doc.data().dailyVoiceCount || 0) < 3; // מגבלה יומית
     } catch (e) { return false; }
 }
 
@@ -165,65 +105,61 @@ async function incrementVoiceUsage(senderId) {
     } catch (e) {}
 }
 
-// ✅ פונקציה משודרגת: ספירת הודעות + בדיקת עליית רמה
-async function incrementTotalMessages(senderId) {
+// 🔥 השינוי: מקבל גם את senderName כדי לתקן את ה-"Unknown User" בדאטה בייס
+async function incrementTotalMessages(senderId, senderName) {
     try {
         const userRef = db.collection('whatsapp_users').doc(senderId);
         
-        // טרנזקציה כדי לוודא שאנחנו תופסים את המספר המדויק בזמן אמת
         const result = await db.runTransaction(async (t) => {
             const doc = await t.get(userRef);
-            if (!doc.exists) return null; // אם המשתמש לא קיים עדיין (נדיר, כי הוא נוצר בהודעה הראשונה)
-
-            const data = doc.data();
-            const currentMsgs = (data.totalMessages || 0) + 1;
             
-            // עדכון מונה ההודעות
-            t.set(userRef, {
-                totalMessages: currentMsgs,
-                lastActive: new Date().toISOString()
+            // עדכון שם המשתמש (Self-Healing)
+            t.set(userRef, { 
+                displayName: senderName, // <-- התיקון הקריטי!
+                lastActive: new Date().toISOString() 
             }, { merge: true });
 
-            // בדיקת עליית רמה
-            // אנחנו בודקים אם המספר הנוכחי *בדיוק* שווה למינימום של דרגה כלשהי
-            const newRank = RANKS.find(r => r.min === currentMsgs);
-            
-            if (newRank && newRank.min > 0) { // מדלגים על רמה 0
-                // יש עליית רמה! נותנים כסף
-                // אם מקושר לדיסקורד - מעדכנים שם, אחרת בוואטסאפ
-                let targetRef = userRef;
-                if (data.discordId) {
-                    targetRef = db.collection('users').doc(data.discordId);
-                }
-
-                t.update(targetRef, {
-                    xp: admin.firestore.FieldValue.increment(newRank.reward)
-                });
-
-                return { 
-                    leveledUp: true, 
-                    rankName: newRank.name, 
-                    reward: newRank.reward,
-                    totalMessages: currentMsgs
-                };
+            if (!doc.exists) {
+                t.set(userRef, { totalMessages: 1 }, { merge: true });
+                return { leveledUp: false };
             }
-            
+
+            const currentMsgs = (doc.data().totalMessages || 0) + 1;
+            t.update(userRef, { totalMessages: currentMsgs });
+
+            // בדיקת רמות
+            const newRank = RANKS.find(r => r.min === currentMsgs);
+            if (newRank && newRank.min > 0) {
+                // הבונוס הולך למאסטר רקורד (דיסקורד) אם קיים
+                let targetRef = userRef;
+                if (doc.data().discordId) {
+                    targetRef = db.collection('users').doc(doc.data().discordId);
+                }
+                t.update(targetRef, { xp: admin.firestore.FieldValue.increment(newRank.reward) });
+
+                return { leveledUp: true, rankName: newRank.name, reward: newRank.reward, totalMessages: currentMsgs };
+            }
             return { leveledUp: false };
         });
-
         return result;
+    } catch (e) { return null; }
+}
 
-    } catch (e) {
-        console.error('Error updating msg count:', e);
-        return null;
-    }
+async function addFact(senderId, fact) {
+    // פונקציית גיבוי, הרוב נעשה דרך memory.js החכם יותר
+    try {
+        const userRef = db.collection('whatsapp_users').doc(senderId);
+        const doc = await userRef.get();
+        let targetRef = userRef;
+        if (doc.exists && doc.data().discordId) targetRef = db.collection('users').doc(doc.data().discordId);
+        
+        await targetRef.update({
+            facts: admin.firestore.FieldValue.arrayUnion({ content: fact, date: new Date().toISOString() })
+        });
+    } catch (e) {}
 }
 
 module.exports = { 
-    getUserFullProfile, 
-    addFact, 
-    checkDailyVoiceLimit, 
-    incrementVoiceUsage,
-    incrementTotalMessages,
-    attemptAutoLinking
+    getUserFullProfile, addFact, checkDailyVoiceLimit, 
+    incrementVoiceUsage, incrementTotalMessages, attemptAutoLinking 
 };

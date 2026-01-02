@@ -172,7 +172,7 @@ const { trackGamePresence } = require('./handlers/presenceTracker');
 const { scanForConsoleAndVerify } = require('./handlers/verificationButton');
 const statTracker = require('./handlers/statTracker');
 const { handleXPMessage } = require('./handlers/engagementManager');
-const { handleSpam } = require('./handlers/antiSpam'); // שים לב לנתיב
+const { handleSpam } = require('./handlers/antispam'); // שים לב לנתיב
 const smartChat = require('./handlers/smartChat');
 
 // 👤 הצטרפות חבר - מעודכן ל-Unified DB

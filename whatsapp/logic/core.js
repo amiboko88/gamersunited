@@ -9,53 +9,49 @@ const gamersEngine = require('./gamers');
 const memoryEngine = require('./memory');
 const casinoLogic = require('./casino');
 
-// הנדלרים ספציפיים שעדיין בשימוש ישיר ע"י ה-Core (אם יש כאלה)
+// הנדלרים ספציפיים שעדיין בשימוש ישיר ע"י ה-Core
 const { generateProfileCard, getUserFullProfile } = require('../handlers/profileRenderer');
 const fs = require('fs');
 
-// מילות מפתח לפרופיל (עדיין קיים כקיצור דרך, אך ניתן להסרה אם תרצה הכל AI)
+// מילות מפתח לפרופיל
 const PROFILE_KEYWORDS = ['פרופיל', 'כרטיס', 'סטטוס', 'דרגה', 'כמה כסף', 'ארנק', 'xp', 'מצב חשבון'];
 
 /**
- * המוח הראשי - Core Logic V3 (Clean & Pure AI)
+ * המוח הראשי - Core Logic V3.2 (FIXED)
  */
 async function handleMessageLogic(sock, msg, text) {
     const chatJid = msg.key.remoteJid;
     const senderFullJid = msg.key.participant || msg.participant || chatJid;
     const senderId = senderFullJid.split('@')[0];
-    const senderName = msg.pushName || "פלוני"; // זה השם שיישמר עכשיו ב-DB
+    const senderName = msg.pushName || "פלוני";
     const lowerText = text.trim().toLowerCase();
     
     // 1. למידה פסיבית
     memoryEngine.learn(senderId, text); 
 
-    // 2. עדכון סטטיסטיקות + תיקון שם משתמש ב-DB + בדיקת רמה
-    // 🔥 כאן העברנו את senderName
+    // 2. עדכון סטטיסטיקות + בדיקת עליית רמה
     const levelData = await incrementTotalMessages(senderId, senderName);
-    
     if (levelData && levelData.leveledUp) {
         await socialEngine.celebrateLevelUp(sock, chatJid, senderId, senderName, levelData);
     }
 
-    // 3. פרופיל מהיר
+    // 3. קיצור דרך לכרטיס פרופיל
     if (PROFILE_KEYWORDS.some(k => lowerText.includes(k)) && lowerText.split(' ').length <= 4) {
         await handleProfileRequest(sock, chatJid, senderId, senderName, msg);
         return;
     }
 
-    // 4. ניתוח כוונות
+    // 4. ניתוח כוונות (AI)
     const intentData = await intentAnalyzer.analyze(text, senderName);
     log(`[Core] 🧠 Intent: ${intentData.category} | Score: ${intentData.interestScore}`);
-    // 5. בדיקת שעות פעילות (הטיפול עבר ל-AI ב-Social Engine)
+
+    // 5. בדיקת שעות פעילות
     const sysStatus = isSystemActive();
     
-    // אם המערכת "כבויה" (שבת/לילה)
     if (!sysStatus.active) {
-        // רק אם הציון גבוה מאוד (ממש חופרים) או שיש תיוג - ה-AI יגיב בעצבים
         if (text.includes('@') || intentData.interestScore > 85) {
             await socialEngine.handleOfflineInteraction(sock, chatJid, senderName, senderId, sysStatus.reason, text);
         } else if (intentData.interestScore > 50) {
-            // סתם ריאקשן שקט כדי להראות סימן חיים
             await sock.sendMessage(chatJid, { react: { text: "😴", key: msg.key } });
         }
         return;
@@ -73,7 +69,7 @@ async function handleMessageLogic(sock, msg, text) {
     if (intentData.category === 'GAMBLING' || intentData.category === 'CASINO_ROULETTE') {
         if (text.includes('רולטה')) {
             await socialEngine.sendQuickReply(sock, chatJid, senderId, senderName, "תחזיק חזק...", "מאיים");
-            const { handleShimonRoulette } = require('../handlers/rouletteHandler'); // טעינה רק כשצריך
+            const { handleShimonRoulette } = require('../handlers/rouletteHandler'); 
             await handleShimonRoulette(sock, chatJid);
         } else {
             await casinoLogic.handleBetRequest(sock, chatJid, senderId, senderName, text);
@@ -81,13 +77,14 @@ async function handleMessageLogic(sock, msg, text) {
         return;
     }
 
-    // 🤝 מנוע חברתי (כל השאר)
+    // 🤝 מנוע חברתי
     switch (intentData.category) {
         case 'GAMING_INVITE':
             await socialEngine.handleGameInvite(sock, chatJid, senderId, senderName);
             break;
         case 'HELP_REQUEST':
-            await socialEngine.handleHelpRequest(sock, chatJid, senderId, senderName, text);
+            // 🔥 תוקן: מעבירים את msg
+            await socialEngine.handleHelpRequest(sock, chatJid, msg, senderId, senderName, text);
             break;
         case 'TRASH_TALK':
         case 'INSULT_BOT':
@@ -95,7 +92,8 @@ async function handleMessageLogic(sock, msg, text) {
             break;
         case 'PRAISE':
         case 'SOCIAL':
-            await socialEngine.handleGeneralChat(sock, chatJid, senderId, senderName, text, intentData.category);
+            // 🔥 תוקן: מעבירים את msg
+            await socialEngine.handleGeneralChat(sock, chatJid, msg, senderId, senderName, text, intentData.category);
             break;
     }
 }

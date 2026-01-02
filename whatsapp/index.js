@@ -105,15 +105,16 @@ async function connectToWhatsApp(discordClient) {
             } else {
                 connectToWhatsApp(discordClient); 
             }
-        } else if (connection === 'open') {
+} else if (connection === 'open') {
             isConnected = true;
             retryCount = 0; 
             log('[WhatsApp] ✅ Connected!');
             
-            // ✅ התיקון הקריטי: מעבירים את discordClient לקרון!
+            // ✅ התיקון: מעבירים את discordClient וגם את sendToMainGroup
             if (!isCronStarted && discordClient) {
                 log('[WhatsApp] ⏳ Starting Cron jobs with Discord link...');
-                startWhatsAppCron(discordClient); // <--- הנה התיקון
+                // שינינו את השורה הזו:
+                startWhatsAppCron(discordClient, sendToMainGroup); 
                 isCronStarted = true;
             } else if (!discordClient) {
                 log('[WhatsApp] ⚠️ Warning: Discord Client missing in connectToWhatsApp!');

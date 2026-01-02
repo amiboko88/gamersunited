@@ -10,11 +10,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // פונקציית ליבה שמייצרת תשובה (מחברת את הכל)
 async function generateAiReply(senderName, senderId, context, mood) {
-    // 1. שליפת מידע מהספר השחור
     const roast = await memoryEngine.getRoast(senderName, senderId);
-    
-    // 2. בניית הפרומפט המלא דרך Persona.js
-    // זה מבטיח שכל החוקים (קצר, סלנג, בלי נימוסים) נשמרים
     const systemMsg = generateSystemPrompt(senderName, roast, "", context, `מצב רוח נוכחי: ${mood}`);
     
     const completion = await openai.chat.completions.create({
@@ -26,7 +22,6 @@ async function generateAiReply(senderName, senderId, context, mood) {
     return completion.choices[0].message.content;
 }
 
-// 🔥 פונקציה חדשה: טיפול ב-Offline (במקום מערכים קבועים)
 async function handleOfflineInteraction(sock, chatJid, senderName, senderId, reason, text) {
     const reasonText = reason === 'Shabbat' ? 'שבת/חג' : (reason === 'Night' ? 'אמצע הלילה' : 'שנ"צ');
     
@@ -56,7 +51,8 @@ async function handleToxicResponse(sock, chatJid, msg, senderId, senderName, tex
     await sock.sendMessage(chatJid, { text: reply }, { quoted: msg });
 }
 
-async function handleHelpRequest(sock, chatJid, senderId, senderName, text) {
+// 🔥 תוקן: הוספנו את msg
+async function handleHelpRequest(sock, chatJid, msg, senderId, senderName, text) {
     const reply = await generateAiReply(senderName, senderId, `המשתמש ביקש עזרה: "${text}". תעזור לו אבל בסגנון של "אח גדול" שיודע הכל ומנחית הוראות.`, "עוזר ומנשא");
     await sock.sendMessage(chatJid, { text: reply }, { quoted: msg });
 }
@@ -66,7 +62,8 @@ async function handleGameInvite(sock, chatJid, senderId, senderName) {
     await sock.sendMessage(chatJid, { text: reply });
 }
 
-async function handleGeneralChat(sock, chatJid, senderId, senderName, text, category) {
+// 🔥 תוקן: הוספנו את msg
+async function handleGeneralChat(sock, chatJid, msg, senderId, senderName, text, category) {
     await sock.sendPresenceUpdate('composing', chatJid);
     const mood = category === 'PRAISE' ? "מבסוט מעצמי (אגו בשמיים)" : "ציני ומשועמם";
     const reply = await generateAiReply(senderName, senderId, `סתם דיבורים: "${text}". תגיב קצר.`, mood);
@@ -78,7 +75,7 @@ async function celebrateLevelUp(sock, chatJid, senderId, senderName, levelData) 
         name: senderName,
         avatarUrl: await sock.profilePictureUrl(chatJid, 'image').catch(() => null),
         messageCount: levelData.totalMessages,
-        balance: levelData.reward // כדאי לשלוף XP עדכני, אבל זה ויזואלי לבינתיים
+        balance: levelData.reward
     });
 
     const aiText = await generateAiReply(senderName, senderId, `המשתמש עלה לדרגה ${levelData.rankName} וקיבל ${levelData.reward}.`, "חגיגי וציני");

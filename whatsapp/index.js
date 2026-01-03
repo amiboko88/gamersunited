@@ -1,22 +1,24 @@
 const makeWASocket = require('@whiskeysockets/baileys').default;
-const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const coreLogic = require('./logic/core'); 
 
+// ✅ תיקון נתיב לפי העץ ששלחת: auth.js נמצא באותה תיקייה, לא ב-utils
+const { useFirestoreAuthState } = require('./auth'); 
+
 let sock;
-const GROUP_ID_PATTERN = /@g\.us$/;
 
 async function connectToWhatsApp() {
-    // טעינת הסשן הקיים (התיקייה שלא מחקנו)
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    // טוען את הסשן מהקובץ auth.js שנמצא ליד ה-index.js
+    const { state, saveCreds } = await useFirestoreAuthState();
     const { version } = await fetchLatestBaileysVersion();
 
-    console.log(`🔄 [WhatsApp] מתחבר... (גרסה ${version.join('.')})`);
+    console.log(`🔄 [WhatsApp] טוען סשן מ-Firestore ומתחבר (גרסה ${version.join('.')})...`);
 
     sock = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
-        // printQRInTerminal: true,  <-- מחקתי את השורה הזו שעשתה בעיות!
+        printQRInTerminal: true,
         auth: state,
         browser: ["Shimon Bot", "Chrome", "1.0.0"],
         connectTimeoutMs: 60000,
@@ -25,22 +27,26 @@ async function connectToWhatsApp() {
     });
 
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection, lastDisconnect, qr } = update;
+
+        if (qr) {
+            console.log('⚠️ הסשן ב-DB פג תוקף או לא קיים. נא לסרוק QR מחדש.');
+        }
 
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('❌ [WhatsApp] נותק. מנסה להתחבר מחדש:', shouldReconnect);
+            console.log(`❌ [WhatsApp] נותק. מתחבר מחדש: ${shouldReconnect}`);
+            
             if (shouldReconnect) {
-                setTimeout(connectToWhatsApp, 3000); // השהייה קטנה לפני ניסיון חוזר
+                setTimeout(connectToWhatsApp, 2000);
             }
         } else if (connection === 'open') {
-            console.log('✅ [WhatsApp] מחובר בהצלחה!');
+            console.log('✅ [WhatsApp] מחובר בהצלחה! (הסשן נטען מהענן)');
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // טיפול בהודעות
     sock.ev.on('messages.upsert', async (m) => {
         try {
             const msg = m.messages[0];
@@ -49,7 +55,6 @@ async function connectToWhatsApp() {
 
             const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || "";
             
-            // שליחה למוח הלוגי
             await coreLogic.handleMessageLogic(sock, msg, text);
 
         } catch (err) {

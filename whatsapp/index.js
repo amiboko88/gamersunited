@@ -1,151 +1,61 @@
-const { makeWASocket, DisconnectReason } = require('@whiskeysockets/baileys');
-const { useFirestoreAuthState } = require('./auth');
-const { handleMedia } = require('./media');
-const { handleMessageLogic } = require('./logic/core');
-const qrcode = require('qrcode');
-const { AttachmentBuilder, EmbedBuilder } = require('discord.js');
-const { log } = require('../utils/logger'); 
-const fs = require('fs'); 
+const makeWASocket = require('@whiskeysockets/baileys').default;
+const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const pino = require('pino');
+const coreLogic = require('./logic/core'); // ✅ מפנה למוח הלוגי של וואטסאפ
 
-// ייבוא ה-Cron החדש
-const { startWhatsAppCron } = require('./cron');
-
-const STAFF_CHANNEL_ID = '881445829100060723'; 
 let sock;
-let isConnected = false;
-let retryCount = 0;
-// משתנה למניעת הפעלה כפולה של מתזמנים
-let isCronStarted = false; 
+const GROUP_ID_PATTERN = /@g\.us$/;
 
-function getMessageContent(msg) {
-    if (!msg.message) return null;
-    const content = msg.message.ephemeralMessage?.message || msg.message;
-    return content.conversation || 
-           content.extendedTextMessage?.text || 
-           content.imageMessage?.caption || 
-           content.videoMessage?.caption ||
-           null;
-}
-
-async function sendToMainGroup(text, mentions = [], mediaPath = null) {
-    const mainGroupId = process.env.WHATSAPP_MAIN_GROUP_ID; 
-
-    if (!sock || !isConnected) {
-        console.log('⚠️ WhatsApp disconnected. Cannot send message.');
-        return;
-    }
-    if (!mainGroupId) return;
-    
-    try {
-        const mentionJids = mentions.map(phone => 
-            phone.includes('@s.whatsapp.net') ? phone : `${phone}@s.whatsapp.net`
-        );
-
-        if (mediaPath && fs.existsSync(mediaPath)) {
-            const buffer = fs.readFileSync(mediaPath);
-            await sock.sendMessage(mainGroupId, { 
-                image: buffer, 
-                caption: text, 
-                mentions: mentionJids 
-            });
-        } else {
-            await sock.sendMessage(mainGroupId, { text: text, mentions: mentionJids });
-        }
-    } catch (err) { console.error('Send Error:', err.message); }
-}
-
-async function connectToWhatsApp(discordClient) {
-    // שימוש ב-Auth שלך (Firestore) - שמרנו על זה!
-    const { state, saveCreds } = await useFirestoreAuthState();
+async function connectToWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    const { version } = await fetchLatestBaileysVersion();
 
     sock = makeWASocket({
-        printQRInTerminal: false,
+        version,
+        logger: pino({ level: 'silent' }),
+        printQRInTerminal: true,
         auth: state,
-        browser: ["Shimon Bot", "Chrome", "1.0.0"],
-        syncFullHistory: false,
-        logger: require('pino')({ level: 'silent' }),
-        connectTimeoutMs: 60000, 
-        keepAliveIntervalMs: 10000
+        browser: ["Shimon Bot", "Chrome", "1.0.0"]
     });
 
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-
-        if (isConnected && qr) return;
-
-        // לוגיקת QR לדיסקורד - שמרנו על זה!
-        if (qr) {
-            log('[WhatsApp] 📸 New QR');
-            try {
-                const qrBuffer = await qrcode.toBuffer(qr);
-                const file = new AttachmentBuilder(qrBuffer, { name: 'qrcode.png' });
-                const channel = await discordClient.channels.fetch(STAFF_CHANNEL_ID);
-                if (channel) {
-                    const embed = new EmbedBuilder()
-                        .setTitle('סרוק לחיבור שמעון')
-                        .setImage('attachment://qrcode.png');
-                    await channel.send({ embeds: [embed], files: [file] });
-                }
-            } catch (err) { console.error('QR Error:', err); }
-        }
-
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update;
         if (connection === 'close') {
-            isConnected = false;
-            const statusCode = (lastDisconnect?.error)?.output?.statusCode;
-            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-            
-            log(`[WhatsApp] ❌ Connection closed (${statusCode}), reconnecting: ${shouldReconnect}`);
-
-            if (shouldReconnect || statusCode === 401) { 
-                if (retryCount < 5) {
-                    retryCount++;
-                    // מעבירים את discordClient גם בחיבור מחדש
-                    setTimeout(() => connectToWhatsApp(discordClient), 3000); 
-                }
-            } else {
-                connectToWhatsApp(discordClient); 
-            }
-} else if (connection === 'open') {
-            isConnected = true;
-            retryCount = 0; 
-            log('[WhatsApp] ✅ Connected!');
-            
-            // ✅ התיקון: מעבירים את discordClient וגם את sendToMainGroup
-            if (!isCronStarted && discordClient) {
-                log('[WhatsApp] ⏳ Starting Cron jobs with Discord link...');
-                // שינינו את השורה הזו:
-                startWhatsAppCron(discordClient, sendToMainGroup); 
-                isCronStarted = true;
-            } else if (!discordClient) {
-                log('[WhatsApp] ⚠️ Warning: Discord Client missing in connectToWhatsApp!');
-            }
+            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log('❌ [WhatsApp] נותק. מנסה להתחבר מחדש:', shouldReconnect);
+            if (shouldReconnect) connectToWhatsApp();
+        } else if (connection === 'open') {
+            console.log('✅ [WhatsApp] מחובר בהצלחה!');
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // 🔥 תוספת: דחיית שיחות (כדי שלא יציקו לבוט)
-    sock.ev.on('call', async (node) => {
-        const { id, from, status } = node[0];
-        if (status === 'offer') {
-            await sock.rejectCall(id, from);
-            // לוג שקט, לא חובה
+    // טיפול בהודעות נכנסות
+    sock.ev.on('messages.upsert', async (m) => {
+        try {
+            const msg = m.messages[0];
+            if (!msg.message || msg.key.fromMe) return;
+            if (msg.key.remoteJid === 'status@broadcast') return;
+
+            // חילוץ טקסט
+            const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || "";
+            
+            // שליחה למוח הלוגי (Core) שמפעיל את הבאפר ואת הניתוח
+            await coreLogic.handleMessageLogic(sock, msg, text);
+
+        } catch (err) {
+            console.error('❌ Error processing message:', err);
         }
     });
+}
 
-    sock.ev.on('messages.upsert', async ({ messages }) => {
-        const msg = messages[0];
-        if (!msg.message || msg.key.fromMe) return; 
-
-        const text = getMessageContent(msg);
-        const senderJid = msg.key.remoteJid;
-
-        // ה-handler שלך למדיה - שמרנו עליו!
-        const mediaHandled = await handleMedia(sock, senderJid, text || "");
-        if (mediaHandled) return; 
-
-        await handleMessageLogic(sock, msg, text || "");
-    });
+// פונקציה לשליחה לקבוצה ראשית (עבור קזינו/התראות)
+async function sendToMainGroup(text, mentions = []) {
+    const MAIN_GROUP_ID = process.env.WHATSAPP_MAIN_GROUP_ID; 
+    if (sock && MAIN_GROUP_ID) {
+        await sock.sendMessage(MAIN_GROUP_ID, { text, mentions });
+    }
 }
 
 module.exports = { connectToWhatsApp, sendToMainGroup };

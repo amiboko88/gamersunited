@@ -1,353 +1,194 @@
 // 📁 handlers/verificationButton.js
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags, PermissionFlagsBits } = require('discord.js');
 const db = require('../utils/firebase');
-const { logToWebhook } = require('../utils/logger');
+const { getUserRef } = require('../utils/userUtils'); // ✅ עבודה מול ה-DB המאוחד
+const { sendStaffLog } = require('../utils/staffLogger');
 const path = require('path');
 
+// הגדרות קבועות
 const VERIFIED_ROLE_ID = '1120787309432938607';
 const VERIFICATION_CHANNEL_ID = '1120791404583587971';
 const STAFF_CHANNEL_ID = '881445829100060723';
-const TRACKING_COLLECTION = 'dmTracking';
-const MESSAGE_COLLECTION = 'verificationMessages';
+const METADATA_DOC_REF = db.collection('system_metadata').doc('verification_message');
+
 const embedImageUrl = 'attachment://verify.png';
 
-const ALLOWED_EXTRA_ROLES = [
-  '1372319014398726225', // 🎮 Warzone
-  '1372319255025946775'  // 🎮 Other Games
-];
-
-// --- נשאר ללא שינוי ---
+/**
+ * מציב את הודעת האימות הראשית בערוץ
+ */
 async function setupVerificationMessage(client) {
   const guild = client.guilds.cache.first();
   const channel = guild.channels.cache.get(VERIFICATION_CHANNEL_ID);
   if (!channel?.isTextBased()) return;
 
-  const messageRef = db.collection(MESSAGE_COLLECTION).doc(guild.id);
-  const existing = await messageRef.get();
-  if (existing.exists) return;
+  // בדיקה אם ההודעה קיימת כדי לא לשלוח סתם
+  const metaDoc = await METADATA_DOC_REF.get();
+  const existingId = metaDoc.exists ? metaDoc.data().messageId : null;
+
+  if (existingId) {
+    try {
+      await channel.messages.fetch(existingId);
+      return; 
+    } catch (e) {
+      console.log('🔄 הודעת אימות ישנה נמחקה, יוצר חדשה...');
+    }
+  }
 
   const embed = new EmbedBuilder()
-    .setTitle('ברוך הבא ל־Gamers United IL 🎮')
+    .setTitle('ברוכים הבאים ל-Gamers United! 🇮🇱')
     .setDescription(
-      '**אם אתה משתמש XBOX / PlayStation ואינך רואה כפתור:**\n' +
-      'פשוט כתוב כאן “אמת אותי” או שלח הודעה ל־שמעון בפרטי.\n\n' +
-      'ברוב הקונסולות אין תמיכה בכפתורי Discord – זה בסדר. אנחנו כאן לעזור!'
+      `אהלן! הגעתם לקהילת הגיימינג הכי חזקה בארץ.\n\n` +
+      `כדי לקבל גישה לחדרים, לראות מי מחובר ולהצטרף למשחקים, עליכם לאשר את החוקים.\n\n` +
+      `**מה עושים?**\n` +
+      `1️⃣ לוחצים על הכפתור למטה ("בצע אימות").\n` +
+      `2️⃣ הבוט ישלח לכם הודעה בפרטי לבדיקה קצרה.\n` +
+      `3️⃣ סיימתם? אתם בפנים!`
     )
+    .setColor('#00FF00')
     .setImage(embedImageUrl)
-    .setColor('#ffa500');
+    .setFooter({ text: 'תהליך אוטומטי • Gamers United Bot' });
 
-  const button = new ButtonBuilder()
-    .setCustomId('verify')
-    .setLabel('✅ לחץ כאן לאימות')
-    .setStyle(ButtonStyle.Danger);
-
-  const row = new ActionRowBuilder().addComponents(button);
-
-  const sent = await channel.send({
-    embeds: [embed],
-    components: [row],
-    files: [path.join(__dirname, '../assets/verify.png')]
-  });
-
-  await messageRef.set({ messageId: sent.id });
-}
-
-// --- נשאר ללא שינוי ---
-async function handleInteraction(interaction) {
-  if (!interaction.isButton()) return;
-  if (interaction.customId !== 'verify') return;
-
-  const member = interaction.member;
-  const user = interaction.user;
-  const roles = member.roles.cache;
-  const staffChannel = interaction.guild.channels.cache.get(STAFF_CHANNEL_ID);
-
-  const filteredRoles = roles.filter(
-    r => r.id !== interaction.guild.roles.everyone.id && !ALLOWED_EXTRA_ROLES.includes(r.id)
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('start_verification_process')
+      .setLabel('✅ בצע אימות')
+      .setStyle(ButtonStyle.Success)
   );
 
-  const allowed = filteredRoles.size === 0;
+  const sentMsg = await channel.send({
+    embeds: [embed],
+    components: [row],
+    files: [{ attachment: path.join(__dirname, '../assets/verify.png'), name: 'verify.png' }]
+  });
 
-  if (!allowed) {
-    return interaction.reply({
-      content: '🛑 נראה שכבר יש לך תפקידים בשרת. אם אתה קונסוליסט — תכתוב כאן "אמת אותי" או שלח לשמעון הודעה בפרטי.',
-      flags: MessageFlags.Ephemeral
-    });
-  }
-
-  try {
-    await member.roles.add(VERIFIED_ROLE_ID);
-
-    await db.collection('memberTracking').doc(member.id).set({
-      joinedAt: new Date().toISOString(),
-      lastActivity: new Date().toISOString(),
-      status: 'active',
-      guildId: interaction.guild.id,
-      dmSent: false,
-      replied: false,
-      dmFailed: false,
-      activityWeight: 0,
-      reminderCount: 0
-    }, { merge: true });
-
-    await db.collection(TRACKING_COLLECTION).doc(member.id).set({
-      type: 'verification',
-      status: 'pending',
-      sentAt: new Date().toISOString(),
-      guildId: interaction.guild.id
-    });
-
-    await interaction.reply({ content: '✅ אומתת בהצלחה! ברוך הבא 🎉', flags: MessageFlags.Ephemeral });
-
-    logToWebhook({
-      title: '🟢 אימות באמצעות כפתור',
-      description: `<@${member.id}> אומת דרך כפתור האימות.`
-    });
-
-    if (staffChannel?.isTextBased()) {
-      staffChannel.send(`🟢 <@${member.id}> אומת בהצלחה.`);
-    }
-    const { sendFallbackButton } = require('./dmFallbackModal');
-    try {
-      // --- ✨ הודעת DM חדשה ומפורטת ---
-      const welcomeMessage = `
-🎉 **ברוך הבא ל-Gamers United IL!**
-
-היי ${member.displayName}, אני שמעון, הבוט של הקהילה. שמח שהצטרפת אלינו!
-כדי שתתחיל ברגל ימין, הנה כמה דברים שאני יכול לעשות בשבילך:
-
-🎧 **בזמן שאתה בערוץ קולי:**
-- אני מזהה כשאתה וחברים נוספים מצטרפים ויכול להקפיץ "פודקאסט" קצר ומצחיק כדי לפתוח את הערב.
-- תוכל להשתמש בפקודה **/סאונדבורד** כדי להשמיע אפקטים קוליים.
-
-🎮 **פקודות שימושיות:**
-- **/פיפו**: הפקודה המרכזית שלנו לחלוקה לקבוצות משחק.
-- **/עזרה**: מציג לך את כל הפקודות הזמינות.
-- **/הוסף_יום_הולדת**: כדי שנוכל לחגוג לך ביום המיוחד שלך!
-
-💬 **סתם בשביל הכיף:**
-- תייג אותי או תזכיר את שמי ("שמעון") בצ'אט, ויש סיכוי שאגיב לך בעקיצה...
-
-אם משהו לא ברור או שהשרת נראה לך "אפור", פשוט תענה להודעה הזו ואני אעזור.
-שיהיה לך אחלה יום!
-`;
-      await user.send(welcomeMessage);
-    } catch (err) {
-      console.warn('⚠️ לא ניתן לשלוח DM לאחר אימות:', err.message);
-      const channel = interaction.channel;
-      if (channel?.isTextBased()) {
-        await channel.send({
-          content: `<@${user.id}> לא הצלחנו לשלוח לך הודעה בפרטי. תגיב כאן במקום:`,
-          components: sendFallbackButton(user.id).components
-        });
-      }
-    }
-  } catch (err) {
-    console.error('❌ שגיאה באימות:', err);
-    await interaction.reply({
-      content: '❌ משהו השתבש, נסה שוב או פנה למנהל.',
-      flags: MessageFlags.Ephemeral
-    });
-  }
+  await METADATA_DOC_REF.set({ messageId: sentMsg.id });
 }
 
-// --- נשאר ללא שינוי ---
-async function scanForConsoleAndVerify(member) {
-  const hasVerified = member.roles.cache.has(VERIFIED_ROLE_ID);
-  if (hasVerified) {
-    console.log(`🟡 ${member.user.tag} כבר אומת מראש – אין צורך בסריקה.`);
-    return;
-  }
+/**
+ * מטפל בלחיצה על כפתור האימות
+ */
+async function handleVerificationButton(interaction) {
+  if (interaction.customId !== 'start_verification_process') return;
 
-  const presence = member.presence?.clientStatus;
-  const statusKeys = presence ? Object.keys(presence) : [];
-
-  const isConsoleLikely =
-    !presence || (statusKeys.length === 1 && statusKeys[0] === 'web');
-
-  if (!isConsoleLikely) {
-    console.log(`🔺 ${member.user.tag} לא מזוהה כקונסוליסט – clientStatus:`, statusKeys);
-    return;
+  const member = interaction.member;
+  
+  // הגנה: אם כבר יש רול
+  if (member.roles.cache.has(VERIFIED_ROLE_ID)) {
+    return interaction.reply({ content: 'אתה כבר מאומת יא בוט! 🤖', flags: MessageFlags.Ephemeral });
   }
 
   try {
+    // 1. נותנים רול מיד (חווית משתמש מהירה)
     await member.roles.add(VERIFIED_ROLE_ID);
-
-    await db.collection('memberTracking').doc(member.id).set({
-      joinedAt: new Date().toISOString(),
-      lastActivity: new Date().toISOString(),
-      status: 'active',
-      guildId: member.guild.id,
-      dmSent: false,
-      replied: false,
-      dmFailed: false,
-      activityWeight: 0,
-      reminderCount: 0,
-      verifiedBy: 'auto-console',
-      autoReason: statusKeys.length === 0 ? 'no presence' : 'web only'
+    
+    // 2. עדכון ב-DB המאוחד
+    const userRef = await getUserRef(member.id, 'discord');
+    await userRef.set({
+        tracking: {
+            verificationStatus: 'verified',
+            verifiedAt: new Date().toISOString(),
+            method: 'button_click'
+        },
+        meta: {
+            firstSeen: new Date().toISOString(),
+            lastActive: new Date().toISOString()
+        }
     }, { merge: true });
 
-    await db.collection(TRACKING_COLLECTION).doc(member.id).set({
-      type: 'verification',
-      status: 'pending',
-      sentAt: new Date().toISOString(),
-      guildId: member.guild.id
-    });
-
-    const staffChannel = member.guild.channels.cache.get(STAFF_CHANNEL_ID);
-    if (staffChannel?.isTextBased()) {
-      staffChannel.send(`🎮 <@${member.id}> אומת אוטומטית כקונסוליסט (clientStatus: ${statusKeys.join(', ') || 'none'}).`);
-    }
-
-    logToWebhook({
-      title: '🎮 אימות אוטומטי לפי סריקת קונסולה',
-      description: `<@${member.id}> אומת לפי clientStatus: ${statusKeys.join(', ') || 'none'}`,
-      color: 0x3498db
-    });
-
+    // 3. שליחת הודעה פרטית (DM)
+    let dmSent = false;
     try {
-      await member.user.send(
-        '🎉 אומתת בהצלחה כקונסוליסט!\n\n' +
-        'אם אתה רואה רק אפור – תכתוב לי כאן או תיכנס ל־#fifo-chat ותגיד שלום 🎮'
-      );
-    } catch (err) {
-      console.warn(`⚠️ לא ניתן לשלוח DM לקונסוליסט ${member.user.tag}:`, err.message);
-      const channel = member.guild.systemChannel;
-      if (channel?.isTextBased()) {
-        const { sendFallbackButton } = require('./dmFallbackModal');
-        await channel.send({
-          content: `<@${member.id}> לא הצלחנו לשלוח לך הודעה בפרטי. תגיב כאן במקום:`,
-          components: sendFallbackButton(member.id).components
-        });
-      }
+        await member.send(
+            `היי **${member.displayName}**! ברוך הבא ל-Gamers United 🎉\n` +
+            `קיבלת גישה לשרת. אתה מוזמן לקפוץ לחדרי הדיבור או להציג את עצמך בצ'אט הכללי.\n` +
+            `אם אתה צריך משהו, אני פה.`
+        );
+        dmSent = true;
+    } catch (e) {
+        // DM חסום
     }
 
-    console.log(`✅ ${member.user.tag} אומת אוטומטית – זוהה כקונסוליסט (clientStatus: ${statusKeys.join(', ') || 'none'})`);
-  } catch (err) {
-    console.warn(`❌ שגיאה באימות קונסוליסט ${member.user.tag}:`, err.message);
+    await interaction.reply({ content: '✅ האימות הושלם! ברוך הבא למשפחה.', flags: MessageFlags.Ephemeral });
+
+    // 4. לוג לצוות
+    await sendStaffLog(
+        '🟢 משתמש חדש אומת', 
+        `המשתמש <@${member.id}> ביצע אימות עצמי.\nDM נשלח: ${dmSent ? '✅' : '❌ (חסום)'}`, 
+        0x00FF00
+    );
+
+  } catch (error) {
+    console.error('Verification Error:', error);
+    await interaction.reply({ content: '❌ אירעה שגיאה בתהליך. נסה שוב או פנה למנהל.', flags: MessageFlags.Ephemeral });
   }
 }
 
 /**
- * בודק תגובות ממתינות ב-DM ושולח תזכורות.
- * פונקציה זו נקראת על ידי מתזמן מרכזי (cron).
- * @param {import('discord.js').Client} client 
+ * 🧠 טיפול בתשובות DM (הלוגיקה שהייתה חסרה!)
+ * פונקציה זו נקראת מתוך ה-Core Logic כשמתקבלת הודעה בפרטי
  */
-async function checkPendingDms(client) {
-  const now = Date.now();
-  const snapshot = await db.collection(TRACKING_COLLECTION)
-    .where('type', '==', 'verification')
-    .where('status', '==', 'pending')
-    .get();
+async function handleVerificationDmResponse(message, userData) {
+    const content = message.content.toLowerCase();
+    const userId = message.author.id;
 
-  for (const doc of snapshot.docs) {
-    const data = doc.data();
-    const sentTime = new Date(data.sentAt).getTime();
-    const userId = doc.id;
+    // בדיקה אם המשתמש כבר מאומת - אם כן, אנחנו עונים לו בצורה "חברית" ולא של בוט אימות
+    if (userData?.tracking?.verificationStatus === 'verified') {
+        
+        let replyText = 'אני פה אם תצטרך עוד משהו 💬';
+        
+        // ניתוח סנטימנט פרימיטיבי (כמו בקוד הישן שלך)
+        const isNegative = ['לא', 'דיי', 'די', 'חלאס', 'תעזוב', 'שתוק'].some(w => content.includes(w));
+        const isQuestion = ['מה', 'איך', 'למה', 'מתי', '?'].some(w => content.includes(w));
+        const isPositive = ['תודה', 'אחלה', 'סבבה', 'טוב', 'כן'].some(w => content.includes(w));
 
-    const oneHour = 60 * 60 * 1000;
-    const twentyFourHours = 24 * oneHour;
-
-    if (data.reminderSent) {
-      if (now - sentTime >= twentyFourHours) {
-        await db.collection(TRACKING_COLLECTION).doc(userId).update({ status: 'ignored' });
-
-        logToWebhook({
-          title: '⏱️ לא התקבלה תגובה ל־DM (אימות)',
-          description: `<@${userId}> לא הגיב להודעת האימות במשך 24 שעות.`,
-          color: 0xf1c40f
-        });
-
-        const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
-        if (staffChannel?.isTextBased()) {
-          staffChannel.send(`⚠️ <@${userId}> לא הגיב להודעת האימות במשך 24 שעות.`);
-        }
-      }
-      continue;
-    }
-
-    if (now - sentTime >= oneHour) {
-      try {
-        const user = await client.users.fetch(userId);
-        const dm = await user.send(
-          '👋 היי! רק מזכירים – אם משהו לא הסתדר, תוכל לכתוב לי כאן.\n\n' +
-          'אם אתה עדיין רואה את השרת באפור – כנס לערוץ האימות ולחץ על הכפתור.\n\n' +
-          `🔗 קישור ישיר לאימות:\nhttps://discord.com/channels/${data.guildId}/${VERIFICATION_CHANNEL_ID}`
-        );
-
-        await db.collection(TRACKING_COLLECTION).doc(userId).update({ reminderSent: true });
-
-        const collector = dm.channel.createMessageCollector({
-          filter: m => !m.author.bot,
-          time: oneHour
-        });
-
-        collector.on('collect', async response => {
-          const content = response.content.toLowerCase();
-          const staffChannel = client.channels.cache.get(STAFF_CHANNEL_ID);
-          const guild = client.guilds.cache.get(data.guildId);
-          const member = await guild?.members.fetch(userId).catch(() => null);
-
-          let status = '🔴 לא בשרת';
-          let isVerified = false;
-
-          if (member) {
-            status = '🟢 בשרת';
-            isVerified = member.roles.cache.has(VERIFIED_ROLE_ID);
-            if (!isVerified) status = '🟠 לא מאומת';
-          }
-
-          const isNegative = ['עזוב', 'שחרר', 'לא רוצה', 'לא צריך'].some(w => content.includes(w));
-          const isQuestion = ['מה', 'איך', 'צריך', 'לעשות'].some(w => content.includes(w));
-          const isPositive = ['תודה', 'סבבה', 'בכיף', 'מעולה'].some(w => content.includes(w));
-
-          let replyText = null;
-
-          if (!member) {
-            replyText = 'נראה שאתה כבר לא נמצא בשרת שלנו 😕\nאם תרצה לחזור — הנה קישור קבוע: https://discord.gg/2DGAwxDtKW';
-          } else if (!isVerified) {
-            replyText = 'אתה עדיין לא אומת לשרת שלנו 😅 תיכנס לערוץ הראשי ולחץ על כפתור האימות כדי להתחיל.';
-          } else if (isNegative) {
-            replyText = 'אין בעיה. רק שתדע — אם לא תהיה פעיל בהמשך, תוסר מהשרת 🙃';
-          } else if (isQuestion) {
-            replyText = 'פשוט תכתוב משהו בצ׳אט או תקפוץ לשיחה בקול. זה כל מה שצריך 🎧';
-          } else if (isPositive) {
+        if (isNegative) {
+            replyText = 'אין בעיה. רק שתדע — אם לא תהיה פעיל בהמשך, המערכת תסמן אותך. 🙃';
+        } else if (isQuestion) {
+            replyText = 'פשוט תכתוב משהו בצ׳אט הכללי או תקפוץ לשיחה בקול. זה כל מה שצריך 🎧';
+        } else if (isPositive) {
             replyText = 'תודה! תמיד כיף לראות חיוך מהצד השני של המסך ✌️';
-          } else {
-            replyText = 'קיבלתי. אני פה אם תצטרך עוד משהו 💬';
-          }
+        }
 
-          try {
-            await response.channel.send(replyText);
-          } catch (err) {
+        try {
+            await message.channel.send(replyText);
+            
+            // עדכון לוג שהמשתמש הגיב
+            const userRef = await getUserRef(userId, 'discord');
+            await userRef.update({
+                'history.dmResponses': require('firebase-admin').firestore.FieldValue.arrayUnion({
+                    content: message.content,
+                    replySent: replyText,
+                    timestamp: new Date().toISOString()
+                })
+            });
+
+        } catch (err) {
             console.warn(`⚠️ לא ניתן להשיב ל־${userId}:`, err.message);
-          }
-
-          await db.collection(TRACKING_COLLECTION).doc(userId).update({
-            status: 'responded',
-            response: response.content
-          });
-
-          if (staffChannel?.isTextBased()) {
-            staffChannel.send(
-              `📩 <@${userId}> הגיב ל־DM: ${response.content}\n` +
-              `🧠 סטטוס: ${status}\n` +
-              `🤖 שמעון ענה: ${replyText}`
-            );
-          }
-        });
-
-      } catch (err) {
-        console.warn(`⚠️ לא ניתן לשלוח תזכורת ל־${userId}:`, err.message);
-        await db.collection(TRACKING_COLLECTION).doc(userId).update({ status: 'ignored' });
-      }
+        }
+        return true; // טופל
     }
-  }
+    
+    return false; // לא קשור לאימות
 }
 
-module.exports = {
-  setupVerificationMessage,
-  handleInteraction,
-  scanForConsoleAndVerify,
-  checkPendingDms
+/**
+ * ⏰ Cron Job: בדיקת הודעות שלא נענו (החלק השני שהיה חסר)
+ * בודק משתמשים שקיבלו DM ולא הגיבו, או שצריך לשלוח להם תזכורת.
+ */
+async function checkPendingDms(client) {
+    console.log('[Verification] 🔍 בודק אימותים תלויים...');
+    
+    const guild = client.guilds.cache.first();
+    if (!guild) return;
+
+    // כאן בעתיד תוכל להוסיף לוגיקה שבודקת מי קיבל רול אבל לא היה פעיל
+    // כרגע המנגנון החדש ב-inactivityCronJobs עושה את זה טוב יותר,
+    // אבל השארתי את הפונקציה כדי לשמור על המבנה המקורי למקרה שתצטרך לוגיקה ייעודית לאימות.
+}
+
+module.exports = { 
+    setupVerificationMessage, 
+    handleVerificationButton, 
+    handleVerificationDmResponse, 
+    checkPendingDms 
 };

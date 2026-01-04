@@ -1,4 +1,4 @@
-// 📁 handlers/statTracker.js (מעודכן ל-Unified DB)
+// 📁 handlers/statTracker.js
 const db = require('../utils/firebase');
 const admin = require('firebase-admin');
 const { getUserRef } = require('../utils/userUtils'); // שימוש בתשתית החדשה
@@ -9,134 +9,111 @@ const xpWeights = {
   slashUsed: 3,
   soundsUsed: 2,
   smartReplies: 4,
-  rsvpCount: 1,
-  voiceMinutes: 1,
-  timesJoinedVoice: 2,
-  mutedCount: 1,
-  nicknameChanges: 1,
-  podcastAppearances: 5,
-  mediaShared: 2,
+  rsvpCount: 5,
+  voiceMinutes: 10, // כל דקה שווה 10 נקודות
+  timesJoinedVoice: 5,
+  mutedCount: 0,
+  nicknameChanges: 0,
+  podcastAppearances: 50, // בונוס יפה
+  mediaShared: 5,
   linksShared: 2
 };
 
-// 🎯 משקל חכם
+// חישוב XP לפעולה
 function getXpReward(field, amount = 1) {
   return (xpWeights[field] || 1) * amount;
 }
 
-// 🧠 עדכון חכם לסטטיסטיקות ו־XP - ישירות למאגר המאוחד
+/**
+ * המנוע המרכזי: מעדכן גם את המשתמש הראשי וגם את הטבלה השבועית
+ */
 async function incrementStat(userId, field, amount = 1) {
   try {
-      // שימוש בפונקציית העזר כדי לקבל את המיקום הנכון ב-users
+      const xpGained = getXpReward(field, amount);
+      
+      // 1. עדכון ב-DB המאוחד (תיק משתמש)
       const userRef = await getUserRef(userId, 'discord');
-      const weekRef = db.collection('weeklyStats').doc(userId); // זה נשאר נפרד, וזה בסדר
-
-      // עדכון הסטטיסטיקה הגלובלית בתוך האובייקט stats
-      const updates = {
+      const userUpdate = {
           [`stats.${field}`]: admin.firestore.FieldValue.increment(amount),
-          'meta.lastSeen': new Date().toISOString()
+          'economy.xp': admin.firestore.FieldValue.increment(xpGained),
+          'meta.lastActive': new Date().toISOString()
+      };
+      
+      // 2. עדכון בטבלה השבועית (עבור ה-MVP וה-Leaderboard)
+      const weekRef = db.collection('weeklyStats').doc(userId);
+      const weekUpdate = {
+          [field]: admin.firestore.FieldValue.increment(amount),
+          xpThisWeek: admin.firestore.FieldValue.increment(xpGained),
+          lastActive: new Date().toISOString()
       };
 
-      // חישוב ועדכון XP באותו הזמן (בתוך economy)
-      const xpToAdd = getXpReward(field, amount);
-      if (xpToAdd > 0) {
-          updates['economy.xp'] = admin.firestore.FieldValue.increment(xpToAdd);
-      }
-
+      // ביצוע שני העדכונים במקביל (Promise.all לביצועים מהירים)
       await Promise.all([
-          userRef.set(updates, { merge: true }),
-          weekRef.set({ [field]: admin.firestore.FieldValue.increment(amount) }, { merge: true })
+          userRef.update(userUpdate).catch(async (e) => {
+              // אם המסמך לא קיים, ניצור אותו (Self-Healing)
+              if (e.code === 5) { // NOT_FOUND
+                  await userRef.set({ 
+                      stats: { [field]: amount },
+                      economy: { xp: xpGained, level: 1, balance: 0 },
+                      meta: { firstSeen: new Date().toISOString() }
+                  }, { merge: true });
+              } else {
+                  console.error(`❌ שגיאה בעדכון משתמש ראשי (${field}):`, e.message);
+              }
+          }),
+          weekRef.set(weekUpdate, { merge: true }) // set עם merge מבטיח יצירה אם לא קיים
       ]);
 
-  } catch (error) {
-      console.error(`❌ שגיאה בעדכון סטטיסטיקה ל-${userId}:`, error);
+  } catch (err) {
+      console.error(`❌ שגיאה כללית ב-statTracker עבור ${userId}:`, err);
   }
 }
 
-// 🎤 מעקב דקות קוליות
-module.exports.trackVoiceMinutes = async (userId, minutes) => {
-  await incrementStat(userId, 'voiceMinutes', minutes);
-};
+// --- פונקציות מעטפת לנוחות (Wrappers) ---
 
-// 💬 מעקב הודעות
 module.exports.trackMessage = async userId => {
   await incrementStat(userId, 'messagesSent');
 };
 
-// 🤖 מעקב פקודות
-module.exports.trackCommand = async userId => {
+module.exports.trackVoiceMinute = async (userId, minutes = 1) => {
+  await incrementStat(userId, 'voiceMinutes', minutes);
+};
+
+module.exports.trackVoiceJoin = async userId => {
+  await incrementStat(userId, 'timesJoinedVoice');
+};
+
+module.exports.trackCommandUse = async userId => {
   await incrementStat(userId, 'slashUsed');
 };
 
-// 🔊 מעקב סאונדבורד
 module.exports.trackSoundUse = async userId => {
   await incrementStat(userId, 'soundsUsed');
 };
 
-// 🚪 מעקב כניסות לחדר
-module.exports.trackJoinCount = async userId => {
-  await incrementStat(userId, 'timesJoinedVoice');
-};
-
-// ⌛ ממוצע זמן בחדר
-module.exports.trackJoinDuration = async (userId, durationMinutes) => {
-  try {
-      const userRef = await getUserRef(userId, 'discord');
-      const doc = await userRef.get();
-      
-      const stats = doc.data()?.stats || {};
-      const totalSessions = (stats.timesJoinedVoice || 0); 
-      
-      const currentAvg = stats.averageJoinDuration || durationMinutes;
-      const newAvg = totalSessions > 0 
-          ? ((currentAvg * (totalSessions - 1)) + durationMinutes) / totalSessions 
-          : durationMinutes;
-
-      await userRef.update({
-          'stats.averageJoinDuration': Math.round(newAvg * 10) / 10 
-      });
-  } catch (e) { /* התעלמות אם אין מסמך */ }
-};
-
-// 🔇 השתקות
-module.exports.trackMuted = async userId => {
-  await incrementStat(userId, 'mutedCount');
-};
-
-// 🧑 שינוי כינוי
-module.exports.trackNicknameChange = async userId => {
-  await incrementStat(userId, 'nicknameChanges');
-};
-
-// ⏰ עדכון שעת פעילות
-module.exports.trackActiveHour = async userId => {
-  try {
-      const hour = new Date().getHours();
-      const userRef = await getUserRef(userId, 'discord');
-      await userRef.set({ 'stats.mostActiveHour': hour }, { merge: true });
-  } catch (e) {}
-};
-
-// 🎙️ השתתפות בפודקאסט
 module.exports.trackPodcast = async userId => {
   await incrementStat(userId, 'podcastAppearances');
 };
 
-// 🎮 נתוני זמן לפי משחק (נשאר בקולקשן נפרד gameStats - זה תקין)
+module.exports.trackSmartReply = async userId => {
+  await incrementStat(userId, 'smartReplies');
+};
+
+// 🎮 נתוני זמן לפי משחק (נשאר בקולקשן נפרד gameStats - זה תקין כי זה מידע כבד)
 async function updateGameStats(userId, gameName, minutes) {
   try {
     if (!gameName) return;
     const ref = db.collection('gameStats').doc(userId);
-    const safeGameName = gameName.replace(/[\/\.]/g, ''); 
-    
-    const updateData = {
-        [`games.${safeGameName}.minutes`]: admin.firestore.FieldValue.increment(minutes),
-        [`games.${safeGameName}.lastPlayed`]: new Date().toISOString()
-    };
+    const safeGameName = gameName.replace(/[\/\.]/g, '_'); // ניקוי תווים אסורים
 
-    await ref.set(updateData, { merge: true });
-  } catch (err) {
-    console.error(`⚠️ שגיאה בעדכון משחק ${gameName}:`, err.message);
+    await ref.set({
+      [safeGameName]: {
+        minutes: admin.firestore.FieldValue.increment(minutes),
+        lastPlayed: new Date().toISOString()
+      }
+    }, { merge: true });
+  } catch (error) {
+    console.error(`⚠️ שגיאה בעדכון משחק (${gameName}):`, error.message);
   }
 }
 

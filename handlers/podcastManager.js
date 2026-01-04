@@ -1,7 +1,7 @@
 // 📁 handlers/podcastManager.js
 const { log } = require('../utils/logger');
 const ttsEngine = require('../tts/ttsEngine.elevenlabs.js');
-const profiles = require('../data/profiles.js');
+const { getUserData } = require('../utils/userUtils'); // ✅ חיבור למוח המאוחד
 const voiceQueue = require('./voiceQueue.js');
 
 const MIN_USERS_FOR_PODCAST = 4;
@@ -27,91 +27,122 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
     if (oldChannelId === newChannel?.id) return false; 
 
+    // בדיקה אם מישהו עזב ערוץ שבו מתנגן פודקאסט
     if (oldChannelId && oldChannelId === activePodcastChannelId) {
         const oldChannel = guild.channels.cache.get(oldChannelId);
         if (oldChannel) {
             const members = oldChannel.members.filter(m => !m.user.bot);
             if (members.size < MIN_USERS_FOR_PODCAST) {
-                log(`[PODCAST] מספר המשתמשים בערוץ ${oldChannel.name} ירד מתחת ל-${MIN_USERS_FOR_PODCAST}. מסיים את הפודקאסט.`);
+                log('[PODCAST] כמות המשתמשים ירדה מתחת למינימום. עוצר פודקאסט.');
+                voiceQueue.stop(guild.id);
                 activePodcastChannelId = null;
-                spokenUsers.clear();
-                podcastCooldown = true;
-                setTimeout(() => { podcastCooldown = false; log('[PODCAST] תקופת הצינון הסתיימה.'); }, PODCAST_COOLDOWN);
             }
         }
     }
 
-    if (newChannel) {
-        const TEST_CHANNEL_ID = '1396779274173943828';
-        if (newChannel.id === TEST_CHANNEL_ID) return false;
-
+    // בדיקה אם מישהו הצטרף והאם צריך להפעיל פודקאסט
+    if (newChannel && !activePodcastChannelId && !podcastCooldown) {
         const members = newChannel.members.filter(m => !m.user.bot);
-        const isPodcastActiveInThisChannel = newChannel.id === activePodcastChannelId;
-        
-        const shouldStart = members.size >= MIN_USERS_FOR_PODCAST && !getPodcastStatus() && !podcastCooldown;
-        const shouldAnnounce = isPodcastActiveInThisChannel && !spokenUsers.has(member.id);
-
-        if (shouldStart || shouldAnnounce) {
-            if (shouldStart) {
-                log(`[PODCAST] התנאים התקיימו בערוץ ${newChannel.name} (${members.size} משתמשים). מתחיל פודקאסט.`);
-                activePodcastChannelId = newChannel.id; 
-                spokenUsers.clear();
-            }
+        if (members.size >= MIN_USERS_FOR_PODCAST) {
+            log(`[PODCAST] זוהו ${members.size} משתמשים בערוץ ${newChannel.name}. מתחיל פודקאסט!`);
             
-            spokenUsers.add(member.id);
-            await playPersonalPodcast(newChannel, member, client);
-            return true; 
+            // בוחרים קורבן (מישהו שעוד לא דיברו עליו)
+            const targetMember = members.find(m => !spokenUsers.has(m.id)) || members.first();
+            
+            await playPersonalPodcast(newChannel, targetMember, client);
+            
+            // מפעילים קולדאון
+            podcastCooldown = true;
+            setTimeout(() => { podcastCooldown = false; }, PODCAST_COOLDOWN);
+            return true;
         }
     }
-    
-    return false; 
+    return false;
 }
 
-async function playPersonalPodcast(channel, member, client) {
-    const { id: userId, displayName: userName } = member;
-    
-    // ✅ [שדרוג] שימוש ב-default כגיבוי ראשי
-    let userProfileLines = profiles.playerProfiles[userId];
-    let source = 'פרופיל אישי';
+/**
+ * מפיק ומנגן פודקאסט אישי על משתמש
+ */
+async function playPersonalPodcast(voiceChannel, member, client) {
+    if (!voiceChannel || !member) return;
 
-    if (!userProfileLines || userProfileLines.length === 0) {
-        userProfileLines = profiles.playerProfiles.default;
-        source = 'פרופיל דיפולטיבי';
-    }
+    activePodcastChannelId = voiceChannel.id;
+    spokenUsers.add(member.id);
 
-    if (!userProfileLines || userProfileLines.length === 0) {
-        log(`[PODCAST] ⚠️ לא נמצאו שורות טקסט (גם לא ב-default). מדלג.`);
-        return;
-    }
+    try {
+        const userName = member.displayName;
+        const userId = member.id;
+        let source = 'DB';
 
-    log(`[PODCAST] מכין פודקאסט עבור ${userName} (מקור: ${source})`);
+        // 1. שליפת הנתונים מה-DB המאוחד (במקום מקובץ profiles.js)
+        const userData = await getUserData(userId, 'discord');
+        let userRoasts = userData?.brain?.roasts || [];
 
-    // בחירת 3 משפטים רנדומליים
-    const selectedLines = [...userProfileLines].sort(() => 0.5 - Math.random()).slice(0, 3);
-    
-    // ✅ [שדרוג] החלפת {userName} בשם המשתמש האמיתי בכל השורות
-    // ובניית הסקריפט (שמעון -> שירלי -> שמעון)
-    let script = [];
-    if (selectedLines[0]) script.push({ speaker: 'shimon', text: selectedLines[0].replace(/{userName}/g, userName) });
-    if (selectedLines[1]) script.push({ speaker: 'shirly', text: selectedLines[1].replace(/{userName}/g, userName) });
-    if (selectedLines[2]) script.push({ speaker: 'shimon', text: selectedLines[2].replace(/{userName}/g, userName) });
-
-    const audioBuffers = await ttsEngine.synthesizeConversation(script, member);
-    
-    if (audioBuffers.length > 0) {
-        log(`[PODCAST] מעביר ${audioBuffers.length} קטעי שמע לתור הניגון.`);
-        for (const buffer of audioBuffers) {
-            voiceQueue.addToQueue(channel.guild.id, channel.id, buffer, client, 'PODCAST');
+        // 2. אם אין ירידות ב-DB, נשתמש במאגר ברירת מחדל (שגם הוא יכול להיות ב-DB ב-metadata, אבל נשים פה ליתר ביטחון)
+        if (userRoasts.length === 0) {
+            log(`[PODCAST] לא נמצאו ירידות ב-DB עבור ${userName}. משתמש בברירת מחדל.`);
+            userRoasts = [
+                `שמעת ש-${userName} הצטרף? הרמה בשרת ירדה ברגע זה.`,
+                `תגיד שירלי, ${userName} יודע לשחק או שהוא פה רק בשביל הנוף?`,
+                `וואלה ${userName}, אם היית משקיע במשחק כמו שאתה משקיע בתירוצים, היינו מנצחים.`
+            ];
+            source = 'Default Fallback';
         }
-    } else {
-        log('[PODCAST] ⚠️ ttsEngine החזיר 0 קטעי אודיו.');
+
+        log(`[PODCAST] מכין פודקאסט עבור ${userName} (מקור: ${source}, שורות זמינות: ${userRoasts.length})`);
+
+        // בחירת 3 משפטים רנדומליים
+        const selectedLines = userRoasts.sort(() => 0.5 - Math.random()).slice(0, 3);
+        
+        // בניית התסריט (החלפת הטקסט {userName} בשם האמיתי אם קיים בטקסט הגולמי)
+        let script = [];
+        // שמעון מתחיל
+        if (selectedLines[0]) script.push({ speaker: 'shimon', text: selectedLines[0].replace(/{userName}/g, userName) });
+        // שירלי עונה (או שמעון, אפשר לגוון, כרגע נשאיר פורמט קבוע)
+        if (selectedLines[1]) script.push({ speaker: 'shirly', text: selectedLines[1].replace(/{userName}/g, userName) });
+        // שמעון מסיים
+        if (selectedLines[2]) script.push({ speaker: 'shimon', text: selectedLines[2].replace(/{userName}/g, userName) });
+
+        // שליחה למנוע ה-TTS
+        const audioBuffers = await ttsEngine.synthesizeConversation(script, member);
+        
+        if (audioBuffers.length > 0) {
+            log(`[PODCAST] יש ${audioBuffers.length} קבצי שמע. מוסיף לתור.`);
+            
+            // הוספה לתור ה-Voice הראשי
+            // שים לב: אנחנו שולחים Buffer, לא נתיב קובץ. voiceQueue צריך לתמוך בזה או ש-ttsEngine שומר קבצים.
+            // בהנחה ש-ttsEngine מחזיר נתיבים (כפי שראינו בקבצים קודמים), זה יעבוד. 
+            // אם ttsEngine מחזיר Buffers, צריך לוודא ש-voiceQueue מטפל בזה. 
+            // במקרה הזה, נניח שהמנוע שומר קבצים זמניים ומחזיר נתיבים (התנהגות סטנדרטית).
+            
+            for (const audioFile of audioBuffers) {
+                await voiceQueue.addToQueue(
+                    voiceChannel.guild.id, 
+                    voiceChannel.id, 
+                    audioFile, // זה צריך להיות נתיב לקובץ MP3
+                    client, 
+                    'PODCAST'
+                );
+            }
+        } else {
+            log('[PODCAST] ❌ לא נוצרו קבצי שמע.');
+            activePodcastChannelId = null;
+        }
+
+    } catch (error) {
+        log(`[PODCAST] ❌ שגיאה: ${error.message}`);
+        activePodcastChannelId = null;
     }
+}
+
+function isPodcastActive() {
+    return activePodcastChannelId !== null;
 }
 
 module.exports = {
-    handleVoiceStateUpdate,
     initializePodcastState,
+    handleVoiceStateUpdate,
+    playPersonalPodcast,
     getPodcastStatus,
-    restrictedCommands,
-    playPersonalPodcast 
+    isPodcastActive
 };

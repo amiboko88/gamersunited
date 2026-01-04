@@ -8,7 +8,6 @@ const { playTTSInVoiceChannel } = require('../utils/ttsQuickPlay');
 const TARGET_CHANNEL_ID = '583575179880431616';
 const BIRTHDAY_ROLE_ID = process.env.BIRTHDAY_ROLE_ID;
 
-// ברכות קוליות
 const birthdayTTSMessages = [
     (name, age) => `מזל טוב ל־${name}! אתה בן ${age} היום, וזה אומר שאתה עדיין משחק ולא פרשת כמו הגדולים!`,
     (name, age) => `${name}, ${age} שנה שאתה מחזיק שליטה – אולי השנה תלמד גם להרים קבוצה?`,
@@ -31,6 +30,7 @@ async function getTodaysBirthdays() {
     const today = new Date();
     const currentDay = today.getDate();
     const currentMonth = today.getMonth() + 1;
+    const currentYear = today.getFullYear();
 
     try {
         // מחפשים משתמשים שהיום והחודש בזהות שלהם תואמים להיום
@@ -41,16 +41,24 @@ async function getTodaysBirthdays() {
 
         if (snapshot.empty) return [];
 
-        return snapshot.docs.map(doc => {
+        // מסננים כאלו שכבר חגגנו להם השנה (כדי לא לחגוג פעמיים אם הבוט עשה ריסטרט)
+        const birthdays = [];
+        snapshot.forEach(doc => {
             const data = doc.data();
-            return {
-                id: doc.id,
-                day: data.identity.birthday.day,
-                month: data.identity.birthday.month,
-                year: data.identity.birthday.year,
-                fullName: data.identity.displayName || 'Gamer'
-            };
+            const lastCelebrated = data.tracking?.lastBirthdayCelebrated || 0;
+
+            if (lastCelebrated !== currentYear) {
+                birthdays.push({
+                    id: doc.id,
+                    day: data.identity.birthday.day,
+                    month: data.identity.birthday.month,
+                    year: data.identity.birthday.year,
+                    fullName: data.identity.displayName || 'Gamer'
+                });
+            }
         });
+
+        return birthdays;
     } catch (error) {
         log(`❌ שגיאה בשליפת ימי הולדת מה-DB המאוחד:`, error);
         return [];
@@ -99,7 +107,7 @@ async function processAndSendGreetings(client, birthdays) {
                 await member.roles.add(BIRTHDAY_ROLE_ID).catch(err => log(`⚠️ לא ניתן היה להוסיף רול יום הולדת: ${err.message}`));
             }
 
-            // 4. תיעוד בתיק המשתמש (במקום בקולקשן נפרד)
+            // 4. תיעוד בתיק המשתמש כדי שלא נחגוג שוב באותה שנה
             await db.collection('users').doc(person.id).update({
                 'tracking.lastBirthdayCelebrated': new Date().getFullYear()
             });
@@ -112,13 +120,19 @@ async function processAndSendGreetings(client, birthdays) {
     }
 }
 
+// הפונקציה שנקראת מה-Cron
 async function sendBirthdayMessage(client) {
     const todayBirthdays = await getTodaysBirthdays();
     if (todayBirthdays.length === 0) {
-        // log('[BIRTHDAY CRON] אין ימי הולדת להיום.');
         return;
     }
     await processAndSendGreetings(client, todayBirthdays);
 }
 
-module.exports = { sendBirthdayMessage };
+// ✅ הפונקציה שנקראת מה-Index בעלייה (שהייתה חסרה)
+async function runMissedBirthdayChecks(client) {
+    log('[BIRTHDAY] 🎂 בודק ימי הולדת בעת אתחול...');
+    await sendBirthdayMessage(client);
+}
+
+module.exports = { sendBirthdayMessage, runMissedBirthdayChecks };

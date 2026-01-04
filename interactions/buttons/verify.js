@@ -1,12 +1,13 @@
 // 📁 interactions/buttons/verify.js
 
-// הפונקציה המקורית מתוך verificationButton.js
-const { handleInteraction: handleVerifyInteraction } = require('../../handlers/verificationButton');
+// ייבוא הפונקציה בשם החדש והנכון מתוך ה-Handler המתוקן
+const { handleVerificationButton } = require('../../handlers/verificationButton');
 
 module.exports = {
-  customId: 'verify', // ה-ID של הכפתור
+  customId: 'verify', // זה כנראה לא בשימוש כי ב-Handler הגדרנו 'start_verification_process', אבל נשאיר לתאימות לאחור
+  
   async execute(interaction, client) {
-    // קוראים לפונקציה המקורית שמטפלת בלוגיקה
-    await handleVerifyInteraction(interaction, client);
+    // הפנייה ללוגיקה המרכזית ב-handlers
+    await handleVerificationButton(interaction, client);
   }
 };

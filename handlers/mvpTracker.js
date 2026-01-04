@@ -1,150 +1,126 @@
+// 📁 handlers/mvpTracker.js
 const admin = require('firebase-admin');
 const { renderMvpImage } = require('./mvpRenderer');
 const { log } = require('../utils/logger');
 const db = require('../utils/firebase'); 
-const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
-// ✅ ייבוא הפונקציה לשליחה לוואטסאפ (וודא שהנתיב נכון, הנחתי שזה תיקייה אחת למעלה ואז whatsapp)
+const { getUserData, getUserRef } = require('../utils/userUtils'); // ✅ עבודה דרך המוח המרכזי
 const { sendToMainGroup } = require('../whatsapp/index');
 
-const MVP_ROLE_ID = process.env.ROLE_MVP_ID;
 const MVP_CHANNEL_ID = '583575179880431616';
+const MVP_REWARD = 1000; // פרס כספי לזוכה
 
 let lastPrintedDate = null;
 
+/**
+ * הפונקציה הראשית שרצה פעם בשבוע (דרך Cron)
+ * בודקת מי המנצח, מכריזה עליו, ומאפסת את הטבלה.
+ */
 async function checkMVPStatusAndRun(client) {
-    const now = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    // חישוב זמן (יום ראשון)
+    const now = new Date(Date.now() + 3 * 60 * 60 * 1000); // התאמה לשעון ישראל
     const today = now.toISOString().split('T')[0];
     const day = now.getDay(); // 0 = ראשון
 
+    // מריצים רק בימי ראשון
     if (day !== 0) return;
 
-    const statusRef = db.doc('mvpSystem/status');
+    // בדיקה האם כבר רץ היום (מונע כפילויות)
+    const statusRef = db.doc('system_metadata/mvp_status'); // ✅ מיקום מסודר יותר
     const statusSnap = await statusRef.get();
     const statusData = statusSnap.exists ? statusSnap.data() : null;
 
     if (statusData?.lastAnnouncedDate === today) {
         if (lastPrintedDate !== today) {
             lastPrintedDate = today;
-            log(`⛔ MVP כבר הוכרז היום (${today}) – מתעלם`);
+            log(`⛔ MVP כבר הוכרז היום (${today}). מדלג.`);
         }
         return;
     }
 
-    log(`📢 יום ראשון – מחשב MVP...`);
-    lastPrintedDate = today;
+    log('🏆 מתחיל חישוב MVP שבועי...');
 
-    await calculateAndAnnounceMVP(client, false);
-}
-
-async function calculateAndAnnounceMVP(client, force = false) {
-    const now = new Date(Date.now() + 3 * 60 * 60 * 1000);
-    const today = now.toISOString().split('T')[0];
-    const statusRef = db.doc('mvpSystem/status');
-    
-    // שליפת נתונים שבועיים
-    const statsRef = db.collection('weeklyStats');
-    const snapshot = await statsRef.get();
-    
+    // 1. שליפת המובילים מהטבלה השבועית (weeklyStats נשמר כאוסף זמני וזה בסדר)
+    const snapshot = await db.collection('weeklyStats').get();
     if (snapshot.empty) {
         log('⚠️ אין נתונים שבועיים לחישוב MVP.');
         return;
     }
 
     let bestUser = null;
-    let maxScore = -1;
+    let maxMinutes = -1;
 
     snapshot.forEach(doc => {
         const data = doc.data();
-        const score = (data.voiceMinutes || 0) * 1 + (data.messagesSent || 0) * 0.5;
-        if (score > maxScore) {
-            maxScore = score;
+        const minutes = data.voiceMinutes || 0;
+        if (minutes > maxMinutes) {
+            maxMinutes = minutes;
             bestUser = { id: doc.id, ...data };
         }
     });
 
-    if (!bestUser) return;
+    if (!bestUser || maxMinutes <= 0) {
+        log('⚠️ לא נמצא מנצח עם דקות חיוביות.');
+        return;
+    }
 
-    const guild = client.guilds.cache.first();
-    const member = await guild.members.fetch(bestUser.id).catch(() => null);
-    const displayName = member ? member.displayName : 'Unknown Warrior';
-    const avatarURL = member ? member.user.displayAvatarURL({ extension: 'png' }) : 'https://cdn.discordapp.com/embed/avatars/0.png';
+    // 2. שליפת פרטי המנצח מה-DB המאוחד
+    const winnerData = await getUserData(bestUser.id, 'discord');
+    const discordUser = await client.users.fetch(bestUser.id).catch(() => null);
+    
+    const displayName = winnerData?.identity?.displayName || discordUser?.username || 'Unknown Soldier';
+    const avatarURL = discordUser?.displayAvatarURL({ extension: 'png', size: 256 }) || 'https://cdn.discordapp.com/embed/avatars/0.png';
 
-    // יצירת תמונה
+    log(`🎉 המנצח השבועי הוא: ${displayName} עם ${Math.floor(maxMinutes)} דקות!`);
+
+    // 3. עדכון זכייה בתיק המשתמש (DB מאוחד)
+    const userRef = await getUserRef(bestUser.id, 'discord');
+    await userRef.update({
+        'economy.balance': admin.firestore.FieldValue.increment(MVP_REWARD),
+        'economy.mvpWins': admin.firestore.FieldValue.increment(1),
+        'stats.totalVoiceMinutes': admin.firestore.FieldValue.increment(maxMinutes)
+    });
+
+    // 4. יצירת תמונת הניצחון
     const imagePath = await renderMvpImage({
         username: displayName,
-        avatarURL,
-        minutes: Math.floor(bestUser.voiceMinutes || 0),
-        wins: bestUser.mvpWins || 0,
+        avatarURL: avatarURL,
+        minutes: Math.floor(maxMinutes),
+        wins: (winnerData?.economy?.mvpWins || 0) + 1,
         fresh: true
     });
 
-    // שליחה לדיסקורד
-    const channel = guild.channels.cache.get(MVP_CHANNEL_ID);
+    // 5. שליחה לדיסקורד
+    const channel = client.channels.cache.get(MVP_CHANNEL_ID);
     if (channel) {
-        const file = new AttachmentBuilder(imagePath, { name: 'mvp.png' });
-        const embed = new EmbedBuilder()
-            .setTitle('👑 ה-MVP השבועי שלנו!')
-            .setDescription(`קבלו את **${displayName}** שנתן בראש השבוע!`)
-            .setColor('Gold')
-            .setImage('attachment://mvp.png');
-        
-        await channel.send({ content: `👏 ברכות ל-${member || displayName}!`, embeds: [embed], files: [file] });
+        await channel.send({
+            content: `👑 **ה-MVP השבועי: <@${bestUser.id}>!**\nזכה ב-**₪${MVP_REWARD}** ושרף את השרת עם **${Math.floor(maxMinutes)}** דקות!`,
+            files: [imagePath]
+        });
     }
 
-    // הוספת ניצחון ואיפוס סטטיסטיקה
-    await db.collection('userStats').doc(bestUser.id).set({
-        mvpWins: admin.firestore.FieldValue.increment(1)
-    }, { merge: true });
-
-    if (member && MVP_ROLE_ID) {
-        await member.roles.add(MVP_ROLE_ID).catch(console.error);
-    }
-
-    // שמירת סטטוס
-    await statusRef.set({ lastAnnouncedDate: today }, { merge: true });
-
-    // איפוס שבועי (מוחק את הקולקשן)
-    const batch = db.batch();
-    snapshot.docs.forEach((doc) => batch.delete(doc.ref));
-    await batch.commit();
-    log('🧹 נתונים שבועיים אופסו.');
-
-    // --- ✅ שליחה לוואטסאפ ---
+    // 6. שליחה לוואטסאפ (עם תיוג אם יש מספר מקושר)
     try {
-        log('[MVP] 📲 Sending to WhatsApp...');
-        
-        // מציאת הטלפון של המנצח (אם מקושר)
         let whatsappMention = [];
-        const userDoc = await db.collection('users').doc(bestUser.id).get();
-        if (userDoc.exists) {
-            const userData = userDoc.data();
-            if (userData.platforms?.whatsapp) {
-                whatsappMention.push(userData.platforms.whatsapp);
-            }
+        if (winnerData?.platforms?.whatsapp) {
+            whatsappMention.push(winnerData.platforms.whatsapp);
         }
 
-        const caption = `👑 **קבלו את ה-MVP השבועי: ${displayName}!**\nשרף השבוע את השרת עם ${Math.floor(bestUser.voiceMinutes || 0)} דקות.\n\nתנו לו בכבוד 👇`;
-        
-        // שליחת התמונה והטקסט
-        await sendToMainGroup(caption, whatsappMention, imagePath);
+        const caption = `👑 **קבלו את ה-MVP השבועי: ${displayName}!**\nשרף השבוע את השרת עם ${Math.floor(maxMinutes)} דקות.\n\nתנו לו בכבוד 👇`;
+        await sendToMainGroup(caption, whatsappMention, imagePath); // ✅ שימוש בפונקציה הקיימת
         
     } catch (e) {
         console.error('❌ Failed to send MVP to WhatsApp:', e);
     }
+
+    // 7. עדכון סטטוס מערכת ואיפוס שבועי
+    await statusRef.set({ lastAnnouncedDate: today }, { merge: true });
+    
+    // מחיקת הקולקשן השבועי (Reset)
+    const batch = db.batch();
+    snapshot.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+    
+    log('🧹 טבלת weeklyStats אופסה בהצלחה.');
 }
 
-async function updateVoiceActivity(userId, minutes) {
-    const weekRef = db.collection('weeklyStats').doc(userId);
-    await weekRef.set({
-        voiceMinutes: admin.firestore.FieldValue.increment(minutes)
-    }, { merge: true });
-}
-
-async function updateMessageActivity(userId) {
-    const weekRef = db.collection('weeklyStats').doc(userId);
-    await weekRef.set({
-        messagesSent: admin.firestore.FieldValue.increment(1)
-    }, { merge: true });
-}
-
-module.exports = { checkMVPStatusAndRun, calculateAndAnnounceMVP, updateVoiceActivity, updateMessageActivity };
+module.exports = { checkMVPStatusAndRun };

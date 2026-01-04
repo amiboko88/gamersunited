@@ -5,14 +5,12 @@ const {
     trackJoinCount,
     trackJoinDuration,
     trackActiveHour,
-    updateGameStats // הוספתי את זה כדי לטפל במשחקים
+    updateGameStats 
 } = require('./statTracker');
 const { getUserRef } = require('../utils/userUtils'); 
-const db = require('../utils/firebase');
 const podcastManager = require('./podcastManager');
 const ttsTester = require('./ttsTester');
 const bf6Announcer = require('./bf6Announcer');
-const { log } = require('../utils/logger');
 
 // --- הגדרות כלליות ---
 const FIFO_CHANNEL_ID = process.env.FIFO_CHANNEL_ID; 
@@ -24,7 +22,6 @@ const joinTimestamps = new Map();
 // --- הגדרות מונה הערוצים הקוליים ---
 const COUNTER_CATEGORY_ID = '689124379019313214';
 const COUNTER_CHANNEL_PREFIX = '🔊 In Voice:';
-const COUNTER_DELETE_AFTER_MINUTES = 5;
 let voiceCounterChannelId = null; 
 
 async function handleVoiceStateUpdate(oldState, newState) {
@@ -39,7 +36,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
     // 1. טיפול במונה משתמשים (Voice Counter)
     await updateVoiceCounterChannel(newState.client);
 
-    // 2. טיפול ב-FIFO (מתן רול כשנכנסים לערוץ ספציפי)
+    // 2. טיפול ב-FIFO
     if (FIFO_CHANNEL_ID) {
         const fifoRole = newState.guild.roles.cache.find(r => r.name === FIFO_ROLE_NAME);
         if (fifoRole) {
@@ -55,7 +52,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
         }
     }
 
-    // 3. TTS Tester (בדיקת סאונד)
+    // 3. TTS Tester
     if (newChannel?.id === TTS_TEST_CHANNEL_ID && oldChannel?.id !== TTS_TEST_CHANNEL_ID) {
         await ttsTester.runTTSTest(member);
     }
@@ -65,22 +62,17 @@ async function handleVoiceStateUpdate(oldState, newState) {
         const joinedAt = joinTimestamps.get(userId);
         if (joinedAt) {
             const durationMs = now - joinedAt;
-            
-            // שומרים רק אם היה מעל דקה
             if (durationMs > 60000) {
                 const minutes = Math.round(durationMs / 60000);
                 
-                // ✅ תיקון: שימוש ב-statTracker בלבד (הוסר updateVoiceActivity)
                 await trackVoiceMinutes(userId, minutes); 
                 await trackJoinDuration(userId, minutes);
                 
-                // בדיקת משחק נוכחי לעדכון סטטיסטיקה
                 const activity = member.presence?.activities?.find(a => a.type === 0);
                 if (activity) {
                     await updateGameStats(userId, activity.name, minutes);
                 }
 
-                // עדכון זמן פעילות אחרון ב-DB המאוחד
                 const userRef = await getUserRef(userId, 'discord');
                 await userRef.set({ 
                     meta: { lastSeen: new Date().toISOString() }
@@ -90,34 +82,38 @@ async function handleVoiceStateUpdate(oldState, newState) {
         }
     }
     
-    // כניסה או מעבר ערוץ - מתחילים ספירה
+    // כניסה או מעבר ערוץ
     if (newChannel && (!oldChannel || newChannel.id !== oldChannel.id)) {
         joinTimestamps.set(userId, now);
-        // טראקינג לכמות כניסות (רק אם נכנס מחדש, לא מעבר חדרים)
         if (!oldChannel) {
             await trackJoinCount(userId);
             await trackActiveHour(userId);
         }
     }
     
-    // 5. BF6 Announcer (מוזיקת אווירה)
+    // 5. BF6 Announcer
     if (newChannel && oldChannel?.id !== newChannel.id) {
         if (newChannel.id === BF6_VOICE_CHANNEL_ID) {
             await bf6Announcer.playBf6Theme(newChannel, member);
         }
     }
 
-    // 6. Podcast Manager (זיהוי קבוצות לפודקאסט)
+    // 6. Podcast Manager
     await podcastManager.handleVoiceStateUpdate(oldState, newState);
 }
 
 // ניהול ערוץ מונה המחוברים
 async function updateVoiceCounterChannel(client) {
     try {
+        // ✅ הגנה מפני קריסה: בדיקה אם ה-Client וה-Guilds מוכנים
+        if (!client || !client.guilds || !client.guilds.cache) {
+            // console.warn('[VoiceCounter] Client not ready yet, skipping update.');
+            return;
+        }
+
         const guild = client.guilds.cache.first(); 
         if (!guild) return;
 
-        // ספירה של כל מי שמחובר לערוץ קולי (למעט בוטים)
         let totalVoiceUsers = 0;
         guild.channels.cache.forEach(channel => {
             if (channel.type === ChannelType.GuildVoice) {
@@ -149,13 +145,12 @@ async function updateVoiceCounterChannel(client) {
                 await existingChannel.setName(channelName);
             }
         } else {
-            // יצירת ערוץ חדש
             const newChannel = await guild.channels.create({
                 name: channelName,
                 type: ChannelType.GuildVoice,
                 parent: COUNTER_CATEGORY_ID,
                 permissionOverwrites: [
-                    { id: guild.id, deny: [PermissionFlagsBits.Connect] } // לקריאה בלבד
+                    { id: guild.id, deny: [PermissionFlagsBits.Connect] }
                 ]
             });
             voiceCounterChannelId = newChannel.id;

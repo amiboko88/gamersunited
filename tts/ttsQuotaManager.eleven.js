@@ -1,7 +1,7 @@
-// 📁 tts/ttsQuotaManager.eleven.js (מעודכן)
+// 📁 tts/ttsQuotaManager.eleven.js
 const db = require('../utils/firebase.js');
 const { log } = require('../utils/logger.js');
-const { getUserRef } = require('../utils/userUtils'); // ✅
+const { getUserRef } = require('../utils/userUtils'); // ✅ החיבור למאגר המאוחד
 const admin = require('firebase-admin');
 
 const USAGE_COLLECTION = 'openAiTtsUsage'; 
@@ -15,7 +15,7 @@ async function registerTTSUsage(characterCount, userId, username, engine, voiceP
     try {
         const timestamp = new Date();
 
-        // 1. שמירה ללוג המפורט (כמו שביקשת להשאיר)
+        // 1. שמירה ללוג המפורט (כמו שביקשת להשאיר - לביקורת כספית)
         const usageData = {
             userId,
             username,
@@ -27,8 +27,8 @@ async function registerTTSUsage(characterCount, userId, username, engine, voiceP
         const logPromise = db.collection(USAGE_COLLECTION).add(usageData);
 
         // 2. עדכון מצטבר בפרופיל המשתמש (Unified User DB)
-        // אם ה-ID הוא מספר טלפון או ID של דיסקורד, ה-UserUtils ידע לטפל בזה
-        const userRef = await getUserRef(userId, 'discord'); // מניח דיסקורד כברירת מחדל, אבל יעבוד גם אם תעביר פורמט אחר
+        // השדרוג: סופרים כמה המשתמש הזה "עלה" לנו
+        const userRef = await getUserRef(userId, 'discord'); 
         
         const userPromise = userRef.set({
             stats: {
@@ -39,24 +39,26 @@ async function registerTTSUsage(characterCount, userId, username, engine, voiceP
             }
         }, { merge: true });
 
+        // ביצוע במקביל לביצועים מהירים
         await Promise.all([logPromise, userPromise]);
         
     } catch (error) {
+        // אנחנו לא רוצים שהבוט יקרוס בגלל לוג, אז רק מדפיסים שגיאה
         log(`❌ [QUOTA] שגיאה ברישום שימוש ב-TTS: ${error.message}`);
     }
 }
 
+/**
+ * פונקציה למשיכת דוח שימוש גלובלי (עבור פקודת /תווים)
+ */
 async function getTTSUsageData() {
     try {
         const snapshot = await db.collection(USAGE_COLLECTION).get();
-        if (snapshot.empty) return [];
         return snapshot.docs.map(doc => doc.data());
     } catch (error) {
+        console.error('Error fetching TTS usage data:', error);
         return [];
     }
 }
 
-module.exports = {
-    registerTTSUsage,
-    getTTSUsageData
-};
+module.exports = { registerTTSUsage, getTTSUsageData };

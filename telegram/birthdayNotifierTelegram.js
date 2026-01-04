@@ -3,7 +3,6 @@ const db = require("../utils/firebase");
 const { Bot } = require("grammy");
 require("dotenv").config();
 
-// אם אין טוקן, אין מה להפעיל את הבוט הזה
 const bot = process.env.TELEGRAM_TOKEN ? new Bot(process.env.TELEGRAM_TOKEN) : null;
 
 function getTodayKey() {
@@ -12,54 +11,46 @@ function getTodayKey() {
 }
 
 async function alreadySentToday() {
-  const doc = await db.collection("systemTasks").doc("lastBirthdayCheck").get();
+  const doc = await db.collection("system_metadata").doc("telegram_birthday_check").get();
   return doc.exists && doc.data().date === getTodayKey();
 }
 
 async function markAsSent() {
-  await db.collection("systemTasks").doc("lastBirthdayCheck").set({ date: getTodayKey() }, { merge: true });
+  await db.collection("system_metadata").doc("telegram_birthday_check").set({ date: getTodayKey() }, { merge: true });
 }
 
-// 🔍 הפונקציה החדשה שסורקת את המשתמשים המאוחדים
+/**
+ * שולף ימי הולדת מה-DB המאוחד
+ */
 async function getTodaysBirthdays() {
-  // חיפוש יעיל: מביא רק משתמשים שיש להם יום הולדת מוגדר
-  // (הערה: ב-Firestore אי אפשר לסנן לפי שדות פנימיים דינמיים בקלות בלי אינדקס, 
-  // אז נביא את מי שיש לו יומולדת ונסנן בקוד - זה מהיר מאוד ל-100 משתמשים)
-  const snapshot = await db.collection("users")
-    .orderBy("identity.birthday") // מוודא שיש שדה כזה
+  const today = new Date();
+  const currentDay = today.getDate();
+  const currentMonth = today.getMonth() + 1;
+
+  // שליפה חכמה מה-DB המאוחד
+  const snapshot = await db.collection('users')
+    .where('identity.birthday.day', '==', currentDay)
+    .where('identity.birthday.month', '==', currentMonth)
     .get();
 
-  const today = new Date();
-  const day = today.getDate();
-  const month = today.getMonth() + 1;
+  const celebrants = [];
 
-  const todays = [];
-  snapshot.forEach((doc) => {
+  snapshot.forEach(doc => {
     const data = doc.data();
-    const bday = data.identity?.birthday;
-
-    // בדיקה אם התאריך תואם להיום
-    if (bday && bday.day === day && bday.month === month) {
-      // נותן עדיפות לשם התצוגה, אחר כך לשם מלא, ולבסוף "חבר"
-      const name = data.identity.displayName || data.identity.fullName || "חבר";
-      
-      // חשוב: אנחנו צריכים את ה-Telegram ID כדי לשלוח הודעה!
-      // אם המשתמש נרשם דרך טלגרם, ה-ID יהיה ב-identity.telegramId
-      // או שה-ID של המסמך עצמו הוא ה-ID (במקרה של משתמשי טלגרם בלבד שלא עברו איחוד)
-      let telegramId = data.identity.telegramId;
-      
-      // fallback: אם ה-ID של המסמך הוא מספר בלבד, כנראה שזה ה-ID של טלגרם
-      if (!telegramId && /^\d+$/.test(doc.id)) {
-          telegramId = doc.id;
-      }
-
-      if (telegramId) {
-          todays.push({ telegramId, name });
-      }
+    // בדיקה אם למשתמש יש קישור לטלגרם
+    // אפשרות 1: שדה platforms.telegram
+    // אפשרות 2: המסמך עצמו הוא ID של טלגרם (במערכות ישנות)
+    const telegramId = data.platforms?.telegram || (/^\d+$/.test(doc.id) ? doc.id : null);
+    
+    if (telegramId) {
+        celebrants.push({
+            id: telegramId,
+            name: data.identity.displayName || data.username || 'חבר יקר'
+        });
     }
   });
 
-  return todays;
+  return celebrants;
 }
 
 async function sendBirthdayMessages() {
@@ -67,39 +58,37 @@ async function sendBirthdayMessages() {
 
   try {
       if (await alreadySentToday()) {
-        console.log("✅ [Telegram Birthday] ברכות כבר נשלחו היום. מדלג.");
+        console.log("✅ [Telegram] ברכות יום הולדת כבר נשלחו היום.");
         return;
       }
 
       const users = await getTodaysBirthdays();
       if (!users.length) {
-        console.log("📭 [Telegram Birthday] אין ימי הולדת היום.");
+        console.log("📭 [Telegram] אין ימי הולדת היום בקרב משתמשי הטלגרם.");
         await markAsSent();
         return;
       }
 
-      console.log(`🎉 [Telegram Birthday] שולח ברכות ל־${users.length} משתמשים...`);
+      console.log(`🎉 [Telegram] שולח ברכות ל־${users.length} משתמשים...`);
 
-      for (const user of users) {
-        const msg = `
-    🎂 <b>יום הולדת שמח, ${user.name}!</b>
-    
-    שמעון מאחל לך המון XP בחיים, פינג נמוך, ושלא ייגמר לך המקום ב-Inventory.
-    שתזכה לשנה של ניצחונות! 🏆
-    `;
-        try {
-            await bot.api.sendMessage(user.telegramId, msg, { parse_mode: "HTML" });
-        } catch (err) {
-            console.error(`❌ נכשל בשליחה ל-${user.name} (${user.telegramId}):`, err.message);
-        }
+      // שליחה לקבוצה הראשית (מוגדר ב-ENV)
+      const MAIN_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
+      if (MAIN_CHAT_ID) {
+          const names = users.map(u => `<b>${u.name}</b>`).join(', ');
+          await bot.api.sendMessage(MAIN_CHAT_ID, 
+            `🎂 <b>חגיגה בקהילה!</b>\n\n` +
+            `יום הולדת שמח ל: ${names}! 🥳\n` +
+            `שמעון מאחל לכם המון XP, ניצחונות ופינג נמוך!`, 
+            { parse_mode: "HTML" }
+          );
       }
 
       await markAsSent();
-      
+
   } catch (error) {
-      console.error("❌ שגיאה כללית בבדיקת ימי הולדת טלגרם:", error);
+      console.error("❌ [Telegram Birthday Error]:", error);
   }
 }
 
-// ייצוא הפונקציה כדי שנוכל לקרוא לה מ-index.js
 module.exports = { sendBirthdayMessages };

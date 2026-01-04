@@ -1,281 +1,105 @@
-// 📁 telegram/telegramCommands.js (גרסה משודרגת עם טיפול בשגיאות)
-const { getUpcomingBirthdaysText } = require("./telegramBirthday");
-const { generateXPProfileCard } = require("./generateXPProfileCard"); 
-const db = require("../utils/firebase");
-const lastStartCommand = new Map();
+// 📁 telegram/telegramCommands.js
 const { generateRoastText } = require("./generateRoastText");
-const openai = require('../utils/openaiConfig');
-const { log } = require('../utils/logger'); // ⚠️ ודא שייבאת את לוגר
-const { InputFile } = require("grammy");
-const axios = require("axios");
-const fs = require("fs");
-const path = require("path");
+const { generateRoastVoice } = require("./telegramTTSRoaster");
+const { log } = require('../utils/logger');
 
+/**
+ * פונקציה זו אחראית על רישום הפקודות הראשיות והתפריט.
+ * (הלוגיקה של יום הולדת ורמות נמצאת בקבצים הנפרדים שלהם, אבל כאן אנחנו מסבירים עליהם)
+ */
 module.exports = function registerTelegramCommands(bot, WAITING_USERS) {
-  // ✅ [תיקון] עטיפת הפקודה ב-try...catch למניעת קריסה בעת אתחול
-  try {
-    bot.api.setMyCommands([
-      { command: "start", description: "🚀 פתיחת תפריט ראשי" },
-      { command: "roast", description: "🔥 צליית משתמש באמצעות AI" }
-    ]);
-  } catch (error) {
-    log(`❌ [TELEGRAM] שגיאה ברישום פקודות: ${error.message}`);
-    // ממשיכים הלאה, זה לא קריטי לאתחול הבוט
-  }
+  
+  // 1. הגדרת התפריט הכחול בטלגרם (Menu Button)
+  // אנחנו רושמים כאן את כל הפקודות, גם אלו שמטופלות בקבצים אחרים
+  bot.api.setMyCommands([
+      { command: "start", description: "🚀 פתיחת תפריט והסברים" },
+      { command: "roast", description: "🔥 שמעון נכנס במישהו" },
+      { command: "birthday", description: "🎂 מתי יום ההולדת שלך?" },
+      { command: "top", description: "🏆 טבלת המובילים (XP)" },
+      { command: "stats", description: "📊 בדיקת סטטוס אישי" }
+  ]).catch(err => log(`❌ [TELEGRAM] Failed to set commands: ${err.message}`));
 
-
-  // ... (קוד הפקודות start ו-roast נשאר זהה) ...
+  // --- פקודת /start - המדריך למשתמש ---
   bot.command("start", async (ctx) => {
-    const userId = ctx.from?.id;
-    const now = Date.now();
-    const lastTime = lastStartCommand.get(userId) || 0;
-
-    if (now - lastTime < 15000) {
-      const prompt = `משתמש מריץ שוב ושוב את הפקודה /start. תן לו עקיצה קצרה, חכמה, בסגנון שמעון. בלי לקלל.`;
-      try {
-        const gptRes = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.85,
-          max_tokens: 60
-        });
-        let reply = gptRes.choices?.[0]?.message?.content?.trim();
-        reply = (reply || "יאללה מספיק עם ה־/start הזה אחי.").replace(/^["“”'`׳"״\s]+|["“”'`׳"״\s]+$/g, "").trim();
-        reply = `\u200F${reply}`;
-        return ctx.reply(reply, { parse_mode: "HTML" });
-      } catch (err) {
-        console.error("❌ GPT עקיצה /start:", err);
-        return ctx.reply("תפריט כבר פתוח, תנשום.");
-      }
-    }
-    lastStartCommand.set(userId, now);
-    await ctx.reply("ברוכים הבאים לתפריט של שמעון ", {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🎂 ניהול ימי הולדת", callback_data: "menu_birthdays" }, { text: "🧑‍💼 פרופיל אישי", callback_data: "menu_profile" }],
-          [{ text: "🧠 שמעון מדגים", callback_data: "menu_demos" }]
-        ]
-      }
-    });
-  });
-
-  bot.command("roast", async (ctx) => {
-    const message = ctx.message;
-    const botUsername = ctx.me.username;
-    try {
-        const targetUsername = message.text.split(' ')[1];
-        if (!targetUsername) {
-            return await ctx.reply('את מי לצלות? תן לי שם משתמש אחרי הפקודה. למשל: `/roast @shimon`');
-        }
-        const cleanUsername = targetUsername.replace('@', '');
-        if (cleanUsername.toLowerCase() === botUsername.toLowerCase()) {
-            return await ctx.reply('אתה באמת חושב שאני אצלה את עצמי? יש לך עוד הרבה מה ללמוד, בן אנוש.');
-        }
-        await ctx.reply(`🔍 מחפש חומרים עסיסיים על ${cleanUsername}... זה ייקח רגע.`);
-        const roastText = await generateRoastText(cleanUsername);
-        if (!roastText) {
-            return await ctx.reply(`לא מצאתי שום דבר מביך על ${cleanUsername}. כנראה שהוא משעמם מדי.`);
-        }
-        await generateRoastVoice(ctx, roastText, cleanUsername);
-    } catch (error) {
-        log('❌ [TELEGRAM-ROAST] Error in roast command:', error);
-        await ctx.reply('אופס, נראה שהמיקרופון שלי נשבר מרוב עוצמת הירידות. נסה שוב מאוחר יותר.');
-    }
-  });
-
-  // ... (קוד תפריטי הניווט נשאר זהה) ...
-  bot.callbackQuery("menu_birthdays", async (ctx) => {
-    await ctx.editMessageReplyMarkup({
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🎉 הוסף/עדכן יום הולדת", callback_data: "bday_update" }],
-          [{ text: "📆 ימי הולדת קרובים", callback_data: "show_upcoming_birthdays" }],
-          [{ text: "🔙 חזרה", callback_data: "menu_back" }]
-        ]
-      }
-    });
-    await ctx.answerCallbackQuery();
-  });
-
-  bot.callbackQuery("menu_profile", async (ctx) => {
-    await ctx.editMessageReplyMarkup({
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🧬 פרופיל XP", callback_data: "profile_xp" }],
-          [{ text: "🏆 טבלת TOP", callback_data: "profile_top" }],
-          [{ text: "⭐ MVP מהדיסקורד", callback_data: "profile_mvp" }],
-          [{ text: "🔙 חזרה", callback_data: "menu_back" }]
-        ]
-      }
-    });
-    await ctx.answerCallbackQuery();
-  });
-
-
-  bot.callbackQuery("profile_xp", async (ctx) => {
-    const userId = ctx.from.id.toString();
-    const name = ctx.from.first_name || "חבר";
-    try {
-        const userRef = db.collection("levels").doc(userId);
-        const doc = await userRef.get();
-        if (!doc.exists || (!doc.data()?.xp && !doc.data()?.level)) {
-            await ctx.reply("😕 אין נתונים עדיין. תכתוב קצת בצ'אט כדי להתקדם.");
-            return ctx.answerCallbackQuery();
-        }
-      
-        const data = doc.data();
-        let avatarDataURL = null;
-        try {
-            const photos = await ctx.api.getUserProfilePhotos(userId);
-            if (photos.total_count > 0) {
-                const fileId = photos.photos[0][0].file_id;
-                const link = await ctx.api.getFileLink(fileId);
-                const res = await axios.get(link.href, { responseType: "arraybuffer" });
-                const base64 = Buffer.from(res.data).toString("base64");
-                avatarDataURL = `data:image/jpeg;base64,${base64}`;
-            }
-        } catch (err) {
-            console.warn("⚠️ שליפת אוואטר נכשלה:", err.message);
-        }
-
-        const buffer = await generateXPProfileCard({
-            fullName: name, level: data.level, xp: data.xp, avatarDataURL
-        });
-        const filePath = path.join("/tmp", `xp_profile_${userId}.png`);
-        fs.writeFileSync(filePath, buffer);
-
-        // ✅ [תיקון] הוספת try-catch סביב שליחת התמונה
-        try {
-            await ctx.replyWithPhoto(new InputFile(filePath, `xp_profile_${userId}.png`), {
-                caption: `✨ <b>פרופיל ה־XP של ${name}</b>`,
-                parse_mode: "HTML"
-            });
-        } catch(photoErr) {
-            console.error(`❌ שגיאה בשליחת תמונת פרופיל XP:`, photoErr.message);
-            if (photoErr.description && photoErr.description.includes("not enough rights")) {
-                 await ctx.reply(`⚠️ לא הצלחתי לשלוח את תמונת הפרופיל. נראה שאין לי הרשאה לשלוח תמונות בצ'אט הזה.`);
-            } else {
-                 await ctx.reply("😵 שגיאה זמנית ביצירת הפרופיל. נסה שוב.");
-            }
-        } finally {
-            fs.unlink(filePath, () => {});
-        }
-
-    } catch (err) {
-        console.error("❌ שגיאה כללית בפרופיל XP:", err);
-        await ctx.reply("😵 שגיאה כללית. נסה שוב מאוחר יותר.");
-    } finally {
-        await ctx.answerCallbackQuery();
-    }
-  });
-
-  bot.callbackQuery("profile_mvp", async (ctx) => {
-    try {
-        const doc = await db.collection("leaderboard").doc("mvp").get();
-        const mvpImageURL = doc.data()?.url;
-        if (!mvpImageURL) {
-            await ctx.reply("🤷‍♂️ אין MVP מעודכן כרגע.");
-            return ctx.answerCallbackQuery();
-        }
-
-        const response = await axios.get(mvpImageURL, { responseType: 'arraybuffer' });
-        const imageBuffer = Buffer.from(response.data);
-        const imageFile = new InputFile(imageBuffer, 'mvp.png');
-
-        // ✅ [תיקון] הוספת try-catch סביב שליחת התמונה
-        try {
-            await ctx.replyWithPhoto(imageFile, {
-                caption: "👑 <b>MVP מהשרת בדיסקורד</b>\nנלקח אוטומטית מהלידרבורד.",
-                parse_mode: "HTML"
-            });
-        } catch (photoErr) {
-            console.error(`❌ שגיאה בשליחת תמונת MVP:`, photoErr.message);
-            if (photoErr.description && photoErr.description.includes("not enough rights")) {
-                 await ctx.reply(`⚠️ לא הצלחתי לשלוח את תמונת ה-MVP. נראה שאין לי הרשאה לשלוח תמונות בצ'אט הזה.`);
-            } else {
-                 await ctx.reply("😵 משהו נדפק. ייתכן שהתמונה פגה תוקף. נסה שוב מאוחר יותר.");
-            }
-        }
-    } catch (err) {
-        console.error("שגיאה בשליפת MVP:", err);
-        await ctx.reply("😵 משהו נדפק. ייתכן שהתמונה פגה תוקף. נסה שוב מאוחר יותר.");
-    } finally {
-        await ctx.answerCallbackQuery();
-    }
-  });
-
-  // ... (שאר הקוד נשאר זהה) ...
-  bot.callbackQuery("show_upcoming_birthdays", async (ctx) => {
-    const text = await getUpcomingBirthdaysText();
-    await ctx.reply(text, { parse_mode: "HTML" });
-    await ctx.answerCallbackQuery();
-  });
-
-  bot.callbackQuery("bday_update", async (ctx) => {
-    WAITING_USERS.set(ctx.from.id, "add");
-    await ctx.reply("📆 שלח תאריך יום הולדת שלך בפורמט 28.06.1993 או כתוב 'ביטול'.");
-    await ctx.answerCallbackQuery();
-  });
-
-  bot.callbackQuery("menu_back", async (ctx) => {
-    await ctx.editMessageReplyMarkup({
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🎂 ניהול ימי הולדת", callback_data: "menu_birthdays" }, { text: "🧑‍💼 פרופיל אישי", callback_data: "menu_profile" }],
-          [{ text: "🧠 שמעון מדגים", callback_data: "menu_demos" }]
-        ]
-      }
-    });
-    await ctx.answerCallbackQuery();
-  });
-  
-  bot.callbackQuery("menu_demos", async (ctx) => {
-    await ctx.editMessageReplyMarkup({
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🤖 תיוג חכם", callback_data: "demo_tags" }],
-          [{ text: "🔥 ירידת GPT", callback_data: "demo_roast" }],
-          [{ text: "🎧 קול של שמעון", callback_data: "demo_voice" }],
-          [{ text: "🔙 חזרה", callback_data: "menu_back" }]
-        ]
-      }
-    });
-    await ctx.answerCallbackQuery();
-  });
-  
-  bot.callbackQuery("demo_tags", async (ctx) => {
+    const user = ctx.from.first_name;
+    
+    // הודעה מושקעת עם כל היכולות
     await ctx.reply(
-      `🤖 <b>תיוגים חכמים</b>\n\nשמעון מזהה שמות כמו:\n• 'קלימרו' → תגובה לעגנית\n• 'עומרי עמר' → תיוג @Tokyo1987\n\n🧠 זה פועל אוטומטית בכל שיחה`, { parse_mode: "HTML" }
+      `אהלן <b>${user}</b>! אני שמעון. 🤖\n` +
+      `הבוט שמאחד את הקהילה בין הדיסקורד לטלגרם.\n\n` +
+      `<b>📢 מה אני יודע לעשות?</b>\n\n` +
+      `🔥 <b>ירידות (Roast):</b>\n` +
+      `כתוב <code>/roast</code> ואני אכנס בך או בחבר. אפשר גם בטקסט וגם בהקלטה קולית!\n\n` +
+      `🎂 <b>ימי הולדת:</b>\n` +
+      `כתוב <code>/birthday</code> כדי לעדכן תאריך. אני מבטיח לזכור ולברך אותך.\n\n` +
+      `🏆 <b>מערכת רמות (XP):</b>\n` +
+      `כל הודעה בטלגרם נספרת! ה-XP שלך משותף עם הדיסקורד.\n` +
+      `בדוק את המצב עם <code>/top</code>.\n\n` +
+      `🧠 <b>בינה מלאכותית:</b>\n` +
+      `אני קורא את הצ'אט. נסה לשאול "שמעון, מה אתה חושב על..." או סתם תייג אותי.\n` +
+      `אני מזהה גם מילים כמו "קלימרו" או "וורזון" ומגיב בהתאם.\n\n` +
+      `יאללה, תתחילו לחפור. 👇`,
+      { parse_mode: "HTML" }
     );
-    await ctx.answerCallbackQuery();
   });
 
+  // --- פקודת /roast - התפריט ---
+  bot.command("roast", async (ctx) => {
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: "📝 טקסט בלבד", callback_data: "demo_roast" },
+          { text: "🎤 הקלטה קולית (TTS)", callback_data: "demo_voice" }
+        ]
+      ]
+    };
+    await ctx.reply("באיזה מצב צבירה אתה רוצה את הירידה?", { reply_markup: keyboard });
+  });
+
+  // --- טיפול בכפתורים (Callbacks) ---
+  
+  // 1. ירידה בטקסט
   bot.callbackQuery("demo_roast", async (ctx) => {
     const name = ctx.from.first_name || "חבר";
+    
+    // מעדכן את הכפתור כדי שלא ילחצו שוב
+    await ctx.answerCallbackQuery({ text: "מחדד את הלשון..." });
+    
     const roast = await generateRoastText(name);
+    // ניקוי רווחים ותווים מיותרים
     const cleanRoast = roast.replace(/^["“”'`׳"״\s]+|["“”'`׳"״\s]+$/g, "").trim();
-    const rtlRoast = `\u200F<b>${cleanRoast}</b>`;
-    await ctx.reply(`🧠 דוגמת ירידה:\n\n${rtlRoast}`, { parse_mode: "HTML" });
-    await ctx.answerCallbackQuery();
+    
+    await ctx.reply(`🧠 <b>ירידה על ${name}:</b>\n\n${cleanRoast}`, { parse_mode: "HTML" });
   });
+
+  // 2. ירידה בקול (TTS)
+  const runningVoiceUsers = new Set(); // מניעת ספאם לחיצות
   
-  const { generateRoastVoice } = require("./telegramTTSRoaster");
-  const runningVoiceUsers = new Set();
   bot.callbackQuery("demo_voice", async (ctx) => {
     const userId = ctx.from.id;
+    
     if (runningVoiceUsers.has(userId)) {
-      return ctx.answerCallbackQuery({ text: "⏳ כבר מופעל... חכה שההקלטה תגיע 🎤", show_alert: false }).catch(() => {});
+      return ctx.answerCallbackQuery({ text: "⏳ כבר מכין הקלטה, חכה רגע!", show_alert: false });
     }
+    
     runningVoiceUsers.add(userId);
-    await ctx.answerCallbackQuery({ text: "🎧 מתחילים...", show_alert: false }).catch(() => {});
+    await ctx.answerCallbackQuery({ text: "🎤 שמעון מקליט... זה ייקח רגע." });
+
+    // שליחת חיווי "מקליט קול" למשתמש
+    await ctx.replyWithChatAction('record_voice');
+
     try {
-      await ctx.reply("🔊 שמעון מתחמם... מחולל קול מופעל 🎤");
-      await generateRoastVoice(ctx, "זו דוגמה לקול שלי, מקווה שאתה אוהב את זה", "חבר");
-    } catch (err) {
-      console.error("🎤 שגיאה במחולל קול:", err);
-      await ctx.reply("😵 שגיאה ביצירת הקול. נסה שוב מאוחר יותר.");
+        const name = ctx.from.first_name || "חבר";
+        const roastText = await generateRoastText(name);
+        
+        // קריאה לפונקציה החיצונית שמטפלת ביצירת הקובץ ובשליחתו
+        await generateRoastVoice(ctx, roastText, name);
+        
+    } catch (error) {
+        console.error("Voice Roast Error:", error);
+        await ctx.reply("❌ הייתה בעיה עם הקול שלי, נגמרו לי המילים (או הטוקנים).");
     } finally {
-      runningVoiceUsers.delete(userId);
+        runningVoiceUsers.delete(userId);
     }
   });
 };

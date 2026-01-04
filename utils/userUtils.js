@@ -3,80 +3,78 @@ const db = require('./firebase');
 const admin = require('firebase-admin');
 
 /**
- * מחזיר את הרפרנס למסמך המשתמש הראשי (Master Record).
- * יודע להתמודד עם Discord ID, או לבצע חיפוש דרך טבלאות ה-Lookup.
- * @param {string} id - המזהה (DiscordID, Phone, או TelegramID)
- * @param {'discord'|'whatsapp'|'telegram'} platform - סוג הפלטפורמה (ברירת מחדל: discord)
+ * מחזיר את הרפרנס למסמך המשתמש הראשי.
+ * מחפש ישירות בתוך users לפי שדה הפלטפורמה.
  */
 async function getUserRef(id, platform = 'discord') {
-    let targetId = id;
-
-    try {
-        // 1. אם זה וואטסאפ - נחפש בטבלת ההמרה
-        if (platform === 'whatsapp') {
-            const lookupDoc = await db.collection('lookup_whatsapp').doc(id).get();
-            if (lookupDoc.exists) {
-                targetId = lookupDoc.data().targetId;
-            } else {
-                // אם אין קישור, נחפש משתמש זמני או ניצור מזהה זמני
-                targetId = id.startsWith('wa_') ? id : `wa_${id}`;
-            }
-        }
-        // 2. אם זה טלגרם - נחפש בטבלת ההמרה
-        else if (platform === 'telegram') {
-            const lookupDoc = await db.collection('lookup_telegram').doc(id.toString()).get();
-            if (lookupDoc.exists) {
-                targetId = lookupDoc.data().targetId;
-            } else {
-                targetId = `tg_${id}`;
-            }
-        }
-    } catch (error) {
-        console.error(`❌ שגיאה בחיפוש משתמש (${id}):`, error);
+    // 1. דיסקורד = מפתח ישיר
+    if (platform === 'discord') {
+        return db.collection('users').doc(id);
     }
 
-    // החזרת הרפרנס למסמך בטבלה הראשית
-    return db.collection('users').doc(targetId);
+    // 2. וואטסאפ = חיפוש לפי שדה platforms.whatsapp
+    if (platform === 'whatsapp') {
+        // מנקים את ה-JID אם צריך (משאירים רק מספר)
+        const cleanPhone = id.replace('@s.whatsapp.net', '').replace('WA:', '');
+        
+        try {
+            const snapshot = await db.collection('users')
+                .where('platforms.whatsapp', '==', cleanPhone)
+                .limit(1)
+                .get();
+
+            if (!snapshot.empty) {
+                return snapshot.docs[0].ref; // מצאנו קישור!
+            }
+        } catch (error) {
+            console.error(`❌ User Lookup Error (${id}):`, error);
+        }
+
+        // 3. אם לא מצאנו, ניצור מסמך חדש על בסיס הטלפון
+        return db.collection('users').doc(cleanPhone);
+    }
+
+    return db.collection('users').doc(id);
 }
 
-/**
- * שולף את נתוני המשתמש המלאים.
- */
 async function getUserData(id, platform = 'discord') {
     const ref = await getUserRef(id, platform);
     const doc = await ref.get();
-    
     if (!doc.exists) return null;
     return doc.data();
 }
 
-/**
- * יוצר או מעדכן משתמש חדש עם מבנה הנתונים המאוחד.
- */
-async function ensureUserExists(discordId, displayName) {
-    const ref = db.collection('users').doc(discordId);
-    const doc = await ref.get();
+async function ensureUserExists(id, displayName, platform = 'discord') {
+    const ref = await getUserRef(id, platform);
+    
+    await db.runTransaction(async (t) => {
+        const doc = await t.get(ref);
 
-    if (!doc.exists) {
-        const newUser = {
-            identity: {
-                discordId: discordId,
-                displayName: displayName,
-                joinedAt: new Date().toISOString()
-            },
-            economy: { xp: 0, level: 1, balance: 0 },
-            stats: { messagesSent: 0, voiceMinutes: 0 },
-            brain: { facts: [], sentiment: 0 },
-            meta: { firstSeen: new Date().toISOString() }
-        };
-        await ref.set(newUser);
-        return newUser;
-    }
-    return doc.data();
+        if (!doc.exists) {
+            const cleanId = id.replace('@s.whatsapp.net', '');
+            const newUser = {
+                identity: {
+                    displayName: displayName || "Unknown Gamer",
+                    joinedAt: new Date().toISOString()
+                },
+                platforms: {
+                    [platform]: cleanId
+                },
+                economy: { xp: 0, level: 1, balance: 0 },
+                stats: { messagesSent: 0 },
+                brain: { facts: [], roasts: [] },
+                meta: { firstSeen: new Date().toISOString() }
+            };
+            t.set(ref, newUser);
+        } else {
+            t.set(ref, { 
+                'identity.displayName': displayName,
+                'meta.lastActive': new Date().toISOString()
+            }, { merge: true });
+        }
+    });
+
+    return (await ref.get()).data();
 }
 
-module.exports = {
-    getUserRef,
-    getUserData,
-    ensureUserExists
-};
+module.exports = { getUserRef, getUserData, ensureUserExists };

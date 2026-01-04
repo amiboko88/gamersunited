@@ -1,4 +1,4 @@
-// 📁 handlers/birthdayCongratulator.js (מתוקן סופית עם fetch)
+// 📁 handlers/birthdayCongratulator.js
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const path = require('path');
 const db = require('../utils/firebase');
@@ -8,6 +8,7 @@ const { playTTSInVoiceChannel } = require('../utils/ttsQuickPlay');
 const TARGET_CHANNEL_ID = '583575179880431616';
 const BIRTHDAY_ROLE_ID = process.env.BIRTHDAY_ROLE_ID;
 
+// ברכות קוליות
 const birthdayTTSMessages = [
     (name, age) => `מזל טוב ל־${name}! אתה בן ${age} היום, וזה אומר שאתה עדיין משחק ולא פרשת כמו הגדולים!`,
     (name, age) => `${name}, ${age} שנה שאתה מחזיק שליטה – אולי השנה תלמד גם להרים קבוצה?`,
@@ -25,88 +26,67 @@ function calculateAge(birthday) {
     return age;
 }
 
+// ✅ שליפה מהמבנה החדש והמאוחד
 async function getTodaysBirthdays() {
     const today = new Date();
-    const day = today.getDate();
-    const month = today.getMonth() + 1;
-    const snapshot = await db.collection('birthdays').where('birthday.day', '==', day).where('birthday.month', '==', month).get();
-    if (snapshot.empty) return [];
+    const currentDay = today.getDate();
+    const currentMonth = today.getMonth() + 1;
 
-    const seenDiscordIds = new Set();
-    const birthdays = [];
-    for (const doc of snapshot.docs) {
-        const data = doc.data();
-        const discordId = data.linkedAccounts?.find(id => id.startsWith('discord:'))?.split(':')[1];
-        if (discordId && !seenDiscordIds.has(discordId)) {
-            seenDiscordIds.add(discordId);
-            const age = calculateAge(data.birthday);
-            birthdays.push({ fullName: data.fullName, age, discordId });
-        }
+    try {
+        // מחפשים משתמשים שהיום והחודש בזהות שלהם תואמים להיום
+        const snapshot = await db.collection('users')
+            .where('identity.birthday.day', '==', currentDay)
+            .where('identity.birthday.month', '==', currentMonth)
+            .get();
+
+        if (snapshot.empty) return [];
+
+        return snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                day: data.identity.birthday.day,
+                month: data.identity.birthday.month,
+                year: data.identity.birthday.year,
+                fullName: data.identity.displayName || 'Gamer'
+            };
+        });
+    } catch (error) {
+        log(`❌ שגיאה בשליפת ימי הולדת מה-DB המאוחד:`, error);
+        return [];
     }
-    return birthdays;
 }
 
-async function handlePlayBirthdayTTS(interaction) {
-    const member = interaction.member;
-    const voiceChannel = member.voice.channel;
-    if (!voiceChannel) {
-        return interaction.reply({ content: 'אתה צריך להיות בערוץ קולי כדי לשמוע את הברכה!', ephemeral: true });
-    }
-    const originalMessage = interaction.message;
-    const birthdayPersonName = originalMessage.embeds[0]?.title?.replace('🎉 מזל טוב ל־', '').replace('!', '') || 'חבר הקהילה';
-    const ageMatch = originalMessage.embeds[0]?.description?.match(/חוגג\/ת היום \*\*(\d+)\*\* שנים/);
-    const age = ageMatch ? parseInt(ageMatch[1]) : 25;
-    const phrase = birthdayTTSMessages[Math.floor(Math.random() * birthdayTTSMessages.length)](birthdayPersonName, age);
-    await interaction.deferReply({ ephemeral: true });
-    await playTTSInVoiceChannel(voiceChannel, phrase);
-    await interaction.editReply({ content: 'הברכה הושמעה! 🎤' });
-}
+async function processAndSendGreetings(client, birthdays) {
+    const channel = client.channels.cache.get(TARGET_CHANNEL_ID);
+    if (!channel) return;
 
-async function processAndSendGreetings(client, birthdaysToCongratulate) {
-    // --- ✅ [תיקון] שימוש ב-fetch במקום cache כדי למנוע שגיאות תזמון ---
-    const guild = await client.guilds.fetch(process.env.GUILD_ID).catch(() => null);
-    if (!guild) {
-        log('❌ [BIRTHDAY] לא ניתן למצוא את השרת.');
-        return;
-    }
-
-    const channel = await guild.channels.fetch(TARGET_CHANNEL_ID).catch(() => null);
-    // --------------------------------------------------------------------
-
-    if (!channel?.isTextBased()) {
-        log(`❌ ערוץ יום ההולדת (${TARGET_CHANNEL_ID}) לא נמצא או אינו ערוץ טקסט.`);
-        return;
-    }
-    
-    const todayKey = new Date().toISOString().split('T')[0];
-
-    for (const person of birthdaysToCongratulate) {
-        const logRef = db.collection('birthdayLogs').doc(`${todayKey}_${person.discordId}`);
-        const logSnap = await logRef.get();
-        if (logSnap.exists) {
-            log(`[BIRTHDAY] ברכה עבור ${person.fullName} כבר נשלחה היום. מדלג.`);
-            continue;
-        }
-
-        const member = await guild.members.fetch(person.discordId).catch(() => null);
-        if (!member) continue;
-
-        const embed = new EmbedBuilder()
-            .setTitle(`🎉 מזל טוב ל־${person.fullName}!`)
-            .setDescription(`🎂 חוגג/ת היום **${person.age}** שנים!\n\nאיחולים חמים מכל קהילת **Gamers United IL** 🎈`)
-            .setColor('#FF69B4')
-            .setImage('attachment://happybirthday.png')
-            .setFooter({ text: 'שמעון שולח חיבוק וירטואלי 🎁' })
-            .setTimestamp();
-        
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`bday_play_tts_${person.discordId}`)
-                .setLabel('▶️ השמע ברכה קולית')
-                .setStyle(ButtonStyle.Success).setEmoji('🎤')
-        );
-
+    for (const person of birthdays) {
         try {
+            const member = await channel.guild.members.fetch(person.id).catch(() => null);
+            if (!member) continue;
+
+            const age = calculateAge(person);
+
+            // 1. השמעת ברכה קולית (אם המשתמש בשיחה)
+            if (member.voice.channel) {
+                const ttsMsg = birthdayTTSMessages[Math.floor(Math.random() * birthdayTTSMessages.length)](member.displayName, age);
+                playTTSInVoiceChannel(member.voice.channel, ttsMsg);
+            }
+
+            // 2. שליחת כרטיס ברכה לערוץ
+            const embed = new EmbedBuilder()
+                .setTitle(`🎉 יום הולדת שמח, ${person.fullName}!`)
+                .setDescription(`היום אנחנו חוגגים **${age}** שנים של כישרון (או חוסר כישרון) במשחקים! 🎂\nמאחלים לך פינג נמוך, FPS גבוה, ושתפסיק למות ראשון.`)
+                .setColor('#FFD700')
+                .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+                .setTimestamp();
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('send_wish').setLabel('ברך אותו 🥳').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId('roast_birthday').setLabel('רד עליו 🎤').setStyle(ButtonStyle.Danger)
+            );
+
             await channel.send({
                 content: `@everyone חגיגה בקהילה! 🎊 בואו לאחל מזל טוב ל-${member}!`,
                 embeds: [embed],
@@ -114,14 +94,20 @@ async function processAndSendGreetings(client, birthdaysToCongratulate) {
                 components: [row]
             });
 
+            // 3. הוספת רול (אם יש)
             if (BIRTHDAY_ROLE_ID) {
-                await member.roles.add(BIRTHDAY_ROLE_ID).catch(err => log(`⚠️ לא ניתן היה להוסיף תפקיד יום הולדת ל-${person.fullName}: ${err.message}`));
+                await member.roles.add(BIRTHDAY_ROLE_ID).catch(err => log(`⚠️ לא ניתן היה להוסיף רול יום הולדת: ${err.message}`));
             }
 
-            await logRef.set({ sentAt: new Date() });
-            log(`[BIRTHDAY] ✅ ברכת יום הולדת נשלחה בהצלחה ל־${person.fullName}`);
+            // 4. תיעוד בתיק המשתמש (במקום בקולקשן נפרד)
+            await db.collection('users').doc(person.id).update({
+                'tracking.lastBirthdayCelebrated': new Date().getFullYear()
+            });
+
+            log(`[BIRTHDAY] ✅ יום הולדת שמח ל-${person.fullName} (${age})`);
+
         } catch (error) {
-            log(`❌ שגיאה קריטית בשליחת ברכת יום הולדת ל-${person.fullName}:`, error);
+            log(`❌ שגיאה בחגיגת יום הולדת ל-${person.id}:`, error);
         }
     }
 }
@@ -129,21 +115,10 @@ async function processAndSendGreetings(client, birthdaysToCongratulate) {
 async function sendBirthdayMessage(client) {
     const todayBirthdays = await getTodaysBirthdays();
     if (todayBirthdays.length === 0) {
-        log('[BIRTHDAY CRON] אין ימי הולדת להיום.');
+        // log('[BIRTHDAY CRON] אין ימי הולדת להיום.');
         return;
     }
     await processAndSendGreetings(client, todayBirthdays);
 }
 
-async function runMissedBirthdayChecks(client) {
-    log('[BIRTHDAY CATCH-UP] מבצע בדיקת השלמה לימי הולדת שפוספסו...');
-    const todayBirthdays = await getTodaysBirthdays();
-    if (todayBirthdays.length === 0) return;
-    await processAndSendGreetings(client, todayBirthdays);
-}
-
-module.exports = { 
-    sendBirthdayMessage,
-    handlePlayBirthdayTTS,
-    runMissedBirthdayChecks
-};
+module.exports = { sendBirthdayMessage };

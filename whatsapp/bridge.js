@@ -1,5 +1,6 @@
-const { sendToMainGroup } = require('./index');
-const db = require('../utils/firebase');
+// 📁 whatsapp/utils/bridge.js
+const { sendToMainGroup } = require('../index');
+const db = require('../../utils/firebase');
 const { OpenAI } = require('openai');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -16,19 +17,23 @@ async function handleVoiceAlerts(oldState, newState) {
     if (!oldState.channelId && newState.channelId) {
         const channel = newState.channel;
         const lastAlert = voiceCooldowns.get(discordId) || 0;
-        if (now - lastAlert < 120000) return; // מניעת ספאם
+        if (now - lastAlert < 120000) return; // 2 דקות קולדאון
         
         voiceCooldowns.set(discordId, now);
 
         try {
-            // חיפוש טלפון לתיוג
+            // ✅ חיפוש משתמש ב-users ובדיקה אם יש לו מספר וואטסאפ
             let whatsappPhone = null;
-            const userSnapshot = await db.collection('whatsapp_users')
-                .where('discordId', '==', discordId)
-                .limit(1)
-                .get();
+            const userDoc = await db.collection('users').doc(discordId).get();
 
-            if (!userSnapshot.empty) whatsappPhone = userSnapshot.docs[0].id;
+            if (userDoc.exists) {
+                const data = userDoc.data();
+                if (data.platforms && data.platforms.whatsapp) {
+                    whatsappPhone = data.platforms.whatsapp.includes('@') 
+                        ? data.platforms.whatsapp 
+                        : `${data.platforms.whatsapp}@s.whatsapp.net`;
+                }
+            }
 
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
@@ -48,7 +53,7 @@ async function handleVoiceAlerts(oldState, newState) {
         } catch (error) { console.error('Bridge Error:', error.message); }
     }
 
-    // --- 🔴 יציאה (לילה טוב נקבות) ---
+    // --- 🔴 יציאה ---
     else if (oldState.channelId && !newState.channelId) {
         const channel = oldState.channel;
         const humansLeft = channel.members.filter(m => !m.user.bot).size;
@@ -57,14 +62,11 @@ async function handleVoiceAlerts(oldState, newState) {
             const israelTime = new Date(now + (2 * 60 * 60 * 1000)); 
             const ilHour = israelTime.getHours();
 
-            // אם בין חצות ל-6 בבוקר והחדר התרוקן
-            if (ilHour >= 0 && ilHour < 6) {
-                await sendToMainGroup("🖕"); 
+            if (ilHour >= 22 || ilHour < 5) {
+                await sendToMainGroup(`😴 הדיסקורד התרוקן. לילה טוב נקבות.`);
             }
         }
     }
 }
 
-function initDailySummary() {} // ריק כרגע
-
-module.exports = { handleVoiceAlerts, initDailySummary };
+module.exports = { handleVoiceAlerts };

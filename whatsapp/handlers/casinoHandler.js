@@ -1,14 +1,15 @@
+// 📁 whatsapp/handlers/casinoHandler.js
 const db = require('../../utils/firebase');
 const admin = require('firebase-admin');
-const { log } = require('../../utils/logger');
 const { OpenAI } = require('openai');
+const { getUserRef, getUserData } = require('../../utils/userUtils'); // ✅ DB מאוחד
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 let activeSession = { isActive: false, startTime: 0, players: [], bets: [] };
 let sessionTimer = null;
 
-// AI לפענוח (נשאר פנימי כי זה כלי עזר)
+// AI לפענוח הימורים (הוחזר!)
 async function parseBetWithAI(text) {
     try {
         const completion = await openai.chat.completions.create({
@@ -27,76 +28,85 @@ function resetAutoCloseTimer() {
     if (sessionTimer) clearTimeout(sessionTimer);
     sessionTimer = setTimeout(() => {
         if (activeSession.isActive) {
-            activeSession.isActive = false; // סגירה שקטה, הלוגיקה תטפל בהודעה אם צריך
-            log('[Casino] ⏳ Auto-closed.');
+            activeSession.isActive = false;
+            // כאן אפשר להוסיף לוגיקה של סגירת רולטה וחישוב תוצאות אם תרצה
+            console.log("Casino session auto-closed.");
         }
-    }, 30 * 60 * 1000);
+    }, 120000); // סגירה אחרי 2 דקות שקט
 }
 
-function startCasinoSession() {
-    if (activeSession.isActive) return false;
-    activeSession = { isActive: true, startTime: Date.now(), players: [], bets: [] };
-    resetAutoCloseTimer();
-    return true;
-}
-
-function endCasinoSession() {
-    activeSession.isActive = false;
-    activeSession.bets = [];
-    if (sessionTimer) clearTimeout(sessionTimer);
-}
-
-// 🔥 השינוי הגדול: מחזיר אובייקט נתונים ולא טקסט
+// הפונקציה המרכזית לביצוע הימור
 async function placeBet(senderId, senderName, text) {
-    if (!activeSession.isActive) return { status: 'closed' };
-
-    resetAutoCloseTimer();
-
-    const betData = await parseBetWithAI(text);
-    if (!betData.isValid || !betData.amount || !betData.target) return { status: 'invalid' };
-
-    const amount = betData.amount;
-    const target = betData.target;
-
-    // בדיקת יתרה
-    const userRef = db.collection('whatsapp_users').doc(senderId);
-    const userDoc = await userRef.get();
-    let currentXP = 0;
-    let discordId = null;
-
-    if (userDoc.exists) {
-        const data = userDoc.data();
-        discordId = data.discordId;
-        if (discordId) {
-            const discordUser = await db.collection('users').doc(discordId).get();
-            currentXP = discordUser.exists ? (discordUser.data().xp || 0) : 0;
-        } else {
-            currentXP = data.xp || 0;
+    // 1. נסיון פענוח פשוט (רג'קס)
+    let amount = 0;
+    let target = "הבית";
+    const amountMatch = text.match(/(\d+)/);
+    
+    if (amountMatch) {
+        amount = parseInt(amountMatch[0]);
+    } else {
+        // 2. אם לא הצלחנו, נשתמש ב-AI (החלק שהיה חסר)
+        const aiAnalysis = await parseBetWithAI(text);
+        if (aiAnalysis.isValid) {
+            amount = aiAnalysis.amount;
+            target = aiAnalysis.target;
         }
     }
 
-    // הלוואה (שוק אפור)
-    if (currentXP <= 0) {
+    if (amount <= 0) return { status: 'invalid' };
+
+    // 3. שליפת נתונים מה-DB המאוחד
+    const userData = await getUserData(senderId, 'whatsapp');
+    const balance = userData?.economy?.balance || 0;
+
+    // הלוואה אוטומטית (שוק אפור)
+    if (balance <= 0) {
         const LOAN = 100;
-        if (discordId) await db.collection('users').doc(discordId).update({ xp: admin.firestore.FieldValue.increment(LOAN) });
-        else await userRef.set({ xp: LOAN }, { merge: true });
+        const userRef = await getUserRef(senderId, 'whatsapp');
+        
+        await userRef.update({ 
+            'economy.balance': admin.firestore.FieldValue.increment(LOAN) 
+        });
         
         return { status: 'broke', loanAmount: LOAN };
     }
 
-    if (currentXP < amount) return { status: 'insufficient_funds', currentBalance: currentXP };
+    if (balance < amount) {
+        return { status: 'insufficient_funds', currentBalance: balance };
+    }
 
-    // ביצוע ההימור
-    activeSession.bets.push({ betterId: senderId, betterName: senderName, target, amount, discordId });
+    // 4. ביצוע ההימור
+    const userRef = await getUserRef(senderId, 'whatsapp');
+    await userRef.update({
+        'economy.balance': admin.firestore.FieldValue.increment(-amount)
+    });
+
+    // ניהול סשן
+    if (!activeSession.isActive) {
+        startCasinoSession();
+    } else {
+        resetAutoCloseTimer();
+    }
+
+    activeSession.bets.push({ 
+        betterId: senderId, 
+        betterName: senderName, 
+        target, 
+        amount,
+        timestamp: Date.now() 
+    });
     
     return { 
         status: 'success', 
-        amount: amount, 
-        target: target, 
-        newBalance: currentXP - amount // יתרה תיאורטית (הכסף יורד רק בהפסד בפועל, אבל לרוב מורידים מראש. נשאיר את הלוגיקה שלך)
+        amount, 
+        target, 
+        newBalance: balance - amount 
     };
 }
 
-function isSessionActive() { return activeSession.isActive; }
+function startCasinoSession() {
+    activeSession = { isActive: true, startTime: Date.now(), players: [], bets: [] };
+    resetAutoCloseTimer();
+}
 
-module.exports = { startCasinoSession, endCasinoSession, placeBet, isSessionActive };
+module.exports = { placeBet, startCasinoSession };

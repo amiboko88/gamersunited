@@ -1,25 +1,45 @@
+// 📁 handlers/helpai.js
 const OpenAI = require('openai');
+const { getUserData } = require('../utils/userUtils'); // ✅ מוח מחובר
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-async function getShimonReply({ text, displayName = '', profileLine = '', mood = null, isAdmin = false }) {
-  let prompt = `אתה שמעון, בוט גיימרים ישראלי (סרקסטי, בוגר).`;
-  if (isAdmin) prompt += ' המשתמש אדמין – תן לו כבוד, אבל באופי שלך.';
-  if (profileLine) prompt += ` משפט אישי: "${profileLine}"`;
-  prompt += `\nמישהו כתב: "${text}"\nתגיב בעברית בלבד, קצר, סרקסטי, ציני, עם וייב של גיימרים.`;
+async function getShimonReply({ text, userId, displayName, isAdmin = false }) {
+    // 1. שליפת מידע על המשתמש מה-DB המאוחד
+    let context = "";
+    try {
+        const userData = await getUserData(userId, 'discord');
+        if (userData) {
+            const facts = userData.brain?.facts || [];
+            const roasts = userData.brain?.roasts || [];
+            
+            if (facts.length > 0) context += `\nעובדה על המשתמש: ${facts[0].content}.`;
+            if (roasts.length > 0) context += `\nחומר ירידות עליו: "${roasts[0]}".`;
+        }
+    } catch (e) { console.error('Error fetching user context:', e); }
 
-  let reply = null;
-  try {
-    const res = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.93,
-      max_tokens: 120
-    });
-    reply = res.choices[0]?.message?.content?.trim()?.replace(/^"|"$/g, "") || null;
-  } catch (err) {
-    reply = "שמעון קצת עמוס. נסה שוב בעוד רגע!";
-  }
-  return reply;
+    // 2. בניית הפרומפט החכם
+    let systemPrompt = `אתה שמעון, בוט גיימרים ישראלי (בן 32, סרקסטי, מכור ל-COD).`;
+    if (isAdmin) systemPrompt += ' המשתמש הוא מנהל (אדמין) – תן לו כבוד מינימלי, אבל תישאר בדמות.';
+    else systemPrompt += ' המשתמש הוא שחקן רגיל (נוב) – אל תרחם עליו.';
+    
+    systemPrompt += context; // הזרקת המידע האישי
+    systemPrompt += `\nהמשתמש שאל: "${text}"\nתגיב בעברית, קצר (עד 20 מילים), ציני וחד.`;
+
+    try {
+        const res = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [{ role: "system", content: systemPrompt }],
+            temperature: 0.9,
+            max_tokens: 100
+        });
+
+        return res.choices[0]?.message?.content?.trim().replace(/^"|"$/g, "") || "וואלה לא הבנתי, נסה שוב.";
+        
+    } catch (err) {
+        console.error('OpenAI Error:', err);
+        return "המוח שלי בלאג, נסה אחר כך.";
+    }
 }
 
 module.exports = { getShimonReply };

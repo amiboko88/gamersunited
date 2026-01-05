@@ -1,17 +1,18 @@
-// 📁 interactions/selectors/inactivitySelectMenuHandler.js (מתוקן סופית)
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
+// 📁 interactions/selectors/inactivitySelectMenuHandler.js
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, MessageFlags } = require('discord.js');
 const db = require('../../utils/firebase');
 const { sendStaffLog } = require('../../utils/staffLogger');
-// --- ✅ [תיקון] שינוי הנתיב לקובץ העזר המרכזי ---
 const { createPaginatedFields } = require('../../utils/embedUtils');
 
-// --- פונקציית ליבה חדשה לאיסוף ועיבוד כל הנתונים ---
+// --- פונקציית ליבה חדשה לאיסוף ועיבוד כל הנתונים (מותאם ל-DB המאוחד) ---
 async function fetchAndProcessInactivityData(interaction) {
     const guild = interaction.guild;
     if (!guild) throw new Error("Guild not found from interaction.");
 
-    const allTrackedDocs = await db.collection('memberTracking').get();
-    const now = Date.now();
+    // ✅ תיקון 1: קריאה מקולקשן users במקום memberTracking
+    const allUsersSnapshot = await db.collection('users').get();
+    
+    // שליפת חברי השרת לזיכרון (Cache) לייעול ביצועים
     const members = await guild.members.fetch().catch(() => new Map());
 
     const processedData = {
@@ -20,180 +21,143 @@ async function fetchAndProcessInactivityData(interaction) {
         statusSummary: {},
     };
 
-    for (const doc of allTrackedDocs.docs) {
+    const now = Date.now();
+
+    for (const doc of allUsersSnapshot.docs) {
         const data = doc.data();
         const userId = doc.id;
+        
+        // ✅ תיקון 2: בדיקה אם המשתמש קיים בדיסקורד כרגע (פעיל בשרת)
         const member = members.get(userId);
+        if (!member) continue; // אם הוא לא בשרת, לא סופרים אותו לסטטיסטיקה הזו
+
+        // ✅ תיקון 3: גישה לשדות המקוננים במבנה החדש (users -> meta / tracking)
+        // במקום data.lastActive נחפש ב-data.meta.lastActive
+        const lastActiveISO = data.meta?.lastActive || data.tracking?.lastActivity || data.tracking?.joinedAt;
+        const statusStage = data.tracking?.statusStage || 'active';
         
-        const statusKey = member ? (data.statusStage || 'active') : (data.statusStage || 'left');
-        processedData.statusSummary[statusKey] = (processedData.statusSummary[statusKey] || 0) + 1;
-        
-        if (member && member.user.bot) {
-            processedData.statusSummary['bot'] = (processedData.statusSummary['bot'] || 0) + 1;
-            continue;
-        }
-        
-        if (!member || ['left', 'kicked'].includes(data.statusStage)) {
-            if (data.statusStage === 'kicked') processedData.stats.kickedUsers++;
-            continue;
+        // חישוב ימים ללא פעילות
+        let daysInactive = 0;
+        if (lastActiveISO) {
+            const lastActiveTime = new Date(lastActiveISO).getTime();
+            daysInactive = Math.floor((now - lastActiveTime) / (1000 * 60 * 60 * 24));
         }
 
-        const lastActivity = new Date(data.lastActivity || data.joinedAt || 0).getTime();
-        const daysInactive = Math.floor((now - lastActivity) / 86400000);
-        const userObject = { id: userId, data, daysInactive };
+        // סיווג לפי ימים (רק אם הוא לא בוט)
+        if (!member.user.bot) {
+            const userEntry = `<@${userId}> (${daysInactive} ימים)`;
 
-        if (daysInactive >= 30) {
-            processedData.stats.inactive30Days++;
-            processedData.lists.inactive30.push(userObject);
+            if (daysInactive >= 30) {
+                processedData.stats.inactive30Days++;
+                processedData.lists.inactive30.push(userEntry);
+            } else if (daysInactive >= 14) {
+                processedData.stats.inactive14Days++;
+                processedData.lists.inactive14.push(userEntry);
+            } else if (daysInactive >= 7) {
+                processedData.stats.inactive7Days++;
+                processedData.lists.inactive7.push(userEntry);
+            }
         }
-        if (daysInactive >= 14) {
-            processedData.stats.inactive14Days++;
-            processedData.lists.inactive14.push(userObject);
-        }
-        if (daysInactive >= 7) {
-            processedData.stats.inactive7Days++;
-            processedData.lists.inactive7.push(userObject);
-        }
-        if (data.statusStage === 'failed_dm') {
+
+        // סיווג לפי סטטוס טיפול (Status Stage)
+        if (statusStage === 'failed_dm') {
             processedData.stats.failedDM++;
-            processedData.lists.failedDM.push(userObject);
-        }
-        if (data.statusStage === 'responded') {
+            processedData.lists.failedDM.push(`<@${userId}>`);
+        } else if (statusStage === 'active' && data.tracking?.lastAliveResponse) {
+            // מישהו שהגיב לאחרונה
             processedData.stats.repliedDM++;
-            processedData.lists.replied.push(userObject);
+            processedData.lists.replied.push(`<@${userId}>`);
         }
     }
-    
-    for (const list of Object.values(processedData.lists)) {
-        list.sort((a, b) => b.daysInactive - a.daysInactive);
-    }
-    
+
     return processedData;
 }
 
-// ... (שאר הפונקציות בקובץ נשארות זהות לחלוטין)
+/**
+ * בונה Embed שמציג רשימת משתמשים בצורה מסודרת (עם דפדוף אם צריך)
+ */
+function buildUserListEmbed(title, userList, color, isPrivate = true) {
+    const embed = new EmbedBuilder()
+        .setTitle(title)
+        .setColor(color)
+        .setTimestamp()
+        .setFooter({ text: `סה"כ נמצאו: ${userList.length}` });
 
-function buildStatusSummaryEmbed(summary, interaction) {
-      const statusMap = {
-        joined: '🆕 הצטרף', waiting_dm: '⏳ ממתין לתזכורת 1', dm_sent: '📩 תזכורת 1 נשלחה',
-        final_warning: '🔴 תזכורת 2 סופית (ידנית)', final_warning_auto: '🚨 תזכורת 2 סופית (אוטומטית)',
-        responded: '💬 הגיב ל-DM', failed_dm: '❌ כשלון שליחת DM', active: '✅ פעיל',
-        left: '🚪 עזב את השרת', kicked: '🚫 הורחק מהשרת', bot: '🤖 בוט',
-      };
-      const order = ['active', 'responded', 'joined', 'waiting_dm', 'dm_sent', 'final_warning', 'final_warning_auto', 'failed_dm', 'kicked', 'left'];
-      const sortedStatuses = Object.keys(summary).sort((a, b) => order.indexOf(a) - order.indexOf(b));
-      const fields = sortedStatuses.map(key => ({
-          name: `${statusMap[key]?.split(' ')[0] || '❓'} ${statusMap[key]?.substring((statusMap[key]?.split(' ')[0] || '').length).trim() || key}`,
-          value: `\`${summary[key]}\` משתמשים`, inline: true
-      }));
-      while (fields.length % 3 !== 0) fields.push({ name: '\u200B', value: '\u200B', inline: true });
-      return new EmbedBuilder().setTitle('📊 דוח סטטוס מפורט של משתמשי השרת')
-          .setDescription('פילוח מלא של כל המשתמשים במערכת הניטור, לפי שלב הסטטוס הנוכחי שלהם.')
-          .addFields(fields).setColor(0x3498db)
-          .setFooter({ text: `סה"כ משתמשים במעקב: ${Object.values(summary).reduce((a, b) => a + b, 0)}` }).setTimestamp();
-}
-
-function buildUserListEmbed(title, users, color, showStatus = false) {
-    const userLines = users.map(user => {
-        let line = `• <@${user.id}>`;
-        if (user.daysInactive !== undefined) line += ` (${user.daysInactive} ימים)`;
-        if (showStatus) line += ` (סטטוס: \`${user.data.statusStage || 'לא ידוע'}\`)`;
-        return line;
-    });
-
-    const fields = createPaginatedFields(title, userLines);
-    return new EmbedBuilder().setColor(color).addFields(fields)
-        .setFooter({ text: `Shimon BOT – ניטור פעילות • ${users.length} משתמשים` }).setTimestamp();
-}
-
-
-function buildMainPanelEmbed(interaction, stats) {
-    return new EmbedBuilder()
-        .setTitle('📊 לוח בקרה וסטטוס פעילות משתמשים – שמעון BOT')
-        .setDescription('ברוכים הבאים ללוח הבקרה המרכזי לניהול פעילות המשתמשים בשרת.')
-        .setColor('#5865F2').setThumbnail(interaction.client.user.displayAvatarURL())
-        .addFields(
-            { name: '⚠️ לא פעילים (7+ ימים):', value: `\`${stats.inactive7Days}\` משתמשים`, inline: true },
-            { name: '⛔ לא פעילים (14+ ימים):', value: `\`${stats.inactive14Days}\` משתמשים`, inline: true },
-            { name: '🚨 לא פעילים (30+ ימים):', value: `\`${stats.inactive30Days}\` משתמשים`, inline: true },
-            { name: '\u200B', value: '\u200B' },
-            { name: '❌ כשלון שליחת DM:', value: `\`${stats.failedDM}\` משתמשים`, inline: true },
-            { name: '✅ הגיבו ל־DM:', value: `\`${stats.repliedDM}\` משתמשים`, inline: true },
-            { name: '🗑️ משתמשים שהורחקו:', value: `\`${stats.kickedUsers}\` משתמשים`, inline: true }
-        )
-        .setFooter({ text: 'Shimon BOT — מערכת ניהול פעילות מתקדמת', iconURL: interaction.client.user.displayAvatarURL() }).setTimestamp();
-}
-
-function buildMainPanelComponents() {
-    const dmRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('send_dm_batch_list').setLabel('שלח תזכורת רגילה 📨').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('send_dm_batch_final_check').setLabel('שלח תזכורת סופית 🚨').setStyle(ButtonStyle.Danger)
-    );
-    const selectRow = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder().setCustomId('inactivity_action_select').setPlaceholder('בחר פעולה מתקדמת או דוח מפורט ⬇️')
-        .addOptions([
-            { label: '📊 דוח סטטוס נוכחי (מפורט)', value: 'show_status_summary', emoji: '📈' },
-            { label: '❌ רשימת כשלונות DM', value: 'show_failed_list', emoji: '🚫' },
-            { label: '💬 רשימת מגיבים ל-DM', value: 'show_replied_list', emoji: '✅' },
-            { label: '🗑️ הרחקת לא פעילים (בדיקה ואישור)', value: 'kick_failed_users', emoji: '🛑' },
-            { label: '⏱️ הצג לא פעילים 7+ ימים', value: 'inactive_7', emoji: '⏳' },
-            { label: '⌛ הצג לא פעילים 14+ ימים', value: 'inactive_14', emoji: '🗓️' },
-            { label: '🛑 הצג לא פעילים 30+ ימים', value: 'inactive_30', emoji: '⛔' }
-        ])
-    );
-    return [dmRow, selectRow];
-}
-
-
-// --- פונקציית Handler ראשית ---
-const execute = async (interaction) => {
-    await interaction.deferReply({ ephemeral: true });
-    const selectedValue = interaction.values?.[0];
-
-    try {
-        const data = await fetchAndProcessInactivityData(interaction);
-        let embed;
-
-        switch (selectedValue) {
-            case 'show_status_summary':
-                embed = buildStatusSummaryEmbed(data.statusSummary, interaction);
-                break;
-            case 'show_replied_list':
-                embed = buildUserListEmbed('💬 משתמשים שהגיבו להודעה פרטית', data.lists.replied, '#2ECC71');
-                break;
-            case 'show_failed_list':
-                embed = buildUserListEmbed('❌ משתמשים שנכשל DM אליהם', data.lists.failedDM, '#E74C3C', true);
-                break;
-            case 'inactive_7':
-                embed = buildUserListEmbed('⏳ 7+ ימים ללא פעילות', data.lists.inactive7, '#F1C40F', true);
-                break;
-            case 'inactive_14':
-                embed = buildUserListEmbed('🗓️ 14+ ימים ללא פעילות', data.lists.inactive14, '#E67E22', true);
-                break;
-            case 'inactive_30':
-                embed = buildUserListEmbed('⛔ 30+ ימים ללא פעילות', data.lists.inactive30, '#992D22', true);
-                break;
-            default:
-                await sendStaffLog(interaction.client, '⚠️ פעולת אינטראקציה לא מטופלת', `המשתמש ${interaction.user.tag} בחר בפעולה \`${selectedValue}\` שעדיין לא ממומשה.`, '#FEE75C');
-                return interaction.editReply({ content: `הפעולה '${selectedValue}' עדיין בפיתוח.`, ephemeral: true });
-        }
-        return interaction.editReply({ embeds: [embed], ephemeral: true });
-
-    } catch (error) {
-        console.error("❌ שגיאה קריטית ב-inactivitySelectMenuHandler:", error);
-        return interaction.editReply({ content: 'אירעה שגיאה חמורה בעת עיבוד הנתונים.', ephemeral: true });
+    if (!userList || userList.length === 0) {
+        embed.setDescription("✅ אין משתמשים בקטגוריה זו.");
+    } else {
+        // שימוש בפונקציית העזר לחלוקה לשדות (מונע קריסה מעומס תווים)
+        const fields = createPaginatedFields('רשימת משתמשים', userList);
+        // הוספת השדות לאמבד (עד המגבלה של דיסקורד)
+        fields.slice(0, 25).forEach(field => embed.addFields(field));
     }
-};
+    return embed;
+}
 
-const customId = (interaction) => {
-    return interaction.customId === 'inactivity_action_select';
-};
-
-// --- ייצוא כל הפונקציות לתאימות עם קובץ הפקודה ---
+/**
+ * ה-Handler הראשי
+ */
 module.exports = {
-    customId,
-    execute,
-    getDetailedInactivityStats: async (interaction) => (await fetchAndProcessInactivityData(interaction)).stats,
-    buildMainPanelEmbed,
-    buildMainPanelComponents,
+    customId: (interaction) => {
+        return interaction.customId === 'inactivity_action_select';
+    },
+
+    async execute(interaction, client) {
+        // וידוא הרשאות
+        if (!interaction.member.permissions.has('Administrator')) {
+            return interaction.reply({ content: '⛔ אין לך הרשאות לבצע פעולה זו.', flags: MessageFlags.Ephemeral });
+        }
+
+        // מניעת Timeout
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+        try {
+            const selectedValue = interaction.values[0];
+            const data = await fetchAndProcessInactivityData(interaction);
+
+            let embed;
+
+            switch (selectedValue) {
+                case 'show_stats':
+                    embed = new EmbedBuilder()
+                        .setTitle('📊 סטטיסטיקת אי-פעילות (Live DB)')
+                        .setColor('#3498db')
+                        .addFields(
+                            { name: '⏳ אזהרה ראשונה (7+)', value: `${data.lists.inactive7.length}`, inline: true },
+                            { name: '🗓️ אזהרה בינונית (14+)', value: `${data.lists.inactive14.length}`, inline: true },
+                            { name: '⛔ אזהרה סופית (30+)', value: `${data.lists.inactive30.length}`, inline: true },
+                            { name: '❌ נכשלו (DM סגור)', value: `${data.lists.failedDM.length}`, inline: true },
+                            { name: '✅ הגיבו לאזהרה', value: `${data.lists.replied.length}`, inline: true }
+                        )
+                        .setTimestamp();
+                    break;
+
+                case 'inactive_7':
+                    embed = buildUserListEmbed('⏳ 7+ ימים ללא פעילות', data.lists.inactive7, '#F1C40F');
+                    break;
+                case 'inactive_14':
+                    embed = buildUserListEmbed('🗓️ 14+ ימים ללא פעילות', data.lists.inactive14, '#E67E22');
+                    break;
+                case 'inactive_30':
+                    embed = buildUserListEmbed('⛔ 30+ ימים ללא פעילות', data.lists.inactive30, '#992D22');
+                    break;
+                case 'failed_dm':
+                    embed = buildUserListEmbed('❌ נכשלו בשליחה (DM חסום)', data.lists.failedDM, '#95a5a6');
+                    break;
+
+                default:
+                    // ✅ תיקון 4: הסרת interaction.client מהקריאה ללוגר
+                    await sendStaffLog('⚠️ פעולת אינטראקציה לא מטופלת', `המשתמש ${interaction.user.tag} בחר בפעולה \`${selectedValue}\` שעדיין לא ממומשה.`, 0xFEE75C);
+                    return interaction.editReply({ content: `הפעולה '${selectedValue}' עדיין בפיתוח.` });
+            }
+
+            await interaction.editReply({ embeds: [embed] });
+
+        } catch (error) {
+            console.error("❌ שגיאה קריטית ב-inactivitySelectMenuHandler:", error);
+            // ✅ תיקון 5: הסרת interaction.client מהקריאה ללוגר
+            await sendStaffLog('❌ שגיאה בלוח ניהול', `שגיאה בעיבוד נתונים: ${error.message}`, 0xFF0000);
+            await interaction.editReply({ content: 'אירעה שגיאה חמורה בעת עיבוד הנתונים.' });
+        }
+    }
 };

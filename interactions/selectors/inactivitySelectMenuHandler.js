@@ -10,15 +10,14 @@ async function fetchAndProcessInactivityData(interactionOrGuild) {
     const guild = interactionOrGuild.guild || interactionOrGuild;
     if (!guild) throw new Error("Guild not found.");
 
-    // 1. שליפת כל המידע מה-DB מראש (Map לגישה מהירה)
+    // 1. שליפת כל המידע מה-DB מראש
     const allUsersSnapshot = await db.collection('users').get();
     const dbUsersMap = new Map();
     allUsersSnapshot.forEach(doc => {
         dbUsersMap.set(doc.id, doc.data());
     });
 
-    // 2. שימוש ב-Cache של השרת בלבד (מונע Timeout)
-    // הבוט מסנכרן את המשתמשים ברקע, אין צורך לעשות fetch כאן ולתקוע את הפאנל
+    // 2. שימוש ב-Cache של השרת
     const members = guild.members.cache;
 
     const processedData = {
@@ -30,7 +29,7 @@ async function fetchAndProcessInactivityData(interactionOrGuild) {
             inactive30Days: 0, 
             failedDM: 0, 
             repliedDM: 0,
-            unknown: 0 // קטגוריה חדשה למי שבשרת אבל אין לו דאטה
+            unknown: 0
         },
         lists: { inactive7: [], inactive14: [], inactive30: [], failedDM: [], replied: [] },
         debug: { bots: 0, processed: 0 }
@@ -38,29 +37,32 @@ async function fetchAndProcessInactivityData(interactionOrGuild) {
 
     const now = Date.now();
 
-    // 3. הלולאה הראשית: רצים על חברי השרת (ה-61 שאתה רואה)
+    // 3. לולאה על חברי השרת
     members.forEach(member => {
-        // סינון בוטים
         if (member.user.bot) {
             processedData.debug.bots++;
             return;
         }
 
         const userId = member.id;
-        const data = dbUsersMap.get(userId); // שליפה מהזיכרון
+        const data = dbUsersMap.get(userId);
 
         processedData.stats.total++;
         processedData.debug.processed++;
 
-        // אם אין דאטה ב-DB, הוא נחשב פעיל/חדש (אבל נספור אותו!)
         if (!data) {
             processedData.stats.active++; 
-            // או processedData.stats.unknown++; אם תרצה להפריד
             return;
         }
 
-        // --- חישוב סטטוס ---
-        const lastActiveISO = data.meta?.lastActive || data.tracking?.lastActivity || data.tracking?.joinedAt;
+        // --- ✅ תיקון קריטי: בדיקת lastSeen לפני הכל ---
+        // סדר עדיפויות מעודכן לפי ה-DB שלך:
+        const lastActiveISO = 
+            data.meta?.lastSeen ||       // השדה שקיים ב-Dump שלך
+            data.meta?.lastActive ||     // שדה גיבוי לגרסאות חדשות
+            data.tracking?.lastActivity || 
+            data.tracking?.joinedAt;     // ברירת מחדל (תאריך מיגרציה)
+
         const statusStage = data.tracking?.statusStage || 'active';
         
         let daysInactive = 0;
@@ -69,6 +71,7 @@ async function fetchAndProcessInactivityData(interactionOrGuild) {
             daysInactive = Math.floor((now - lastActiveTime) / (1000 * 60 * 60 * 24));
         }
 
+        // לוגיקת סיווג
         if (statusStage === 'failed_dm') {
             processedData.stats.failedDM++;
             processedData.lists.failedDM.push(`<@${userId}>`);
@@ -121,7 +124,7 @@ function buildMainPanelEmbed(statsData) {
         )
         .setColor('#2b2d31')
         .setImage(chartUrl)
-        .setFooter({ text: `Shimon 2026 • Fast Mode • ${statsData.debug.bots} Bots Filtered` })
+        .setFooter({ text: `Shimon 2026 • Live Data • ${statsData.debug.bots} Bots Filtered` })
         .setTimestamp();
 }
 
@@ -178,7 +181,6 @@ module.exports = {
             return interaction.reply({ content: '⛔ גישה למנהלים בלבד.', flags: MessageFlags.Ephemeral });
         }
 
-        // שימוש ב-deferUpdate כדי למנוע הבהובים ו-Timeout
         await interaction.deferUpdate(); 
 
         try {

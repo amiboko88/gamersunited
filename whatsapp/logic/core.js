@@ -8,49 +8,38 @@ const socialEngine = require('../../handlers/social');
 const mediaGenerator = require('./mediaGenerator'); 
 const gamersEngine = require('./gamers'); 
 
-/**
- * נקודת הכניסה הראשית להודעות
- */
 async function handleMessageLogic(sock, msg, text) {
     const chatJid = msg.key.remoteJid;
     const senderFullJid = msg.key.participant || msg.participant || chatJid;
     const senderId = senderFullJid.split('@')[0];
 
-    // חיווי הקלדה מיידי - נותן תחושה חיה
-    await sock.sendPresenceUpdate('composing', chatJid);
-
-    // שליחה לבאפר
+    // ❌ הסרנו מכאן את ה"מקליד" כדי למנוע מצב שהוא מקליד ולא עונה
+    
     bufferSystem.addToBuffer(senderId, msg, text, (finalMsg, combinedText, mediaMsg) => {
         executeCoreLogic(sock, finalMsg, combinedText, mediaMsg, senderId);
     });
 }
 
-/**
- * המוח המרכזי - רץ במקביל למהירות מקסימלית
- */
 async function executeCoreLogic(sock, msg, text, mediaMsg, senderId) {
     const chatJid = msg.key.remoteJid;
     const senderName = msg.pushName || "גיימר";
 
-    // 1. הגנה מספאם
+    // 1. חסימת ספאם
     if (text === "BLOCKED_SPAM") {
         await sock.sendMessage(chatJid, { text: `🚨 ${senderName}, סתום ת'פה לדקה. חפרת.` }, { quoted: msg });
         return;
     }
 
     try {
-        // --- 2. מסלול מהיר (Fast Path) - ללא AI וללא המתנה ---
-        
-        // א. רולטה
+        // 2. Fast Path - משחקים (ללא AI וללא השהיה)
         if (text.includes('רולטה')) {
             await rouletteHandler.handleShimonRoulette(sock, chatJid);
             return;
         }
 
-        // ב. הימורים
         if (text.includes('הימור') || text.includes('בט') || (text.includes('שם') && text.match(/\d+/))) {
             const betResult = await casinoHandler.placeBet(senderId, senderName, text);
-            
+            // ... (לוגיקת קזינו קיימת) ...
             if (betResult.status === 'success') {
                 let caption = betResult.result === 'WIN' 
                     ? `🤑 **יש זכייה!**\nלקחת ${betResult.amount * 2} שקל.` 
@@ -67,32 +56,35 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId) {
                 }
             } else if (betResult.status === 'broke') {
                 await sock.sendMessage(chatJid, { text: `💸 אין לך שקל. קח הלוואה.` });
-            } else if (betResult.status === 'insufficient_funds') {
-                await sock.sendMessage(chatJid, { text: `🛑 אין כיסוי. יש לך רק ₪${betResult.currentBalance}.` });
             }
             return; 
         }
 
-        // ג. ניתוח תמונה (Vision)
+        // Vision AI
         if (mediaMsg && (text.includes('דמג') || text.includes('לוח') || text.includes('סקור'))) {
             await gamersEngine.processImage(sock, mediaMsg, chatJid, senderId, senderName);
             return;
         }
 
-        // --- 3. ניתוח כוונות (Intent) ---
+        // 3. 🧠 Intent Analysis
         const intentData = await intentAnalyzer.analyze(text, senderName);
+
+        // ✅ לוג משוחזר: מציג את הכוונה והציון
+        log(`[Core] 🧠 Intent: ${intentData.category} (${intentData.interestScore}) | Sentiment: ${intentData.sentiment}`);
 
         const botId = sock.user.id.split(':')[0];
         const isMentioned = text.includes('@') || text.includes('שמעון') || msg.message.extendedTextMessage?.contextInfo?.participant?.includes(botId);
         
+        // סינון הודעות לא מעניינות ("שששש")
         if (intentData.interestScore < 85 && !isMentioned) {
-            return;
+            log(`[Core] 💤 Ignoring low interest message.`);
+            return; // 🛑 כאן אנחנו יוצאים *לפני* ששלחנו "מקליד", אז לא תהיה הקלדת רפאים
         }
 
-        // --- 4. 🚀 ביצוע מקבילי (Parallel Execution) ---
-        // הטריק למהירות: מריצים את שתי המשימות (טקסט ותמונה) ביחד!
+        // 4. ✅ עכשיו החלטנו לענות - נפעיל "מקליד"
+        await sock.sendPresenceUpdate('composing', chatJid);
 
-        // משימה א' (טקסט):
+        // 5. ביצוע מקבילי (טקסט + תמונה)
         const textPromise = socialEngine.generateAiReply(
             senderName,
             senderId,
@@ -103,21 +95,17 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId) {
             'whatsapp'
         );
 
-        // משימה ב' (תמונה - הבמאי הויזואלי):
-        // מעבירים null כ-senderNameEng כי הלוגיקה החדשה מטפלת בזה בפנים
         const imagePromise = mediaGenerator.generateContextualMedia(
             sock, senderId, senderName, null, intentData, text
         );
 
-        // --- 5. שליחה חכמה (מי שמוכן קודם נשלח) ---
-
-        // הטקסט בדרך כלל מוכן ראשון - נשלח אותו מיד!
+        // שליחת טקסט
         const replyText = await textPromise;
         if (replyText) {
             await sock.sendMessage(chatJid, { text: replyText }, { quoted: msg });
         }
 
-        // התמונה לוקחת יותר זמן - נחכה לה ברקע ונשלח כשהיא מוכנה
+        // שליחת תמונה (אם יש)
         const dynamicMedia = await imagePromise;
         if (dynamicMedia && dynamicMedia.url) {
             await sock.sendMessage(chatJid, { 

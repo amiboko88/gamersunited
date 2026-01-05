@@ -2,14 +2,11 @@
 const { log } = require('../../utils/logger');
 
 const messageBuffer = new Map();
-const spamMap = new Map(); // מעקב אחרי ספאמרים
+const spamMap = new Map(); 
 
-// הגדרות הגנה
-const SPAM_LIMIT = 6; // טיפה יותר סלחן
-const SPAM_WINDOW_MS = 10000; // ב-10 שניות
-const COOLDOWN_MS = 60000; // דקה עונש
-
-// ✅ שינוי קריטי: הורדנו מ-2000 ל-1500 (שניה וחצי) לשיפור תגובתיות
+const SPAM_LIMIT = 7; 
+const SPAM_WINDOW_MS = 10000; 
+const COOLDOWN_MS = 60000; 
 const BUFFER_DELAY_MS = 1500; 
 
 function isSpammer(senderId) {
@@ -21,10 +18,8 @@ function isSpammer(senderId) {
         spamMap.set(senderId, userData);
     }
 
-    // אם המשתמש חסום
     if (now < userData.blockedUntil) return { blocked: true, silent: true };
 
-    // איפוס חלון זמן
     if (now - userData.firstMsgTime > SPAM_WINDOW_MS) {
         userData.count = 0;
         userData.firstMsgTime = now;
@@ -32,18 +27,16 @@ function isSpammer(senderId) {
 
     userData.count++;
 
-    // בדיקת חריגה
     if (userData.count > SPAM_LIMIT) {
         userData.blockedUntil = now + COOLDOWN_MS;
         log(`[Buffer] 🚫 User ${senderId} blocked for spamming.`);
-        return { blocked: true, silent: false }; // Silent=false אומר שצריך להזהיר אותו פעם אחת
+        return { blocked: true, silent: false };
     }
 
     return { blocked: false };
 }
 
 function addToBuffer(senderId, msg, text, processCallback) {
-    // 1. בדיקת ספאם
     const spamCheck = isSpammer(senderId);
     if (spamCheck.blocked) {
         if (!spamCheck.silent) {
@@ -52,10 +45,9 @@ function addToBuffer(senderId, msg, text, processCallback) {
         return; 
     }
 
-    // 2. ניהול הבאפר
     let session = messageBuffer.get(senderId);
     if (session) {
-        clearTimeout(session.timer); // איפוס טיימר אם ממשיך להקליד
+        clearTimeout(session.timer);
     } else {
         session = { textParts: [], mediaMsg: null, lastMsg: msg };
     }
@@ -64,9 +56,12 @@ function addToBuffer(senderId, msg, text, processCallback) {
     if (msg.message.imageMessage) session.mediaMsg = msg;
     session.lastMsg = msg;
 
-    // שבירת טיימר למקרים דחופים
+    // לוג קבלת הודעה (פנימי)
+    // log(`[Buffer] 📥 Received chunk from ${senderId}: "${text}"`);
+
     const isUrgent = text.includes('@') || text.includes('שמעון') || text.includes('רולטה');
     if (isUrgent) {
+        log(`[Buffer] 🚀 Urgent trigger for ${senderId}`);
         executeSession(senderId, session, processCallback);
         return;
     }
@@ -82,6 +77,10 @@ function executeSession(senderId, session, processCallback) {
     messageBuffer.delete(senderId);
     const fullText = session.textParts.join(" ");
     const primaryMsg = session.mediaMsg || session.lastMsg;
+    
+    // ✅ לוג משוחזר: מראה שהבאפר סיים ומשחרר ל-Core
+    log(`[Buffer] ⏩ Processed batch for ${senderId}: "${fullText}" (Images: ${session.mediaMsg ? 'Yes' : 'No'})`);
+    
     processCallback(primaryMsg, fullText, session.mediaMsg);
 }
 

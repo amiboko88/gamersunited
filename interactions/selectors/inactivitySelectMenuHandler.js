@@ -5,55 +5,61 @@ const { sendStaffLog } = require('../../utils/staffLogger');
 const { createPaginatedFields } = require('../../utils/embedUtils');
 const { generateStatusPieChart } = require('../../utils/graphGenerator');
 
-// --- פונקציית ליבה: איסוף ועיבוד נתונים ---
+// --- פונקציית ליבה: איסוף ועיבוד נתונים (Ultra Fast Mode) ---
 async function fetchAndProcessInactivityData(interactionOrGuild) {
     const guild = interactionOrGuild.guild || interactionOrGuild;
     if (!guild) throw new Error("Guild not found.");
 
-    console.log('🔄 [Dashboard] מתחיל משיכת נתונים...');
-    const start = Date.now();
-
-    // 1. שליפת כל המשתמשים מה-DB
+    // 1. שליפת כל המידע מה-DB מראש (Map לגישה מהירה)
     const allUsersSnapshot = await db.collection('users').get();
-    console.log(`📥 [Dashboard] נשלפו ${allUsersSnapshot.size} משתמשים מ-Firebase.`);
+    const dbUsersMap = new Map();
+    allUsersSnapshot.forEach(doc => {
+        dbUsersMap.set(doc.id, doc.data());
+    });
 
-    // 2. משיכת חברי שרת (Cache)
-    const members = await guild.members.fetch();
-    console.log(`👥 [Dashboard] נמצאו ${members.size} חברים בשרת הדיסקורד.`);
+    // 2. שימוש ב-Cache של השרת בלבד (מונע Timeout)
+    // הבוט מסנכרן את המשתמשים ברקע, אין צורך לעשות fetch כאן ולתקוע את הפאנל
+    const members = guild.members.cache;
 
     const processedData = {
-        stats: { total: 0, active: 0, inactive7Days: 0, inactive14Days: 0, inactive30Days: 0, failedDM: 0, repliedDM: 0 },
+        stats: { 
+            total: 0,
+            active: 0,
+            inactive7Days: 0, 
+            inactive14Days: 0, 
+            inactive30Days: 0, 
+            failedDM: 0, 
+            repliedDM: 0,
+            unknown: 0 // קטגוריה חדשה למי שבשרת אבל אין לו דאטה
+        },
         lists: { inactive7: [], inactive14: [], inactive30: [], failedDM: [], replied: [] },
-        debug: { bots: 0, left: 0, processed: 0 }
+        debug: { bots: 0, processed: 0 }
     };
 
     const now = Date.now();
 
-    for (const doc of allUsersSnapshot.docs) {
-        const data = doc.data();
-        const userId = doc.id;
-        
-        const member = members.get(userId);
-
-        // סינון משתמשים שעזבו
-        if (!member) {
-            processedData.debug.left++;
-            continue; 
-        }
-
-        // סינון בוטים (זה כנראה הפער של ה-10 שראית)
+    // 3. הלולאה הראשית: רצים על חברי השרת (ה-61 שאתה רואה)
+    members.forEach(member => {
+        // סינון בוטים
         if (member.user.bot) {
             processedData.debug.bots++;
-            // console.log(`🤖 [Dashboard] בוט זוהה וסונן: ${member.displayName}`);
-            continue;
+            return;
         }
 
-        // --- מכאן זה משתמש אמיתי וקיים ---
-        processedData.debug.processed++;
-        processedData.stats.total++;
+        const userId = member.id;
+        const data = dbUsersMap.get(userId); // שליפה מהזיכרון
 
-        // שליפת תאריך אחרון לחישוב
-        // סדר עדיפויות: מתי נראה לאחרונה > מתי הגיב לאחרונה > מתי הצטרף
+        processedData.stats.total++;
+        processedData.debug.processed++;
+
+        // אם אין דאטה ב-DB, הוא נחשב פעיל/חדש (אבל נספור אותו!)
+        if (!data) {
+            processedData.stats.active++; 
+            // או processedData.stats.unknown++; אם תרצה להפריד
+            return;
+        }
+
+        // --- חישוב סטטוס ---
         const lastActiveISO = data.meta?.lastActive || data.tracking?.lastActivity || data.tracking?.joinedAt;
         const statusStage = data.tracking?.statusStage || 'active';
         
@@ -63,7 +69,6 @@ async function fetchAndProcessInactivityData(interactionOrGuild) {
             daysInactive = Math.floor((now - lastActiveTime) / (1000 * 60 * 60 * 24));
         }
 
-        // לוגיקת סיווג
         if (statusStage === 'failed_dm') {
             processedData.stats.failedDM++;
             processedData.lists.failedDM.push(`<@${userId}>`);
@@ -88,11 +93,10 @@ async function fetchAndProcessInactivityData(interactionOrGuild) {
             processedData.stats.repliedDM++;
             processedData.lists.replied.push(`<@${userId}>`);
         }
-    }
+    });
 
-    console.log(`✅ [Dashboard] עיבוד הושלם ב-${Date.now() - start}ms.`);
-    console.log(`📊 סיכום: סה"כ ב-DB: ${allUsersSnapshot.size} | בוטים: ${processedData.debug.bots} | עזבו: ${processedData.debug.left} | משתמשים אמיתיים: ${processedData.debug.processed}`);
-
+    console.log(`📊 [Dashboard Fix] סה"כ בשרת: ${members.size} | בוטים: ${processedData.debug.bots} | בני אדם: ${processedData.stats.total}`);
+    
     return processedData;
 }
 
@@ -105,8 +109,7 @@ function buildMainPanelEmbed(statsData) {
         .setTitle('📊 Shimon Analytics Dashboard')
         .setDescription(`
         **מצב הקהילה בזמן אמת:**
-        מציג פילוח של **${statsData.stats.total}** משתמשים (בני אנוש בלבד).
-        *(סוננו ${statsData.debug.bots} בוטים ו-${statsData.debug.left} משתמשים שעזבו)*
+        מציג נתונים עבור **${statsData.stats.total}** חברי שרת (ללא בוטים).
         `)
         .addFields(
             { name: '🟢 פעילים', value: `${statsData.stats.active}`, inline: true },
@@ -114,11 +117,11 @@ function buildMainPanelEmbed(statsData) {
             { name: '🟠 בסיכון (14+)', value: `${statsData.stats.inactive14Days}`, inline: true },
             { name: '🔴 לניקוי (30+)', value: `${statsData.stats.inactive30Days}`, inline: true },
             { name: '⚫ חסומים (DM)', value: `${statsData.stats.failedDM}`, inline: true },
-            { name: '✨ הגיבו לאזהרה', value: `${statsData.stats.repliedDM}`, inline: true }
+            { name: '✨ אישרו פעילות', value: `${statsData.stats.repliedDM}`, inline: true }
         )
         .setColor('#2b2d31')
         .setImage(chartUrl)
-        .setFooter({ text: `Shimon 2026 • Live Data • Processed in ${Date.now() % 1000}ms` })
+        .setFooter({ text: `Shimon 2026 • Fast Mode • ${statsData.debug.bots} Bots Filtered` })
         .setTimestamp();
 }
 
@@ -175,13 +178,11 @@ module.exports = {
             return interaction.reply({ content: '⛔ גישה למנהלים בלבד.', flags: MessageFlags.Ephemeral });
         }
 
-        // שימוש ב-deferUpdate מיידי כדי למנוע הודעת "Interaction failed" במקרה של איטיות
+        // שימוש ב-deferUpdate כדי למנוע הבהובים ו-Timeout
         await interaction.deferUpdate(); 
 
         try {
             const selectedValue = interaction.values[0];
-            
-            // שליפת נתונים מחדש
             const data = await fetchAndProcessInactivityData(interaction);
             let embed;
 
@@ -210,7 +211,7 @@ module.exports = {
         } catch (error) {
             console.error("❌ שגיאה ב-inactivitySelectMenuHandler:", error);
             await sendStaffLog('❌ שגיאה בלוח ניהול', `שגיאה: ${error.message}`, 0xFF0000);
-            await interaction.followUp({ content: 'אירעה שגיאה בטעינת הנתונים.', flags: MessageFlags.Ephemeral });
+            await interaction.followUp({ content: 'אירעה שגיאה בטעינת הנתונים (ראה לוג).', flags: MessageFlags.Ephemeral });
         }
     }
 };

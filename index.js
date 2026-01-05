@@ -3,22 +3,23 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, Collection, Partials } = require('discord.js');
 const express = require('express'); 
 
-// --- מודולים פנימיים ---
+// --- ייבוא מודולים ---
 const telegramBot = require('./telegram/shimonTelegram');
 const { registerDiscordEvents } = require('./handlers/discordEvents');
 const { handleInteractions } = require('./handlers/interactionHandler');
 const botLifecycle = require('./handlers/botLifecycle');
 const welcomeImage = require('./handlers/welcomeImage');
 
-// --- 🛡️ טיפול בשגיאות קריטיות (מונע קריסה שקטה) ---
+// ✅ התיקון הקריטי: ייבוא המנוע של וואטסאפ
+const { connectToWhatsApp } = require('./whatsapp/index'); 
+
+// --- 🛡️ טיפול בשגיאות קריטיות (Anti-Crash) ---
 process.on('unhandledRejection', (reason, promise) => {
     console.error('❌ [CRITICAL] Unhandled Rejection:', reason);
-    // לא עוצרים את הבוט, רק מתעדים
 });
 
 process.on('uncaughtException', (error) => {
     console.error('❌ [CRITICAL] Uncaught Exception:', error);
-    // במקרה חמור אולי נרצה לעשות restart, אבל כרגע נשאיר אותו חי
 });
 
 // --- Server Setup (Railway / Telegram Webhook) ---
@@ -26,6 +27,7 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 app.use(express.json());
 
+// Health Check פשוט ל-Railway
 app.get('/', (req, res) => res.send('Shimon Bot is Alive & Kicking 🤖'));
 
 if (process.env.RAILWAY_STATIC_URL) {
@@ -48,7 +50,6 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message, Partials.User, Partials.GuildMember]
 });
 
-// משתנה גלובלי לשימוש בלוגרים
 global.client = client;
 
 client.commands = new Collection();
@@ -60,8 +61,6 @@ for (const file of commandFiles) {
     const command = require(filePath);
     if ('data' in command && 'execute' in command) {
         client.commands.set(command.data.name, command);
-    } else {
-        console.warn(`[WARNING] The command at ${filePath} is missing "data" or "execute".`);
     }
 }
 
@@ -78,7 +77,7 @@ client.on('interactionCreate', async interaction => {
             await command.execute(interaction);
         } catch (error) {
             console.error(error);
-            const reply = { content: '❌ אירעה שגיאה בביצוע הפקודה!', flags: 64 }; // Ephemeral
+            const reply = { content: '❌ אירעה שגיאה בביצוע הפקודה!', flags: 64 };
             if (interaction.replied || interaction.deferred) await interaction.followUp(reply);
             else await interaction.reply(reply);
         }
@@ -87,23 +86,29 @@ client.on('interactionCreate', async interaction => {
     await handleInteractions(interaction, client);
 });
 
-// --- הפעלת הבוט ---
+// --- 🚀 הפעלת הבוט (Main Entry Point) ---
 (async () => {
     try {
+        // 1. חיבור לדיסקורד
         await client.login(process.env.DISCORD_TOKEN);
         
-        // אתחול מחזור החיים (Crons) רק אחרי שהבוט מחובר
         client.once('ready', () => {
             console.log(`✅ Discord Bot Logged in as ${client.user.tag}`);
+            
+            // 2. אתחול משימות רקע (Crons)
             botLifecycle.init(client);
+
+            // 3. ✅ הפעלת הוואטסאפ (היה חסר!)
+            console.log('🔄 [System] Initializing WhatsApp...');
+            connectToWhatsApp().catch(err => console.error('❌ WhatsApp Init Failed:', err));
         });
 
-        // הפעלת שרת Express
-        app.listen(PORT, () => {
+        // 4. הפעלת השרת
+        app.listen(PORT, '0.0.0.0', () => {
             console.log(`🚀 Server listening on port ${PORT}`);
         });
 
     } catch (error) {
-        console.error('Fatal Error during startup:', error);
+        console.error('❌ Fatal Error during startup:', error);
     }
 })();

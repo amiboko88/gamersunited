@@ -1,98 +1,69 @@
 // 📁 handlers/groupTracker.js
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const statTracker = require('./statTracker');
+const { log } = require('../utils/logger');
 
+// מפה למעקב אחרי קבוצות פעילות: ChannelID -> { createdAt, members, teamName }
 const activeGroups = new Map();
-const pendingLeaves = new Map();
-const LEAVE_GRACE_PERIOD = 60000; // זמן חסד של דקה
 
 /**
- * מתחיל מעקב אחר קבוצה חדשה.
- * @param {import('discord.js').VoiceChannel} channel - הערוץ הקולי של הקבוצה.
- * @param {string[]} users - מערך של ID המשתמשים בקבוצה.
- * @param {string} groupName - שם הקבוצה.
+ * מתחיל מעקב אחרי קבוצה חדשה שנוצרה
  */
-function startGroupTracking(channel, users, groupName) {
-  const key = `${channel.guild.id}-${channel.id}`;
-  activeGroups.set(key, { channel, users, groupName, start: Date.now() });
-  console.log(`🚀 התחיל מעקב לקבוצה '${groupName}' עם ${users.length} שחקנים.`);
+function startGroupTracking(channel, memberIds, teamName) {
+    activeGroups.set(channel.id, {
+        createdAt: Date.now(),
+        members: memberIds,
+        teamName: teamName
+    });
+    // log(`[GroupTracker] מעקב התחיל עבור ${teamName} (${channel.id})`);
 }
 
 /**
- * מבצע סריקה אחת על כל הקבוצות הפעילות ובודק אם התפרקו.
- * פונקציה זו נקראת על ידי מתזמן מרכזי (cron).
- * @param {import('discord.js').Client} client - אובייקט הקליינט של דיסקורד.
+ * מפסיק מעקב אחרי קבוצה (למשל כשנמחקת)
  */
-async function checkActiveGroups(client) {
-  const now = Date.now();
-
-  for (const [key, group] of activeGroups.entries()) {
-    const { channel, users, groupName } = group;
-
-    // ודא שהערוץ עדיין קיים
-    if (!channel.guild.channels.cache.has(channel.id)) {
-        activeGroups.delete(key);
-        pendingLeaves.delete(key);
-        console.log(`🧹 ערוץ של קבוצה '${groupName}' נמחק, המעקב הופסק.`);
-        continue;
+function stopGroupTracking(channelId) {
+    if (activeGroups.has(channelId)) {
+        activeGroups.delete(channelId);
     }
-
-    const currentMembers = [...channel.members.keys()].filter(id => !channel.members.get(id).user.bot);
-
-    // מי חסר בערוץ
-    const missing = users.filter(uid => !currentMembers.includes(uid));
-
-    // אם אין חסרים – הסר את המעקב הזמני אחר העוזבים
-    if (missing.length === 0) {
-      pendingLeaves.delete(key);
-      continue;
-    }
-
-    // אם מישהו עזב – בדוק אם עבר זמן החסד
-    const pending = pendingLeaves.get(key) || {};
-    const confirmedLeavers = [];
-
-    for (const uid of missing) {
-        if (!pending[uid]) {
-            pending[uid] = now; // התחל לספור זמן חסד
-        }
-        if (now - pending[uid] >= LEAVE_GRACE_PERIOD) {
-            confirmedLeavers.push(uid); // זמן החסד עבר
-        }
-    }
-
-    // עדכן את רשימת הממתינים
-    pendingLeaves.set(key, pending);
-
-    // אם אף אחד לא "מאושר כעוזב" עדיין
-    if (confirmedLeavers.length === 0) continue;
-
-    // הקבוצה נחשבת שהתפרקה
-    activeGroups.delete(key);
-    pendingLeaves.delete(key);
-
-    // תעד בסטטיסטיקה
-    confirmedLeavers.forEach(uid => statTracker.trackGroupQuit(uid));
-
-    // שלח התראה לערוץ FIFO
-    const embed = new EmbedBuilder()
-      .setTitle('⚠️ קבוצה התפרקה!')
-      .setDescription(`הקבוצה **${groupName}** התפרקה כי ${confirmedLeavers.length > 1 ? 'כמה שחקנים' : 'שחקן אחד'} עזב את הערוץ.`)
-      .setColor('#ff5555')
-      .setTimestamp();
-
-    const buttons = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('back_temp').setLabel('חזרתי בטעות').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('kick_confirm').setLabel('העיפו אותנו').setStyle(ButtonStyle.Danger)
-    );
-
-    try {
-        await channel.send({ embeds: [embed], components: [buttons] });
-        console.log(`❌ הקבוצה '${groupName}' התפרקה.`);
-    } catch(error) {
-        console.error(`❌ שגיאה בשליחת הודעת פירוק קבוצה ל-${channel.name}:`, error);
-    }
-  }
 }
 
-module.exports = { startGroupTracking, checkActiveGroups };
+/**
+ * פונקציית ה-Cron: בודקת קבוצות ריקות ומוחקת אותן
+ */
+async function checkEmptyGroups(client) {
+    if (activeGroups.size === 0) return;
+
+    const now = Date.now();
+    const TIMEOUT = 5 * 60 * 1000; // 5 דקות של חסד
+
+    for (const [channelId, data] of activeGroups) {
+        try {
+            const channel = await client.channels.fetch(channelId).catch(() => null);
+
+            // אם הערוץ נמחק ידנית כבר
+            if (!channel) {
+                activeGroups.delete(channelId);
+                continue;
+            }
+
+            // אם הערוץ ריק מאנשים
+            if (channel.members.size === 0) {
+                // בדיקה כמה זמן הוא ריק/קיים
+                if (now - data.createdAt > TIMEOUT) {
+                    await channel.delete('קבוצה ריקה - ניקוי אוטומטי');
+                    activeGroups.delete(channelId);
+                    log(`🗑️ [GroupTracker] הקבוצה ${data.teamName} נמחקה עקב חוסר פעילות.`);
+                }
+            } else {
+                // אם יש אנשים, אפשר לעדכן את זמן הפעילות (אופציונלי)
+                // data.lastActive = now; 
+            }
+        } catch (error) {
+            console.error(`❌ Error checking group ${channelId}:`, error.message);
+        }
+    }
+}
+
+module.exports = { 
+    startGroupTracking, 
+    stopGroupTracking, 
+    checkEmptyGroups 
+};

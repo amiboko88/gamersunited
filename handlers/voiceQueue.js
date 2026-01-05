@@ -1,4 +1,4 @@
-// 📁 handlers/voiceQueue.js (מתוקן למניעת קיפאון)
+// 📁 handlers/voiceQueue.js
 const {
     joinVoiceChannel, createAudioPlayer, createAudioResource, entersState,
     AudioPlayerStatus, VoiceConnectionStatus, NoSubscriberBehavior, StreamType
@@ -27,8 +27,7 @@ function createResource(input) {
 }
 
 /**
- * ✅ [תיקון קריטי] פונקציה מרכזית להריסת תור וניקוי משאבים
- * מונעת דליפות זיכרון וקיפאון
+ * פונקציה מרכזית להריסת תור וניקוי משאבים
  */
 function destroyQueue(guildId) {
     const serverQueue = queues.get(guildId);
@@ -42,15 +41,15 @@ function destroyQueue(guildId) {
     // 2. עצירת הנגן
     if (serverQueue.player) {
         serverQueue.player.stop();
-        serverQueue.player.removeAllListeners(); // ניקוי מאזינים למניעת כפילויות
+        serverQueue.player.removeAllListeners();
     }
 
-    // 3. ניתוק החיבור (אם קיים)
+    // 3. ניתוק החיבור
     if (serverQueue.connection) {
         if (serverQueue.connection.state.status !== VoiceConnectionStatus.Destroyed) {
             serverQueue.connection.destroy();
         }
-        serverQueue.connection.removeAllListeners(); // ניקוי מאזינים
+        serverQueue.connection.removeAllListeners();
     }
 
     // 4. מחיקה מהמפה
@@ -61,17 +60,14 @@ function getQueue(guildId, client) {
     if (!queues.has(guildId)) {
         const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Pause } });
 
-        // --- מאזיני נגן ---
         player.on(AudioPlayerStatus.Idle, (oldState) => {
             const serverQueue = queues.get(guildId);
             if (!serverQueue) return;
 
-            // בדיקת שלמות החיבור
             const connectionDestroyed = !serverQueue.connection || 
                                         serverQueue.connection.state.status === VoiceConnectionStatus.Destroyed ||
                                         serverQueue.connection.state.status === VoiceConnectionStatus.Disconnected;
             
-            // טיפול בסיום שיר
             if (serverQueue.nowPlayingMessage && serverQueue.lastTrackType === 'SONG') {
                 handleSongEnd(serverQueue);
                 serverQueue.nowPlayingMessage = null; 
@@ -82,7 +78,7 @@ function getQueue(guildId, client) {
                 playNextInQueue(guildId);
             } else if (connectionDestroyed) {
                 log(`[QUEUE] החיבור נהרס (במהלך Idle).`);
-                destroyQueue(guildId); // ✅ שימוש בפונקציית ההריסה
+                destroyQueue(guildId);
             }
         });
 
@@ -147,10 +143,9 @@ async function playNextInQueue(guildId) {
             if (serverQueue.idleTimer) clearTimeout(serverQueue.idleTimer);
             serverQueue.idleTimer = setTimeout(() => {
                 const currentQueue = queues.get(guildId);
-                // בדיקה כפולה לפני ניתוק
                 if (currentQueue && !currentQueue.isPlaying && currentQueue.queue.length === 0) {
                     log(`[CLEANUP] טיימר הניתוק (${timeoutSeconds} שניות) הופעל.`);
-                    destroyQueue(guildId); // ✅ שימוש בפונקציית ההריסה
+                    destroyQueue(guildId);
                 }
             }, timeoutSeconds * 1000);
         }
@@ -180,23 +175,21 @@ async function playNextInQueue(guildId) {
                 selfMute: false
             });
             
-            // --- מאזיני חיבור ---
             connection.on(VoiceConnectionStatus.Disconnected, async () => {
                 try {
                     await Promise.race([
                         entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
                         entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
                     ]);
-                    // התחבר מחדש
                 } catch (error) {
                     log(`[QUEUE] החיבור התנתק סופית.`);
-                    destroyQueue(guildId); // ✅ שימוש בפונקציית ההריסה
+                    destroyQueue(guildId);
                 }
             });
 
             connection.on(VoiceConnectionStatus.Destroyed, () => {
                 log(`[QUEUE] החיבור נהרס (אירוע Destroyed).`);
-                destroyQueue(guildId); // ✅ שימוש בפונקציית ההריסה
+                destroyQueue(guildId);
             });
 
             serverQueue.connection = connection;
@@ -300,7 +293,6 @@ function resume(guildId) {
 }
 
 function stop(guildId) {
-    // ✅ [תיקון] שימוש בפונקציית ההריסה גם לעצירה יזומה
     const serverQueue = queues.get(guildId);
     if (serverQueue) {
         if (serverQueue.nowPlayingMessage) {
@@ -333,11 +325,24 @@ async function updateSongMessage(guildId, content, isPaused) {
     }
 }
 
-function cleanupIdleConnections() {}
+/**
+ * ✅ [תיקון] פונקציית הבדיקה לבוט-לייף-סייקל
+ * בודקת את כל הנגנים ומנתקת את מי שתקוע ללא שירים וללא פעילות
+ */
+function checkIdlePlayers(client) {
+    for (const [guildId, queue] of queues.entries()) {
+        // אם אין שירים בתור והנגן במצב Idle
+        if (queue.queue.length === 0 && queue.player.state.status === AudioPlayerStatus.Idle) {
+             // אם עבר זמן מסוים (אפשר להוסיף לוגיקה) או פשוט לנקות
+             log(`[CRON-Check] מנקה נגן לא פעיל בשרת ${guildId}`);
+             destroyQueue(guildId);
+        }
+    }
+}
 
 module.exports = { 
     addToQueue, 
-    cleanupIdleConnections,
+    checkIdlePlayers, // ✅ שיניתי את השם מ-cleanupIdleConnections כדי שיתאים ל-Lifecycle
     pause,
     resume,
     stop,

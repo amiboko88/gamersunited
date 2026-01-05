@@ -1,11 +1,16 @@
 // 📁 utils/repartitionUtils.js
-const { activeGroups } = require('./replayManager');
-const { resetReplayVotes } = require('./replayManager');
-const { playTTSInVoiceChannel } = require('./ttsQuickPlay');
+const { activeGroups, resetReplayVotes } = require('./replayManager');
+const { playTTSInVoiceChannel } = require('./ttsQuickPlay'); // ודא שקובץ זה קיים ב-utils
 
+// ה-ID של ערוץ ה-FIFO הראשי (לובי המתנה)
+const FIFO_CHANNEL_ID = process.env.FIFO_CHANNEL_ID || '1231453923387379783';
+
+/**
+ * מבצע איפוס וחלוקה מחדש (Replay) לקבוצה
+ */
 async function executeReplayReset(guild, textChannel, teamName) {
   try {
-    // 1. שליפת פרטי הקבוצה הנגדית (אם קיימת)
+    // 1. הודעה קולית לקבוצה היריבה (אם יש)
     const opponentGroup = [...activeGroups.entries()].find(([name]) => name !== teamName);
 
     if (opponentGroup) {
@@ -14,61 +19,56 @@ async function executeReplayReset(guild, textChannel, teamName) {
       if (voiceChannel) {
         await playTTSInVoiceChannel(
           voiceChannel,
-          `שחקני ${teamName} רוצים ריפליי. מה דעתכם ${opponentData.name}?`
+          `שחקני ${teamName} רוצים ריפליי. מתכוננים לחלוקה מחדש!`
         );
       }
     }
 
-    // 2. החזרת כל המשתמשים לערוץ הראשי
-    const fifoChannelId = '123456789012345678'; // 🛑 החלף ל-ID של ערוץ הפיפו
-    const fifoChannel = guild.channels.cache.get(fifoChannelId);
+    // 2. החזרת כל המשתמשים לערוץ הראשי (FIFO)
+    const fifoChannel = guild.channels.cache.get(FIFO_CHANNEL_ID);
 
-    if (!fifoChannel || !fifoChannel.isVoiceBased()) return;
+    if (!fifoChannel || !fifoChannel.isVoiceBased()) {
+        console.error('❌ ערוץ FIFO הראשי לא נמצא או אינו ערוץ קולי.');
+        if (textChannel) await textChannel.send('⚠️ שגיאה: לא ניתן להחזיר שחקנים (ערוץ ראשי חסר).');
+        return;
+    }
 
+    // עוברים על כל הקבוצות הפעילות
     for (const [, groupData] of activeGroups) {
       const { channelId, members } = groupData;
       const ch = guild.channels.cache.get(channelId);
 
+      // העברת שחקנים
       if (ch && ch.isVoiceBased()) {
         for (const memberId of members) {
           const member = await guild.members.fetch(memberId).catch(() => null);
           if (member && member.voice.channelId === ch.id) {
-            await member.voice.setChannel(fifoChannel).catch(() => null);
+            await member.voice.setChannel(fifoChannel).catch(err => 
+                console.warn(`לא הצלחתי להעביר את ${member.displayName}: ${err.message}`)
+            );
           }
         }
       }
 
-      // מחיקת הערוץ
+      // מחיקת הערוץ הזמני
       if (ch && ch.deletable) {
         await ch.delete().catch(() => null);
       }
     }
 
-    // 3. איפוס מוחלט
+    // 3. איפוס המערכת
     resetReplayVotes();
 
-    // 4. שליחת הצעה לחלוקה מחדש
-    await textChannel.send({
-      content: '🎮 כל המשתמשים הוחזרו. מוכנים לחלוקה מחדש?',
-      components: [
-        {
-          type: 1,
-          components: [
-            {
-              type: 2,
-              style: 1,
-              custom_id: 'repartition_now',
-              label: '🚀 חלקו מחדש'
-            }
-          ]
-        }
-      ]
-    });
-  } catch (err) {
-    console.error('❌ שגיאה ב־executeReplayReset:', err);
+    // 4. הודעה בטקסט
+    if (textChannel) {
+        await textChannel.send({
+            content: '🎮 **בוצע איפוס למשחק!**\nכל השחקנים הוחזרו ללובי לחלוקה מחדש.'
+        });
+    }
+
+  } catch (error) {
+    console.error('❌ Error in executeReplayReset:', error);
   }
 }
 
-module.exports = {
-  executeReplayReset
-};
+module.exports = { executeReplayReset };

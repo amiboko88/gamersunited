@@ -1,43 +1,54 @@
-// 📁 commands/inactivity.js (מתוקן)
+// 📁 commands/inactivity.js
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { buildMainPanelEmbed, buildMainPanelComponents, getDetailedInactivityStats } = require('../interactions/selectors/inactivitySelectMenuHandler');
+const { 
+    buildMainPanelEmbed, 
+    buildMainPanelComponents, 
+    fetchAndProcessInactivityData 
+} = require('../interactions/selectors/inactivitySelectMenuHandler');
 
 const data = new SlashCommandBuilder()
   .setName('ניהול')
-  .setDescription('ניהול משתמשים לא פעילים')
+  .setDescription('מרכז הבקרה של שמעון')
   .addSubcommand(sub =>
-    sub.setName('משתמשים').setDescription('📋 פתח לוח ניהול משתמשים')
-  );
+    sub.setName('משתמשים').setDescription('📊 פתח לוח מחוונים גרפי לניהול משתמשים')
+  )
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
 const execute = async (interaction, client) => {
   const sub = interaction.options.getSubcommand();
+
   if (sub === 'משתמשים') {
     if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
       return await interaction.reply({
-        content: '⛔ הפקודה הזו זמינה רק לאדמינים עם הרשאת ADMINISTRATOR.',
+        content: '⛔ גישה למנהלים בלבד.',
         flags: MessageFlags.Ephemeral,
       });
     }
-    await interaction.deferReply({ ephemeral: true });
+
+    // משתמשים ב-deferReply כדי לתת לבוט זמן לחשב ולייצר את הגרף
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
-      // --- ✅ [תיקון] העברת אובייקט ה-interaction השלם במקום client ---
-      const stats = await getDetailedInactivityStats(interaction);
-      const embed = buildMainPanelEmbed(interaction, stats);
+      // 1. חישוב נתונים
+      const statsData = await fetchAndProcessInactivityData(interaction);
+
+      // 2. בניית דאשבורד גרפי
+      const embed = buildMainPanelEmbed(statsData);
       const components = buildMainPanelComponents();
 
+      // 3. הצגה
       await interaction.editReply({
         embeds: [embed],
         components: components,
       });
+
     } catch (error) {
-        console.error("❌ שגיאה בהפעלת פקודת /ניהול:", error);
-        await interaction.editReply({ content: 'אירעה שגיאה בעת בניית הפאנל.' });
+        console.error("❌ שגיאה בפקודת /ניהול משתמשים:", error);
+        await interaction.editReply({ 
+            content: '❌ אירעה שגיאה בטעינת הלוח הגרפי.' 
+        });
     }
   }
 };
 
-module.exports = {
-  data,
-  execute,
-};
+module.exports = { data, execute };

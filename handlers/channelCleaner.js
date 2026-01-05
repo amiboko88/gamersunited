@@ -1,42 +1,45 @@
 // 📁 handlers/channelCleaner.js
 const { ChannelType } = require('discord.js');
+const { log } = require('../utils/logger');
 
-const CATEGORY_ID = '689124379019313214'; // קטגוריית פיפו הראשית
+// הגדרת קטגוריית ה-FIFO (אם רוצים לנקות רק שם)
+// כרגע נגדיר אותו לנקות ערוצים שמתחילים ב-"TEAM" בכל הקטגוריות הרלוונטיות
+const FIFO_CATEGORY_ID = process.env.FIFO_CATEGORY_ID; 
 
 /**
- * מוחק ערוצים קוליים ריקים ששמם מתחיל ב-"TEAM" בקטגוריה ספציפית.
- * @param {import('discord.js').Client} client - אובייקט הקליינט של דיסקורד.
+ * סורק את השרת ומוחק ערוצי קול זמניים (TEAM X) שאין בהם אנשים.
+ * @param {import('discord.js').Client} client 
  */
-async function cleanupEmptyChannels(client) {
-  console.log('🧹 מתחיל סריקה לניקוי ערוצים קוליים ריקים...');
-  
-  for (const guild of client.guilds.cache.values()) {
-    const category = guild.channels.cache.get(CATEGORY_ID);
-    if (!category || category.type !== ChannelType.GuildCategory) {
-      console.warn(`לא נמצאה קטגוריה עם ה-ID: ${CATEGORY_ID} בשרת ${guild.name}`);
-      continue;
-    }
+async function cleanupEmptyVoiceChannels(client) {
+    try {
+        const guild = client.guilds.cache.first(); // עובדים על השרת הראשון שמצאנו (או ספציפי לפי ID)
+        if (!guild) return;
 
-    const teamChannels = category.children.cache.filter(
-      c => c.type === ChannelType.GuildVoice && c.name.startsWith('TEAM')
-    );
+        // שליפת כל הערוצים
+        // מסננים: ערוצי קול + מתחילים ב-"TEAM" + ריקים מאדם
+        const emptyChannels = guild.channels.cache.filter(c => 
+            c.type === ChannelType.GuildVoice &&
+            c.name.startsWith('TEAM') && // מנקים רק ערוצים שהבוט יצר
+            c.members.size === 0
+        );
 
-    if (teamChannels.size === 0) {
-      console.log(`לא נמצאו ערוצי TEAM לניקוי בשרת ${guild.name}.`);
-      continue;
-    }
+        if (emptyChannels.size === 0) return;
 
-    for (const [id, channel] of teamChannels) {
-      if (channel.members.size === 0) {
-        try {
-          await channel.delete('ניקוי אוטומטי של ערוץ ריק');
-          console.log(`✅ נמחק הערוץ הריק: ${channel.name}`);
-        } catch (error) {
-          console.error(`❌ שגיאה במחיקת הערוץ ${channel.name}:`, error);
+        log(`[ChannelCleaner] 🧹 נמצאו ${emptyChannels.size} ערוצים ריקים למחיקה.`);
+
+        for (const [id, channel] of emptyChannels) {
+            try {
+                await channel.delete('ניקוי ערוץ ריק (אוטומטי)');
+                // log(`🗑️ ערוץ נמחק: ${channel.name}`); // אפשר להחזיר אם רוצים לוג מפורט
+            } catch (err) {
+                console.warn(`⚠️ נכשל במחיקת ערוץ ${channel.name}: ${err.message}`);
+            }
         }
-      }
+
+    } catch (error) {
+        console.error('[ChannelCleaner] ❌ Error:', error);
     }
-  }
 }
 
-module.exports = { cleanupEmptyChannels };
+// ✅ הייצוא הקריטי - זה מה ש-botLifecycle מחפש
+module.exports = { cleanupEmptyVoiceChannels };

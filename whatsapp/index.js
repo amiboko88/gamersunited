@@ -1,6 +1,7 @@
 // 📁 whatsapp/index.js
 const makeWASocket = require('@whiskeysockets/baileys').default;
-const { DisconnectReason, fetchLatestBaileysVersion, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+// ✅ ניקיתי מכאן את useMultiFileAuthState
+const { DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const coreLogic = require('./logic/core');
 const { useFirestoreAuthState } = require('./auth'); 
@@ -20,8 +21,8 @@ async function connectToWhatsApp() {
 
         sock = makeWASocket({
             version,
-            logger: pino({ level: 'silent' }), // לוגים שקטים כדי לא להציף את הקונסולה
-            printQRInTerminal: true,
+            logger: pino({ level: 'silent' }), // לוגים שקטים
+            // 🗑️ השורה printQRInTerminal נמחקה מכאן כדי למנוע את האזהרה הצהובה
             auth: state,
             msgRetryCounterCache, // ✅ קריטי ליציבות
             connectTimeoutMs: 60000,

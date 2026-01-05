@@ -1,84 +1,84 @@
+// 📁 whatsapp/logic/buffer.js
 const { log } = require('../../utils/logger');
 
-// מפה שמחזיקה את המשתמשים שמקלידים כרגע
-// Key: senderId, Value: { timer, textParts: [], media: null, lastMsg: obj }
 const messageBuffer = new Map();
+const spamMap = new Map(); // מעקב אחרי ספאמרים
 
-// זמן המתנה (בשניות) לפני ששמעון עונה
-const BUFFER_DELAY_MS = 3500; // 3.5 שניות - מספיק זמן לכתוב עוד הודעה
+// הגדרות הגנה
+const SPAM_LIMIT = 5; // מקסימום הודעות
+const SPAM_WINDOW_MS = 10000; // ב-10 שניות
+const COOLDOWN_MS = 60000; // דקה עונש
+const BUFFER_DELAY_MS = 2000; // המתנה קצרה לתגובה
 
-/**
- * מוסיף הודעה לתור של המשתמש.
- * @param {string} senderId - המזהה של השולח
- * @param {object} msg - אובייקט ההודעה המקורי (של וואטסאפ)
- * @param {string} text - הטקסט של ההודעה הנוכחית
- * @param {function} processCallback - הפונקציה שתופעל כשהטיימר יסתיים (הלוגיקה של שמעון)
- */
+function isSpammer(senderId) {
+    const now = Date.now();
+    let userData = spamMap.get(senderId);
+
+    if (!userData) {
+        userData = { count: 0, firstMsgTime: now, blockedUntil: 0 };
+        spamMap.set(senderId, userData);
+    }
+
+    // אם המשתמש חסום
+    if (now < userData.blockedUntil) return { blocked: true, silent: true };
+
+    // איפוס חלון זמן
+    if (now - userData.firstMsgTime > SPAM_WINDOW_MS) {
+        userData.count = 0;
+        userData.firstMsgTime = now;
+    }
+
+    userData.count++;
+
+    // בדיקת חריגה
+    if (userData.count > SPAM_LIMIT) {
+        userData.blockedUntil = now + COOLDOWN_MS;
+        log(`[Buffer] 🚫 User ${senderId} blocked for spamming.`);
+        return { blocked: true, silent: false }; // Silent=false אומר שצריך להזהיר אותו פעם אחת
+    }
+
+    return { blocked: false };
+}
+
 function addToBuffer(senderId, msg, text, processCallback) {
-    // 1. האם יש כבר סשן פתוח למשתמש הזה?
-    let session = messageBuffer.get(senderId);
+    // 1. בדיקת ספאם
+    const spamCheck = isSpammer(senderId);
+    if (spamCheck.blocked) {
+        if (!spamCheck.silent) {
+            processCallback(msg, "BLOCKED_SPAM", null);
+        }
+        return; 
+    }
 
+    // 2. ניהול הבאפר
+    let session = messageBuffer.get(senderId);
     if (session) {
-        // יש סשן קיים - מאפסים את הטיימר (Debounce)
         clearTimeout(session.timer);
     } else {
-        // סשן חדש
-        session = { 
-            textParts: [], 
-            mediaMsg: null, 
-            lastMsg: msg // שומרים את ההודעה האחרונה כדי לצטט אותה בסוף
-        };
+        session = { textParts: [], mediaMsg: null, lastMsg: msg };
     }
 
-    // 2. איסוף המידע
-    if (text) {
-        session.textParts.push(text);
-    }
-
-    // אם יש תמונה בהודעה הנוכחית, נשמור אותה
-    // (זה פותר את הבעיה ששולחים תמונה ואח"כ טקסט)
-    if (msg.message.imageMessage) {
-        session.mediaMsg = msg;
-    }
-    
-    // עדכון ההודעה האחרונה (לצורך ציטוט)
+    if (text) session.textParts.push(text);
+    if (msg.message.imageMessage) session.mediaMsg = msg;
     session.lastMsg = msg;
 
-    // 3. מקרים מיוחדים לשבירת הטיימר (Immediate Trigger)
-    // אם המשתמש תייג את שמעון או כתב מילה דחופה - לא מחכים!
     const isUrgent = text.includes('@') || text.includes('שמעון');
-
     if (isUrgent) {
-        log(`[Buffer] 🚀 Urgent trigger for ${senderId}`);
         executeSession(senderId, session, processCallback);
         return;
     }
 
-    // 4. הפעלת הטיימר
     session.timer = setTimeout(() => {
         executeSession(senderId, session, processCallback);
     }, BUFFER_DELAY_MS);
 
-    // שמירה בזיכרון
     messageBuffer.set(senderId, session);
 }
 
-/**
- * פונקציית עזר פנימית לביצוע הלוגיקה וניקוי הזיכרון
- */
 function executeSession(senderId, session, processCallback) {
-    // מחיקה מהזיכרון (כדי שלא יופעל שוב)
     messageBuffer.delete(senderId);
-    
-    // איחוד כל הטקסטים למשפט אחד שלם
-    const fullText = session.textParts.join(" "); // "למה" + "אתה" + "לא עונה" -> "למה אתה לא עונה"
-    
-    // קביעת ההודעה הראשית לטיפול (אם הייתה תמונה, היא הקובעת)
+    const fullText = session.textParts.join(" ");
     const primaryMsg = session.mediaMsg || session.lastMsg;
-
-    log(`[Buffer] 📦 Processed batch for ${senderId}: "${fullText}" (Images: ${session.mediaMsg ? 'Yes' : 'No'})`);
-
-    // שליחה למוח של שמעון
     processCallback(primaryMsg, fullText, session.mediaMsg);
 }
 

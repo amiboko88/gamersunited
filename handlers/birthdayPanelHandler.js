@@ -1,7 +1,7 @@
 // 📁 handlers/birthdayPanelHandler.js
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { getUserRef } = require('../utils/userUtils'); // ✅ עבודה מול המאגר המאוחד
-const db = require('../utils/firebase'); // לשליפות כלליות
+const { getUserRef } = require('../utils/userUtils');
+const db = require('../utils/firebase');
 const generateBirthdayCard = require('../utils/generateBirthdayCard');
 
 // פונקציית עזר לפענוח תאריך
@@ -21,6 +21,41 @@ function parseBirthdayInput(input) {
   if (year > now.getFullYear() || year < 1900) return null; 
 
   return { day, month, year };
+}
+
+/**
+ * ✅ הפונקציה שהייתה חסרה: הנתב הראשי של הפאנל
+ */
+async function handleBirthdayPanel(interaction, client) {
+    // אם זו בחירה מתפריט (Select Menu)
+    if (interaction.isStringSelectMenu() && interaction.customId === 'birthday_action_select') {
+        const selection = interaction.values[0];
+        
+        if (selection === 'add_bday') {
+            await showBirthdayModal(interaction);
+        } else if (selection === 'check_bday') {
+            // לוגיקה לבדיקת יום הולדת קיים
+            const userRef = await getUserRef(interaction.user.id, 'discord');
+            const doc = await userRef.get();
+            const bday = doc.data()?.identity?.birthday;
+            
+            if (bday) {
+                await interaction.reply({ 
+                    content: `🎂 יום ההולדת שלך מוגדר ל: **${bday.day}/${bday.month}/${bday.year}**`,
+                    flags: MessageFlags.Ephemeral 
+                });
+            } else {
+                await interaction.reply({ 
+                    content: '❌ לא מוגדר לך יום הולדת במערכת.',
+                    flags: MessageFlags.Ephemeral 
+                });
+            }
+        }
+    }
+    // אם זה כפתור רגיל שפותח את הפאנל
+    else {
+        await showBirthdayModal(interaction);
+    }
 }
 
 /**
@@ -56,6 +91,8 @@ async function handleBirthdayModalSubmit(interaction) {
     }
 
     try {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral }); // נותן זמן ליצירת התמונה
+
         const userRef = await getUserRef(interaction.user.id, 'discord');
         
         // עדכון ישיר בזהות המשתמש ב-DB המאוחד
@@ -72,27 +109,34 @@ async function handleBirthdayModalSubmit(interaction) {
         // יצירת כרטיס תצוגה
         let files = [];
         try {
-            const cardBuffer = await generateBirthdayCard(interaction.member, birthday);
+            // שולחים את המידע בצורה מפורשת לפונקציית היצירה
+            const cardBuffer = await generateBirthdayCard({
+                fullName: interaction.member.displayName,
+                birthdate: birthday, // שולחים אובייקט ולא סטרינג! (התיקון בקובץ הבא מטפל בזה)
+                profileUrl: interaction.user.displayAvatarURL({ extension: 'png', size: 256 })
+            });
             files.push(cardBuffer);
         } catch (e) {
             console.warn('Could not generate birthday card image:', e);
         }
         
-        await interaction.reply({ 
+        await interaction.editReply({ 
             content: `✅ תאריך הלידה שלך (${birthday.day}/${birthday.month}/${birthday.year}) נשמר בהצלחה!`,
-            files: files,
-            flags: MessageFlags.Ephemeral 
+            files: files
         });
 
     } catch (error) {
         console.error('Birthday Update Error:', error);
-        await interaction.reply({ content: '❌ שגיאה בשמירת התאריך.', flags: MessageFlags.Ephemeral });
+        if (interaction.deferred) {
+            await interaction.editReply({ content: '❌ שגיאה בשמירת התאריך.' });
+        } else {
+            await interaction.reply({ content: '❌ שגיאה בשמירת התאריך.', flags: MessageFlags.Ephemeral });
+        }
     }
 }
 
 /**
  * פונקציית מנהל: שולחת תזכורות בפרטי לכל מי שלא הזין יום הולדת
- * (זו הפונקציה שהייתה חסרה לך בקוד הקודם)
  */
 async function sendBirthdayReminders(interaction) {
     if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
@@ -106,7 +150,6 @@ async function sendBirthdayReminders(interaction) {
     let alreadySet = 0;
 
     try {
-        // שליפת כל המשתמשים מה-DB המאוחד
         const usersSnapshot = await db.collection('users').get();
         const guild = interaction.guild;
 
@@ -114,17 +157,14 @@ async function sendBirthdayReminders(interaction) {
             const userData = doc.data();
             const userId = doc.id;
 
-            // אם כבר יש יום הולדת - מדלגים
             if (userData.identity && userData.identity.birthday) {
                 alreadySet++;
                 continue;
             }
 
-            // מנסים להשיג את המשתמש בדיסקורד
             const member = await guild.members.fetch(userId).catch(() => null);
             if (!member || member.user.bot) continue;
 
-            // שליחת הודעה פרטית
             const embed = new EmbedBuilder()
                 .setTitle('🎂 מתי יום ההולדת שלך?')
                 .setDescription(`היי **${member.displayName}**, שים לב שעדיין לא עדכנת תאריך לידה במערכת!\nתעדכן כדי שנוכל לחגוג לך כמו שצריך (ואולי תקבל מתנה).`)
@@ -133,7 +173,7 @@ async function sendBirthdayReminders(interaction) {
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
-                    .setCustomId('open_birthday_modal') // כפתור שמפעיל את showBirthdayModal
+                    .setCustomId('open_birthday_modal')
                     .setLabel('📅 הוסף יום הולדת עכשיו')
                     .setStyle(ButtonStyle.Primary)
             );
@@ -142,7 +182,7 @@ async function sendBirthdayReminders(interaction) {
                 await member.send({ embeds: [embed], components: [row] });
                 success++;
             } catch (e) {
-                failed++; // כנראה ה-DM חסום
+                failed++;
             }
         }
 
@@ -165,6 +205,7 @@ async function sendBirthdayReminders(interaction) {
 }
 
 module.exports = { 
+    handleBirthdayPanel, // ✅ נוסף
     showBirthdayModal, 
     handleBirthdayModalSubmit, 
     sendBirthdayReminders 

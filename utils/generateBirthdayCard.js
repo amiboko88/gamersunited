@@ -1,7 +1,6 @@
-// 📁 utils/generateBirthdayCard.js (מעודכן לשימוש ב-Puppeteer)
-const puppeteer = require('puppeteer'); // ייבוא ספריית Puppeteer
-const axios = require('axios'); // נשאר עבור הורדת תמונות פרופיל אם תרצה לשמור מקומית קודם
-const fs = require('fs/promises'); // לטיפול בקבצים אם נרצה לשמור תמונה זמנית
+// 📁 utils/generateBirthdayCard.js
+const puppeteer = require('puppeteer');
+const fs = require('fs/promises');
 
 // פונקציית עזר ליצירת קונפטי ב-HTML/CSS
 function generateConfettiHTML(amount = 80) {
@@ -14,7 +13,7 @@ function generateConfettiHTML(amount = 80) {
         const randomSize = Math.random() * 8 + 5;
         const randomSpeed = Math.random() * 3 + 2;
         const randomRotation = Math.random() * 360;
-        const randomDelay = Math.random() * 2; // כדי לפזר את התחלת האנימציה
+        const randomDelay = Math.random() * 2;
 
         confettiPieces += `
             <div class="confetti-piece" style="
@@ -33,15 +32,42 @@ function generateConfettiHTML(amount = 80) {
     return confettiPieces;
 }
 
+/**
+ * מייצר כרטיס ברכה.
+ * @param {Object} params
+ * @param {string} params.fullName - שם המשתמש
+ * @param {string|Object} params.birthdate - תאריך (מחרוזת או אובייקט)
+ * @param {string} params.profileUrl - כתובת תמונה
+ */
 module.exports = async function generateBirthdayCard({ fullName, birthdate, profileUrl }) {
+    // ✅ טיפול חכם בפורמט התאריך (מונע קריסה)
+    let day, month, year;
+
+    if (typeof birthdate === 'object' && birthdate !== null) {
+        // אם התקבל אובייקט { day, month, year }
+        day = birthdate.day;
+        month = birthdate.month;
+        year = birthdate.year;
+    } else if (typeof birthdate === 'string') {
+        // אם התקבלה מחרוזת "dd.mm.yyyy"
+        [day, month, year] = birthdate.split('.');
+    } else {
+        // ברירת מחדל כדי למנוע שגיאה
+        const now = new Date();
+        day = now.getDate();
+        month = now.getMonth() + 1;
+        year = now.getFullYear();
+    }
+
     // חישוב גיל
-    const [day, month, year] = birthdate.split('.');
     const now = new Date();
     let age = now.getFullYear() - parseInt(year);
     const bdayThisYear = new Date(now.getFullYear(), parseInt(month) - 1, parseInt(day));
     if (now < bdayThisYear) age--;
 
-    // קוד ה-HTML וה-CSS כולו כסטרינג (האימוג'י בתוך ה-HTML יטופלו על ידי Chromium)
+    // פורמט תצוגה יפה
+    const displayDate = `${day}.${month}.${year}`;
+
     const htmlTemplate = `
         <!DOCTYPE html>
         <html lang="he" dir="rtl">
@@ -52,16 +78,16 @@ module.exports = async function generateBirthdayCard({ fullName, birthdate, prof
             <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Hebrew:wght@400;700&display=swap" rel="stylesheet">
             <style>
                 body {
-                    font-family: 'Noto Sans Hebrew', sans-serif; /* פונט שמוטען מגוגל פונטים */
+                    font-family: 'Noto Sans Hebrew', sans-serif;
                     margin: 0;
                     display: flex;
                     justify-content: center;
                     align-items: center;
-                    min-height: 240px; /* גובה מינימלי */
-                    background: linear-gradient(135deg, #fbc2eb, #a6c1ee); /* רקע עם גרדיאנט נעים */
+                    min-height: 240px;
+                    background: linear-gradient(135deg, #fbc2eb, #a6c1ee);
                     padding: 30px;
                     box-sizing: border-box;
-                    overflow: hidden; /* למנוע גלילה אם הקונפטי יוצא מהמסך */
+                    overflow: hidden;
                 }
 
                 .banner-container {
@@ -71,11 +97,11 @@ module.exports = async function generateBirthdayCard({ fullName, birthdate, prof
                     display: flex;
                     align-items: center;
                     padding: 30px;
-                    width: 680px; /* רוחב קבוע */
-                    height: 200px; /* גובה קבוע לבאנר עצמו */
+                    width: 680px;
+                    height: 200px;
                     box-sizing: border-box;
-                    position: relative; /* עבור מיקום הלוגו */
-                    overflow: hidden; /* לוודא שהצל והקונפטי לא יוצאים מהגבול */
+                    position: relative;
+                    overflow: hidden;
                 }
 
                 .profile-image {
@@ -83,9 +109,9 @@ module.exports = async function generateBirthdayCard({ fullName, birthdate, prof
                     height: 100px;
                     border-radius: 50%;
                     object-fit: cover;
-                    margin-left: 20px; /* רווח בין התמונה לטקסט */
-                    border: 5px solid #e91e63; /* מסגרת לתמונה */
-                    flex-shrink: 0; /* למנוע כיווץ של התמונה */
+                    margin-left: 20px;
+                    border: 5px solid #e91e63;
+                    flex-shrink: 0;
                 }
 
                 .text-content {
@@ -113,7 +139,6 @@ module.exports = async function generateBirthdayCard({ fullName, birthdate, prof
                     font-weight: bold;
                 }
 
-                /* קונפטי - אנימציה מתמדת */
                 .confetti {
                     position: absolute;
                     width: 100%;
@@ -121,7 +146,7 @@ module.exports = async function generateBirthdayCard({ fullName, birthdate, prof
                     top: 0;
                     left: 0;
                     pointer-events: none;
-                    overflow: hidden; /* וודא שהקונפטי נשאר בתוך הבאנר */
+                    overflow: hidden;
                 }
 
                 .confetti-piece {
@@ -129,7 +154,7 @@ module.exports = async function generateBirthdayCard({ fullName, birthdate, prof
                     background: #f06292;
                     border-radius: 50%;
                     opacity: 0.7;
-                    animation: confetti-fall linear infinite; /* אנימציה אינסופית */
+                    animation: confetti-fall linear infinite;
                 }
 
                 @keyframes confetti-fall {
@@ -137,12 +162,11 @@ module.exports = async function generateBirthdayCard({ fullName, birthdate, prof
                     100% { transform: translateY(200%) rotate(720deg); opacity: 0; }
                 }
 
-                /* לוגו בפינה שמאלית תחתונה */
                 .logo {
                     position: absolute;
                     bottom: 15px;
                     left: 15px;
-                    width: 50px; /* גודל הלוגו */
+                    width: 50px;
                     height: 50px;
                     object-fit: contain;
                 }
@@ -153,7 +177,7 @@ module.exports = async function generateBirthdayCard({ fullName, birthdate, prof
                 <img src="${profileUrl}" alt="תמונת פרופיל" class="profile-image">
                 <div class="text-content">
                     <h1 class="greeting">🎉 מזל טוב ל־${fullName}! 🎉</h1>
-                    <p class="details">📅 תאריך: ${birthdate}</p>
+                    <p class="details">📅 תאריך: ${displayDate}</p>
                     <p class="age">🎂 גיל: ${age}</p>
                 </div>
                 <div class="confetti">
@@ -166,7 +190,7 @@ module.exports = async function generateBirthdayCard({ fullName, birthdate, prof
     let browser;
     try {
         browser = await puppeteer.launch({
-            headless: 'new', // או true
+            headless: 'new',
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -175,29 +199,22 @@ module.exports = async function generateBirthdayCard({ fullName, birthdate, prof
         });
         const page = await browser.newPage();
 
-        // הגדרת גודל עמוד כך שיתאים לגודל הבאנר
-        await page.setViewport({ width: 680 + (30*2), height: 240 + (30*2), deviceScaleFactor: 2 }); // רוחב וגובה הבאנר + הפדינג של הבאדי, scaleFactor משפר איכות
+        await page.setViewport({ width: 680 + (30*2), height: 240 + (30*2), deviceScaleFactor: 2 });
+        await page.setContent(htmlTemplate, { waitUntil: 'networkidle0' });
 
-        // טען את התוכן HTML
-        await page.setContent(htmlTemplate, { waitUntil: 'networkidle0' }); // המתן עד שאין פעילות רשת (כולל טעינת תמונות ופונטים)
-
-        // המתן לטעינת תמונת הפרופיל והפונטים
         await page.waitForSelector('.profile-image', { visible: true, timeout: 5000 }).catch(() => console.warn('תמונת פרופיל לא נטענה בזמן.'));
-        // ניתן להוסיף המתנה ספציפית לפונטים אם הם קריטיים, אך waitUntil: 'networkidle0' לרוב מספיק
         
-        // צלם מסך של ה-banner-container בלבד
         const bannerElement = await page.$('.banner-container');
         if (!bannerElement) {
             throw new Error('לא נמצא אלמנט .banner-container לצילום.');
         }
 
-        const imageBuffer = await bannerElement.screenshot({ type: 'png', omitBackground: true }); // omitBackground: true אם רוצים רק את הבאנר בלי הרקע של ה-body
-
+        const imageBuffer = await bannerElement.screenshot({ type: 'png', omitBackground: true });
         return imageBuffer;
 
     } catch (error) {
         console.error('❌ שגיאה ביצירת באנר יום הולדת עם Puppeteer:', error);
-        throw error; // זרוק את השגיאה הלאה לטיפול
+        throw error;
     } finally {
         if (browser) {
             await browser.close();

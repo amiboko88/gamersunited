@@ -5,10 +5,12 @@ const messageBuffer = new Map();
 const spamMap = new Map(); // מעקב אחרי ספאמרים
 
 // הגדרות הגנה
-const SPAM_LIMIT = 5; // מקסימום הודעות
+const SPAM_LIMIT = 6; // טיפה יותר סלחן
 const SPAM_WINDOW_MS = 10000; // ב-10 שניות
 const COOLDOWN_MS = 60000; // דקה עונש
-const BUFFER_DELAY_MS = 2000; // המתנה קצרה לתגובה
+
+// ✅ שינוי קריטי: הורדנו מ-2000 ל-1500 (שניה וחצי) לשיפור תגובתיות
+const BUFFER_DELAY_MS = 1500; 
 
 function isSpammer(senderId) {
     const now = Date.now();
@@ -53,7 +55,7 @@ function addToBuffer(senderId, msg, text, processCallback) {
     // 2. ניהול הבאפר
     let session = messageBuffer.get(senderId);
     if (session) {
-        clearTimeout(session.timer);
+        clearTimeout(session.timer); // איפוס טיימר אם ממשיך להקליד
     } else {
         session = { textParts: [], mediaMsg: null, lastMsg: msg };
     }
@@ -62,7 +64,8 @@ function addToBuffer(senderId, msg, text, processCallback) {
     if (msg.message.imageMessage) session.mediaMsg = msg;
     session.lastMsg = msg;
 
-    const isUrgent = text.includes('@') || text.includes('שמעון');
+    // שבירת טיימר למקרים דחופים
+    const isUrgent = text.includes('@') || text.includes('שמעון') || text.includes('רולטה');
     if (isUrgent) {
         executeSession(senderId, session, processCallback);
         return;

@@ -6,7 +6,7 @@ const { log } = require('../utils/logger');
 const presenceRotator = require('./presenceRotator');
 const inactivityCronJobs = require('./inactivityCronJobs');
 const leaderboardUpdater = require('./leaderboardUpdater');
-const weeklyBirthdayReminder = require('./weeklyBirthdayReminder'); // ✅ כעת בשימוש תקין
+const weeklyBirthdayReminder = require('./weeklyBirthdayReminder');
 const birthdayCongratulator = require('./birthdayCongratulator');
 const mvpTracker = require('./mvpTracker');
 const verificationButton = require('./verificationButton');
@@ -14,8 +14,6 @@ const voiceQueue = require('./voiceQueue');
 const groupTracker = require('./groupTracker');
 const channelCleaner = require('./channelCleaner');
 const { updateVoiceCounterChannel } = require('./voiceHandler');
-
-// אם היה לך כאן ייבוא של sendWarzoneEmbed שלא בשימוש - הסרתי אותו כדי לנקות שגיאות.
 
 /**
  * פונקציית האתחול הראשית - נקראת מתוך index.js
@@ -25,7 +23,6 @@ async function init(client) {
 
     try {
         // 1. הרצות מיידיות (Startup Tasks)
-        // דברים שחייבים לקרות ברגע שהבוט עולה
         await runStartupTasks(client);
 
         // 2. רישום משימות מתוזמנות (Cron Jobs)
@@ -37,64 +34,66 @@ async function init(client) {
     }
 }
 
-/**
- * משימות שרצות פעם אחת בעת עליית הבוט
- */
 async function runStartupTasks(client) {
-    // עדכון סטטוס (משחק/צופה)
-    presenceRotator.rotatePresence(client);
-    
-    // בדיקת ימי הולדת (אולי פספסנו בזמן שהבוט היה למטה)
-    await birthdayCongratulator.runMissedBirthdayChecks(client);
-    
-    // הצבת הודעת אימות בערוץ (אם חסרה)
-    await verificationButton.setupVerificationMessage(client);
-    
-    // סנכרון מונה המחוברים הקוליים
-    await updateVoiceCounterChannel(client);
-    
-    // ניקוי ערוצים שאולי נתקעו מהריצה הקודמת
-    await channelCleaner.cleanupEmptyVoiceChannels(client);
+    try {
+        // רוטציה ראשונית
+        presenceRotator.rotatePresence(client);
+        
+        // בדיקות אתחול נוספות
+        await birthdayCongratulator.runMissedBirthdayChecks(client);
+        await verificationButton.setupVerificationMessage(client);
+        await updateVoiceCounterChannel(client);
+        await channelCleaner.cleanupEmptyVoiceChannels(client);
+    } catch (error) {
+        console.error('[STARTUP] שגיאה במשימות אתחול:', error);
+    }
 }
 
 /**
  * הגדרת התזמונים הקבועים (CRON)
+ * הוספנו לוגים לכל משימה כדי לוודא שהן רצות
  */
 function registerCronJobs(client) {
     
     // 🔄 רוטציית סטטוס (כל 15 דקות)
     cron.schedule('*/15 * * * *', () => {
+        // log('[CRON] 🔄 מבצע רוטציית סטטוס...'); // אפשר להחזיר אם רוצים לראות כל 15 דק'
         presenceRotator.rotatePresence(client);
     });
 
     // 🎂 בדיקת ימי הולדת יומית (08:00)
     cron.schedule('0 8 * * *', async () => {
+        log('[CRON] 🎂 בודק ימי הולדת יומיים...');
         await birthdayCongratulator.sendBirthdayMessage(client);
     });
 
     // 📅 תזכורת יום הולדת שבועית (שישי ב-14:00)
-    // ✅ כאן אנחנו משתמשים במשתנה שהיה "אפור" אצלך
     cron.schedule('0 14 * * 5', async () => {
+        log('[CRON] 📅 שולח תזכורת יום הולדת שבועית...');
         await weeklyBirthdayReminder.sendWeeklyReminder(client);
     });
 
     // 🏆 עדכון Leaderboard שבועי (מוצ"ש ב-22:00)
     cron.schedule('0 22 * * 6', async () => {
+        log('[CRON] 🏆 מריץ עדכון Leaderboard שבועי...');
         await leaderboardUpdater.updateWeeklyLeaderboard(client);
     });
 
     // 👑 הכרזת MVP שבועי (ראשון ב-20:00)
     cron.schedule('0 20 * * 0', async () => {
+        log('[CRON] 👑 בודק MVP שבועי...');
         await mvpTracker.checkMVPStatusAndRun(client);
     });
 
     // 💤 בדיקת משתמשים לא פעילים (כל יום ב-19:00)
     cron.schedule('0 19 * * *', async () => {
+        log('[CRON] 💤 מריץ בדיקת אי-פעילות יומית...');
         await inactivityCronJobs.runAutoTracking(client);
     });
 
-    // 🧹 ניקוי ערוצים וקבוצות (כל 5 דקות)
+    // 🧹 משימות תחזוקה שוטפות (כל 5 דקות) - הוספתי לוג עדין
     cron.schedule('*/5 * * * *', async () => {
+        // log('[CRON] 🧹 מריץ ניקוי ערוצים וקבוצות...'); // לוג דיבאג
         await channelCleaner.cleanupEmptyVoiceChannels(client);
         await groupTracker.checkEmptyGroups(client);
     });
@@ -106,11 +105,17 @@ function registerCronJobs(client) {
 
     // 📩 בדיקת הודעות אימות בפרטי (כל שעה)
     cron.schedule('0 * * * *', async () => {
+        log('[CRON] 🔍 בודק אימותים תלויים (שעתי)...');
         await verificationButton.checkPendingDms(client);
     });
 
-    log(`[CRON] ✅ 9 משימות תוזמנו.`);
+    // ❤️ Heartbeat Log - כדי לדעת שהבוט חי (כל 30 דקות)
+    cron.schedule('*/30 * * * *', () => {
+        const memoryUsage = process.memoryUsage().heapUsed / 1024 / 1024;
+        log(`[HEARTBEAT] 💓 הבוט חי ונושם. זיכרון בשימוש: ${memoryUsage.toFixed(2)} MB`);
+    });
+
+    log(`[CRON] ✅ כל המשימות תוזמנו בהצלחה.`);
 }
 
-// ✅ הייצוא הקריטי - זה מה שמתקן את השגיאה ב-index.js
 module.exports = { init };

@@ -3,7 +3,6 @@ const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMen
 const db = require('../../utils/firebase');
 const { sendStaffLog } = require('../../utils/staffLogger');
 const { createPaginatedFields } = require('../../utils/embedUtils');
-// ✅ ייבוא המנוע הגרפי החדש
 const { generateStatusPieChart } = require('../../utils/graphGenerator');
 
 // --- פונקציית ליבה: איסוף ועיבוד נתונים ---
@@ -11,23 +10,21 @@ async function fetchAndProcessInactivityData(interactionOrGuild) {
     const guild = interactionOrGuild.guild || interactionOrGuild;
     if (!guild) throw new Error("Guild not found.");
 
-    // שליפת כל המשתמשים
+    console.log('🔄 [Dashboard] מתחיל משיכת נתונים...');
+    const start = Date.now();
+
+    // 1. שליפת כל המשתמשים מה-DB
     const allUsersSnapshot = await db.collection('users').get();
-    
-    // Cache של חברי השרת (כדי לדעת מי כבר עזב ולא צריך לספור אותו)
-    const members = await guild.members.fetch().catch(() => new Map());
+    console.log(`📥 [Dashboard] נשלפו ${allUsersSnapshot.size} משתמשים מ-Firebase.`);
+
+    // 2. משיכת חברי שרת (Cache)
+    const members = await guild.members.fetch();
+    console.log(`👥 [Dashboard] נמצאו ${members.size} חברים בשרת הדיסקורד.`);
 
     const processedData = {
-        stats: { 
-            total: 0,
-            active: 0,
-            inactive7Days: 0, 
-            inactive14Days: 0, 
-            inactive30Days: 0, 
-            failedDM: 0, 
-            repliedDM: 0 
-        },
+        stats: { total: 0, active: 0, inactive7Days: 0, inactive14Days: 0, inactive30Days: 0, failedDM: 0, repliedDM: 0 },
         lists: { inactive7: [], inactive14: [], inactive30: [], failedDM: [], replied: [] },
+        debug: { bots: 0, left: 0, processed: 0 }
     };
 
     const now = Date.now();
@@ -36,11 +33,27 @@ async function fetchAndProcessInactivityData(interactionOrGuild) {
         const data = doc.data();
         const userId = doc.id;
         
-        // אם המשתמש לא נמצא בשרת, מדלגים עליו (או שהוא בוט)
         const member = members.get(userId);
-        if (!member || member.user.bot) continue; 
 
-        // לוגיקה חכמה לבחירת התאריך הקובע
+        // סינון משתמשים שעזבו
+        if (!member) {
+            processedData.debug.left++;
+            continue; 
+        }
+
+        // סינון בוטים (זה כנראה הפער של ה-10 שראית)
+        if (member.user.bot) {
+            processedData.debug.bots++;
+            // console.log(`🤖 [Dashboard] בוט זוהה וסונן: ${member.displayName}`);
+            continue;
+        }
+
+        // --- מכאן זה משתמש אמיתי וקיים ---
+        processedData.debug.processed++;
+        processedData.stats.total++;
+
+        // שליפת תאריך אחרון לחישוב
+        // סדר עדיפויות: מתי נראה לאחרונה > מתי הגיב לאחרונה > מתי הצטרף
         const lastActiveISO = data.meta?.lastActive || data.tracking?.lastActivity || data.tracking?.joinedAt;
         const statusStage = data.tracking?.statusStage || 'active';
         
@@ -50,9 +63,7 @@ async function fetchAndProcessInactivityData(interactionOrGuild) {
             daysInactive = Math.floor((now - lastActiveTime) / (1000 * 60 * 60 * 24));
         }
 
-        processedData.stats.total++;
-        
-        // סיווג לקטגוריות
+        // לוגיקת סיווג
         if (statusStage === 'failed_dm') {
             processedData.stats.failedDM++;
             processedData.lists.failedDM.push(`<@${userId}>`);
@@ -78,23 +89,24 @@ async function fetchAndProcessInactivityData(interactionOrGuild) {
             processedData.lists.replied.push(`<@${userId}>`);
         }
     }
+
+    console.log(`✅ [Dashboard] עיבוד הושלם ב-${Date.now() - start}ms.`);
+    console.log(`📊 סיכום: סה"כ ב-DB: ${allUsersSnapshot.size} | בוטים: ${processedData.debug.bots} | עזבו: ${processedData.debug.left} | משתמשים אמיתיים: ${processedData.debug.processed}`);
+
     return processedData;
 }
 
-// --- פונקציות תצוגה משודרגות ---
+// --- פונקציות תצוגה ---
 
-/**
- * בונה את ה-Embed הראשי עם הגרף (Dashboard)
- */
 function buildMainPanelEmbed(statsData) {
-    // יצירת הגרף דרך המנוע החדש
     const chartUrl = generateStatusPieChart(statsData.stats);
 
     return new EmbedBuilder()
         .setTitle('📊 Shimon Analytics Dashboard')
         .setDescription(`
         **מצב הקהילה בזמן אמת:**
-        מציג פילוח של ${statsData.stats.total} משתמשים המחוברים לשרת.
+        מציג פילוח של **${statsData.stats.total}** משתמשים (בני אנוש בלבד).
+        *(סוננו ${statsData.debug.bots} בוטים ו-${statsData.debug.left} משתמשים שעזבו)*
         `)
         .addFields(
             { name: '🟢 פעילים', value: `${statsData.stats.active}`, inline: true },
@@ -104,9 +116,9 @@ function buildMainPanelEmbed(statsData) {
             { name: '⚫ חסומים (DM)', value: `${statsData.stats.failedDM}`, inline: true },
             { name: '✨ הגיבו לאזהרה', value: `${statsData.stats.repliedDM}`, inline: true }
         )
-        .setColor('#2b2d31') // צבע כהה מודרני
-        .setImage(chartUrl) // ✅ הגרף מוטמע כאן
-        .setFooter({ text: 'נתונים בזמן אמת • Shimon 2026', iconURL: 'https://cdn-icons-png.flaticon.com/512/1055/1055644.png' })
+        .setColor('#2b2d31')
+        .setImage(chartUrl)
+        .setFooter({ text: `Shimon 2026 • Live Data • Processed in ${Date.now() % 1000}ms` })
         .setTimestamp();
 }
 
@@ -122,7 +134,6 @@ function buildMainPanelComponents() {
             new StringSelectMenuOptionBuilder().setLabel('נכשלו בשליחה (DM)').setValue('failed_dm').setEmoji('❌')
         );
 
-    // כפתור הרחקה מסוכן - מופרד בשורה משלו
     const kickButton = new ButtonBuilder()
         .setCustomId('kick_inactive_users')
         .setLabel('ניקוי משתמשים (Kick Auto)')
@@ -164,11 +175,13 @@ module.exports = {
             return interaction.reply({ content: '⛔ גישה למנהלים בלבד.', flags: MessageFlags.Ephemeral });
         }
 
-        // שימוש ב-deferUpdate כי אנחנו משנים הודעה קיימת (חלק יותר בעין)
+        // שימוש ב-deferUpdate מיידי כדי למנוע הודעת "Interaction failed" במקרה של איטיות
         await interaction.deferUpdate(); 
 
         try {
             const selectedValue = interaction.values[0];
+            
+            // שליפת נתונים מחדש
             const data = await fetchAndProcessInactivityData(interaction);
             let embed;
 

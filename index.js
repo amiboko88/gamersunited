@@ -1,61 +1,62 @@
 // 📁 index.js
 require('dotenv').config();
-const fs = require('fs');
-const path = require('path');
 const { Client, GatewayIntentBits, Collection, Partials } = require('discord.js');
 const express = require('express'); 
 
 // --- מודולים פנימיים ---
-const { connectToWhatsApp } = require('./whatsapp/index');
-const telegramBot = require('./telegram/shimonTelegram'); // הבוט של טלגרם
+const telegramBot = require('./telegram/shimonTelegram');
 const { registerDiscordEvents } = require('./handlers/discordEvents');
 const { handleInteractions } = require('./handlers/interactionHandler');
 const botLifecycle = require('./handlers/botLifecycle');
-const welcomeImage = require('./handlers/welcomeImage'); // קובץ זה רושם לעצמו את ה-Listener
+const welcomeImage = require('./handlers/welcomeImage');
+
+// --- 🛡️ טיפול בשגיאות קריטיות (מונע קריסה שקטה) ---
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ [CRITICAL] Unhandled Rejection:', reason);
+    // לא עוצרים את הבוט, רק מתעדים
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('❌ [CRITICAL] Uncaught Exception:', error);
+    // במקרה חמור אולי נרצה לעשות restart, אבל כרגע נשאיר אותו חי
+});
 
 // --- Server Setup (Railway / Telegram Webhook) ---
 const app = express();
 const PORT = process.env.PORT || 8080;
 app.use(express.json());
 
-// נתיב בריאות
 app.get('/', (req, res) => res.send('Shimon Bot is Alive & Kicking 🤖'));
 
-// חיבור Webhook לטלגרם (במקום ש-shimonTelegram ירים שרת משלו)
 if (process.env.RAILWAY_STATIC_URL) {
     const { webhookCallback } = require("grammy");
     app.use("/telegram", webhookCallback(telegramBot.bot, "express")); 
-    // הערה: וודא ש-shimonTelegram מייצא את bot בשם .bot או שתשנה שם בהתאם
-    console.log('🔗 Telegram Webhook Mounted on /telegram');
+    console.log(`🔗 Telegram Webhook set to: ${process.env.RAILWAY_STATIC_URL}/telegram`);
 }
-
-app.listen(PORT, () => console.log(`🚀 Server listening on port ${PORT}`));
 
 // --- Discord Client Setup ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildPresences,
         GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildPresences,
         GatewayIntentBits.DirectMessages
     ],
     partials: [Partials.Channel, Partials.Message, Partials.User, Partials.GuildMember]
 });
 
-// משתנה גלובלי (עבור logger וקבצי utils)
+// משתנה גלובלי לשימוש בלוגרים
 global.client = client;
 
 client.commands = new Collection();
-
-// --- טעינת פקודות (Commands) ---
-const commandsPath = path.join(__dirname, 'commands');
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+const commandsPath = require('path').join(__dirname, 'commands');
+const commandFiles = require('fs').readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
 for (const file of commandFiles) {
-    const filePath = path.join(commandsPath, file);
+    const filePath = require('path').join(commandsPath, file);
     const command = require(filePath);
     if ('data' in command && 'execute' in command) {
         client.commands.set(command.data.name, command);
@@ -65,12 +66,11 @@ for (const file of commandFiles) {
 }
 
 // --- הרשמת אירועים ---
-registerDiscordEvents(client); // אירועי צ'אט, כניסה, קול
-welcomeImage(client);          // תמונת ברוך הבא
+registerDiscordEvents(client);
+welcomeImage(client);
 
-// --- ניהול אינטראקציות (הפניה לנתב הראשי) ---
+// --- ניהול אינטראקציות ---
 client.on('interactionCreate', async interaction => {
-    // 1. פקודות סלאש
     if (interaction.isChatInputCommand()) {
         const command = interaction.client.commands.get(interaction.commandName);
         if (!command) return;
@@ -78,30 +78,32 @@ client.on('interactionCreate', async interaction => {
             await command.execute(interaction);
         } catch (error) {
             console.error(error);
-            const reply = { content: '❌ אירעה שגיאה בביצוע הפקודה!', ephemeral: true };
+            const reply = { content: '❌ אירעה שגיאה בביצוע הפקודה!', flags: 64 }; // Ephemeral
             if (interaction.replied || interaction.deferred) await interaction.followUp(reply);
             else await interaction.reply(reply);
         }
         return;
     }
-
-    // 2. כל השאר (כפתורים, מודאלים, תפריטים) -> לנתב
     await handleInteractions(interaction, client);
 });
 
 // --- הפעלת הבוט ---
 (async () => {
     try {
-        // 1. התחברות ל-Discord
-        await client.login(process.env.TOKEN);
+        await client.login(process.env.DISCORD_TOKEN);
         
-        // 2. הפעלת מחזור חיים (Cron jobs וכו')
-        await botLifecycle.init(client);
+        // אתחול מחזור החיים (Crons) רק אחרי שהבוט מחובר
+        client.once('ready', () => {
+            console.log(`✅ Discord Bot Logged in as ${client.user.tag}`);
+            botLifecycle.init(client);
+        });
 
-        // 3. התחברות לוואטסאפ (במקביל)
-        connectToWhatsApp();
+        // הפעלת שרת Express
+        app.listen(PORT, () => {
+            console.log(`🚀 Server listening on port ${PORT}`);
+        });
 
     } catch (error) {
-        console.error('❌ CRITICAL STARTUP ERROR:', error);
+        console.error('Fatal Error during startup:', error);
     }
 })();

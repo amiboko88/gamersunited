@@ -1,7 +1,7 @@
-// 📁 commands/tts.js
+
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const mediaStats = require('../handlers/media/stats'); // ✅ החיבור החדש
-const { log } = require('../utils/logger');
+const mediaStats = require('../../handlers/media/stats'); // ✅ החיבור החדש
+const { log } = require('../../utils/logger');
 
 module.exports = {
     data: new SlashCommandBuilder()

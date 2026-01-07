@@ -2,7 +2,7 @@
 const { OpenAI } = require('openai');
 const admin = require('firebase-admin');
 const { getUserRef } = require('../../utils/userUtils');
-const { sendStaffLog } = require('../../utils/staffLogger');
+const { sendStaffLog } = require('../../utils/logger'); // ✅ הכתובת החדשה והמאוחדת
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 

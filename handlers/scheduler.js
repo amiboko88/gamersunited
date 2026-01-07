@@ -2,8 +2,7 @@
 const { sendToMainGroup } = require('../whatsapp/index');
 const path = require('path');
 const { createCanvas, loadImage } = require('canvas');
-
-// ... בתוך initScheduler ...
+const cron = require('node-cron'); // ✅ חובה כדי שהתזמונים יעבדו
 
 // 📢 FOMO Engine: בדיקה כל 5 דקות האם יש אקשן בדיסקורד
 let lastAlertTime = 0;

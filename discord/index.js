@@ -3,7 +3,10 @@ const { Client, GatewayIntentBits, Collection, Partials } = require('discord.js'
 const fs = require('fs');
 const path = require('path');
 const { log } = require('../utils/logger');
-const scheduler = require('../handlers/scheduler'); // הטעינה החדשה
+
+// ✅ ייבוא המערכות הקריטיות להפעלה
+const scheduler = require('../handlers/scheduler');
+const birthdayManager = require('../handlers/birthday/manager');
 
 const client = new Client({
     intents: [
@@ -19,13 +22,17 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// 1. טעינת פקודות
+// 1. טעינת פקודות (Commands)
 const commandsPath = path.join(__dirname, 'commands');
 if (fs.existsSync(commandsPath)) {
     const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
     for (const file of commandFiles) {
         const command = require(path.join(commandsPath, file));
-        client.commands.set(command.data.name, command);
+        if (command.data && command.data.name) {
+            client.commands.set(command.data.name, command);
+        } else {
+            console.warn(`[WARNING] The command at ${file} is missing a required "data" or "data.name" property.`);
+        }
     }
 }
 
@@ -43,10 +50,17 @@ if (fs.existsSync(eventsPath)) {
     }
 }
 
-// 3. אירוע עלייה לאוויר (מוגדר כאן או בנפרד)
+// 3. אירוע עלייה לאוויר (Ready)
 client.once('ready', () => {
     log(`🤖 [Discord] Logged in as ${client.user.tag}`);
-    scheduler.initScheduler(client); // הפעלת השעונים
+
+    // ✅ אתחול מערכת ימי הולדת (Discord Client)
+    // הערה: את הוואטסאפ והטלגרם נחבר אליו דרך ה-Manager הראשי, אבל חשוב שהוא יכיר את דיסקורד כבר עכשיו
+    birthdayManager.init(client, null, null, null);
+
+    // ✅ אתחול המתזמן הראשי (הלב של המערכת)
+    // זה מפעיל את ה-Cron Jobs, ה-Status Rotator, ואת הניקיונות
+    scheduler.initScheduler(client);
 });
 
 // כניסה

@@ -47,13 +47,6 @@ module.exports = {
                 }
             }
 
-            // 3. טיפול בטפסים (Modals)
-            if (interaction.isModalSubmit()) {
-                if (interaction.customId === 'dm_fallback_modal') {
-                    await dmFallbackModal.execute(interaction);
-                }
-            }
-
         } catch (error) {
             log(`❌ Interaction Error: ${error.message}`);
             if (interaction.isRepliable() && !interaction.replied) {

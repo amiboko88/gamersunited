@@ -1,7 +1,7 @@
 // 📁 discord/interactions/buttons/music_controls.js
 // ⚠️ וודא שהקובץ הזה קיים! אם לא, הכפתורים יכשלו.
 // תיקנתי לנתיב ../../../ למקרה שהוא בתיקייה הראשית.
-const handleMusicControls = require('../../../handlers/musicControls'); 
+const handleMusicControls = require('../../../handlers/music/controller');
 
 const musicControlIds = ['pause', 'resume', 'stop'];
 

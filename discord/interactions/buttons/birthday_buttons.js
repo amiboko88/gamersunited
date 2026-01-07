@@ -1,22 +1,29 @@
-// 📁 interactions/buttons/birthday_buttons.js
-const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+// 📁 discord/interactions/modals/birthday_modal.js
+// ✅ תיקון נתיב: יציאה משולשת (../../../) כדי להגיע לתיקייה הראשית
+const birthdayManager = require('../../../handlers/birthday/manager');
+const { MessageFlags } = require('discord.js');
 
 module.exports = {
-    customId: (interaction) => interaction.customId === 'open_birthday_modal',
-    
+    customId: 'submit_birthday',
+
     async execute(interaction) {
-        // פשוט פותח מודאל. אין כאן לוגיקה עסקית.
-        const modal = new ModalBuilder()
-            .setCustomId('submit_birthday')
-            .setTitle('📅 מתי נולדת?');
+        const input = interaction.fields.getTextInputValue('bday_date');
+        // תמיכה בפורמטים שונים (נקודה או סלאש)
+        const [day, month, year] = input.split(/[\.\/]/).map(s => parseInt(s.trim()));
 
-        const dateInput = new TextInputBuilder()
-            .setCustomId('bday_date')
-            .setLabel('תאריך (לדוגמה: 24.10.1995)')
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true);
+        if (!day || !month || !year || isNaN(day) || isNaN(month) || isNaN(year)) {
+            return interaction.reply({ content: '❌ תאריך לא תקין. נסה פורמט: 24.10.1990', flags: MessageFlags.Ephemeral });
+        }
 
-        modal.addComponents(new ActionRowBuilder().addComponents(dateInput));
-        await interaction.showModal(modal);
+        try {
+            const { age } = await birthdayManager.registerUser(interaction.user.id, 'discord', day, month, year);
+            
+            await interaction.reply({ 
+                content: `✅ נרשם בהצלחה! (גיל: ${age})\nנחגוג לך בתאריך ${day}/${month}.`, 
+                flags: MessageFlags.Ephemeral 
+            });
+        } catch (error) {
+            await interaction.reply({ content: `❌ שגיאה: ${error.message}`, flags: MessageFlags.Ephemeral });
+        }
     }
 };

@@ -1,7 +1,8 @@
-// 📁 interactions/buttons/activity.js
-const dashboardHandler = require('../../handlers/users/dashboard');
-const activityMonitor = require('../../handlers/users/activity');
-const userManager = require('../../handlers/users/manager');
+// 📁 discord/interactions/buttons/activity.js
+// ✅ תיקון נתיבים: יציאה משולשת (../../../)
+const dashboardHandler = require('../../../handlers/users/dashboard');
+const activityMonitor = require('../../../handlers/users/activity');
+const userManager = require('../../../handlers/users/manager');
 const { MessageFlags } = require('discord.js');
 
 module.exports = {

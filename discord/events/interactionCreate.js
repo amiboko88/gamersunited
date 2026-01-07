@@ -6,7 +6,6 @@ const { log } = require('../../utils/logger');
 const musicController = require('../../handlers/music/controller');
 const verifyButton = require('../../handlers/users/verification'); 
 const fifoButtons = require('../interactions/fifoButtons'); 
-const dmFallbackModal = require('../interactions/modals/dmFallback'); 
 
 module.exports = {
     name: 'interactionCreate',

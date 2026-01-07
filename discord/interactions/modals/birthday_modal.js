@@ -1,5 +1,5 @@
 // 📁 interactions/modals/birthday_modal.js
-const birthdayManager = require('../../handlers/birthday/manager');
+const birthdayManager = require('../../../handlers/birthday/manager');
 const { MessageFlags } = require('discord.js');
 
 module.exports = {

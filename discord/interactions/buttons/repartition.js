@@ -1,13 +1,12 @@
-// 📁 interactions/buttons/repartition.js
+// 📁 discord/interactions/buttons/repartition.js
 const { EmbedBuilder, MessageFlags } = require('discord.js');
-const { createGroupsAndChannels, cleanupFifo } = require('../../utils/squadBuilder');
-const { startGroupTracking } = require('../../handlers/groupTracker');
-const { resetReplayVotes } = require('../../utils/replayManager');
-const { log } = require('../../utils/logger');
+// ✅ שימוש במנועים החדשים במקום הקבצים שנמחקו
+const fifoEngine = require('../../../handlers/fifo/engine');
+const fifoManager = require('../../../handlers/fifo/manager'); 
+const { log } = require('../../../utils/logger');
 
-const FIFO_CHANNEL_ID = '1231453923387379783'; 
-const FIFO_CATEGORY_ID = process.env.FIFO_CATEGORY_ID;
-const DEFAULT_GROUP_SIZE = 4; // ברירת מחדל לחלוקה מחדש
+const FIFO_CHANNEL_ID = '1231453923387379783'; // וודא שזה ה-ID הנכון
+const DEFAULT_GROUP_SIZE = 4; 
 
 module.exports = {
   customId: 'repartition_now',
@@ -27,44 +26,37 @@ module.exports = {
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
-    // ניקוי קבוצות קיימות לפני יצירת חדשות
-    await cleanupFifo(interaction, voiceChannel);
+    // 1. איפוס וניקוי (מחזיר את כולם ללובי ומוחק חדרים)
+    // אנחנו מדמים "איפוס" כדי לנקות את הלוח
+    if (fifoManager.activeSessions.has(interaction.guild.id)) {
+        await fifoManager.resetSession(interaction.guild, fifoManager.activeSessions.get(interaction.guild.id));
+    }
 
-    const { squads, waiting, channels } = await createGroupsAndChannels({
-      interaction,
-      members: [...members.values()],
-      groupSize: DEFAULT_GROUP_SIZE,
-      categoryId: FIFO_CATEGORY_ID,
-    });
+    // 2. יצירת קבוצות חדשות (לוגיקה ו-AI)
+    const rawSquads = await fifoEngine.createSquads([...members.values()], DEFAULT_GROUP_SIZE);
+    const enrichedSquads = await fifoEngine.generateMatchMetadata(interaction.guild.id, rawSquads);
 
+    // 3. יצירת ערוצים והעברה פיזית
+    // אנו משתמשים ב-setupChannels הקיים ב-Manager
+    const createdChannels = await fifoManager.setupChannels(interaction, enrichedSquads, voiceChannel.parentId, voiceChannel.id);
+
+    // 4. דוח סיכום
     const summaryEmbed = new EmbedBuilder()
       .setTitle('📢 בוצעה חלוקה מחדש!')
+      .setDescription(`נוצרו ${enrichedSquads.length} קבוצות חדשות.`)
       .setColor(0x00ff88)
       .setTimestamp();
 
-    squads.forEach((squad, i) => {
-      const name = `TEAM ${String.fromCharCode(65 + i)}`;
+    enrichedSquads.forEach((squad, i) => {
       summaryEmbed.addFields({
-        name: `\u200F${name} (${squad.length} שחקנים)`,
-        value: squad.map(m => `<@${m.id}>`).join(', '),
+        name: `🛡️ ${squad.name}`,
+        value: squad.members.map(m => `<@${m.id}>`).join(', '),
         inline: true
       });
-
-      const ch = channels[i];
-      if (ch) startGroupTracking(ch, squad.map(m => m.id), name);
     });
-
-    if (waiting.length > 0) {
-      summaryEmbed.addFields({
-        name: '⏳ ממתינים',
-        value: waiting.map(m => `<@${m.id}>`).join(', '),
-        inline: true
-      });
-    }
     
     // שליחת הסיכום לערוץ שבו הכפתור נלחץ
     await interaction.channel.send({ embeds: [summaryEmbed] });
-    await interaction.editReply({ content: '✅ החלוקה מחדש בוצעה!' });
-    resetReplayVotes();
+    await interaction.editReply({ content: '✅ החלוקה מחדש בוצעה בהצלחה!' });
   }
 };

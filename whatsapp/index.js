@@ -1,19 +1,17 @@
 // 📁 whatsapp/index.js
 const makeWASocket = require('@whiskeysockets/baileys').default;
-// ✅ ניקיתי מכאן את useMultiFileAuthState
 const { DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
-const coreLogic = require('./logic/core');
 const { useFirestoreAuthState } = require('./auth'); 
+const coreLogic = require('./logic/core'); // הלוגיקה החדשה
 
-// Cache לניסיונות שליחה חוזרים (מונע קריסות על הודעות תקועות)
-const msgRetryCounterCache = new Map();
-
+// משתנים גלובליים
 let sock;
+const msgRetryCounterCache = new Map();
+const MAIN_GROUP_ID = process.env.WHATSAPP_MAIN_GROUP_ID; // וודא שזה קיים ב-.env
 
 async function connectToWhatsApp() {
     try {
-        // טעינת גרסה ואימות
         const { version } = await fetchLatestBaileysVersion();
         const { state, saveCreds } = await useFirestoreAuthState();
 
@@ -21,58 +19,46 @@ async function connectToWhatsApp() {
 
         sock = makeWASocket({
             version,
-            logger: pino({ level: 'silent' }), // לוגים שקטים
-            // 🗑️ השורה printQRInTerminal נמחקה מכאן כדי למנוע את האזהרה הצהובה
+            logger: pino({ level: 'silent' }),
             auth: state,
-            msgRetryCounterCache, // ✅ קריטי ליציבות
+            msgRetryCounterCache,
             connectTimeoutMs: 60000,
             keepAliveIntervalMs: 10000,
             emitOwnEvents: false,
             browser: ["Shimon Bot", "Chrome", "1.0.0"],
-            syncFullHistory: false // חוסך זיכרון
+            syncFullHistory: false
         });
 
-        // ניהול אירועי חיבור
         sock.ev.on('connection.update', (update) => {
             const { connection, lastDisconnect, qr } = update;
 
-            if (qr) {
-                console.log('⚠️ [WhatsApp] סרוק את ה-QR בטרמינל כדי להתחבר.');
-            }
+            if (qr) console.log('⚠️ [WhatsApp] סרוק QR בטרמינל.');
 
             if (connection === 'close') {
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
-                // ניתוק יזום (Logged Out) לא יגרום לחיבור מחדש אוטומטי
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+                console.log(`❌ [WhatsApp] נותק (${statusCode}). מתחבר מחדש: ${shouldReconnect}`);
                 
-                console.log(`❌ [WhatsApp] נותק. קוד שגיאה: ${statusCode || 'N/A'}. מתחבר מחדש: ${shouldReconnect}`);
-
-                if (shouldReconnect) {
-                    // המתנה קלה לפני חיבור מחדש למניעת לופ מהיר
-                    setTimeout(connectToWhatsApp, 3000); 
-                }
+                if (shouldReconnect) setTimeout(connectToWhatsApp, 3000);
             } else if (connection === 'open') {
-                console.log('✅ [WhatsApp] מחובר בהצלחה!');
+                console.log('✅ [WhatsApp] מחובר ומוכן!');
             }
         });
 
-        // שמירת אימות (חובה)
         sock.ev.on('creds.update', saveCreds);
 
-        // טיפול בהודעות נכנסות
         sock.ev.on('messages.upsert', async (m) => {
             try {
                 const msg = m.messages[0];
                 if (!msg.message || msg.key.fromMe) return;
-                // התעלמות מעדכוני סטטוס
                 if (msg.key.remoteJid === 'status@broadcast') return;
 
-                // חילוץ טקסט
+                // חילוץ טקסט נקי
                 const text = msg.message.conversation || 
                              msg.message.extendedTextMessage?.text || 
                              msg.message.imageMessage?.caption || "";
                 
-                // העברה ללוגיקה המרכזית
+                // העברה למוח החדש
                 await coreLogic.handleMessageLogic(sock, msg, text);
 
             } catch (err) {
@@ -82,44 +68,32 @@ async function connectToWhatsApp() {
 
     } catch (error) {
         console.error('❌ [WhatsApp Fatal Error]:', error);
-        setTimeout(connectToWhatsApp, 5000); // נסיון התאוששות מאסון
+        setTimeout(connectToWhatsApp, 5000);
     }
 }
 
 /**
- * פונקציה חיצונית לשליחת הודעות לקבוצה הראשית
- * (משמשת את ה-MVP ואת ה-Leaderboard)
+ * ✅ הפונקציה שמאפשרת למערכת המשתמשים ולמערכת ימי ההולדת לשלוח הודעות לקבוצה
  */
 async function sendToMainGroup(text, mentions = [], imageBuffer = null) {
-    const MAIN_GROUP_ID = process.env.WHATSAPP_MAIN_GROUP_ID; 
-    
-    if (!sock) {
-        console.warn('⚠️ [WhatsApp] Socket not initialized. Cannot send message.');
-        return;
-    }
-    if (!MAIN_GROUP_ID) {
-        console.warn('⚠️ [WhatsApp] MAIN_GROUP_ID is missing in .env');
+    if (!sock || !MAIN_GROUP_ID) {
+        console.warn('⚠️ [WhatsApp] לא ניתן לשלוח הודעה (Socket מנותק או אין ID קבוצה).');
         return;
     }
 
     try {
-        const payload = { 
-            text: text, 
-            mentions: mentions 
-        };
-
-        // אם יש תמונה, נשלח אותה עם כיתוב
         if (imageBuffer) {
             await sock.sendMessage(MAIN_GROUP_ID, { 
-                image: imageBuffer, // יכול להיות Buffer או נתיב לקובץ
+                image: imageBuffer, 
                 caption: text,
                 mentions: mentions
             });
         } else {
-            // טקסט רגיל
-            await sock.sendMessage(MAIN_GROUP_ID, payload);
+            await sock.sendMessage(MAIN_GROUP_ID, { 
+                text: text, 
+                mentions: mentions 
+            });
         }
-        
     } catch (err) {
         console.error('❌ [WhatsApp Send Error]:', err.message);
     }

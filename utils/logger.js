@@ -1,51 +1,56 @@
-const { WebhookClient, EmbedBuilder, MessageFlags } = require('discord.js');
+// 📁 utils/logger.js
+const { WebhookClient, EmbedBuilder } = require('discord.js');
 
-const webhookUrl = process.env.LOG_WEBHOOK_URL;
-const webhook = webhookUrl ? new WebhookClient({ url: webhookUrl }) : null;
+// הגדרות
+const WEBHOOK_URL = process.env.LOG_WEBHOOK_URL;
+const STAFF_CHANNEL_ID = '881445829100060723'; // ערוץ הצוות
 
-function log(message) {
-  console.log(message);
-  if (webhook) {
-    webhook.send({ content: `📢 ${message}` }).catch(() => {});
-  }
-}
-function logToWebhook({ title, description, color = 0x5865f2 }) {
-  if (!webhook) return;
+const webhookClient = WEBHOOK_URL ? new WebhookClient({ url: WEBHOOK_URL }) : null;
 
-  const embed = new EmbedBuilder()
-    .setTitle(title)
-    .setDescription(description)
-    .setColor(color)
-    .setTimestamp()
-    .setFooter({ text: 'שימי הבוט – מערכת תיעוד חכמה' });
+const Logger = {
+    // 1. לוג רגיל (קונסול + וובהוק)
+    info: (message) => {
+        console.log(`ℹ️ ${message}`);
+        if (webhookClient) webhookClient.send(`ℹ️ ${message}`).catch(() => {});
+    },
 
-  webhook.send({ embeds: [embed] }).catch(() => {});
-}
-function logRoleChange({ member, action, roleName, gameName }) {
-  if (!webhook) return;
+    error: (message, error) => {
+        console.error(`❌ ${message}`, error);
+        if (webhookClient) webhookClient.send(`❌ **ERROR:** ${message}\n\`${error?.message || error}\``).catch(() => {});
+    },
 
-  const fields = [
-    { name: 'תפקיד', value: roleName, inline: true }
-  ];
+    // 2. לוג לצוות (מחליף את staffLogger)
+    staff: async (client, title, description, color = 'Blue', fields = []) => {
+        if (!client || !STAFF_CHANNEL_ID) return;
+        
+        try {
+            const channel = await client.channels.fetch(STAFF_CHANNEL_ID).catch(() => null);
+            if (!channel) return;
 
-  if (gameName) {
-    fields.push({ name: 'משחק', value: gameName, inline: true });
-  }
+            const embed = new EmbedBuilder()
+                .setTitle(title)
+                .setDescription(description)
+                .setColor(color)
+                .addFields(fields.slice(0, 25)) // מגבלת דיסקורד
+                .setTimestamp()
+                .setFooter({ text: 'Shimon AI Security' });
 
-  const embed = new EmbedBuilder()
-    .setTitle(action === 'add' ? '✅ תפקיד נוסף' : '❌ תפקיד הוסר')
-    .setColor(action === 'add' ? 0x57F287 : 0xED4245)
-    .setDescription(`**${member.user.tag}** (${member.id})`)
-    .addFields(fields)
-    .setThumbnail(member.user.displayAvatarURL())
-    .setTimestamp()
-    .setFooter({ text: 'שימי הבוט – מערכת תיעוד חכמה' });
+            await channel.send({ embeds: [embed] });
+        } catch (e) {
+            console.error('Failed to send staff log:', e);
+        }
+    },
 
-  webhook.send({ embeds: [embed] }).catch(() => {});
-}
-
-module.exports = {
-  log,
-  logRoleChange,
-  logToWebhook 
+    // 3. לוג שינוי רולים (לנוכחות)
+    roleChange: ({ member, action, roleName, gameName }) => {
+        if (!webhookClient) return;
+        const embed = new EmbedBuilder()
+            .setTitle(action === 'add' ? '✅ תפקיד נוסף' : '❌ תפקיד הוסר')
+            .setColor(action === 'add' ? 'Green' : 'Red')
+            .setDescription(`**משתמש:** ${member.user.tag}\n**תפקיד:** ${roleName}` + (gameName ? `\n**משחק:** ${gameName}` : ''))
+            .setTimestamp();
+        webhookClient.send({ embeds: [embed] }).catch(() => {});
+    }
 };
+
+module.exports = { log: Logger.info, error: Logger.error, sendStaffLog: Logger.staff, logRoleChange: Logger.roleChange };

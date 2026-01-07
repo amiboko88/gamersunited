@@ -1,7 +1,6 @@
-
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const mediaStats = require('../../handlers/media/stats'); // ✅ החיבור החדש
-const { log } = require('../../utils/logger');
+const mediaStats = require('../../handlers/media/stats'); // ✅ נתיב מתוקן
+const { log } = require('../../utils/logger'); // ✅ נתיב מתוקן
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -34,14 +33,13 @@ module.exports = {
                 .join('\n') || 'אין נתונים';
 
             const embed = new EmbedBuilder()
-                .setColor('#4285F4') // Google Blue / ElevenLabs Style
+                .setColor('#4285F4')
                 .setTitle('📊 דוח שימוש: מנוע TTS')
-                .setThumbnail('https://i.imgur.com/P4Un12C.png')
                 .addFields(
                     { name: '📈 סה"כ (כל הזמנים)', value: `\`${stats.totalCharsAllTime.toLocaleString()}\` תווים`, inline: false },
                     { name: '📅 חודשי', value: `\`${stats.totalCharsMonth.toLocaleString()}\` תווים`, inline: true },
                     { name: '☀️ יומי', value: `\`${stats.totalCharsToday.toLocaleString()}\` תווים`, inline: true },
-                    { name: '\u200B', value: '\u200B' }, // מרווח
+                    { name: '\u200B', value: '\u200B' },
                     { name: '🏆 המשתמשים הכבדים', value: topUsers, inline: false },
                     { name: '🎤 קולות פופולריים', value: topProfiles, inline: false }
                 )

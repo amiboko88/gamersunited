@@ -1,111 +1,140 @@
 // 📁 handlers/ai/learning.js
 const { OpenAI } = require('openai');
-const admin = require('firebase-admin');
-const { getUserRef } = require('../../utils/userUtils');
+const db = require('../../utils/firebase');
 const { log } = require('../../utils/logger');
 
+// אתחול OpenAI (משתמש במפתח מהסביבה)
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-class LearningEngine {
-    
-    /**
-     * הצופה השקט: מנתח הודעות ברקע ושומר עובדות
-     * @param {string} userId - מזהה המשתמש
-     * @param {string} userName - שם המשתמש
-     * @param {string} platform - הפלטפורמה (whatsapp/discord)
-     * @param {string} text - תוכן ההודעה
-     */
-    async learnFromContext(userId, userName, platform, text) {
-        // סינון ראשוני: הודעות קצרות מדי, ספאם, או פקודות בוט לא רלוונטיות ללמידה
-        if (!text || text.length < 15 || text.startsWith('/') || text.includes('חחח')) {
-            return;
-        }
-
-        try {
-            // 1. ניתוח באמצעות AI קטן ומהיר לחילוץ עובדות
-            const completion = await openai.chat.completions.create({
-                model: "gpt-4o-mini", // מודל מהיר וזול
-                messages: [
-                    { 
-                        role: "system", 
-                        content: `You are a fact extractor. 
-                        Task: Extract new facts about the user "${userName}" from the text.
-                        Rules:
-                        1. Ignore opinions, questions, or random chatter.
-                        2. Look for: Events, Purchases, location changes, personal status.
-                        3. Output format: The fact in Hebrew.
-                        4. If no fact found, return "FALSE".
-                        
-                        Example: "אני טס מחר ליוון" -> "טס ליוון מחר".
-                        Example: "איזה משחק גרוע" -> "FALSE".` 
-                    },
-                    { role: "user", content: text }
-                ],
-                max_tokens: 60,
-                temperature: 0 // דיוק מקסימלי
-            });
-
-            const fact = completion.choices[0]?.message?.content?.trim();
-
-            // 2. שמירה ב-DB (רק אם נמצאה עובדה אמיתית)
-            if (fact && fact !== "FALSE" && !fact.includes("FALSE")) {
-                const userRef = await getUserRef(userId, platform);
-                
-                // שימוש ב-arrayUnion כדי להוסיף לרשימה בלי למחוק קודמים
-                await userRef.update({
-                    'brain.facts': admin.firestore.FieldValue.arrayUnion({
-                        content: fact,
-                        date: new Date().toISOString(),
-                        source: 'chat_learning_v2',
-                        originalText: text // שומרים גם את ההקשר המקורי
-                    })
-                });
-                
-                log(`🧠 [Learning] למדתי עובדה חדשה על ${userName}: "${fact}"`);
-            }
-
-        } catch (error) {
-            // לוג שגיאה שקט כדי לא להציף את הקונסול
-            console.warn(`⚠️ [Learning] נכשל בניתוח הודעה מ-${userName}: ${error.message}`);
+class LearningSystem {
+    constructor() {
+        this.isReady = !!process.env.OPENAI_API_KEY;
+        if (!this.isReady) {
+            log('⚠️ [Learning] OpenAI API Key missing. Learning disabled.');
         }
     }
 
     /**
-     * שליפת הפרופיל המלא של המשתמש (עובדות + ירידות) לשימוש ב-Brain
+     * המוח הלומד: מקבל הודעה, מנתח אותה, ושומר עובדות אם צריך
+     * @param {string} userId - ה-ID של המשתמש
+     * @param {string} text - הטקסט שנכתב
+     * @param {string} platform - המקור (discord/whatsapp/telegram)
      */
-    async getUserProfile(userId, platform) {
+    async learn(userId, text, platform) {
+        if (!this.isReady) return;
+
+        // 1. סינון ראשוני: הודעות קצרות מדי, פקודות, או ספאם
+        if (!text || text.length < 8 || text.startsWith('/') || text.startsWith('!')) return;
+
         try {
-            const userRef = await getUserRef(userId, platform);
-            const doc = await userRef.get();
-            
+            // 2. בדיקה האם הטקסט מכיל מידע אישי בעל ערך (AI Analysis)
+            // אנחנו לא רוצים לשמור "מה קורה", אלא "אני גר בתל אביב"
+            const fact = await this.extractFact(text);
+
+            if (fact) {
+                await this.saveMemory(userId, fact, platform);
+            }
+
+        } catch (error) {
+            console.error(`❌ [Learning] Error processing user ${userId}:`, error.message);
+        }
+    }
+
+    /**
+     * שולח את הטקסט ל-OpenAI כדי להבין אם יש פה עובדה חדשה
+     * @returns {Promise<string|null>} העובדה שחולצה או null
+     */
+    async extractFact(text) {
+        try {
+            const response = await openai.chat.completions.create({
+                model: "gpt-4o-mini", // מודל מהיר וזול לניתוח
+                messages: [
+                    {
+                        role: "system",
+                        content: `You are a background memory processor.
+                        Analyze the user's message. If it contains a FACT about the user (name, location, hobby, profession, age, pet, favorite game, specific opinion), extract it as a short, concise sentence in Hebrew.
+                        If it's just chit-chat ("hi", "how are you", "lol"), return "FALSE".
+                        
+                        Example User: "קוראים לי יוסי ואני בן 22"
+                        Output: "המשתמש נקרא יוסי והוא בן 22"
+                        
+                        Example User: "איזה יום יפה היום"
+                        Output: "FALSE"`
+                    },
+                    { role: "user", content: text }
+                ],
+                temperature: 0,
+                max_tokens: 60
+            });
+
+            const result = response.choices[0].message.content.trim();
+            return result === "FALSE" ? null : result;
+
+        } catch (e) {
+            // במקרה של שגיאה ב-AI, מוותרים על הלמידה הספציפית הזו
+            return null;
+        }
+    }
+
+    /**
+     * שמירת העובדה ב-DB
+     */
+    async saveMemory(userId, fact, platform) {
+        const userRef = db.collection('users').doc(userId);
+        
+        // יצירת אובייקט הזיכרון
+        const memoryItem = {
+            content: fact,
+            originalText: fact, // במקרה הזה העובדה המעובדת
+            platform: platform,
+            timestamp: new Date().toISOString(),
+            confidence: 1.0
+        };
+
+        // אטומיק אפדייט: הוספה למערך ה-facts בתוך אובייקט brain
+        // או שמירה בקולקציית משנה (תלוי במבנה ה-DB שלך, כאן אני שומר למערך ב-doc הראשי לביצועים)
+        try {
+            await db.runTransaction(async (t) => {
+                const doc = await t.get(userRef);
+                const data = doc.data() || {};
+                const brain = data.brain || {};
+                const facts = brain.facts || [];
+
+                // בדיקה אם העובדה כבר קיימת (למנוע כפילויות)
+                const exists = facts.some(f => f.content === fact);
+                if (!exists) {
+                    facts.push(memoryItem);
+                    // שומרים רק את ה-20 האחרונים כדי לא להעמיס
+                    if (facts.length > 20) facts.shift();
+                    
+                    t.set(userRef, { brain: { ...brain, facts } }, { merge: true });
+                    log(`🧠 [Learning] נלמד מידע חדש על ${userId}: "${fact}"`);
+                }
+            });
+        } catch (e) {
+            console.error(`❌ [Learning] DB Save Error:`, e);
+        }
+    }
+
+    /**
+     * שליפת הקונטקסט עבור ה-Brain הראשי
+     */
+    async getContext(userId) {
+        try {
+            const doc = await db.collection('users').doc(userId).get();
             if (!doc.exists) return "";
 
             const data = doc.data();
-            let profileContext = "";
-
-            // 1. שליפת עובדות (Facts)
             const facts = data.brain?.facts || [];
-            if (facts.length > 0) {
-                // לוקחים את 5 העובדות האחרונות (הכי רלוונטיות)
-                // וממיינים לפי תאריך אם צריך, כאן אנחנו לוקחים את סוף המערך
-                const recentFacts = facts.slice(-5).map(f => `- ${f.content}`).join('\n');
-                profileContext += `\n# דברים שאני יודע עליו (מהעבר):\n${recentFacts}\n`;
-            }
+            
+            if (facts.length === 0) return "";
 
-            // 2. שליפת ירידות שמורות (Roasts) - לשימוש ב-TRASH_TALK
-            const roasts = data.brain?.roasts || [];
-            if (roasts.length > 0) {
-                const randomRoast = roasts[Math.floor(Math.random() * roasts.length)];
-                profileContext += `\n# חומר לירידות עליו (אם צריך): "${randomRoast}"\n`;
-            }
-
-            return profileContext;
-
-        } catch (error) {
-            console.error(`Error fetching user profile for ${userId}:`, error);
+            return facts.map(f => `- ${f.content}`).join('\n');
+        } catch (e) {
             return "";
         }
     }
 }
 
-module.exports = new LearningEngine();
+// ✅ ייצוא מופע (Instance) כדי לתקן את שגיאת "memory.learn is not a function"
+module.exports = new LearningSystem();

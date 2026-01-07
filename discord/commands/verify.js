@@ -1,6 +1,7 @@
-// 📁 commands/verify.js
+// 📁 discord/commands/verify.js
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const verificationHandler = require('../handlers/users/verification');
+// ✅ תיקון נתיב
+const verificationHandler = require('../../handlers/users/verification');
 
 module.exports = {
   data: new SlashCommandBuilder()

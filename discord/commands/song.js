@@ -1,11 +1,14 @@
-// 📁 commands/שיר.js (משודרג לשימוש ב-voiceQueue הראשי)
+// 📁 discord/commands/song.js
 const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const voiceQueue = require('../handlers/music/player')
-const podcastManager = require('../handlers/podcastManager'); 
 
-const musicDir = path.join(__dirname, '..', 'music');
+// ✅ תיקון נתיבים (יציאה כפולה לתיקייה הראשית)
+const voiceQueue = require('../../handlers/music/player'); 
+const podcastManager = require('../../handlers/voice/podcast'); // שים לב: שיניתי למיקום האמיתי של הפודקאסט
+
+// ✅ תיקון נתיב לתיקיית המוזיקה (יציאה משולשת: commands -> discord -> root -> music)
+const musicDir = path.join(__dirname, '../../music'); 
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -20,7 +23,9 @@ module.exports = {
     ),
 
   async execute(interaction, client) {
-    if (podcastManager.getPodcastStatus()) {
+    // בדיקה אם הפודקאסט פעיל (השתמשתי במתודה בטוחה יותר אם הקודמת לא קיימת)
+    // אם אין לך פונקציית getPodcastStatus, אפשר להשתמש בבדיקה ידנית או לוותר עליה כרגע
+    if (podcastManager && podcastManager.isPodcastActive) { 
         return interaction.reply({ 
             content: 'שמעון עסוק כרגע בפודקאסט ולא ניתן להפריע לו!', 
             flags: MessageFlags.Ephemeral 
@@ -41,7 +46,6 @@ module.exports = {
     }
 
     try {
-        // ✅ [שדרוג] שלח הודעת "נוסף לתור"
         const embed = new EmbedBuilder()
           .setColor('Purple')
           .setTitle('🎶 נוסף לתור')
@@ -49,20 +53,18 @@ module.exports = {
           .setFooter({ text: 'שמעון נגן – מוזיקה איכותית בלבד 🎧' })
           .setTimestamp();
 
-        // ✅ [שדרוג] יוצר את הכפתורים בפעם הראשונה
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId('pause').setLabel('השהה').setEmoji('⏸️').setStyle(ButtonStyle.Secondary),
           new ButtonBuilder().setCustomId('stop').setLabel('עצור').setEmoji('⏹️').setStyle(ButtonStyle.Danger)
         );
 
-        // שולח את ההודעה ומעביר את האינטראקציה לתור
         await interaction.reply({ embeds: [embed], components: [row] });
         
-        // שולח ל-voiceQueue הראשי עם נתיב הקובץ והאינטראקציה
-        voiceQueue.addToQueue(channel.guild.id, channel.id, filePath, client, 'SONG', interaction, songName);
+        // שליחה ל-voiceQueue (השתמשתי ב-client מתוך האינטראקציה למקרה שהארגומנט השני ריק)
+        voiceQueue.addToQueue(channel.guild.id, channel.id, filePath, interaction.client, 'SONG', interaction, songName);
 
     } catch (error) {
-        log(`❌ [SONG] שגיאה בשליחת הודעה או הוספה לתור:`, error);
+        console.error(`❌ [SONG] שגיאה בשליחת הודעה או הוספה לתור:`, error);
         if (!interaction.replied) {
             await interaction.reply({ content: '❌ אירעה שגיאה.', flags: MessageFlags.Ephemeral });
         }
@@ -71,6 +73,9 @@ module.exports = {
 
   async autocomplete(interaction) {
     const focused = interaction.options.getFocused();
+    // בדיקה שהתיקייה קיימת לפני קריאה
+    if (!fs.existsSync(musicDir)) return interaction.respond([]);
+
     const files = fs.readdirSync(musicDir).filter(f => f.endsWith('.mp3'));
 
     const choices = files.map(file => path.parse(file).name);

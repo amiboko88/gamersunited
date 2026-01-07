@@ -1,8 +1,9 @@
-// 📁 commands/fifo.js
+// 📁 discord/commands/fifo.js
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
-const fifoEngine = require('../handlers/fifo/engine');
-const fifoManager = require('../handlers/fifo/manager');
-const { log } = require('../utils/logger');
+// ✅ תיקון נתיבים (יציאה כפולה)
+const fifoEngine = require('../../handlers/fifo/engine');
+const fifoManager = require('../../handlers/fifo/manager');
+const { log } = require('../../utils/logger');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -32,7 +33,8 @@ module.exports = {
             const enrichedSquads = await fifoEngine.generateMatchMetadata(interaction.guild.id, rawSquads);
 
             // 2. יצירת ערוצים והעברה
-         const createdChannels = await fifoManager.setupChannels(interaction, enrichedSquads, voiceChannel.parentId, voiceChannel.id);
+            const createdChannels = await fifoManager.setupChannels(interaction, enrichedSquads, voiceChannel.parentId, voiceChannel.id);
+            
             // 3. דוח סיכום
             const summaryEmbed = new EmbedBuilder()
                 .setTitle('🏆 הקרב מתחיל!')

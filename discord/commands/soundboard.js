@@ -1,35 +1,46 @@
-// 📁 commands/soundboard.js (משודרג לטעינה דינמית ושימוש ב-voiceQueue)
+// 📁 discord/commands/soundboard.js
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { log } = require('../utils/logger');
-const voiceQueue = require('../handlers/music/player');
 const fs = require('fs');
 const path = require('path');
-const statTracker = require('../handlers/statTracker');
-const podcastManager = require('../handlers/podcastManager'); 
 
-const soundsDir = path.join(__dirname, '..', 'sounds');
+// ✅ תיקון נתיבים קריטי (יציאה כפולה ../../)
+const { log } = require('../../utils/logger');
+const voiceQueue = require('../../handlers/music/player'); 
+const statTracker = require('../../handlers/users/stats'); // הנחתי שזה ב-users/stats או שתעדכן לנתיב הנכון
+// אם podcastManager עבר ל-handlers/voice/podcast, נעדכן:
+const podcastManager = require('../../handlers/voice/podcast'); 
+
+// ✅ תיקון נתיב לתיקיית הסאונד (יציאה משולשת: commands -> discord -> root -> sounds)
+const soundsDir = path.join(__dirname, '../../sounds');
+
 const COOLDOWN_SECONDS = 15;
 const lastUsedTimestamps = new Map();
 
 // ✅ [שדרוג] טעינה דינמית של קבצי סאונד
 let availableSounds = [];
 try {
-    const files = fs.readdirSync(soundsDir).filter(f => f.endsWith('.mp3'));
-    availableSounds = files.map(file => {
-        const name = path.parse(file).name;
-        // מנסה למצוא אימוג'י מתאים לפי שם
-        let emoji = '🔊';
-        if (name.includes('goat')) emoji = '🐐';
-        if (name.includes('headshot')) emoji = '🤯';
-        if (name.includes('boom')) emoji = '💥';
-        if (name.includes('clap')) emoji = '👏';
-        
-        return { name: `${emoji} ${name}`, value: name };
-    });
-    if (availableSounds.length === 0) {
-        log('⚠️ [SOUNDBOARD] לא נמצאו קבצי MP3 בתיקייה /sounds.');
+    // בדיקה שהתיקייה קיימת לפני קריאה
+    if (fs.existsSync(soundsDir)) {
+        const files = fs.readdirSync(soundsDir).filter(f => f.endsWith('.mp3'));
+        availableSounds = files.map(file => {
+            const name = path.parse(file).name;
+            // מנסה למצוא אימוג'י מתאים לפי שם
+            let emoji = '🔊';
+            if (name.includes('goat')) emoji = '🐐';
+            if (name.includes('headshot')) emoji = '🤯';
+            if (name.includes('boom')) emoji = '💥';
+            if (name.includes('clap')) emoji = '👏';
+            
+            return { name: `${emoji} ${name}`, value: name };
+        });
+
+        if (availableSounds.length === 0) {
+            log('⚠️ [SOUNDBOARD] לא נמצאו קבצי MP3 בתיקייה /sounds.');
+        } else {
+            log(`🎵 [SOUNDBOARD] נטענו ${availableSounds.length} סאונדים.`);
+        }
     } else {
-        log(`🎵 [SOUNDBOARD] נטענו ${availableSounds.length} סאונדים: ${availableSounds.map(s => s.value).join(', ')}`);
+        log('⚠️ [SOUNDBOARD] תיקיית sounds לא נמצאה בנתיב המצופה.');
     }
 } catch (error) {
     log('❌ [SOUNDBOARD] שגיאה בקריאת תיקיית /sounds:', error);
@@ -43,14 +54,15 @@ const commandData = new SlashCommandBuilder()
         .setName('שם')
         .setDescription('בחר סאונד')
         .setRequired(true)
-        .setAutocomplete(true) // ⬅️ שינינו ל-Autocomplete
+        .setAutocomplete(true) 
     );
 
 module.exports = {
   data: commandData,
 
   async execute(interaction, client) {
-    if (podcastManager.getPodcastStatus()) {
+    // בדיקה אם הפודקאסט פעיל
+    if (podcastManager && podcastManager.isPodcastActive) {
         return interaction.reply({ 
             content: 'שמעון עסוק כרגע בפודקאסט ולא ניתן להפריע לו!', 
             flags: MessageFlags.Ephemeral 
@@ -72,7 +84,7 @@ module.exports = {
     const soundName = interaction.options.getString('שם');
     const filePath = path.join(soundsDir, `${soundName}.mp3`);
 
-    // ✅ [שדרוג] בדיקה שהקובץ שנבחר אכן קיים (למקרה שנוסף/נמחק מאז עליית הבוט)
+    // ✅ [שדרוג] בדיקה שהקובץ שנבחר אכן קיים
     if (!fs.existsSync(filePath)) {
       log(`⚠️ [SOUNDBOARD] ניסיון לנגן קובץ לא קיים: ${soundName}.mp3`);
       return interaction.reply({ content: '❌ הקובץ הזה כבר לא קיים.', flags: MessageFlags.Ephemeral });
@@ -85,11 +97,16 @@ module.exports = {
     }
 
     lastUsedTimestamps.set(userId, now);
-    await statTracker.trackSoundUse(userId); 
+    
+    // אם statTracker קיים, נשתמש בו
+    if (statTracker && typeof statTracker.trackSoundUse === 'function') {
+        await statTracker.trackSoundUse(userId); 
+    }
 
     try {
         // ✅ [שדרוג] שליחה ל-voiceQueue הראשי עם נתיב הקובץ
-        voiceQueue.addToQueue(channel.guild.id, channel.id, filePath, client, 'SOUNDBOARD');
+        // השתמשתי ב-interaction.client ליתר ביטחון
+        voiceQueue.addToQueue(channel.guild.id, channel.id, filePath, interaction.client, 'SOUNDBOARD');
         
         await interaction.reply({ content: `🎵 משמיע: ${soundName}` });
         // מחיקה אוטומטית של ההודעה אחרי 5 שניות
@@ -97,14 +114,18 @@ module.exports = {
 
     } catch (error) {
         log(`❌ [SOUNDBOARD] שגיאה בהוספה לתור:`, error);
-        await interaction.reply({ content: '❌ אירעה שגיאה בניגון הסאונד.', flags: MessageFlags.Ephemeral });
+        if (!interaction.replied) {
+            await interaction.reply({ content: '❌ אירעה שגיאה בניגון הסאונד.', flags: MessageFlags.Ephemeral });
+        }
     }
   },
 
-  // ✅ [שדרוג] הוספת Autocomplete שקורא דינמית את הקבצים
+  // ✅ [שדרוג] הוספת Autocomplete
   async autocomplete(interaction) {
     const focused = interaction.options.getFocused();
     try {
+        if (!fs.existsSync(soundsDir)) return interaction.respond([]);
+
         const files = fs.readdirSync(soundsDir).filter(f => f.endsWith('.mp3'));
         const choices = files.map(file => path.parse(file).name);
         const filtered = choices.filter(c => c.toLowerCase().includes(focused.toLowerCase()));

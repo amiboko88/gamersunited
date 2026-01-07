@@ -1,23 +1,28 @@
-// 📁 commands/leaderboard.js
+// 📁 discord/commands/leaderboard.js
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const rankingCore = require('../handlers/ranking/core');
-const rankingRenderer = require('../handlers/ranking/render');
-const rankingBroadcaster = require('../handlers/ranking/broadcaster');
-const { getWeekNumber } = require('../utils/timeHandler'); // (פונקציית עזר פשוטה)
+// ✅ תיקון נתיבים
+const rankingCore = require('../../handlers/ranking/core');
+const rankingRenderer = require('../../handlers/ranking/render');
+const rankingBroadcaster = require('../../handlers/ranking/broadcaster');
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('טבלה')
+        .setName('leaderboard') // שיניתי חזרה לאנגלית כדי שיתאים ל-interactionCreate (אם הוא מחפש leaderboard)
+        .setNameLocalizations({ he: 'טבלה' }) // תמיכה בעברית בתפריט
         .setDescription('🏆 מפיק ושולח את טבלת האלופים (וואטסאפ/דיסקורד/טלגרם)')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async execute(interaction) {
+        // אם כבר ענינו, לא מנסים שוב
+        if (interaction.replied || interaction.deferred) {
+            return; 
+        }
         await interaction.deferReply({ ephemeral: true });
 
         try {
             // 1. שליפת נתונים
             const leaders = await rankingCore.getWeeklyLeaderboard(5);
-            if (leaders.length === 0) {
+            if (!leaders || leaders.length === 0) {
                 return interaction.editReply('❌ אין נתונים לשבוע הזה עדיין.');
             }
 
@@ -33,9 +38,16 @@ module.exports = {
                             `👇 לוח התוצאות המלא בתמונה 👇`;
 
             // 4. הפצה לכולם
-            await rankingBroadcaster.broadcastAll(imageBuffer, caption, interaction.client);
-
-            await interaction.editReply('✅ הטבלה הופצה בהצלחה לכל הפלטפורמות!');
+            if (rankingBroadcaster && typeof rankingBroadcaster.broadcastAll === 'function') {
+                await rankingBroadcaster.broadcastAll(imageBuffer, caption, interaction.client);
+                await interaction.editReply('✅ הטבלה הופצה בהצלחה לכל הפלטפורמות!');
+            } else {
+                // במקרה חירום שאין ברודקאסטר - שולח רק בדיסקורד
+                await interaction.editReply({ 
+                    content: '✅ הטבלה הופקה (מצב מקומי):', 
+                    files: [{ attachment: imageBuffer, name: 'leaderboard.png' }] 
+                });
+            }
 
         } catch (error) {
             console.error(error);
@@ -44,6 +56,7 @@ module.exports = {
     }
 };
 
+// פונקציית העזר נשארת כאן
 function getCurrentWeekNumber() {
     const currentDate = new Date();
     const startDate = new Date(currentDate.getFullYear(), 0, 1);

@@ -1,10 +1,11 @@
-// 📁 commands/inactivity.js
+// 📁 discord/commands/inactivity.js
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const dashboardHandler = require('../handlers/users/dashboard');
+// ✅ תיקון נתיב
+const dashboardHandler = require('../../handlers/users/dashboard');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('ניהול_משתמשים') // שם מעודכן
+    .setName('ניהול_משתמשים') 
     .setDescription('📊 פאנל ניהול משתמשים ואי-פעילות')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 

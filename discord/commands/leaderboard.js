@@ -1,22 +1,19 @@
 // 📁 discord/commands/leaderboard.js
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-// ✅ תיקון נתיבים
 const rankingCore = require('../../handlers/ranking/core');
 const rankingRenderer = require('../../handlers/ranking/render');
 const rankingBroadcaster = require('../../handlers/ranking/broadcaster');
+const { getWeekNumber } = require('../../whatsapp/utils/timeHandler'); // שימוש בפונקציה הקיימת
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('leaderboard') // שיניתי חזרה לאנגלית כדי שיתאים ל-interactionCreate (אם הוא מחפש leaderboard)
-        .setNameLocalizations({ he: 'טבלה' }) // תמיכה בעברית בתפריט
+        .setName('leaderboard') 
         .setDescription('🏆 מפיק ושולח את טבלת האלופים (וואטסאפ/דיסקורד/טלגרם)')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async execute(interaction) {
-        // אם כבר ענינו, לא מנסים שוב
-        if (interaction.replied || interaction.deferred) {
-            return; 
-        }
+        if (interaction.replied || interaction.deferred) return; 
+        
         await interaction.deferReply({ ephemeral: true });
 
         try {
@@ -27,7 +24,17 @@ module.exports = {
             }
 
             // 2. יצירת תמונה
-            const weekNum = getCurrentWeekNumber();
+            // אם הפונקציה getWeekNumber לא זמינה כאן, נשתמש בחישוב מקומי
+            let weekNum;
+            try {
+                weekNum = getWeekNumber();
+            } catch (e) {
+                const currentDate = new Date();
+                const startDate = new Date(currentDate.getFullYear(), 0, 1);
+                const days = Math.floor((currentDate - startDate) / (24 * 60 * 60 * 1000));
+                weekNum = Math.ceil(days / 7);
+            }
+
             const imageBuffer = await rankingRenderer.generateLeaderboardImage(leaders, weekNum);
 
             // 3. יצירת טקסט
@@ -42,7 +49,6 @@ module.exports = {
                 await rankingBroadcaster.broadcastAll(imageBuffer, caption, interaction.client);
                 await interaction.editReply('✅ הטבלה הופצה בהצלחה לכל הפלטפורמות!');
             } else {
-                // במקרה חירום שאין ברודקאסטר - שולח רק בדיסקורד
                 await interaction.editReply({ 
                     content: '✅ הטבלה הופקה (מצב מקומי):', 
                     files: [{ attachment: imageBuffer, name: 'leaderboard.png' }] 
@@ -55,11 +61,3 @@ module.exports = {
         }
     }
 };
-
-// פונקציית העזר נשארת כאן
-function getCurrentWeekNumber() {
-    const currentDate = new Date();
-    const startDate = new Date(currentDate.getFullYear(), 0, 1);
-    const days = Math.floor((currentDate - startDate) / (24 * 60 * 60 * 1000));
-    return Math.ceil(days / 7);
-}

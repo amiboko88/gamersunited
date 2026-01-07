@@ -15,6 +15,30 @@ const generatorSystem = require('../../handlers/media/generator'); // יצירת
 const mediaDirector = require('../../handlers/media/director'); // הבמאי החדש (במקום triggers)
 const userManager = require('../../handlers/users/manager');    // ניהול משתמשים (פעילות)
 
+// --- 🛠️ הגדרות מצב תחזוקה חכם 🛠️ ---
+let lastCrashReply = 0;
+const CRASH_COOLDOWN = 1000 * 60 * 15; // מגיב לשגיאות רק פעם ב-15 דקות
+
+const MAINTENANCE_RESPONSES = [
+    "וואלה נתקע לי ה-RAM. תנו לי כמה דקות להתאפס על עצמי.",
+    "המתכנת שלי נגע במשהו ועכשיו אני בשיפוצים. תכף אשוב.",
+    "הלכתי להביא פיצה, השרת רעב. נדבר עוד מעט.",
+    "יש לי לאג במוח. חכו רגע, אני עושה ריסטרט.",
+    "נתקע לי כבל בגרון. הפסקה טכנית.",
+    "אני כרגע במוד 'מוסך', מטפלים לי בפלאגים. מיד חוזר.",
+    "שניה אני מפרמט את עצמי. תמשיכו לדבר, אני מקשיב בחצי אוזן."
+];
+
+function getSmartErrorResponse() {
+    const now = Date.now();
+    if (now - lastCrashReply > CRASH_COOLDOWN) {
+        lastCrashReply = now;
+        return MAINTENANCE_RESPONSES[Math.floor(Math.random() * MAINTENANCE_RESPONSES.length)];
+    }
+    return null;
+}
+// ----------------------------------------
+
 // עזרים
 const isDirectCall = (text) => text.includes('שמעון') || text.includes('בוט') || text.includes('@');
 
@@ -28,14 +52,10 @@ async function handleMessageLogic(sock, msg, text) {
     const senderId = senderFullJid.split('@')[0];
 
     // --- 🛑 בדיקה 0: שעות פעילות (שבת/לילה/צהריים) ---
-    // אם המערכת ישנה, אנחנו מתעלמים מהכל ויוצאים מיד
     const systemStatus = isSystemActive();
     if (!systemStatus.active) {
-        // אופציונלי: אם זה אדמין (אתה), אולי כן נאפשר? 
-        // כרגע זה חוסם את כולם גורף כדי לא לחלל שבת/להעיר אותך
         const isAdmin = senderId === '972526800647' || senderId === '526800647';
         if (!isAdmin) {
-            // log(`[Silence] Shimon is sleeping: ${systemStatus.reason}`);
             return; 
         }
     }
@@ -53,7 +73,6 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
     const senderName = msg.pushName || "גיימר";
 
     // --- 0. עדכון זמן פעילות (User Activity) ---
-    // קריטי עבור זיהוי AFK בעתיד
     try {
         await userManager.updateLastActive(senderId);
     } catch (e) {
@@ -62,7 +81,6 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
 
     // --- 1. הגנה מספאם (אם הבאפר סימן כ-BLOCKED) ---
     if (text === "BLOCKED_SPAM") {
-        // שדרוג 2026: במקום הודעה קבועה, ה-AI יורד עליו
         const roast = await shimonBrain.ask(senderId, 'whatsapp', "אני מציף את הקבוצה בהודעות ספאם. רד עלי חזק.", false);
         await sock.sendMessage(chatJid, { text: `🚨 ${roast}` }, { quoted: msg });
         return;
@@ -70,22 +88,19 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
 
     try {
         // --- 🎂 2. מערכת ימי הולדת (זיהוי תאריך אוטומטי) ---
-        // מחפש תבניות תאריך כמו 24.10, 24/10/90
         const dateMatch = text.match(/\b(\d{1,2})[\.\/](\d{1,2})(?:[\.\/](\d{2,4}))?\b/);
-        // רק בהודעות קצרות יחסית כדי למנוע זיהוי שגוי בתוך טקסט ארוך
         if (dateMatch && text.length < 30) {
             const day = parseInt(dateMatch[1]);
             const month = parseInt(dateMatch[2]);
             let year = dateMatch[3] ? parseInt(dateMatch[3]) : new Date().getFullYear();
-            if (year < 100) year += 2000; // תיקון שנה מקוצרת
+            if (year < 100) year += 2000;
 
             try {
-                // מנסה לרשום את המשתמש
                 const res = await birthdayManager.registerUser(senderId, 'whatsapp', day, month, year);
                 await sock.sendMessage(chatJid, { text: `✅ רשמתי! יום הולדת ב-${res.day}/${res.month}. נחגוג לך בגיל ${res.age}!` }, { quoted: msg });
-                return; // אם זו הייתה פקודת רישום, סיימנו
+                return;
             } catch (e) {
-                // תאריך לא תקין או בעיה אחרת - מתעלמים וממשיכים
+                // תאריך לא תקין
             }
         }
 
@@ -101,7 +116,7 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
                     await sock.sendMessage(chatJid, { video: { url: result.url }, gifPlayback: true });
                 }
             }
-            return; // משחקים עוצרים את השרשרת
+            return;
         }
 
         // קזינו / הימורים
@@ -122,7 +137,6 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
 
         // --- 👁️ 4. מערכת Vision (אם יש תמונה) ---
         if (mediaMsg) {
-            // טריגרים לניתוח תמונה
             if (text.includes('דמג') || text.includes('לוח') || text.includes('סקור') || text.includes('ראה')) {
                 const imageBuffer = await visionSystem.downloadWhatsAppImage(mediaMsg, sock);
                 if (imageBuffer) {
@@ -137,11 +151,10 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
 
         // --- 🕵️ 5. הצופה השקט + במאי המדיה (כשלא פנו לבוט) ---
         if (!isDirectCall(text)) {
-            // א. למידה שקטה: הבוט לומד עובדות על המשתמש למרות שלא פנו אליו
+            // א. למידה שקטה
             await learningEngine.learnFromContext(senderId, senderName, 'whatsapp', text);
             
-            // ב. תגובה חכמה למילות מפתח (במאי): אם מישהו אמר "כסף" או שם של חבר
-            // הבוט עשוי להחליט להגיב בסאונד או סטיקר גם בלי תיוג
+            // ב. במאי המדיה
             const smartMedia = await mediaDirector.handleSmartResponse(text, senderId, 'whatsapp', senderName);
             
             if (smartMedia) {
@@ -152,39 +165,29 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
                 } else if (smartMedia.type === 'video') {
                     await sock.sendMessage(chatJid, { video: { url: smartMedia.url }, gifPlayback: true });
                 }
-                // לא עושים return כדי לאפשר מקרים נדירים
             }
-            
-            // אם לא היה טריגר מדיה מיוחד, הבוט שותק ומסיים כאן.
             return;
         }
 
         // --- 🧠 6. המוח המרכזי (AI Chat & Help) ---
-        // מגיעים לפה רק אם תייגו את הבוט או עשו Reply
-        
-        // אינדיקציה שמקלידים
         await sock.sendPresenceUpdate('composing', chatJid);
-
-        // בדיקת הרשאות מנהל
         const isAdmin = senderId === '972526800647' || senderId === '526800647'; 
-
-        // 1. קבלת תשובה טקסטואלית מהמוח (שכבר מכיל את העובדות שלמדנו!)
         const aiResponse = await shimonBrain.ask(senderId, 'whatsapp', text, isAdmin);
 
-        // 2. בדיקה אופציונלית אם לייצר תמונה (Generator)
-        // כרגע מנוטרל כברירת מחדל, אבל ניתן להפעיל:
-        /*
-        const visualDecision = await generatorSystem.shouldGenerateImage(text, "whatsapp_chat");
-        if (visualDecision.generate) {
-             // לוגיקה ליצירת תמונה...
-        }
-        */
-
-        // שליחת התשובה
         await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });
 
     } catch (error) {
-        console.error('❌ [Core] Fatal Error inside executeCoreLogic:', error);
+        // ✅ התיקון היחיד: טיפול חכם בשגיאות במקום סתם לוג
+        log(`❌ [Core] Fatal Error inside executeCoreLogic: ${error.message}`);
+        
+        const smartResponse = getSmartErrorResponse();
+        if (smartResponse) {
+            try {
+                await sock.sendMessage(chatJid, { text: smartResponse });
+            } catch (sendErr) {
+                console.error('Failed to send error response:', sendErr);
+            }
+        }
     }
 }
 

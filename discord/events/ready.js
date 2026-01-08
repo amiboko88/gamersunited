@@ -3,11 +3,13 @@ const { Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = r
 const { log } = require('../../utils/logger');
 const scheduler = require('../../handlers/scheduler');
 const birthdayManager = require('../../handlers/birthday/manager');
-const db = require('../../utils/firebase');
+const fs = require('fs');
+const path = require('path');
 
-// הגדרת ערוץ האימות הקבוע
+// הגדרות ערוץ האימות
 const VERIFY_CHANNEL_ID = '1120791404583587971';
-const VERIFY_IMAGE_URL = 'https://media.discordapp.net/attachments/1120791404583587971/1120792864679530506/Verify_Banner.png'; // (דוגמה, נדרש URL תקין שלך)
+// נתיב לתמונה המקומית
+const VERIFY_IMAGE_PATH = './assets/verify.png'; 
 
 module.exports = {
     name: Events.ClientReady,
@@ -21,46 +23,52 @@ module.exports = {
         // 2. אתחול המתזמן הראשי
         scheduler.initScheduler(client);
         
-        // 3. בדיקת ערוץ האימות (חדש!)
+        // 3. בדיקת ערוץ האימות
         await checkVerificationChannel(client);
     },
 };
 
-/**
- * פונקציה לווידוא קיום הודעת האימות
- */
 async function checkVerificationChannel(client) {
     try {
         const channel = await client.channels.fetch(VERIFY_CHANNEL_ID).catch(() => null);
-        
         if (!channel) {
-            log('[Startup] ⚠️ ערוץ האימות לא נמצא (ID שגוי?). מדלג.');
+            log('[Startup] ⚠️ ערוץ האימות לא נמצא. מדלג.');
             return;
         }
 
-        // בדיקת הודעות אחרונות
         const messages = await channel.messages.fetch({ limit: 5 });
         const hasBotMessage = messages.find(m => m.author.id === client.user.id && m.components.length > 0);
 
         if (!hasBotMessage) {
             log('[Startup] 🛠️ הודעת אימות חסרה. יוצר חדשה...');
-            
-            // מחיקת הודעות ישנות (אופציונלי - כדי לשמור על הערוץ נקי)
-            // await channel.bulkDelete(5).catch(() => {});
+
+            // בדיקה שהתמונה קיימת
+            let files = [];
+            if (fs.existsSync(VERIFY_IMAGE_PATH)) {
+                files = [{ attachment: VERIFY_IMAGE_PATH, name: 'verify.png' }];
+            } else {
+                console.warn(`[Startup] ⚠️ קובץ התמונה לא נמצא ב-${VERIFY_IMAGE_PATH}. נשלח ללא תמונה.`);
+            }
 
             const embed = new EmbedBuilder()
-                .setImage('https://i.imgur.com/P9t7gJ5.png') // שים כאן את הלינק לתמונה שלך
-                .setColor(0x00FF00); // ירוק
+                .setColor(0x00FF00);
+            
+            // אם התמונה קיימת, נשתמש בה ב-Embed
+            if (files.length > 0) {
+                embed.setImage('attachment://verify.png');
+            } else {
+                embed.setTitle('ברוכים הבאים - אימות משתמש'); // כותרת גיבוי אם אין תמונה
+            }
 
             const row = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
-                        .setCustomId('start_verification_process') // ID חדש לתהליך
+                        .setCustomId('start_verification_process')
                         .setLabel('לחץ כאן לאימות ✅')
                         .setStyle(ButtonStyle.Success)
                 );
 
-            await channel.send({ embeds: [embed], components: [row] });
+            await channel.send({ embeds: [embed], components: [row], files: files });
             log('[Startup] ✅ הודעת אימות נוצרה בהצלחה.');
         } else {
             log('[Startup] ✅ הודעת אימות קיימת ותקינה.');

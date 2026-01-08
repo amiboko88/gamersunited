@@ -7,9 +7,48 @@ const brain = require('../ai/brain');
 class VerificationHandler {
 
     /**
-     * פתיחת מודאל לאיסוף פרטים (שלב 1)
+     * בדיקה מקדימה: האם להציג מודאל או לאמת מיד?
      */
     async showVerificationModal(interaction) {
+        const userId = interaction.user.id;
+        
+        try {
+            // שליפת המשתמש מה-DB
+            const userDoc = await db.collection('users').doc(userId).get();
+            const userData = userDoc.exists ? userDoc.data() : null;
+
+            // בדיקה אם המידע הקריטי כבר קיים
+            const hasPhone = userData?.identity?.whatsappPhone;
+            const hasBirthday = userData?.identity?.birthday;
+
+            // תרחיש: המשתמש כבר מוכר ומלא בפרטים -> אימות מיידי ללא מודאל
+            if (userData && hasPhone && hasBirthday) {
+                await interaction.deferReply({ ephemeral: true });
+                
+                // הרצת אימות "שקט" כדי לוודא רולים וסטטוס
+                const result = await this.verifyUser(interaction.member, {}, 'smart_check');
+                
+                // הודעה מותאמת אישית
+                await interaction.editReply({ 
+                    content: `👋 היי **${userData.identity.displayName || interaction.user.username}**!\nאני רואה שכל הפרטים שלך כבר מעודכנים אצלי.\n\n${result.message}` 
+                });
+                return;
+            }
+
+            // תרחיש רגיל: חסרים פרטים -> פתיחת מודאל
+            await this.openModal(interaction);
+
+        } catch (error) {
+            console.error('Smart Verify Error:', error);
+            // במקרה של שגיאה בבדיקה, נפתח את המודאל כגיבוי
+            await this.openModal(interaction);
+        }
+    }
+
+    /**
+     * בניית והצגת המודאל (פונקציית עזר פנימית)
+     */
+    async openModal(interaction) {
         const modal = new ModalBuilder()
             .setCustomId('verification_modal_submit')
             .setTitle('אימות משתמש - פרטים נוספים');
@@ -19,7 +58,7 @@ class VerificationHandler {
             .setLabel('תאריך יום הולדת (DD/MM)')
             .setStyle(TextInputStyle.Short)
             .setPlaceholder('לדוגמה: 15/04')
-            .setRequired(false) // אופציונלי
+            .setRequired(false)
             .setMaxLength(5);
 
         const phoneInput = new TextInputBuilder()
@@ -27,7 +66,7 @@ class VerificationHandler {
             .setLabel('מספר טלפון (לחיבור וואטסאפ)')
             .setStyle(TextInputStyle.Short)
             .setPlaceholder('05X-XXXXXXX')
-            .setRequired(false) // אופציונלי
+            .setRequired(false)
             .setMaxLength(15);
 
         const platformInput = new TextInputBuilder()
@@ -35,7 +74,7 @@ class VerificationHandler {
             .setLabel('פלטפורמת משחק עיקרית')
             .setStyle(TextInputStyle.Short)
             .setPlaceholder('PC / Xbox / PS5')
-            .setRequired(false) // אופציונלי
+            .setRequired(false)
             .setMaxLength(20);
 
         const row1 = new ActionRowBuilder().addComponents(bdayInput);
@@ -46,26 +85,17 @@ class VerificationHandler {
         await interaction.showModal(modal);
     }
 
-    /**
-     * טיפול בנתונים מהמודאל וביצוע האימות (שלב 2)
-     */
     async handleModalSubmit(interaction) {
-        // מניעת שגיאת "Application did not respond"
         await interaction.deferReply({ ephemeral: true });
 
         const bday = interaction.fields.getTextInputValue('verify_bday');
         const phone = interaction.fields.getTextInputValue('verify_phone');
         const platform = interaction.fields.getTextInputValue('verify_platform');
 
-        // הרצת האימות בפועל
         const result = await this.verifyUser(interaction.member, { bday, phone, platform }, 'modal_form');
-        
         await interaction.editReply({ content: result.message });
     }
 
-    /**
-     * הלוגיקה המרכזית של האימות (שימושית גם לקונסולות אוטומטי)
-     */
     async verifyUser(member, data = {}, source = 'command') {
         try {
             const userId = member.id;
@@ -73,34 +103,27 @@ class VerificationHandler {
 
             log(`[Verification] 🛡️ מתחיל תהליך אימות עבור ${member.displayName} (${userId}) דרך ${source}...`);
 
-            // 1. הכנת המידע ל-DB (מבנה מאוחד)
+            // 1. הכנת המידע ל-DB
             const updates = {
                 'identity.discordId': userId,
                 'identity.displayName': member.displayName,
-                'identity.fullName': member.user.username, // ברירת מחדל
+                'identity.fullName': member.user.username,
                 'meta.isVerified': true,
                 'meta.verifiedAt': new Date().toISOString(),
                 'meta.verificationSource': source
             };
 
-            // הוספת שדות אופציונליים רק אם הוזנו (כדי לא לדרוס דברים קיימים עם NULL)
             if (data.phone) updates['identity.whatsappPhone'] = data.phone; 
             if (data.bday) updates['identity.birthday'] = data.bday;
             if (data.platform) updates['gaming.primaryPlatform'] = data.platform;
 
-            // עדכון DB
             await db.collection('users').doc(userId).set(updates, { merge: true });
-            log(`[Verification] ✅ נתוני DB עודכנו עבור ${member.displayName}.`);
-
-            // 2. טיפול ברול (מנגנון חכם)
-            let role = null;
             
-            // נסיון 1: ENV
+            // 2. טיפול ברול
+            let role = null;
             if (process.env.VERIFIED_ROLE_ID) {
                 role = guild.roles.cache.get(process.env.VERIFIED_ROLE_ID);
             }
-
-            // נסיון 2: חיפוש לפי שם
             if (!role) {
                 role = guild.roles.cache.find(r => 
                     r.name.toLowerCase() === 'verified' || 
@@ -116,15 +139,17 @@ class VerificationHandler {
                     log(`[Verification] 👑 רול ${role.name} הוענק ל-${member.displayName}.`);
                     message = `✅ **אימות הושלם בהצלחה!**\nקיבלת את הרול: **${role.name}**.`;
                 } else {
-                    message = `✅ פרטיך עודכנו במערכת (כבר היית מאומת).`;
+                    message = `✅ פרטיך עודכנו במערכת (הרול כבר קיים אצלך).`;
                 }
             } else {
-                log(`[Verification] ⚠️ לא נמצא רול מתאים לחלוקה.`);
-                message = `✅ פרטיך נקלטו במערכת, אך לא נמצא רול מתאים בשרת. פנה למנהל.`;
+                message = `✅ פרטיך נקלטו במערכת, אך לא נמצא רול מתאים בשרת.`;
             }
 
-            // 3. שליחת DM חכם (AI Follow-up)
-            this.sendWelcomeDM(member, data);
+            // 3. שליחת DM - רק אם זה לא אימות חכם (Smart Check) שכבר קיים
+            // כדי למנוע ספאם למשתמשים קיימים
+            if (source !== 'smart_check') {
+                this.sendWelcomeDM(member, data);
+            }
 
             return { success: true, message };
 
@@ -134,33 +159,21 @@ class VerificationHandler {
         }
     }
 
-    /**
-     * שליחת הודעה פרטית חכמה
-     */
     async sendWelcomeDM(member, data) {
         try {
-            let prompt = `המשתמש ${member.displayName} הרגע סיים תהליך אימות. `;
+            // אם המשתמש לא מילא כלום, ה-AI ישאל אותו.
+            // אם הוא מילא הכל, ה-AI יברך אותו.
+            let prompt = `המשתמש ${member.displayName} סיים אימות. `;
             
             if (!data.phone && !data.bday) {
-                prompt += "הוא לא מילא את הטלפון ולא את יום ההולדת. תברך אותו על ההצטרפות ותשאל אותו בעדינות אם הוא רוצה לספר לך מתי יום ההולדת שלו כדי שתחגוג לו, ואם בא לו עדכונים לוואטסאפ.";
-            } else if (data.phone && !data.bday) {
-                prompt += "הוא מילא טלפון אבל לא יום הולדת. תודה לו על הטלפון ותשאל מתי יום ההולדת.";
-            } else if (!data.phone && data.bday) {
-                prompt += "הוא מילא יום הולדת אבל לא טלפון. תאחל לו מזל טוב מראש ותשאל אם הוא רוצה לחבר את הוואטסאפ.";
+                prompt += "הוא לא מילא פרטים (טלפון/יומולדת). תברך אותו ותשאל אם הוא רוצה להשלים אותם.";
             } else {
-                prompt += "הוא מילא את כל הפרטים! תודה לו ותגיד לו שהוא אלוף.";
+                prompt += "הוא מילא את הפרטים. תודה לו.";
             }
 
-            // יצירת תשובה מהמוח
             const aiResponse = await brain.ask(member.id, 'discord', prompt);
-            
-            await member.send(aiResponse).catch(() => {
-                log(`[Verification] ⚠️ לא ניתן לשלוח DM ל-${member.displayName}.`);
-            });
-
-        } catch (e) {
-            console.error('AI DM Error:', e);
-        }
+            await member.send(aiResponse).catch(() => {});
+        } catch (e) { console.error('AI DM Error:', e); }
     }
 }
 

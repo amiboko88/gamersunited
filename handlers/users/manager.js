@@ -29,7 +29,6 @@ class UserManager {
         const now = Date.now();
         const msPerDay = 1000 * 60 * 60 * 24;
 
-        // הכנת מבנה הנתונים
         const stats = {
             total: 0,        
             humans: 0,       
@@ -39,48 +38,63 @@ class UserManager {
             inactive14: [],
             inactive30: [],
             kickCandidates: [],
-            newMembers: 0
+            newMembers: 0,
+            voiceNow: 0,       // כמה מחוברים לקול כרגע
+            topActive: []      // רשימת ה-TOP 3
         };
 
         try {
-            // 1. משיכת נתונים כבדה (משתמשים + סטטיסטיקות משחק)
-            const [allMembers, usersSnapshot, gameStatsSnapshot] = await Promise.all([
-                guild.members.fetch({ force: true }), // משתמשים חיים
-                db.collection('users').get(),         // דאטה בסיסי
-                db.collection('gameStats').get()      // היסטוריית משחקים
+            // --- שלב 1: משיכת נתונים מוגנת (Anti-Crash) ---
+            try {
+                // מנסים למשוך בכוח, אבל עוטפים כדי לא להקריס את הבוט
+                await guild.members.fetch({ time: 10000, force: true });
+            } catch (timeoutError) {
+                console.warn(`[UserManager] ⚠️ משיכת משתמשים איטית. משתמש בזיכרון הקיים למניעת קריסה.`);
+            }
+
+            // משיכת דאטה מה-DB במקביל
+            const [usersSnapshot, gameStatsSnapshot] = await Promise.all([
+                db.collection('users').get(),
+                db.collection('gameStats').get()
             ]);
 
-            stats.total = allMembers.size;
-
-            // מיפוי ה-DB לגישה מהירה
+            // מיפוי לגישה מהירה
             const usersMap = new Map();
             usersSnapshot.forEach(doc => usersMap.set(doc.id, doc.data()));
 
             const gamesMap = new Map();
             gameStatsSnapshot.forEach(doc => gamesMap.set(doc.id, doc.data()));
 
-            // מעבר על כל חבר בשרת
+            // איסוף מועמדים ל-Top Active
+            let activityScores = [];
+
+            // --- שלב 2: מעבר על המשתמשים ---
+            const allMembers = guild.members.cache; // עובדים עם מה שיש (Cache)
+            stats.total = guild.memberCount; // המספר האמיתי מדיסקורד
+
             allMembers.forEach(member => {
-                if (member.user.bot) return; // מתעלמים מבוטים
+                if (member.user.bot) return;
                 
                 stats.humans++;
                 const userId = member.id;
                 const userData = usersMap.get(userId) || {};
                 const userGames = gamesMap.get(userId) || {};
 
-                // --- בדיקה 1: האם הוא פעיל *עכשיו*? ---
-                // אם הוא בחדר קול, או בסטטוס אונליין/DND/Idle - הוא פעיל.
-                const isOnline = member.presence && member.presence.status !== 'offline';
+                // 1. בדיקת פעילות חיה (Voice)
                 const isInVoice = member.voice && member.voice.channelId;
-                
-                if (isInVoice || isOnline) {
-                    stats.active++;
-                    // עדכון אופציונלי ל-DB ברקע (כדי שלא יסומן כמת בעתיד)
-                    // this.updateLastActive(userId); 
-                    return;
-                }
+                if (isInVoice) stats.voiceNow++;
 
-                // --- בדיקה 2: חסינות ---
+                // 2. חישוב זמן אחרון (Deep Scan)
+                const lastSeenTime = this.calculateLastSeen(member, userData, userGames);
+                const daysInactive = Math.floor((now - lastSeenTime) / msPerDay);
+
+                // חישוב ניקוד לפעילות (לטובת ה-TOP 3)
+                // משקל: ימים מאז פעילות (פחות ימים = יותר נקודות) + הודעות + XP
+                const xp = userData.economy?.xp || 0;
+                const score = (1000 / (daysInactive + 1)) + (xp / 10); 
+                activityScores.push({ name: member.displayName, score: score, days: daysInactive });
+
+                // 3. חסינות
                 const isImmune = member.roles.cache.some(r => 
                     IMMUNE_ROLES_NAMES.some(immuneName => r.name.includes(immuneName)) ||
                     r.id === process.env.ROLE_MVP_ID
@@ -91,19 +105,11 @@ class UserManager {
                     return;
                 }
 
-                // --- בדיקה 3: חישוב הזמן האחרון שנראה (Deep Scan) ---
-                const lastSeenTime = this.calculateLastSeen(member, userData, userGames);
-                const daysInactive = Math.floor((now - lastSeenTime) / msPerDay);
-
-                // הגנה לחדשים (3 ימים)
+                // 4. סיווג
                 if (daysInactive < 3) {
                     stats.newMembers++;
                     stats.active++;
-                    return;
-                }
-
-                // סיווג סופי
-                if (daysInactive >= TIMES.KICK) {
+                } else if (daysInactive >= TIMES.KICK) {
                     stats.inactive30.push({ userId, days: daysInactive, name: member.displayName });
                     stats.kickCandidates.push({ userId, days: daysInactive, name: member.displayName });
                 } else if (daysInactive >= TIMES.DANGER) {
@@ -115,6 +121,11 @@ class UserManager {
                 }
             });
 
+            // מיון וחילוף ה-Top 3
+            stats.topActive = activityScores
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 3);
+
             return stats;
 
         } catch (error) {
@@ -123,30 +134,19 @@ class UserManager {
         }
     }
 
-    /**
-     * פונקציית עזר: מוצאת את התאריך הכי מאוחר מכל המקורות האפשריים
-     */
     calculateLastSeen(member, userData, userGames) {
         let timestamps = [];
-
-        // 1. נתונים ישירים מהמשתמש
         if (userData.meta?.lastActive) timestamps.push(new Date(userData.meta.lastActive).getTime());
         if (userData.tracking?.joinedAt) timestamps.push(new Date(userData.tracking.joinedAt).getTime());
         if (userData.identity?.lastWhatsappMessage) timestamps.push(new Date(userData.identity.lastWhatsappMessage).getTime());
-
-        // 2. נתוני משחקים (gameStats) - רצים על כל המשחקים ומוצאים את ה-lastPlayed הכי חדש
+        
         if (userGames) {
             Object.values(userGames).forEach(game => {
-                if (game.lastPlayed) {
-                    timestamps.push(new Date(game.lastPlayed).getTime());
-                }
+                if (game.lastPlayed) timestamps.push(new Date(game.lastPlayed).getTime());
             });
         }
-
-        // 3. זמן הצטרפות לדיסקורד (כברירת מחדל אחרונה)
+        
         timestamps.push(member.joinedTimestamp);
-
-        // מחזירים את המספר הכי גדול (הכי עדכני)
         return Math.max(...timestamps);
     }
 

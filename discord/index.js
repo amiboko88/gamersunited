@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { log } = require('../utils/logger');
 
-// ✅ ייבוא המערכות הקריטיות להפעלה
+// ייבוא המערכות הקריטיות
 const scheduler = require('../handlers/scheduler');
 const birthdayManager = require('../handlers/birthday/manager');
 
@@ -17,23 +17,42 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildPresences
     ],
-    partials: [Partials.Channel, Partials.Message] // תמיכה ב-DM
+    partials: [Partials.Channel, Partials.Message]
 });
 
 client.commands = new Collection();
 
+// פונקציה לטעינה רקורסיבית של פקודות
+function loadCommands(dir) {
+    const files = fs.readdirSync(dir, { withFileTypes: true });
+    
+    for (const file of files) {
+        const fullPath = path.join(dir, file.name);
+        
+        if (file.isDirectory()) {
+            // כניסה לתיקייה פנימית
+            loadCommands(fullPath);
+        } else if (file.name.endsWith('.js')) {
+            try {
+                const command = require(fullPath);
+                if (command.data && command.data.name) {
+                    client.commands.set(command.data.name, command);
+                    // log(`[Command] ✅ נטענה הפקודה: ${command.data.name}`);
+                } else {
+                    console.warn(`[WARNING] הפקודה ב-${fullPath} חסרה מאפיין "data" או "name".`);
+                }
+            } catch (error) {
+                console.error(`[ERROR] נכשל בטעינת פקודה ${fullPath}:`, error);
+            }
+        }
+    }
+}
+
 // 1. טעינת פקודות (Commands)
 const commandsPath = path.join(__dirname, 'commands');
 if (fs.existsSync(commandsPath)) {
-    const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-    for (const file of commandFiles) {
-        const command = require(path.join(commandsPath, file));
-        if (command.data && command.data.name) {
-            client.commands.set(command.data.name, command);
-        } else {
-            console.warn(`[WARNING] The command at ${file} is missing a required "data" or "data.name" property.`);
-        }
-    }
+    loadCommands(commandsPath); // שימוש בטעינה הרקורסיבית
+    log(`[System] ✅ סה"כ נטענו ${client.commands.size} פקודות סלאש.`);
 }
 
 // 2. טעינת אירועים (Events)
@@ -54,16 +73,17 @@ if (fs.existsSync(eventsPath)) {
 client.once('ready', () => {
     log(`🤖 [Discord] Logged in as ${client.user.tag}`);
 
-    // ✅ אתחול מערכת ימי הולדת (Discord Client)
-    // הערה: את הוואטסאפ והטלגרם נחבר אליו דרך ה-Manager הראשי, אבל חשוב שהוא יכיר את דיסקורד כבר עכשיו
-    birthdayManager.init(client, null, null, null);
+    // אתחול מערכת ימי הולדת
+    if (birthdayManager && typeof birthdayManager.init === 'function') {
+        birthdayManager.init(client, null, null, null);
+    }
 
-    // ✅ אתחול המתזמן הראשי (הלב של המערכת)
-    // זה מפעיל את ה-Cron Jobs, ה-Status Rotator, ואת הניקיונות
-    scheduler.initScheduler(client);
+    // אתחול המתזמן הראשי
+    if (scheduler && typeof scheduler.initScheduler === 'function') {
+        scheduler.initScheduler(client);
+    }
 });
 
-// כניסה
 client.login(process.env.DISCORD_TOKEN);
 
 module.exports = client;

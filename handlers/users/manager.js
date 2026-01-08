@@ -2,11 +2,10 @@
 const db = require('../../utils/firebase');
 const { log } = require('../../utils/logger');
 
-// הגדרת זמנים בימים
 const DAYS = {
-    DEAD: 180,    // חצי שנה - מת
-    SUSPECT: 90,  // 3 חודשים - חשוד/רדום
-    AFK: 30       // חודש - AFK טרי
+    DEAD: 180,    // 6 חודשים - לקיק
+    SUSPECT: 90,  // 3 חודשים - לבדיקה
+    AFK: 30       // חודש
 };
 
 const IMMUNE_ROLES_NAMES = ['MVP', 'Server Booster', 'VIP'];
@@ -21,7 +20,7 @@ class UserManager {
                 tracking: { statusStage: 'active' }
             }, { merge: true });
         } catch (error) {
-            log(`❌ [UserManager] עדכון פעילות נכשל: ${error.message}`);
+            log(`❌ Update Active Failed: ${error.message}`);
         }
     }
 
@@ -32,32 +31,21 @@ class UserManager {
         const msPerDay = 1000 * 60 * 60 * 24;
 
         const stats = {
-            total: 0,        
-            humans: 0,       
-            active: 0,
-            immune: 0, 
-            
-            // הקטגוריות החדשות
-            dead: [],        // מעל חצי שנה (מועמדים לקיק)
-            review: [],      // מעל 3 חודשים עם פעילות עבר (לבדיקה)
-            sleeping: [],    // מעל 3 חודשים ללא עבר (רדומים)
-            afk: [],         // חדשים שנעלמו (AFK)
-            
-            kickCandidates: [], // הרשימה הסופית לבעיטה (רק ה"מתים" וה"רדומים ללא עבר")
-            newMembers: 0,
-            voiceNow: 0
+            total: 0, humans: 0, active: 0, immune: 0,
+            dead: [], review: [], sleeping: [], afk: [],
+            kickCandidates: [], 
+            newMembers: 0, voiceNow: 0
         };
 
         try {
-            // Anti-Crash + Force Fetch
+            // נסיון משיכה שקט - אם נכשל, מתעלמים לחלוטין מהשגיאה
             if (guild.memberCount !== guild.members.cache.size) {
-                try { await guild.members.fetch({ time: 10000 }); } catch (e) {}
+                try { await guild.members.fetch({ time: 5000 }); } catch (e) { }
             }
             
             const allMembers = guild.members.cache;
             stats.total = guild.memberCount; 
 
-            // משיכת דאטה
             const [usersSnapshot, gameStatsSnapshot] = await Promise.all([
                 db.collection('users').get(),
                 db.collection('gameStats').get()
@@ -77,12 +65,10 @@ class UserManager {
                 const userData = usersMap.get(userId) || {};
                 const userGames = gamesMap.get(userId) || {};
 
-                // --- Live Status ---
                 const isOnline = member.presence && member.presence.status !== 'offline';
                 const isInVoice = member.voice && member.voice.channelId;
                 if (isInVoice) stats.voiceNow++;
 
-                // חישוב ימים ללא פעילות
                 let daysInactive = 0;
                 if (isOnline || isInVoice) {
                     daysInactive = 0;
@@ -91,10 +77,7 @@ class UserManager {
                     daysInactive = Math.floor((now - lastSeenTime) / msPerDay);
                 }
 
-                // בדיקת ותק (מתי הצטרף לשרת)
                 const daysSinceJoin = Math.floor((now - member.joinedTimestamp) / msPerDay);
-
-                // נתוני עבר (XP/הודעות) לזיהוי משתמשים "חשודים"
                 const hasLegacy = (userData.economy?.xp > 100) || (userData.stats?.messagesSent > 10);
 
                 // חסינות
@@ -108,55 +91,36 @@ class UserManager {
                     return;
                 }
 
-                // --- המיון החדש והמדויק ---
-
-                // 1. פעילים (פחות מחודש)
+                // סיווג חדש
                 if (daysInactive < DAYS.AFK) {
-                    // אם הצטרף בשבוע האחרון - נחשב "חדש"
                     if (daysSinceJoin < 7) stats.newMembers++;
                     stats.active++;
                 } 
-                // 2. מתים (מעל חצי שנה) - לקיק מיידי
                 else if (daysInactive >= DAYS.DEAD) {
+                    // רק אלו הולכים לקיק!
                     stats.dead.push({ userId, days: daysInactive, name: member.displayName });
                     stats.kickCandidates.push({ userId, days: daysInactive, name: member.displayName });
                 }
-                // 3. בדיקה (מעל 3 חודשים)
                 else if (daysInactive >= DAYS.SUSPECT) {
-                    if (hasLegacy) {
-                        // יש לו היסטוריה - הולך ל"בדיקה" (לא לקיק אוטומטי)
-                        stats.review.push({ userId, days: daysInactive, name: member.displayName });
-                    } else {
-                        // אין היסטוריה - הולך ל"רדומים" (אפשר להעיף)
-                        stats.sleeping.push({ userId, days: daysInactive, name: member.displayName });
-                        stats.kickCandidates.push({ userId, days: daysInactive, name: member.displayName });
-                    }
+                    if (hasLegacy) stats.review.push({ userId, days: daysInactive, name: member.displayName });
+                    else stats.sleeping.push({ userId, days: daysInactive, name: member.displayName });
                 }
-                // 4. AFK (חדשים שנעלמו)
                 else {
-                    // אם הוא כאן, הוא בין 30 ל-90 יום אי פעילות.
-                    // אם הוא הצטרף לאחרונה יחסית (בחודשיים האחרונים) וכבר נעלם - הוא AFK.
-                    if (daysSinceJoin < 60) {
-                        stats.afk.push({ userId, days: daysInactive, name: member.displayName });
-                    } else {
-                        // ותיק שסתם נעלם לחודש - נחשב פעיל/רגיל בינתיים
-                        stats.active++;
-                    }
+                    if (daysSinceJoin < 60) stats.afk.push({ userId, days: daysInactive, name: member.displayName });
+                    else stats.active++;
                 }
             });
 
             return stats;
 
         } catch (error) {
-            log(`❌ [UserManager] שגיאה בחישוב: ${error.message}`);
+            log(`❌ Stats Calc Error: ${error.message}`);
             return null;
         }
     }
 
     calculateLastSeen(member, userData, userGames) {
         let timestamps = [];
-        
-        // קריאה מהמבנה הנקי
         if (userData.meta) {
             if (userData.meta.lastSeen) timestamps.push(new Date(userData.meta.lastSeen).getTime());
             if (userData.meta.lastActive) timestamps.push(new Date(userData.meta.lastActive).getTime());
@@ -181,7 +145,7 @@ class UserManager {
             try {
                 const member = await guild.members.fetch(userId).catch(() => null);
                 if (member) {
-                    await member.kick('Shimon Inactivity Cleanup');
+                    await member.kick('Shimon Inactivity Cleanup (6+ Months)');
                     kicked.push(member.displayName);
                     await db.collection('users').doc(userId).set({ 
                         tracking: { status: 'kicked', kickedAt: new Date().toISOString() }

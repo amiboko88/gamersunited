@@ -10,72 +10,65 @@ class DashboardHandler {
             const guild = interaction.guild;
             const stats = await userManager.getInactivityStats(guild);
             
-            if (!stats) {
-                return interaction.editReply('❌ נתונים חסרים (נסה שוב).');
-            }
+            if (!stats) return interaction.editReply('❌ נתונים חסרים.');
 
-            // --- גרף QuickChart (Donut) ---
+            // --- תצורה לתמונה אינפוגרפית מלאה ---
+            // הרעיון: תמונה אחת שמכילה הכל.
             const chartConfig = {
                 type: 'doughnut',
                 data: {
-                    // תוויות מעודכנות
-                    labels: [
-                        'פעילים', 
-                        'חסינים', 
-                        'לבדיקה (חשודים)', 
-                        'רדומים (ללא עבר)', 
-                        'מתים (6 חודשים+)'
-                    ],
+                    labels: ['פעילים', 'חשודים', 'רדומים', 'מתים (לניקוי)'],
                     datasets: [{
-                        data: [
-                            stats.active, 
-                            stats.immune, 
-                            stats.review.length, 
-                            stats.sleeping.length, 
-                            stats.dead.length
-                        ],
-                        backgroundColor: [
-                            '#4CAF50', // ירוק
-                            '#2196F3', // כחול
-                            '#FF9800', // כתום (חשודים)
-                            '#9E9E9E', // אפור (רדומים)
-                            '#F44336'  // אדום (מתים)
-                        ],
+                        data: [stats.active, stats.review.length, stats.sleeping.length, stats.dead.length],
+                        backgroundColor: ['#4CAF50', '#FF9800', '#9E9E9E', '#F44336'],
                         borderColor: '#1e1e1e',
-                        borderWidth: 3
+                        borderWidth: 4
                     }]
                 },
                 options: {
-                    legend: { display: true, position: 'right', labels: { fontColor: '#ffffff', fontSize: 14 } },
+                    rotation: -1.57, // מתחיל מלמעלה
+                    circumference: 6.28,
+                    legend: {
+                        display: true,
+                        position: 'right',
+                        align: 'center',
+                        labels: {
+                            fontColor: 'white',
+                            fontSize: 18,
+                            padding: 20,
+                            boxWidth: 20,
+                            generateLabels: (chart) => {
+                                const data = chart.data;
+                                return data.labels.map((label, i) => ({
+                                    text: `${label}: ${data.datasets[0].data[i]}`,
+                                    fillStyle: data.datasets[0].backgroundColor[i],
+                                    hidden: false,
+                                    index: i
+                                }));
+                            }
+                        }
+                    },
                     plugins: {
-                        datalabels: { display: true, color: 'white', font: { weight: 'bold', size: 16 } },
+                        datalabels: { display: false }, // לא צריך על הגרף עצמו
                         doughnutlabel: {
                             labels: [
-                                { text: `${stats.humans}`, font: { size: 24, color: 'white' } },
-                                { text: 'חברים', font: { size: 14, color: '#cccccc' } }
+                                { text: `${stats.humans}`, font: { size: 30, color: 'white', weight: 'bold' } },
+                                { text: 'חברים', font: { size: 16, color: '#cccccc' } }
                             ]
                         }
                     }
                 }
             };
-            const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&backgroundColor=%231e1e1e&width=550&height=300`;
 
-            // --- Embed נקי בלי מובילים ---
+            // URL רחב וגדול
+            const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&backgroundColor=%231e1e1e&width=700&height=350`;
+
             const embed = new EmbedBuilder()
                 .setColor('#1e1e1e')
-                .setTitle(`📊 דשבורד קהילה: ${guild.name}`)
-                .setDescription(`ניתוח עומק לוגי.\nסה"כ משתמשים: **${stats.total}**`)
+                .setTitle(`🚀 דשבורד קהילה: ${guild.name}`)
                 .setImage(chartUrl)
-                .addFields(
-                    { name: '💀 מתים (להרחקה)', value: `**${stats.dead.length}** (חצי שנה+)`, inline: true },
-                    { name: '🕵️ לבדיקה ידנית', value: `**${stats.review.length}** (לא פעילים עם עבר)`, inline: true },
-                    { name: '💤 רדומים (ללא עבר)', value: `**${stats.sleeping.length}** (3 חודשים+)`, inline: true },
-                    { name: '👻 AFK טריים', value: `**${stats.afk.length}** (נכנסו ויצאו)`, inline: true },
-                    { name: '🎙️ קול', value: `**${stats.voiceNow}** מחוברים`, inline: true },
-                    { name: '🌱 חדשים', value: `**${stats.newMembers}** השבוע`, inline: true }
-                )
                 .setFooter({ 
-                    text: `עודכן: ${new Date().toLocaleTimeString("he-IL", { timeZone: "Asia/Jerusalem" })} • שמעון AI`,
+                    text: `🎙️ בקול: ${stats.voiceNow} | 🌱 חדשים: ${stats.newMembers} | עודכן: ${new Date().toLocaleTimeString("he-IL", { timeZone: "Asia/Jerusalem" })}`,
                     iconURL: guild.iconURL()
                 });
 
@@ -86,12 +79,13 @@ class DashboardHandler {
                     .setStyle(ButtonStyle.Secondary)
                     .setEmoji('🔄'),
                 
+                // כפתור אדום רק אם יש "מתים"
                 new ButtonBuilder()
                     .setCustomId('btn_manage_kick_prep')
-                    .setLabel(`ניקוי (${stats.kickCandidates.length})`) // מנקה רק מתים ורדומים
+                    .setLabel(`ניקוי מתים (${stats.kickCandidates.length})`)
                     .setStyle(ButtonStyle.Danger)
                     .setDisabled(stats.kickCandidates.length === 0)
-                    .setEmoji('🗑️')
+                    .setEmoji('💀')
             );
 
             if (interaction.deferred || interaction.replied) {
@@ -110,24 +104,24 @@ class DashboardHandler {
         await interaction.deferReply({ ephemeral: true });
 
         const stats = await userManager.getInactivityStats(interaction.guild);
-        const candidates = stats.kickCandidates;
+        const candidates = stats.kickCandidates; // מכיל רק DEAD
 
         if (candidates.length === 0) {
-            return interaction.editReply('✅ אין מועמדים להרחקה (מתים/רדומים).');
+            return interaction.editReply('✅ אין משתמשים "מתים" (מעל 6 חודשים).');
         }
 
         const listText = candidates.map(c => `• **${c.name}** (<@${c.userId}>) - ${c.days} ימים`).join('\n');
         
         const embed = new EmbedBuilder()
-            .setTitle(`⚠️ מועמדים להרחקה (${candidates.length})`)
-            .setDescription(`המשתמשים הבאים הם "מתים" (180+ יום) או "רדומים ללא היסטוריה" (90+ יום):\n\n${listText.slice(0, 3000)}`)
+            .setTitle(`💀 ניקוי בית קברות (${candidates.length})`)
+            .setDescription(`המשתמשים הבאים לא נראו מעל חצי שנה:\n\n${listText.slice(0, 3000)}`)
             .setColor('Red')
-            .setFooter({ text: 'לחץ על "בצע הרחקה" רק אם אתה בטוח.' });
+            .setFooter({ text: 'אישור יסיר אותם מהשרת לצמיתות.' });
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('btn_manage_kick_confirm')
-                .setLabel('🚨 בצע הרחקה')
+                .setLabel('🚨 אשר מחיקה')
                 .setStyle(ButtonStyle.Danger),
             
             new ButtonBuilder()
@@ -140,7 +134,7 @@ class DashboardHandler {
     }
 
     async executeKick(interaction) {
-        await interaction.update({ content: '🚀 שמעון מנקה את השרת...', components: [], embeds: [] });
+        await interaction.update({ content: '🚀 מנקה...', components: [], embeds: [] });
         
         const stats = await userManager.getInactivityStats(interaction.guild);
         const userIds = stats.kickCandidates.map(c => c.userId);
@@ -148,13 +142,9 @@ class DashboardHandler {
         const result = await userManager.executeKickBatch(interaction.guild, userIds);
 
         const summaryEmbed = new EmbedBuilder()
-            .setTitle('🧹 סיכום פעולה')
+            .setTitle('🧹 סיכום ניקוי')
             .setColor('Green')
-            .addFields(
-                { name: 'הורחקו', value: `${result.kicked.length}`, inline: true },
-                { name: 'נכשלו', value: `${result.failed.length}`, inline: true }
-            )
-            .setDescription(`**טופלו:** ${result.kicked.join(', ') || 'אף אחד'}`);
+            .setDescription(`🗑️ **הוסרו:** ${result.kicked.length}\n❌ **נכשלו:** ${result.failed.length}\n\n${result.kicked.join(', ')}`);
 
         await interaction.followUp({ embeds: [summaryEmbed], ephemeral: true });
     }

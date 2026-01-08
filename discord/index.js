@@ -4,7 +4,6 @@ const fs = require('fs');
 const path = require('path');
 const { log } = require('../utils/logger');
 
-// ייבוא המערכות הקריטיות
 const scheduler = require('../handlers/scheduler');
 const birthdayManager = require('../handlers/birthday/manager');
 
@@ -25,10 +24,8 @@ const commandsData = [];
 
 function loadCommands(dir) {
     const files = fs.readdirSync(dir, { withFileTypes: true });
-    
     for (const file of files) {
         const fullPath = path.join(dir, file.name);
-        
         if (file.isDirectory()) {
             loadCommands(fullPath);
         } else if (file.name.endsWith('.js')) {
@@ -39,45 +36,45 @@ function loadCommands(dir) {
                     commandsData.push(command.data.toJSON());
                 }
             } catch (error) {
-                console.error(`[ERROR] נכשל בטעינת פקודה ${fullPath}:`, error);
+                console.error(`[ERROR] Load command failed: ${fullPath}`, error);
             }
         }
     }
 }
 
 const commandsPath = path.join(__dirname, 'commands');
-if (fs.existsSync(commandsPath)) {
-    loadCommands(commandsPath);
-    log(`[System] ✅ נטענו מקומית ${client.commands.size} פקודות סלאש.`);
-}
+if (fs.existsSync(commandsPath)) loadCommands(commandsPath);
 
 const eventsPath = path.join(__dirname, 'events');
 if (fs.existsSync(eventsPath)) {
     const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
     for (const file of eventFiles) {
         const event = require(path.join(eventsPath, file));
-        if (event.once) {
-            client.once(event.name, (...args) => event.execute(...args));
-        } else {
-            client.on(event.name, (...args) => event.execute(...args));
-        }
+        if (event.once) client.once(event.name, (...args) => event.execute(...args));
+        else client.on(event.name, (...args) => event.execute(...args));
     }
 }
 
-// --- הגנה גלובלית מקריסות (Anti-Crash) ---
+// --- Anti-Crash & Error Suppression ---
+// משתיק לחלוטין את שגיאות ה-Timeout המציקות
 process.on('unhandledRejection', (reason, promise) => {
-    // מסננים את השגיאה הספציפית הזו כדי שלא תלכלך את הלוג
-    if (reason.code === 'GuildMembersTimeout') {
-        // שגיאה שקטה - הבוט ימשיך כרגיל
-        return; 
-    }
+    if (reason && reason.code === 'GuildMembersTimeout') return; 
+    if (reason && reason.message && reason.message.includes('Members didn\'t arrive')) return;
     console.error('❌ [Unhandled Rejection]:', reason);
 });
 
 process.on('uncaughtException', (error) => {
+    if (error && error.code === 'GuildMembersTimeout') return;
     console.error('❌ [Uncaught Exception]:', error);
 });
-// -------------------------------------------
+
+// --- Graceful Shutdown (Zombie Killer) ---
+// מבטיח שהבוט ימות כשרייל מבקש, ולא ישאיר תהליך תקוע
+process.on('SIGTERM', () => {
+    log('🛑 SIGTERM received. Closing connections...');
+    client.destroy();
+    process.exit(0);
+});
 
 client.once('ready', async () => {
     log(`🤖 [Discord] Logged in as ${client.user.tag}`);
@@ -88,32 +85,24 @@ client.once('ready', async () => {
         const clientId = client.user.id;
         
         if (guildId) {
-            log(`[System] 🧹 מנקה פקודות גלובליות כפולות...`);
+            log(`[System] 🧹 Cleaning global commands...`);
             await rest.put(Routes.applicationCommands(clientId), { body: [] });
 
-            log(`[System] 🔄 מפיץ ${commandsData.length} פקודות לשרת הספציפי (${guildId})...`);
+            log(`[System] 🔄 Deploying ${commandsData.length} commands to Guild (${guildId})...`);
             await rest.put(
                 Routes.applicationGuildCommands(clientId, guildId),
                 { body: commandsData },
             );
-            log('[System] ✅ הפקודות נרשמו בשרת באופן נקי ומיידי!');
+            log('[System] ✅ Commands registered successfully!');
         } else {
-            await rest.put(
-                Routes.applicationCommands(clientId),
-                { body: commandsData },
-            );
+            await rest.put(Routes.applicationCommands(clientId), { body: commandsData });
         }
     } catch (error) {
-        console.error('[System] ❌ שגיאה בהפצת הפקודות:', error);
+        console.error('[System] ❌ Deploy Error:', error);
     }
 
-    if (birthdayManager && typeof birthdayManager.init === 'function') {
-        birthdayManager.init(client, null, null, null);
-    }
-
-    if (scheduler && typeof scheduler.initScheduler === 'function') {
-        scheduler.initScheduler(client);
-    }
+    if (birthdayManager?.init) birthdayManager.init(client, null, null, null);
+    if (scheduler?.initScheduler) scheduler.initScheduler(client);
 });
 
 client.login(process.env.DISCORD_TOKEN);

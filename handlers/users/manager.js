@@ -27,7 +27,6 @@ class UserManager {
     async getInactivityStats(guild) {
         if (!guild) return null;
         
-        // משיכת נתונים מה-DB
         const snapshot = await db.collection('users').get();
         const now = Date.now();
         const msPerDay = 1000 * 60 * 60 * 24;
@@ -44,14 +43,24 @@ class UserManager {
         };
 
         try {
-            // ✅ תיקון Timeout: נותנים לבוט 2 דקות למשוך את כל המשתמשים
-            const membersCache = await guild.members.fetch({ time: 120000 });
+            // ✅ מנגנון Fallback משוריין
+            // מנסים למשוך את כולם (עד 2 דקות). אם נכשל - לא קורסים, אלא ממשיכים עם מה שיש.
+            try {
+                await guild.members.fetch({ time: 120000 }); 
+            } catch (timeoutError) {
+                console.warn(`[UserManager] ⚠️ משיכת משתמשים מלאה לקחה יותר מדי זמן. משתמש ב-Cache הקיים (${guild.members.cache.size}).`);
+            }
+            
+            // עובדים מול ה-Cache (שעכשיו מלא או חלקי, אבל קיים)
+            const membersCache = guild.members.cache;
 
             snapshot.forEach(doc => {
                 const data = doc.data();
                 const userId = doc.id;
                 
+                // אם המשתמש לא בשרת (או לא נטען בגלל תקלה), מדלגים
                 if (!membersCache.has(userId)) return;
+                
                 const member = membersCache.get(userId);
                 if (member.user.bot) return;
 
@@ -68,11 +77,11 @@ class UserManager {
                     return;
                 }
 
-                // 2. חישוב ימי אי-פעילות (כולל וואטסאפ מה-DB המאוחד)
+                // 2. חישוב ימי אי-פעילות (כולל בדיקת וואטסאפ מה-DB)
                 const dates = [
                     data.meta?.lastActive,
                     data.tracking?.joinedAt,
-                    data.identity?.lastWhatsappMessage 
+                    data.identity?.lastWhatsappMessage
                 ].filter(d => d).map(d => new Date(d).getTime());
 
                 const lastActiveTime = dates.length > 0 ? Math.max(...dates) : 0;
@@ -81,7 +90,6 @@ class UserManager {
                 if (lastActiveTime > 0) {
                     daysInactive = Math.floor((now - lastActiveTime) / msPerDay);
                 } else {
-                    // אם אין נתונים ב-DB, בודקים מתי הצטרף לדיסקורד
                     const joinTime = member.joinedTimestamp;
                     daysInactive = Math.floor((now - joinTime) / msPerDay);
                 }
@@ -108,7 +116,7 @@ class UserManager {
             return stats;
 
         } catch (error) {
-            log(`❌ [UserManager] שגיאה במשיכת משתמשים: ${error.message}`);
+            log(`❌ [UserManager] שגיאה קריטית בחישוב: ${error.message}`);
             return null;
         }
     }

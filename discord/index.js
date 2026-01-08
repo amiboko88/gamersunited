@@ -75,17 +75,24 @@ client.once('ready', async () => {
     log(`🤖 [Discord] Logged in as ${client.user.tag}`);
 
     // --- הפצת הפקודות לדיסקורד (Deploy) ---
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     try {
-        log(`[System] 🔄 מפיץ ${commandsData.length} פקודות לשרתי דיסקורד (Global)...`);
+        const guildId = process.env.GUILD_ID; // וודא שיש לך את זה ב-Variables ברייל
         
-        // שימוש ב-client.user.id מבטיח שאנחנו משתמשים ב-ID הנכון של הבוט
-        await rest.put(
-            Routes.applicationCommands(client.user.id),
-            { body: commandsData },
-        );
-        
-        log('[System] ✅ הפקודות (כולל /manage) נרשמו בהצלחה!');
+        if (guildId) {
+            log(`[System] 🔄 מפיץ ${commandsData.length} פקודות לשרת הספציפי (${guildId}) לעדכון מיידי...`);
+            await rest.put(
+                Routes.applicationGuildCommands(client.user.id, guildId),
+                { body: commandsData },
+            );
+            log('[System] ✅ הפקודות נרשמו בשרת באופן מיידי!');
+        } else {
+            log('[System] ⚠️ לא נמצא GUILD_ID ב-ENV. מפיץ גלובלית (עשוי לקחת שעה להתעדכן)...');
+            await rest.put(
+                Routes.applicationCommands(client.user.id),
+                { body: commandsData },
+            );
+        }
     } catch (error) {
         console.error('[System] ❌ שגיאה בהפצת הפקודות:', error);
     }

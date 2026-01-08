@@ -14,65 +14,78 @@ class DashboardHandler {
                 return interaction.editReply('❌ שגיאה בטעינת נתונים.');
             }
 
-            // --- עיצוב גרף 2026 (Donut Dark Mode) ---
+            // קונפיגורציה לגרף עשיר וברור
             const chartConfig = {
                 type: 'doughnut',
                 data: {
-                    labels: [
-                        `פעילים (${stats.active})`, 
-                        `חסינים (${stats.immune})`, 
-                        `רדומים 7+ (${stats.inactive7.length})`, 
-                        `בסיכון 14+ (${stats.inactive14.length})`, 
-                        `להרחקה 30+ (${stats.inactive30.length})`
-                    ],
+                    labels: ['פעילים', 'חסינים', 'רדומים (7+)', 'בסיכון (14+)', 'להרחקה (30+)'],
                     datasets: [{
-                        data: [stats.active, stats.immune, stats.inactive7.length, stats.inactive14.length, stats.inactive30.length],
-                        backgroundColor: ['#00E676', '#2979FF', '#FFEA00', '#FF9100', '#FF1744'],
-                        borderColor: '#2B2D31', // צבע רקע של דיסקורד להפרדה
-                        borderWidth: 2
+                        data: [
+                            stats.active, 
+                            stats.immune, 
+                            stats.inactive7.length, 
+                            stats.inactive14.length, 
+                            stats.inactive30.length
+                        ],
+                        backgroundColor: [
+                            '#4CAF50', // ירוק - פעיל
+                            '#2196F3', // כחול - חסין
+                            '#FFC107', // צהוב - רדום
+                            '#FF9800', // כתום - סיכון
+                            '#F44336'  // אדום - הרחקה
+                        ],
+                        borderColor: '#1e1e1e',
+                        borderWidth: 3
                     }]
                 },
                 options: {
+                    // הופך את הגרף לברור יותר עם מקרא בצד
+                    legend: {
+                        display: true,
+                        position: 'right',
+                        labels: {
+                            fontColor: '#ffffff',
+                            fontSize: 16,
+                            padding: 15,
+                            boxWidth: 20
+                        }
+                    },
                     plugins: {
-                        legend: {
+                        // הצגת מספרים על הגרף עצמו
+                        datalabels: {
                             display: true,
-                            position: 'right',
-                            labels: {
-                                fontColor: 'white',
-                                fontSize: 16,
-                                padding: 20
-                            }
+                            color: '#ffffff',
+                            font: { weight: 'bold', size: 20 },
+                            anchor: 'center',
+                            align: 'center'
                         },
                         doughnutlabel: {
                             labels: [
-                                { text: `${stats.humans}`, font: { size: 30, color: 'white' } },
-                                { text: 'בני אנוש', font: { size: 14, color: '#cccccc' } }
+                                { text: `${stats.humans}`, font: { size: 30, color: '#ffffff' } },
+                                { text: 'חברים', font: { size: 16, color: '#cccccc' } }
                             ]
                         }
                     }
                 }
             };
             
-            // יצירת URL עם רקע כהה מותאם
-            const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&backgroundColor=%232B2D31&width=600&height=300`;
+            // שימוש ב-plugin להצגת תוויות מספרים (datalabels)
+            const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&backgroundColor=%231e1e1e&width=600&height=350`;
 
-            // --- בניית ה-Embed הנקי ---
             const embed = new EmbedBuilder()
-                .setColor('#2B2D31') // משתלב עם הרקע
-                .setTitle(`🚀 דשבורד קהילה: ${guild.name}`)
-                // תיאור מינימליסטי כי הכל בתמונה
-                .setDescription(`סה"כ בשרת: **${stats.total}** (כולל בוטים)\nחברים חדשים השבוע: **${stats.newMembers}**`) 
+                .setColor('#1e1e1e')
+                .setTitle(`📊 דשבורד קהילה: ${guild.name}`)
+                .setDescription(`ניתוח עומק בזמן אמת.\nסה"כ בשרת: **${stats.total}** | בני אנוש: **${stats.humans}**`)
                 .setImage(chartUrl)
                 .setFooter({ 
-                    text: `עודכן: ${new Date().toLocaleTimeString("he-IL", { timeZone: "Asia/Jerusalem" })}`,
+                    text: `עודכן: ${new Date().toLocaleTimeString("he-IL", { timeZone: "Asia/Jerusalem" })} • שמעון AI`,
                     iconURL: guild.iconURL()
                 });
 
-            // כפתורים
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('btn_manage_refresh')
-                    .setLabel('רענן נתונים')
+                    .setLabel('רענן')
                     .setStyle(ButtonStyle.Secondary)
                     .setEmoji('🔄'),
                 
@@ -84,17 +97,18 @@ class DashboardHandler {
                     .setEmoji('🗑️')
             );
 
-            // עדכון ההודעה
-            if (interaction.isButton()) {
-                // טריק: משנים את הכפתור ל"טוען" לשבריר שניה כדי לתת פידבק
+            // בדיקה אם זו הודעה חדשה או עדכון
+            if (interaction.deferred || interaction.replied) {
                 await interaction.editReply({ embeds: [embed], components: [row] });
             } else {
-                await interaction.editReply({ embeds: [embed], components: [row] });
+                await interaction.reply({ embeds: [embed], components: [row], flags: 64 }); // Ephemeral
             }
 
         } catch (error) {
             log(`Dashboard Error: ${error.message}`);
-            try { await interaction.editReply('❌ שגיאה בטעינת הגרף.'); } catch (e) {}
+            try { 
+                if (!interaction.replied) await interaction.editReply('❌ שגיאה בטעינת הגרף.');
+            } catch (e) {}
         }
     }
 
@@ -105,21 +119,21 @@ class DashboardHandler {
         const candidates = stats.kickCandidates;
 
         if (candidates.length === 0) {
-            return interaction.editReply('✅ השרת נקי! אין מועמדים להרחקה.');
+            return interaction.editReply('✅ הרשימה ריקה! הקהילה בריאה.');
         }
 
         const listText = candidates.map(c => `• **${c.name}** (<@${c.userId}>) - ${c.days} ימים`).join('\n');
         
         const embed = new EmbedBuilder()
-            .setTitle('⚠️ רשימת הרחקה (Pre-Flight Check)')
-            .setDescription(`**סה"כ להרחקה:** ${candidates.length}\n\n${listText.slice(0, 3000)}`)
+            .setTitle(`⚠️ בדיקת הרחקה (${candidates.length} משתמשים)`)
+            .setDescription(`המשתמשים הבאים לא נראו בדיסקורד, בוואטסאפ או במשחקים מעל 30 יום:\n\n${listText.slice(0, 3000)}`)
             .setColor('Red')
-            .setFooter({ text: 'פעולה זו היא סופית.' });
+            .setFooter({ text: 'לחץ על "בצע הרחקה" רק אם אתה בטוח.' });
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('btn_manage_kick_confirm')
-                .setLabel('🔥 בצע הרחקה')
+                .setLabel('🚨 בצע הרחקה')
                 .setStyle(ButtonStyle.Danger),
             
             new ButtonBuilder()
@@ -132,7 +146,7 @@ class DashboardHandler {
     }
 
     async executeKick(interaction) {
-        await interaction.update({ content: '🚀 מבצע ניקוי... נא להמתין.', components: [], embeds: [] });
+        await interaction.update({ content: '🚀 שמעון מנקה את השרת... נא להמתין.', components: [], embeds: [] });
         
         const stats = await userManager.getInactivityStats(interaction.guild);
         const userIds = stats.kickCandidates.map(c => c.userId);
@@ -140,13 +154,13 @@ class DashboardHandler {
         const result = await userManager.executeKickBatch(interaction.guild, userIds);
 
         const summaryEmbed = new EmbedBuilder()
-            .setTitle('🧹 דוח ביצוע')
+            .setTitle('🧹 סיכום פעולה')
             .setColor('Green')
             .addFields(
                 { name: 'הורחקו', value: `${result.kicked.length}`, inline: true },
-                { name: 'נכשלו', value: `${result.failed.length}`, inline: true }
+                { name: 'נכשלו/מוגנים', value: `${result.failed.length}`, inline: true }
             )
-            .setDescription(`**שמות:**\n${result.kicked.join(', ') || 'אין'}`);
+            .setDescription(`**טופלו:** ${result.kicked.join(', ') || 'אף אחד'}`);
 
         await interaction.followUp({ embeds: [summaryEmbed], ephemeral: true });
     }

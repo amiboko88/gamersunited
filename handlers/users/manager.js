@@ -2,32 +2,23 @@
 const db = require('../../utils/firebase');
 const { log } = require('../../utils/logger');
 
-const TIMES = {
-    WARNING: 7,
-    DANGER: 14,
-    KICK: 30
+// הגדרת זמנים בימים
+const DAYS = {
+    DEAD: 180,    // חצי שנה - מת
+    SUSPECT: 90,  // 3 חודשים - חשוד/רדום
+    AFK: 30       // חודש - AFK טרי
 };
 
 const IMMUNE_ROLES_NAMES = ['MVP', 'Server Booster', 'VIP'];
 
 class UserManager {
 
-    /**
-     * עדכון פעילות - כתיבה אטומית לתוך המבנה הנקי
-     */
     async updateLastActive(userId) {
         try {
             const now = new Date().toISOString();
-            
-            // שימוש ב-merge כדי לעדכן רק את השדות הרלוונטיים בתוך האובייקטים
             await db.collection('users').doc(userId).set({
-                meta: { 
-                    lastActive: now,
-                    lastSeen: now 
-                },
-                tracking: { 
-                    statusStage: 'active' 
-                }
+                meta: { lastActive: now, lastSeen: now },
+                tracking: { statusStage: 'active' }
             }, { merge: true });
         } catch (error) {
             log(`❌ [UserManager] עדכון פעילות נכשל: ${error.message}`);
@@ -45,27 +36,28 @@ class UserManager {
             humans: 0,       
             active: 0,
             immune: 0, 
-            inactive7: [],
-            inactive14: [],
-            inactive30: [],
-            kickCandidates: [],
+            
+            // הקטגוריות החדשות
+            dead: [],        // מעל חצי שנה (מועמדים לקיק)
+            review: [],      // מעל 3 חודשים עם פעילות עבר (לבדיקה)
+            sleeping: [],    // מעל 3 חודשים ללא עבר (רדומים)
+            afk: [],         // חדשים שנעלמו (AFK)
+            
+            kickCandidates: [], // הרשימה הסופית לבעיטה (רק ה"מתים" וה"רדומים ללא עבר")
             newMembers: 0,
-            voiceNow: 0,
-            topActive: []
+            voiceNow: 0
         };
 
         try {
-            // הגנה מקריסה בעת משיכת משתמשים (Anti-Crash)
+            // Anti-Crash + Force Fetch
             if (guild.memberCount !== guild.members.cache.size) {
-                try {
-                    await guild.members.fetch({ time: 15000 }); 
-                } catch (e) {}
+                try { await guild.members.fetch({ time: 10000 }); } catch (e) {}
             }
             
             const allMembers = guild.members.cache;
             stats.total = guild.memberCount; 
 
-            // משיכת דאטה מה-DB
+            // משיכת דאטה
             const [usersSnapshot, gameStatsSnapshot] = await Promise.all([
                 db.collection('users').get(),
                 db.collection('gameStats').get()
@@ -77,8 +69,6 @@ class UserManager {
             const gamesMap = new Map();
             gameStatsSnapshot.forEach(doc => gamesMap.set(doc.id, doc.data()));
 
-            let activityScores = [];
-
             allMembers.forEach(member => {
                 if (member.user.bot) return;
                 
@@ -87,31 +77,27 @@ class UserManager {
                 const userData = usersMap.get(userId) || {};
                 const userGames = gamesMap.get(userId) || {};
 
-                // --- Live Status Check ---
-                // אם המשתמש מחובר כרגע או בקול - הוא פעיל (0 ימים)
+                // --- Live Status ---
                 const isOnline = member.presence && member.presence.status !== 'offline';
                 const isInVoice = member.voice && member.voice.channelId;
-                
                 if (isInVoice) stats.voiceNow++;
 
+                // חישוב ימים ללא פעילות
                 let daysInactive = 0;
-                
                 if (isOnline || isInVoice) {
                     daysInactive = 0;
                 } else {
-                    // חישוב לפי ה-DB הנקי בלבד
                     const lastSeenTime = this.calculateLastSeen(member, userData, userGames);
                     daysInactive = Math.floor((now - lastSeenTime) / msPerDay);
                 }
 
-                // Top 3 Score Calculation
-                const xp = userData.economy?.xp || 0;
-                const liveBonus = (isOnline || isInVoice) ? 500 : 0;
-                const score = (1000 / (daysInactive + 1)) + (xp / 10) + liveBonus;
-                
-                activityScores.push({ name: member.displayName, score: score, days: daysInactive });
+                // בדיקת ותק (מתי הצטרף לשרת)
+                const daysSinceJoin = Math.floor((now - member.joinedTimestamp) / msPerDay);
 
-                // Immunity Check
+                // נתוני עבר (XP/הודעות) לזיהוי משתמשים "חשודים"
+                const hasLegacy = (userData.economy?.xp > 100) || (userData.stats?.messagesSent > 10);
+
+                // חסינות
                 const isImmune = member.roles.cache.some(r => 
                     IMMUNE_ROLES_NAMES.some(immuneName => r.name.includes(immuneName)) ||
                     r.id === process.env.ROLE_MVP_ID
@@ -122,23 +108,43 @@ class UserManager {
                     return;
                 }
 
-                // Classification
-                if (daysInactive < 3) { 
-                    if (daysInactive > 0) stats.newMembers++;
+                // --- המיון החדש והמדויק ---
+
+                // 1. פעילים (פחות מחודש)
+                if (daysInactive < DAYS.AFK) {
+                    // אם הצטרף בשבוע האחרון - נחשב "חדש"
+                    if (daysSinceJoin < 7) stats.newMembers++;
                     stats.active++;
-                } else if (daysInactive >= TIMES.KICK) {
-                    stats.inactive30.push({ userId, days: daysInactive, name: member.displayName });
+                } 
+                // 2. מתים (מעל חצי שנה) - לקיק מיידי
+                else if (daysInactive >= DAYS.DEAD) {
+                    stats.dead.push({ userId, days: daysInactive, name: member.displayName });
                     stats.kickCandidates.push({ userId, days: daysInactive, name: member.displayName });
-                } else if (daysInactive >= TIMES.DANGER) {
-                    stats.inactive14.push({ userId, days: daysInactive, name: member.displayName });
-                } else if (daysInactive >= TIMES.WARNING) {
-                    stats.inactive7.push({ userId, days: daysInactive, name: member.displayName });
-                } else {
-                    stats.active++;
+                }
+                // 3. בדיקה (מעל 3 חודשים)
+                else if (daysInactive >= DAYS.SUSPECT) {
+                    if (hasLegacy) {
+                        // יש לו היסטוריה - הולך ל"בדיקה" (לא לקיק אוטומטי)
+                        stats.review.push({ userId, days: daysInactive, name: member.displayName });
+                    } else {
+                        // אין היסטוריה - הולך ל"רדומים" (אפשר להעיף)
+                        stats.sleeping.push({ userId, days: daysInactive, name: member.displayName });
+                        stats.kickCandidates.push({ userId, days: daysInactive, name: member.displayName });
+                    }
+                }
+                // 4. AFK (חדשים שנעלמו)
+                else {
+                    // אם הוא כאן, הוא בין 30 ל-90 יום אי פעילות.
+                    // אם הוא הצטרף לאחרונה יחסית (בחודשיים האחרונים) וכבר נעלם - הוא AFK.
+                    if (daysSinceJoin < 60) {
+                        stats.afk.push({ userId, days: daysInactive, name: member.displayName });
+                    } else {
+                        // ותיק שסתם נעלם לחודש - נחשב פעיל/רגיל בינתיים
+                        stats.active++;
+                    }
                 }
             });
 
-            stats.topActive = activityScores.sort((a, b) => b.score - a.score).slice(0, 3);
             return stats;
 
         } catch (error) {
@@ -147,37 +153,25 @@ class UserManager {
         }
     }
 
-    /**
-     * חישוב זמן אחרון - מותאם אך ורק למבנה ה-DB הנקי והמאוחד
-     */
     calculateLastSeen(member, userData, userGames) {
         let timestamps = [];
         
-        // 1. קריאה מהמבנה החדש והנקי בלבד (meta, tracking, identity)
+        // קריאה מהמבנה הנקי
         if (userData.meta) {
             if (userData.meta.lastSeen) timestamps.push(new Date(userData.meta.lastSeen).getTime());
             if (userData.meta.lastActive) timestamps.push(new Date(userData.meta.lastActive).getTime());
             if (userData.meta.firstSeen) timestamps.push(new Date(userData.meta.firstSeen).getTime());
         }
+        if (userData.tracking?.joinedAt) timestamps.push(new Date(userData.tracking.joinedAt).getTime());
+        if (userData.identity?.lastWhatsappMessage) timestamps.push(new Date(userData.identity.lastWhatsappMessage).getTime());
 
-        if (userData.tracking && userData.tracking.joinedAt) {
-            timestamps.push(new Date(userData.tracking.joinedAt).getTime());
-        }
-
-        if (userData.identity && userData.identity.lastWhatsappMessage) {
-            timestamps.push(new Date(userData.identity.lastWhatsappMessage).getTime());
-        }
-
-        // 2. נתוני משחקים
         if (userGames) {
             Object.values(userGames).forEach(game => {
                 if (game.lastPlayed) timestamps.push(new Date(game.lastPlayed).getTime());
             });
         }
         
-        // 3. ברירת מחדל: דיסקורד
         timestamps.push(member.joinedTimestamp);
-
         return Math.max(...timestamps);
     }
 
@@ -187,15 +181,10 @@ class UserManager {
             try {
                 const member = await guild.members.fetch(userId).catch(() => null);
                 if (member) {
-                    await member.kick('Shimon Automation: Inactivity');
+                    await member.kick('Shimon Inactivity Cleanup');
                     kicked.push(member.displayName);
-                    
-                    // עדכון סטטוס ב-DB הנקי
                     await db.collection('users').doc(userId).set({ 
-                        tracking: {
-                            status: 'kicked',
-                            kickedAt: new Date().toISOString()
-                        }
+                        tracking: { status: 'kicked', kickedAt: new Date().toISOString() }
                     }, { merge: true });
                 }
             } catch (e) { failed.push(userId); }

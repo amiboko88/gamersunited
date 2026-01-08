@@ -37,8 +37,6 @@ function loadCommands(dir) {
                 if (command.data && command.data.name) {
                     client.commands.set(command.data.name, command);
                     commandsData.push(command.data.toJSON());
-                } else {
-                    console.warn(`[WARNING] הפקודה ב-${fullPath} חסרה מאפיין "data" או "name".`);
                 }
             } catch (error) {
                 console.error(`[ERROR] נכשל בטעינת פקודה ${fullPath}:`, error);
@@ -66,6 +64,21 @@ if (fs.existsSync(eventsPath)) {
     }
 }
 
+// --- הגנה גלובלית מקריסות (Anti-Crash) ---
+process.on('unhandledRejection', (reason, promise) => {
+    // מסננים את השגיאה הספציפית הזו כדי שלא תלכלך את הלוג
+    if (reason.code === 'GuildMembersTimeout') {
+        // שגיאה שקטה - הבוט ימשיך כרגיל
+        return; 
+    }
+    console.error('❌ [Unhandled Rejection]:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('❌ [Uncaught Exception]:', error);
+});
+// -------------------------------------------
+
 client.once('ready', async () => {
     log(`🤖 [Discord] Logged in as ${client.user.tag}`);
 
@@ -76,7 +89,6 @@ client.once('ready', async () => {
         
         if (guildId) {
             log(`[System] 🧹 מנקה פקודות גלובליות כפולות...`);
-            // מחיקת הגלובליים כדי למנוע כפילויות
             await rest.put(Routes.applicationCommands(clientId), { body: [] });
 
             log(`[System] 🔄 מפיץ ${commandsData.length} פקודות לשרת הספציפי (${guildId})...`);
@@ -86,7 +98,6 @@ client.once('ready', async () => {
             );
             log('[System] ✅ הפקודות נרשמו בשרת באופן נקי ומיידי!');
         } else {
-            // אם אין GUILD_ID, נאלץ להשתמש בגלובלי
             await rest.put(
                 Routes.applicationCommands(clientId),
                 { body: commandsData },

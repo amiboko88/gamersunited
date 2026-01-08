@@ -11,17 +11,36 @@ class DashboardHandler {
             const stats = await userManager.getInactivityStats(guild);
             
             if (!stats) {
-                return interaction.editReply('❌ שגיאה בטעינת נתונים (נסה שוב בעוד דקה).');
+                return interaction.editReply('❌ נתונים חסרים (נסה שוב).');
             }
 
             // --- גרף QuickChart (Donut) ---
             const chartConfig = {
                 type: 'doughnut',
                 data: {
-                    labels: ['פעילים', 'חסינים', 'רדומים', 'בסיכון', 'להרחקה'],
+                    // תוויות מעודכנות
+                    labels: [
+                        'פעילים', 
+                        'חסינים', 
+                        'לבדיקה (חשודים)', 
+                        'רדומים (ללא עבר)', 
+                        'מתים (6 חודשים+)'
+                    ],
                     datasets: [{
-                        data: [stats.active, stats.immune, stats.inactive7.length, stats.inactive14.length, stats.inactive30.length],
-                        backgroundColor: ['#4CAF50', '#2196F3', '#FFC107', '#FF9800', '#F44336'],
+                        data: [
+                            stats.active, 
+                            stats.immune, 
+                            stats.review.length, 
+                            stats.sleeping.length, 
+                            stats.dead.length
+                        ],
+                        backgroundColor: [
+                            '#4CAF50', // ירוק
+                            '#2196F3', // כחול
+                            '#FF9800', // כתום (חשודים)
+                            '#9E9E9E', // אפור (רדומים)
+                            '#F44336'  // אדום (מתים)
+                        ],
                         borderColor: '#1e1e1e',
                         borderWidth: 3
                     }]
@@ -39,23 +58,21 @@ class DashboardHandler {
                     }
                 }
             };
-            const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&backgroundColor=%231e1e1e&width=500&height=300`;
+            const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&backgroundColor=%231e1e1e&width=550&height=300`;
 
-            // --- בניית טקסט ל-TOP 3 ---
-            const topUsersText = stats.topActive.length > 0 
-                ? stats.topActive.map((u, i) => `${['🥇','🥈','🥉'][i]} **${u.name}**`).join('\n')
-                : 'אין מספיק נתונים';
-
-            // --- בניית ה-Embed העשיר ---
+            // --- Embed נקי בלי מובילים ---
             const embed = new EmbedBuilder()
                 .setColor('#1e1e1e')
-                .setTitle(`🚀 דשבורד קהילה: ${guild.name}`)
-                .setDescription(`ניתוח פעילות בזמן אמת.\nסה"כ משתמשים: **${stats.total}**`)
+                .setTitle(`📊 דשבורד קהילה: ${guild.name}`)
+                .setDescription(`ניתוח עומק לוגי.\nסה"כ משתמשים: **${stats.total}**`)
                 .setImage(chartUrl)
                 .addFields(
-                    { name: '🏆 המובילים השבוע', value: topUsersText, inline: true },
-                    { name: '🎙️ סטטוס קולי', value: `**${stats.voiceNow}** משתמשים מחוברים כרגע`, inline: true },
-                    { name: '🌱 צמיחה', value: `**${stats.newMembers}** הצטרפו ב-3 ימים האחרונים`, inline: true }
+                    { name: '💀 מתים (להרחקה)', value: `**${stats.dead.length}** (חצי שנה+)`, inline: true },
+                    { name: '🕵️ לבדיקה ידנית', value: `**${stats.review.length}** (לא פעילים עם עבר)`, inline: true },
+                    { name: '💤 רדומים (ללא עבר)', value: `**${stats.sleeping.length}** (3 חודשים+)`, inline: true },
+                    { name: '👻 AFK טריים', value: `**${stats.afk.length}** (נכנסו ויצאו)`, inline: true },
+                    { name: '🎙️ קול', value: `**${stats.voiceNow}** מחוברים`, inline: true },
+                    { name: '🌱 חדשים', value: `**${stats.newMembers}** השבוע`, inline: true }
                 )
                 .setFooter({ 
                     text: `עודכן: ${new Date().toLocaleTimeString("he-IL", { timeZone: "Asia/Jerusalem" })} • שמעון AI`,
@@ -71,9 +88,9 @@ class DashboardHandler {
                 
                 new ButtonBuilder()
                     .setCustomId('btn_manage_kick_prep')
-                    .setLabel(`ניקוי (${stats.inactive30.length})`)
+                    .setLabel(`ניקוי (${stats.kickCandidates.length})`) // מנקה רק מתים ורדומים
                     .setStyle(ButtonStyle.Danger)
-                    .setDisabled(stats.inactive30.length === 0)
+                    .setDisabled(stats.kickCandidates.length === 0)
                     .setEmoji('🗑️')
             );
 
@@ -96,16 +113,16 @@ class DashboardHandler {
         const candidates = stats.kickCandidates;
 
         if (candidates.length === 0) {
-            return interaction.editReply('✅ השרת נקי! אין מועמדים להרחקה.');
+            return interaction.editReply('✅ אין מועמדים להרחקה (מתים/רדומים).');
         }
 
         const listText = candidates.map(c => `• **${c.name}** (<@${c.userId}>) - ${c.days} ימים`).join('\n');
         
         const embed = new EmbedBuilder()
-            .setTitle(`⚠️ בדיקת הרחקה (${candidates.length} משתמשים)`)
-            .setDescription(`רשימת מועמדים להרחקה (30+ יום ללא פעילות):\n\n${listText.slice(0, 3000)}`)
+            .setTitle(`⚠️ מועמדים להרחקה (${candidates.length})`)
+            .setDescription(`המשתמשים הבאים הם "מתים" (180+ יום) או "רדומים ללא היסטוריה" (90+ יום):\n\n${listText.slice(0, 3000)}`)
             .setColor('Red')
-            .setFooter({ text: 'פעולה זו היא סופית.' });
+            .setFooter({ text: 'לחץ על "בצע הרחקה" רק אם אתה בטוח.' });
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -135,7 +152,7 @@ class DashboardHandler {
             .setColor('Green')
             .addFields(
                 { name: 'הורחקו', value: `${result.kicked.length}`, inline: true },
-                { name: 'נכשלו/מוגנים', value: `${result.failed.length}`, inline: true }
+                { name: 'נכשלו', value: `${result.failed.length}`, inline: true }
             )
             .setDescription(`**טופלו:** ${result.kicked.join(', ') || 'אף אחד'}`);
 

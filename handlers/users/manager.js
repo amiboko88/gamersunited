@@ -12,11 +12,22 @@ const IMMUNE_ROLES_NAMES = ['MVP', 'Server Booster', 'VIP'];
 
 class UserManager {
 
+    /**
+     * עדכון פעילות - כתיבה אטומית לתוך המבנה הנקי
+     */
     async updateLastActive(userId) {
         try {
+            const now = new Date().toISOString();
+            
+            // שימוש ב-merge כדי לעדכן רק את השדות הרלוונטיים בתוך האובייקטים
             await db.collection('users').doc(userId).set({
-                meta: { lastActive: new Date().toISOString() },
-                tracking: { statusStage: 'active' }
+                meta: { 
+                    lastActive: now,
+                    lastSeen: now 
+                },
+                tracking: { 
+                    statusStage: 'active' 
+                }
             }, { merge: true });
         } catch (error) {
             log(`❌ [UserManager] עדכון פעילות נכשל: ${error.message}`);
@@ -39,38 +50,34 @@ class UserManager {
             inactive30: [],
             kickCandidates: [],
             newMembers: 0,
-            voiceNow: 0,       // כמה מחוברים לקול כרגע
-            topActive: []      // רשימת ה-TOP 3
+            voiceNow: 0,
+            topActive: []
         };
 
         try {
-            // --- שלב 1: משיכת נתונים מוגנת (Anti-Crash) ---
-            try {
-                // מנסים למשוך בכוח, אבל עוטפים כדי לא להקריס את הבוט
-                await guild.members.fetch({ time: 10000, force: true });
-            } catch (timeoutError) {
-                console.warn(`[UserManager] ⚠️ משיכת משתמשים איטית. משתמש בזיכרון הקיים למניעת קריסה.`);
+            // הגנה מקריסה בעת משיכת משתמשים (Anti-Crash)
+            if (guild.memberCount !== guild.members.cache.size) {
+                try {
+                    await guild.members.fetch({ time: 15000 }); 
+                } catch (e) {}
             }
+            
+            const allMembers = guild.members.cache;
+            stats.total = guild.memberCount; 
 
-            // משיכת דאטה מה-DB במקביל
+            // משיכת דאטה מה-DB
             const [usersSnapshot, gameStatsSnapshot] = await Promise.all([
                 db.collection('users').get(),
                 db.collection('gameStats').get()
             ]);
 
-            // מיפוי לגישה מהירה
             const usersMap = new Map();
             usersSnapshot.forEach(doc => usersMap.set(doc.id, doc.data()));
 
             const gamesMap = new Map();
             gameStatsSnapshot.forEach(doc => gamesMap.set(doc.id, doc.data()));
 
-            // איסוף מועמדים ל-Top Active
             let activityScores = [];
-
-            // --- שלב 2: מעבר על המשתמשים ---
-            const allMembers = guild.members.cache; // עובדים עם מה שיש (Cache)
-            stats.total = guild.memberCount; // המספר האמיתי מדיסקורד
 
             allMembers.forEach(member => {
                 if (member.user.bot) return;
@@ -80,21 +87,31 @@ class UserManager {
                 const userData = usersMap.get(userId) || {};
                 const userGames = gamesMap.get(userId) || {};
 
-                // 1. בדיקת פעילות חיה (Voice)
+                // --- Live Status Check ---
+                // אם המשתמש מחובר כרגע או בקול - הוא פעיל (0 ימים)
+                const isOnline = member.presence && member.presence.status !== 'offline';
                 const isInVoice = member.voice && member.voice.channelId;
+                
                 if (isInVoice) stats.voiceNow++;
 
-                // 2. חישוב זמן אחרון (Deep Scan)
-                const lastSeenTime = this.calculateLastSeen(member, userData, userGames);
-                const daysInactive = Math.floor((now - lastSeenTime) / msPerDay);
+                let daysInactive = 0;
+                
+                if (isOnline || isInVoice) {
+                    daysInactive = 0;
+                } else {
+                    // חישוב לפי ה-DB הנקי בלבד
+                    const lastSeenTime = this.calculateLastSeen(member, userData, userGames);
+                    daysInactive = Math.floor((now - lastSeenTime) / msPerDay);
+                }
 
-                // חישוב ניקוד לפעילות (לטובת ה-TOP 3)
-                // משקל: ימים מאז פעילות (פחות ימים = יותר נקודות) + הודעות + XP
+                // Top 3 Score Calculation
                 const xp = userData.economy?.xp || 0;
-                const score = (1000 / (daysInactive + 1)) + (xp / 10); 
+                const liveBonus = (isOnline || isInVoice) ? 500 : 0;
+                const score = (1000 / (daysInactive + 1)) + (xp / 10) + liveBonus;
+                
                 activityScores.push({ name: member.displayName, score: score, days: daysInactive });
 
-                // 3. חסינות
+                // Immunity Check
                 const isImmune = member.roles.cache.some(r => 
                     IMMUNE_ROLES_NAMES.some(immuneName => r.name.includes(immuneName)) ||
                     r.id === process.env.ROLE_MVP_ID
@@ -105,9 +122,9 @@ class UserManager {
                     return;
                 }
 
-                // 4. סיווג
-                if (daysInactive < 3) {
-                    stats.newMembers++;
+                // Classification
+                if (daysInactive < 3) { 
+                    if (daysInactive > 0) stats.newMembers++;
                     stats.active++;
                 } else if (daysInactive >= TIMES.KICK) {
                     stats.inactive30.push({ userId, days: daysInactive, name: member.displayName });
@@ -121,32 +138,46 @@ class UserManager {
                 }
             });
 
-            // מיון וחילוף ה-Top 3
-            stats.topActive = activityScores
-                .sort((a, b) => b.score - a.score)
-                .slice(0, 3);
-
+            stats.topActive = activityScores.sort((a, b) => b.score - a.score).slice(0, 3);
             return stats;
 
         } catch (error) {
-            log(`❌ [UserManager] שגיאה בחישוב סטטיסטיקה: ${error.message}`);
+            log(`❌ [UserManager] שגיאה בחישוב: ${error.message}`);
             return null;
         }
     }
 
+    /**
+     * חישוב זמן אחרון - מותאם אך ורק למבנה ה-DB הנקי והמאוחד
+     */
     calculateLastSeen(member, userData, userGames) {
         let timestamps = [];
-        if (userData.meta?.lastActive) timestamps.push(new Date(userData.meta.lastActive).getTime());
-        if (userData.tracking?.joinedAt) timestamps.push(new Date(userData.tracking.joinedAt).getTime());
-        if (userData.identity?.lastWhatsappMessage) timestamps.push(new Date(userData.identity.lastWhatsappMessage).getTime());
         
+        // 1. קריאה מהמבנה החדש והנקי בלבד (meta, tracking, identity)
+        if (userData.meta) {
+            if (userData.meta.lastSeen) timestamps.push(new Date(userData.meta.lastSeen).getTime());
+            if (userData.meta.lastActive) timestamps.push(new Date(userData.meta.lastActive).getTime());
+            if (userData.meta.firstSeen) timestamps.push(new Date(userData.meta.firstSeen).getTime());
+        }
+
+        if (userData.tracking && userData.tracking.joinedAt) {
+            timestamps.push(new Date(userData.tracking.joinedAt).getTime());
+        }
+
+        if (userData.identity && userData.identity.lastWhatsappMessage) {
+            timestamps.push(new Date(userData.identity.lastWhatsappMessage).getTime());
+        }
+
+        // 2. נתוני משחקים
         if (userGames) {
             Object.values(userGames).forEach(game => {
                 if (game.lastPlayed) timestamps.push(new Date(game.lastPlayed).getTime());
             });
         }
         
+        // 3. ברירת מחדל: דיסקורד
         timestamps.push(member.joinedTimestamp);
+
         return Math.max(...timestamps);
     }
 
@@ -158,10 +189,14 @@ class UserManager {
                 if (member) {
                     await member.kick('Shimon Automation: Inactivity');
                     kicked.push(member.displayName);
-                    await db.collection('users').doc(userId).update({ 
-                        'tracking.status': 'kicked',
-                        'tracking.kickedAt': new Date().toISOString()
-                    });
+                    
+                    // עדכון סטטוס ב-DB הנקי
+                    await db.collection('users').doc(userId).set({ 
+                        tracking: {
+                            status: 'kicked',
+                            kickedAt: new Date().toISOString()
+                        }
+                    }, { merge: true });
                 }
             } catch (e) { failed.push(userId); }
         }

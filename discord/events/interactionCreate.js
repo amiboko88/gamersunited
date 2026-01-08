@@ -2,10 +2,11 @@
 const { Events, MessageFlags } = require('discord.js');
 const { log } = require('../../utils/logger');
 
-// ייבוא המטפלים (Handlers) השונים
-const verificationHandler = require('../../handlers/users/verification'); // ✅ אימות
-const handleMusicControls = require('../../discord/interactions/buttons/music_controls'); // מוזיקה
-const handleFifoButtons = require('../../discord/interactions/fifoButtons'); // פיפו
+// ייבוא המטפלים (Handlers)
+const verificationHandler = require('../../handlers/users/verification');
+const handleMusicControls = require('../../discord/interactions/buttons/music_controls');
+const handleFifoButtons = require('../../discord/interactions/fifoButtons');
+const dashboardHandler = require('../../handlers/users/dashboard'); // ✅ התוספת החדשה
 
 module.exports = {
     name: Events.InteractionCreate,
@@ -18,21 +19,17 @@ module.exports = {
                 const command = interaction.client.commands.get(interaction.commandName);
 
                 if (!command) {
-                    console.error(`[Error] No command matching ${interaction.commandName} was found.`);
+                    console.warn(`[Command] No command matching ${interaction.commandName} was found.`);
                     return;
                 }
 
                 try {
                     await command.execute(interaction);
                 } catch (error) {
-                    console.error(`Error executing ${interaction.commandName}`);
-                    console.error(error);
-                    const replyContent = { content: '❌ אירעה שגיאה בביצוע הפקודה.', flags: MessageFlags.Ephemeral };
-                    if (interaction.replied || interaction.deferred) {
-                        await interaction.followUp(replyContent);
-                    } else {
-                        await interaction.reply(replyContent);
-                    }
+                    console.error(`Error executing ${interaction.commandName}:`, error);
+                    const msg = { content: '❌ אירעה שגיאה בביצוע הפקודה.', flags: MessageFlags.Ephemeral };
+                    if (interaction.replied || interaction.deferred) await interaction.followUp(msg);
+                    else await interaction.reply(msg);
                 }
             }
 
@@ -42,25 +39,34 @@ module.exports = {
             else if (interaction.isButton()) {
                 const id = interaction.customId;
 
-                // א. כפתור האימות הראשי (מה-Banner)
+                // --- אימות ---
                 if (id === 'start_verification_process') {
                     await verificationHandler.showVerificationModal(interaction);
                 }
                 
-                // ב. כפתורי מוזיקה (Music Controls)
+                // --- ניהול ודשבורד (חדש!) ---
+                else if (id === 'btn_manage_refresh') {
+                    await interaction.deferUpdate(); // מונע שגיאת אינטראקציה
+                    await dashboardHandler.showMainDashboard(interaction);
+                }
+                else if (id === 'btn_manage_kick_prep') {
+                    await dashboardHandler.showKickCandidateList(interaction);
+                }
+                else if (id === 'btn_manage_kick_confirm') {
+                    await dashboardHandler.executeKick(interaction);
+                }
+                else if (id === 'btn_manage_cancel') {
+                    await interaction.update({ content: '✅ הפעולה בוטלה.', embeds: [], components: [], files: [] });
+                }
+
+                // --- מוזיקה ---
                 else if (['play_pause', 'skip', 'stop', 'loop', 'shuffle', 'lyrics'].includes(id)) {
                     await handleMusicControls.execute(interaction);
                 }
 
-                // ג. כפתורי פיפו (Vote / Replay)
+                // --- פיפו (הצבעות) ---
                 else if (id.startsWith('fifo_vote_') || id === 'fifo_replay') {
                     await handleFifoButtons.execute(interaction);
-                }
-                
-                // ד. כפתור הוספת יום הולדת (מהסלאש הישן אם קיים)
-                else if (id === 'birthday_add') {
-                     // אם נשאר כפתור כזה, אפשר להפנות אותו למודאל של האימות או למודאל נפרד
-                     // כרגע המודאל באימות מטפל בזה, אז נשאיר אופציונלי
                 }
             }
 
@@ -70,14 +76,8 @@ module.exports = {
             else if (interaction.isModalSubmit()) {
                 const id = interaction.customId;
 
-                // א. סיום טופס אימות
                 if (id === 'verification_modal_submit') {
                     await verificationHandler.handleModalSubmit(interaction);
-                }
-                
-                // ב. טופס פתיחת טיקט / DM (אם קיים)
-                else if (id === 'dm_fallback_modal') {
-                     // לוגיקה לטיפול ב-DM אם תחזיר אותה בעתיד
                 }
             }
 

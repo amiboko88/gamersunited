@@ -1,87 +1,144 @@
 // 📁 handlers/users/dashboard.js
-const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
 const userManager = require('./manager');
-const { generateStatusPieChart } = require('../../utils/graphGenerator');
-const { createPaginatedFields } = require('../../utils/embedUtils');
+const { generateStatusPieChart } = require('../../utils/graphGenerator'); // וודא שזה קיים
+const { log } = require('../../utils/logger');
 
 class DashboardHandler {
 
-    async getDashboard(interaction) {
-        const stats = await userManager.getInactivityStats(interaction.guild);
-        
-        // יצירת גרף (אם הפונקציה קיימת ב-utils)
-        let chartUrl = null;
+    /**
+     * הצגת הדשבורד הראשי (פקודת /manage)
+     */
+    async showMainDashboard(interaction) {
         try {
-            chartUrl = await generateStatusPieChart(stats);
-        } catch (e) {
-            console.error('Graph generation failed:', e);
-        }
+            const guild = interaction.guild;
+            const stats = await userManager.getInactivityStats(guild);
+            
+            if (!stats) {
+                return interaction.editReply('❌ לא ניתן למשוך נתונים כרגע.');
+            }
 
-        const embed = new EmbedBuilder()
-            .setTitle('📊 מרכז ניהול משתמשים')
-            .setDescription(`**מצב הקהילה בזמן אמת:**\nסה"כ חברים בשרת: **${stats.total}**`)
-            .addFields(
-                { name: '🟢 פעילים', value: `${stats.active}`, inline: true },
-                { name: '🟡 רדומים (7+)', value: `${stats.inactive7.length}`, inline: true },
-                { name: '🟠 בסיכון (14+)', value: `${stats.inactive14.length}`, inline: true },
-                { name: '🔴 להרחקה (30+)', value: `${stats.inactive30.length}`, inline: true },
-                { name: '❌ כשלי DM', value: `${stats.failedDM.length}`, inline: true }
-            )
-            .setColor('#2b2d31')
-            .setFooter({ text: 'AI 2026 User Management System' })
-            .setTimestamp();
+            // יצירת גרף
+            let files = [];
+            try {
+                // הנחה: generateStatusPieChart מחזיר Buffer של תמונה
+                const chartBuffer = await generateStatusPieChart(stats);
+                const attachment = new AttachmentBuilder(chartBuffer, { name: 'stats_chart.png' });
+                files.push(attachment);
+            } catch (e) {
+                console.error('Graph Error:', e);
+            }
 
-        if (chartUrl) embed.setImage(chartUrl);
+            const embed = new EmbedBuilder()
+                .setTitle('📊 מרכז ניהול משתמשים - שמעון')
+                .setDescription(`דוח מצב קהילה בזמן אמת עבור **${guild.name}**`)
+                .setColor('Blue')
+                .addFields(
+                    { name: '👥 סה"כ חברים', value: `${stats.total}`, inline: true },
+                    { name: '🟢 פעילים', value: `${stats.active}`, inline: true },
+                    { name: '🛡️ חסינים (MVP)', value: `${stats.immune}`, inline: true },
+                    { name: '🟡 רדומים (7+ יום)', value: `${stats.inactive7.length}`, inline: true },
+                    { name: '🟠 בסיכון (14+ יום)', value: `${stats.inactive14.length}`, inline: true },
+                    { name: '🔴 להרחקה (30+ יום)', value: `${stats.inactive30.length}`, inline: true }
+                )
+                .setTimestamp()
+                .setFooter({ text: 'לחיצה על "הכן רשימה" לא תמחק מיידית' });
 
-        const menu = new StringSelectMenuBuilder()
-            .setCustomId('users_dashboard_select')
-            .setPlaceholder('🔍 בחר קטגוריה להצגה')
-            .addOptions(
-                new StringSelectMenuOptionBuilder().setLabel('רענן נתונים').setValue('refresh').setEmoji('🔄'),
-                new StringSelectMenuOptionBuilder().setLabel('הצג מועמדים להרחקה (30+)').setValue('list_kick').setEmoji('🔴'),
-                new StringSelectMenuOptionBuilder().setLabel('הצג רדומים (7+)').setValue('list_warning').setEmoji('🟡')
+            if (files.length > 0) {
+                embed.setImage('attachment://stats_chart.png');
+            }
+
+            // כפתורים
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('btn_manage_refresh')
+                    .setLabel('רענן נתונים')
+                    .setStyle(ButtonStyle.Primary)
+                    .setEmoji('🔄'),
+                
+                new ButtonBuilder()
+                    .setCustomId('btn_manage_kick_prep')
+                    .setLabel(`הכן רשימת הרחקה (${stats.inactive30.length})`)
+                    .setStyle(ButtonStyle.Danger)
+                    .setDisabled(stats.inactive30.length === 0) // מושבת אם אין את מי להעיף
+                    .setEmoji('🗑️')
             );
 
-        const kickButton = new ButtonBuilder()
-            .setCustomId('users_kick_action')
-            .setLabel(`נקה משתמשים לא פעילים (${stats.kickCandidates.length})`)
-            .setStyle(ButtonStyle.Danger)
-            .setDisabled(stats.kickCandidates.length === 0)
-            .setEmoji('🗑️');
+            await interaction.editReply({ embeds: [embed], components: [row], files: files });
 
-        const row1 = new ActionRowBuilder().addComponents(menu);
-        const row2 = new ActionRowBuilder().addComponents(kickButton);
-
-        return { embeds: [embed], components: [row1, row2] };
+        } catch (error) {
+            log(`Dashboard Error: ${error.message}`);
+            await interaction.editReply('❌ אירעה שגיאה בטעינת הדשבורד.');
+        }
     }
 
-    async getListEmbed(interaction, type) {
+    /**
+     * שלב 2: הצגת רשימת המועמדים להרחקה לאישור
+     */
+    async showKickCandidateList(interaction) {
+        await interaction.deferReply({ ephemeral: true }); // אישי למנהל
+
         const stats = await userManager.getInactivityStats(interaction.guild);
-        let list = [];
-        let title = '';
-        let color = '';
+        const candidates = stats.kickCandidates;
 
-        if (type === 'list_kick') {
-            list = [...stats.inactive30.map(u => u.userId), ...stats.failedDM];
-            title = '🔴 מועמדים להרחקה (30+ יום או DM חסום)';
-            color = 'Red';
-        } else if (type === 'list_warning') {
-            list = stats.inactive7.map(u => u.userId);
-            title = '🟡 משתמשים רדומים (7-14 יום)';
-            color = 'Yellow';
+        if (candidates.length === 0) {
+            return interaction.editReply('✅ אין מועמדים להרחקה כרגע. כולם פעילים!');
         }
 
-        const embed = new EmbedBuilder().setTitle(title).setColor(color);
+        // יצירת טקסט לרשימה (עד 2000 תווים או קובץ)
+        // אם הרשימה ארוכה מדי, ניצור קובץ טקסט
+        const listText = candidates.map(c => `• ${c.name} (<@${c.userId}>) - ${c.days} ימים`).join('\n');
         
-        if (list.length === 0) {
-            embed.setDescription('✅ הרשימה ריקה.');
-        } else {
-            const formattedList = list.map(id => `<@${id}>`);
-            const fields = createPaginatedFields('משתמשים', formattedList);
-            fields.slice(0, 25).forEach(f => embed.addFields(f));
+        const embed = new EmbedBuilder()
+            .setTitle('⚠️ אישור ביצוע הרחקה')
+            .setDescription(`המשתמשים הבאים לא היו פעילים מעל 30 יום ואינם חסינים:\n\n${listText.slice(0, 1500)}${listText.length > 1500 ? '...\n(ונוספים בקובץ)' : ''}`)
+            .setColor('Red')
+            .setFooter({ text: 'פעולה זו היא סופית! לחץ על אישור לביצוע.' });
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('btn_manage_kick_confirm')
+                .setLabel('🚨 אשר ובעט את כולם')
+                .setStyle(ButtonStyle.Danger),
+            
+            new ButtonBuilder()
+                .setCustomId('btn_manage_cancel')
+                .setLabel('ביטול')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+        // אם הרשימה ארוכה, נצרף קובץ
+        let files = [];
+        if (listText.length > 1000) {
+            const buffer = Buffer.from(listText, 'utf-8');
+            const attachment = new AttachmentBuilder(buffer, { name: 'kick_list.txt' });
+            files.push(attachment);
         }
 
-        return { embeds: [embed] };
+        await interaction.editReply({ embeds: [embed], components: [row], files: files });
+    }
+
+    /**
+     * שלב 3: הביצוע בפועל
+     */
+    async executeKick(interaction) {
+        await interaction.update({ content: '🚀 מבצע ניקוי... אנא המתן.', components: [] });
+        
+        const stats = await userManager.getInactivityStats(interaction.guild);
+        const userIds = stats.kickCandidates.map(c => c.userId);
+
+        const result = await userManager.executeKickBatch(interaction.guild, userIds);
+
+        const summaryEmbed = new EmbedBuilder()
+            .setTitle('🧹 תוצאות הניקוי')
+            .setColor('Green')
+            .addFields(
+                { name: '✅ הורחקו בהצלחה', value: `${result.kicked.length} משתמשים`, inline: true },
+                { name: '❌ נכשלו', value: `${result.failed.length}`, inline: true }
+            )
+            .setDescription(`**הורחקו:**\n${result.kicked.join(', ') || 'אף אחד'}`);
+
+        await interaction.followUp({ embeds: [summaryEmbed], ephemeral: true });
     }
 }
 

@@ -11,6 +11,8 @@ class VerificationHandler {
      */
     async showVerificationModal(interaction) {
         const userId = interaction.user.id;
+        // לוקחים את השם הכי עדכני מהדיסקורד עצמו כדי לא להגיד "Unknown"
+        const currentName = interaction.member.displayName || interaction.user.username;
         
         try {
             // שליפת המשתמש מה-DB
@@ -18,19 +20,20 @@ class VerificationHandler {
             const userData = userDoc.exists ? userDoc.data() : null;
 
             // בדיקה אם המידע הקריטי כבר קיים
-            const hasPhone = userData?.identity?.whatsappPhone;
-            const hasBirthday = userData?.identity?.birthday;
+            // אנחנו בודקים גם בתוך identity וגם בשורש למקרה של מידע ישן
+            const hasPhone = userData?.identity?.whatsappPhone || userData?.whatsappPhone;
+            const hasBirthday = userData?.identity?.birthday || userData?.birthday;
 
             // תרחיש: המשתמש כבר מוכר ומלא בפרטים -> אימות מיידי ללא מודאל
             if (userData && hasPhone && hasBirthday) {
                 await interaction.deferReply({ ephemeral: true });
                 
-                // הרצת אימות "שקט" כדי לוודא רולים וסטטוס
+                // הרצת אימות "שקט" כדי לוודא רולים וסטטוס + תיקון השם ב-DB אם היה Unknown
                 const result = await this.verifyUser(interaction.member, {}, 'smart_check');
                 
-                // הודעה מותאמת אישית
+                // הודעה מותאמת אישית עם השם האמיתי
                 await interaction.editReply({ 
-                    content: `👋 היי **${userData.identity.displayName || interaction.user.username}**!\nאני רואה שכל הפרטים שלך כבר מעודכנים אצלי.\n\n${result.message}` 
+                    content: `👋 היי **${currentName}**!\nאני רואה שכל הפרטים שלך כבר מעודכנים אצלי.\n\n${result.message}` 
                 });
                 return;
             }
@@ -100,13 +103,16 @@ class VerificationHandler {
         try {
             const userId = member.id;
             const guild = member.guild;
+            // שימוש בשם התצוגה הנוכחי ללוג ול-DB
+            const currentDisplayName = member.displayName;
 
-            log(`[Verification] 🛡️ מתחיל תהליך אימות עבור ${member.displayName} (${userId}) דרך ${source}...`);
+            log(`[Verification] 🛡️ מתחיל תהליך אימות עבור ${currentDisplayName} (${userId}) דרך ${source}...`);
 
             // 1. הכנת המידע ל-DB
+            // אנחנו דורסים את ה-displayName עם השם הנוכחי כדי להעיף את ה-Unknown
             const updates = {
                 'identity.discordId': userId,
-                'identity.displayName': member.displayName,
+                'identity.displayName': currentDisplayName, 
                 'identity.fullName': member.user.username,
                 'meta.isVerified': true,
                 'meta.verifiedAt': new Date().toISOString(),
@@ -136,7 +142,7 @@ class VerificationHandler {
             if (role) {
                 if (!member.roles.cache.has(role.id)) {
                     await member.roles.add(role);
-                    log(`[Verification] 👑 רול ${role.name} הוענק ל-${member.displayName}.`);
+                    log(`[Verification] 👑 רול ${role.name} הוענק ל-${currentDisplayName}.`);
                     message = `✅ **אימות הושלם בהצלחה!**\nקיבלת את הרול: **${role.name}**.`;
                 } else {
                     message = `✅ פרטיך עודכנו במערכת (הרול כבר קיים אצלך).`;
@@ -145,8 +151,7 @@ class VerificationHandler {
                 message = `✅ פרטיך נקלטו במערכת, אך לא נמצא רול מתאים בשרת.`;
             }
 
-            // 3. שליחת DM - רק אם זה לא אימות חכם (Smart Check) שכבר קיים
-            // כדי למנוע ספאם למשתמשים קיימים
+            // 3. שליחת DM
             if (source !== 'smart_check') {
                 this.sendWelcomeDM(member, data);
             }
@@ -161,8 +166,6 @@ class VerificationHandler {
 
     async sendWelcomeDM(member, data) {
         try {
-            // אם המשתמש לא מילא כלום, ה-AI ישאל אותו.
-            // אם הוא מילא הכל, ה-AI יברך אותו.
             let prompt = `המשתמש ${member.displayName} סיים אימות. `;
             
             if (!data.phone && !data.bday) {

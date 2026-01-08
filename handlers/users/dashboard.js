@@ -8,18 +8,17 @@ class DashboardHandler {
     async showMainDashboard(interaction) {
         try {
             const guild = interaction.guild;
-            // משיכת נתונים (עכשיו עם Timeout ארוך יותר ב-manager)
             const stats = await userManager.getInactivityStats(guild);
             
             if (!stats) {
                 return interaction.editReply('❌ לא ניתן למשוך נתונים כרגע.');
             }
 
-            // --- יצירת גרף פאי יפה (QuickChart) ---
+            // יצירת גרף פאי יפה (QuickChart URL)
             const chartConfig = {
                 type: 'outlabeledPie',
                 data: {
-                    labels: ['פעילים', 'חסינים (MVP)', 'רדומים (7+)', 'בסיכון (14+)', 'להרחקה (30+)'],
+                    labels: ['פעילים', 'חסינים', 'רדומים', 'בסיכון', 'להרחקה'],
                     datasets: [{
                         data: [stats.active, stats.immune, stats.inactive7.length, stats.inactive14.length, stats.inactive30.length],
                         backgroundColor: ['#4CAF50', '#2196F3', '#FFC107', '#FF9800', '#F44336']
@@ -38,26 +37,25 @@ class DashboardHandler {
                 }
             };
             
+            // בונים את ה-URL. חשוב: זה רק URL, לא צריך קבצים מקומיים.
             const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&backgroundColor=transparent&width=500&height=300`;
-            // ----------------------------------------
 
             const embed = new EmbedBuilder()
                 .setTitle(`📊 מרכז הקהילה - ${guild.name}`)
                 .setDescription(`**סה"כ חברים בשרת:** ${stats.total}\n(כולל ${stats.newMembers} חדשים מהשבוע האחרון)`)
                 .setColor('Blue')
                 .setThumbnail(guild.iconURL({ dynamic: true }))
-                .setImage(chartUrl) // הגרף היפה
+                .setImage(chartUrl)
                 .addFields(
                     { name: '🟢 פעילים', value: `${stats.active}`, inline: true },
                     { name: '🛡️ חסינים', value: `${stats.immune}`, inline: true },
-                    { name: '\u200B', value: '\u200B', inline: true }, // רווח
+                    { name: '\u200B', value: '\u200B', inline: true },
                     { name: '🟡 רדומים', value: `${stats.inactive7.length}`, inline: true },
                     { name: '🟠 בסיכון', value: `${stats.inactive14.length}`, inline: true },
                     { name: '🔴 להרחקה', value: `${stats.inactive30.length}`, inline: true }
                 )
                 .setFooter({ text: `עודכן לאחרונה: ${new Date().toLocaleTimeString('he-IL')}` });
 
-            // כפתורים
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('btn_manage_refresh')
@@ -73,19 +71,15 @@ class DashboardHandler {
                     .setEmoji('🗑️')
             );
 
-            // טיפול בעדכון הודעה קיימת או שליחה חדשה
             if (interaction.isButton()) {
-                await interaction.editReply({ embeds: [embed], components: [row], files: [] }); // מנקים קבצים ישנים
+                await interaction.editReply({ embeds: [embed], components: [row], files: [] });
             } else {
                 await interaction.editReply({ embeds: [embed], components: [row] });
             }
 
         } catch (error) {
             log(`Dashboard Error: ${error.message}`);
-            // במקרה של שגיאה, מנסים לשלוח הודעה פשוטה
-            try {
-                 await interaction.editReply('❌ אירעה שגיאה בטעינת הדשבורד הגרפי.');
-            } catch (e) {}
+            try { await interaction.editReply('❌ אירעה שגיאה בטעינת הדשבורד.'); } catch (e) {}
         }
     }
 
@@ -99,12 +93,11 @@ class DashboardHandler {
             return interaction.editReply('✅ הרשימה ריקה! כולם פעילים או מוגנים.');
         }
 
-        // יצירת טקסט לרשימה
         const listText = candidates.map(c => `• **${c.name}** (<@${c.userId}>) - ${c.days} ימים`).join('\n');
         
         const embed = new EmbedBuilder()
             .setTitle('⚠️ אישור הרחקה סופי')
-            .setDescription(`המשתמשים הבאים מועמדים להרחקה:\n\n${listText.slice(0, 3000)}`) // דיסקורד תומך עד 4096 בתיאור, נגביל לביטחון
+            .setDescription(`המשתמשים הבאים מועמדים להרחקה:\n\n${listText.slice(0, 3000)}`)
             .setColor('Red')
             .setFooter({ text: 'לחץ על "אשר" לביצוע המחיקה.' });
 

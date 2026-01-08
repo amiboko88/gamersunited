@@ -2,7 +2,6 @@
 const db = require('../../utils/firebase');
 const { log } = require('../../utils/logger');
 
-// הגדרות זמנים
 const TIMES = {
     WARNING: 7,
     DANGER: 14,
@@ -43,22 +42,19 @@ class UserManager {
         };
 
         try {
-            // ✅ מנגנון Fallback משוריין
-            // מנסים למשוך את כולם (עד 2 דקות). אם נכשל - לא קורסים, אלא ממשיכים עם מה שיש.
+            // מנסים למשוך את כולם (עד 2 דקות). אם נכשל - ממשיכים עם ה-Cache הקיים.
             try {
                 await guild.members.fetch({ time: 120000 }); 
             } catch (timeoutError) {
-                console.warn(`[UserManager] ⚠️ משיכת משתמשים מלאה לקחה יותר מדי זמן. משתמש ב-Cache הקיים (${guild.members.cache.size}).`);
+                console.warn(`[UserManager] ⚠️ Timeout במשיכת משתמשים. משתמש ב-Cache (${guild.members.cache.size}).`);
             }
             
-            // עובדים מול ה-Cache (שעכשיו מלא או חלקי, אבל קיים)
             const membersCache = guild.members.cache;
 
             snapshot.forEach(doc => {
                 const data = doc.data();
                 const userId = doc.id;
                 
-                // אם המשתמש לא בשרת (או לא נטען בגלל תקלה), מדלגים
                 if (!membersCache.has(userId)) return;
                 
                 const member = membersCache.get(userId);
@@ -77,7 +73,7 @@ class UserManager {
                     return;
                 }
 
-                // 2. חישוב ימי אי-פעילות (כולל בדיקת וואטסאפ מה-DB)
+                // 2. חישוב ימי אי-פעילות
                 const dates = [
                     data.meta?.lastActive,
                     data.tracking?.joinedAt,

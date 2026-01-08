@@ -31,7 +31,8 @@ class UserManager {
         const msPerDay = 1000 * 60 * 60 * 24;
 
         const stats = {
-            total: 0,
+            total: 0,        // סה"כ בשרת (כולל בוטים)
+            humans: 0,       // סה"כ בני אדם (לניהול)
             active: 0,
             immune: 0, 
             inactive7: [],
@@ -42,27 +43,26 @@ class UserManager {
         };
 
         try {
-            // מנסים למשוך את כולם (עד 2 דקות). אם נכשל - ממשיכים עם ה-Cache הקיים.
-            try {
-                await guild.members.fetch({ time: 120000 }); 
-            } catch (timeoutError) {
-                console.warn(`[UserManager] ⚠️ Timeout במשיכת משתמשים. משתמש ב-Cache (${guild.members.cache.size}).`);
-            }
+            // ✅ FORCE FETCH: לא סומכים על הזיכרון. מושכים הכל מהשרת של דיסקורד.
+            // זה יפתור את הבעיה של ה-51 מול 61.
+            const allMembers = await guild.members.fetch({ force: true });
             
-            const membersCache = guild.members.cache;
+            stats.total = allMembers.size; // הספירה האמיתית והמלאה
 
-            snapshot.forEach(doc => {
-                const data = doc.data();
-                const userId = doc.id;
-                
-                if (!membersCache.has(userId)) return;
-                
-                const member = membersCache.get(userId);
+            // מיפוי מהיר של ה-DB לזיכרון
+            const dbMap = new Map();
+            snapshot.forEach(doc => dbMap.set(doc.id, doc.data()));
+
+            // מעבר על כל חברי השרת האמיתיים
+            allMembers.forEach(member => {
+                // דילוג על בוטים בחישוב הפעילות (אבל הם נספרו ב-Total)
                 if (member.user.bot) return;
+                
+                stats.humans++;
+                const userId = member.id;
+                const data = dbMap.get(userId) || {};
 
-                stats.total++;
-
-                // 1. בדיקת חסינות
+                // 1. בדיקת חסינות (MVP / Roles)
                 const isImmune = member.roles.cache.some(r => 
                     IMMUNE_ROLES_NAMES.some(immuneName => r.name.includes(immuneName)) ||
                     r.id === process.env.ROLE_MVP_ID
@@ -73,30 +73,26 @@ class UserManager {
                     return;
                 }
 
-                // 2. חישוב ימי אי-פעילות
+                // 2. חישוב ימי אי-פעילות (שכלול כל הנתונים)
                 const dates = [
                     data.meta?.lastActive,
                     data.tracking?.joinedAt,
                     data.identity?.lastWhatsappMessage
                 ].filter(d => d).map(d => new Date(d).getTime());
 
-                const lastActiveTime = dates.length > 0 ? Math.max(...dates) : 0;
+                // אם אין תאריך, נשתמש בזמן ההצטרפות לשרת כברירת מחדל
+                const lastActiveTime = dates.length > 0 ? Math.max(...dates) : member.joinedTimestamp;
                 
-                let daysInactive = 0;
-                if (lastActiveTime > 0) {
-                    daysInactive = Math.floor((now - lastActiveTime) / msPerDay);
-                } else {
-                    const joinTime = member.joinedTimestamp;
-                    daysInactive = Math.floor((now - joinTime) / msPerDay);
-                }
+                const daysInactive = Math.floor((now - lastActiveTime) / msPerDay);
 
+                // הגנה לחדשים (פחות מ-3 ימים)
                 if (daysInactive < 3) {
                     stats.newMembers++;
                     stats.active++;
                     return;
                 }
 
-                // 3. סיווג
+                // 3. סיווג לקטגוריות
                 if (daysInactive >= TIMES.KICK) {
                     stats.inactive30.push({ userId, days: daysInactive, name: member.displayName });
                     stats.kickCandidates.push({ userId, days: daysInactive, name: member.displayName });
@@ -112,22 +108,20 @@ class UserManager {
             return stats;
 
         } catch (error) {
-            log(`❌ [UserManager] שגיאה קריטית בחישוב: ${error.message}`);
+            log(`❌ [UserManager] שגיאה במשיכת נתונים: ${error.message}`);
             return null;
         }
     }
 
     async executeKickBatch(guild, userIds) {
         let kicked = [], failed = [];
-        
         for (const userId of userIds) {
             try {
                 const member = await guild.members.fetch(userId).catch(() => null);
                 if (member) {
-                    await member.send("היי, עקב חוסר פעילות ממושך (30+ יום), המערכת מסירה אותך מהשרת. נשמח לראותך שוב בעתיד!").catch(() => {});
-                    await member.kick('Shimon Automation: Inactivity > 30 Days');
+                    await member.send("היי, עקב חוסר פעילות ממושך, המערכת מסירה אותך מהשרת. נשמח לראותך שוב!").catch(() => {});
+                    await member.kick('Shimon Automation: Inactivity');
                     kicked.push(member.displayName);
-                    
                     await db.collection('users').doc(userId).update({ 
                         'tracking.status': 'kicked',
                         'tracking.kickedAt': new Date().toISOString()
@@ -135,7 +129,6 @@ class UserManager {
                 }
             } catch (e) { 
                 failed.push(userId); 
-                log(`Failed to kick ${userId}: ${e.message}`);
             }
         }
         return { kicked, failed };

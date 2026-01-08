@@ -1,7 +1,7 @@
 // 📁 handlers/users/stats.js
 const db = require('../../utils/firebase');
 const admin = require('firebase-admin');
-const { getUserRef } = require('../../utils/userUtils'); // ✅ DB מאוחד
+const { getUserRef } = require('../../utils/userUtils');
 
 // 🎚️ טבלת משקלים (XP Weights)
 const XP_RATES = {
@@ -9,9 +9,9 @@ const XP_RATES = {
   command: 3,
   sound: 2,
   smart_reply: 4,
-  voice_minute: 10, // הכי משתלם
+  voice_minute: 10,
   voice_join: 5,
-  podcast: 50,      // בונוס ענק
+  podcast: 50,
   media: 5
 };
 
@@ -19,34 +19,27 @@ class StatTracker {
 
     /**
      * פונקציה גנרית לעדכון סטטיסטיקה ו-XP
-     * @param {string} userId - מזהה המשתמש
-     * @param {string} type - סוג הפעולה (message, voice_minute...)
-     * @param {string} platform - discord / whatsapp
-     * @param {number} amount - כמות (למשל דקות)
      */
     async track(userId, type, platform = 'discord', amount = 1) {
         if (!userId) return;
-
         const xpReward = (XP_RATES[type] || 1) * amount;
         const fieldName = this.mapTypeToField(type);
 
         try {
-            // 1. עדכון המשתמש הראשי (מצטבר)
+            // 1. עדכון המשתמש הראשי
             const userRef = await getUserRef(userId, platform);
-            
             const updates = {
                 [`stats.${fieldName}`]: admin.firestore.FieldValue.increment(amount),
                 'economy.xp': admin.firestore.FieldValue.increment(xpReward),
                 'meta.lastActive': new Date().toISOString()
             };
 
-            // 2. עדכון טבלה שבועית (עבור Leaderboard/MVP)
-            // שים לב: אנחנו שומרים את ה-ID המקורי כמפתח
+            // 2. עדכון טבלה שבועית
             const weekRef = db.collection('weeklyStats').doc(userId);
             const weekUpdates = {
                 [fieldName]: admin.firestore.FieldValue.increment(amount),
                 xpThisWeek: admin.firestore.FieldValue.increment(xpReward),
-                platform: platform, // כדי שנדע מאיפה הוא
+                platform: platform,
                 lastActive: new Date().toISOString()
             };
 
@@ -54,18 +47,18 @@ class StatTracker {
                 userRef.set(updates, { merge: true }),
                 weekRef.set(weekUpdates, { merge: true })
             ]);
-
         } catch (error) {
             console.error(`❌ [Stats] Error tracking ${type} for ${userId}:`, error.message);
         }
     }
 
     /**
-     * עדכון זמן משחק (לדיסקורד בלבד)
+     * ✅ עדכון זמן משחק (תוקן השם מ-trackGameTime ל-updateGameStats)
      */
-    async trackGameTime(userId, gameName, minutes) {
+    async updateGameStats(userId, gameName, minutes) {
         if (!gameName) return;
         try {
+            // החלפת תווים בעייתיים בשם המשחק (כמו נקודות או סלאשים)
             const safeGameName = gameName.replace(/[\/\.]/g, '_');
             const ref = db.collection('gameStats').doc(userId);
             

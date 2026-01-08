@@ -1,5 +1,5 @@
 // 📁 discord/index.js
-const { Client, GatewayIntentBits, Collection, Partials } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, Partials, REST, Routes } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const { log } = require('../utils/logger');
@@ -21,6 +21,7 @@ const client = new Client({
 });
 
 client.commands = new Collection();
+const commandsData = []; // מערך לשמירת המידע שנשלח לדיסקורד
 
 // פונקציה לטעינה רקורסיבית של פקודות
 function loadCommands(dir) {
@@ -30,14 +31,14 @@ function loadCommands(dir) {
         const fullPath = path.join(dir, file.name);
         
         if (file.isDirectory()) {
-            // כניסה לתיקייה פנימית
             loadCommands(fullPath);
         } else if (file.name.endsWith('.js')) {
             try {
                 const command = require(fullPath);
+                // בדיקת תקינות בסיסית
                 if (command.data && command.data.name) {
                     client.commands.set(command.data.name, command);
-                    // log(`[Command] ✅ נטענה הפקודה: ${command.data.name}`);
+                    commandsData.push(command.data.toJSON()); // שמירה לטובת ההפצה
                 } else {
                     console.warn(`[WARNING] הפקודה ב-${fullPath} חסרה מאפיין "data" או "name".`);
                 }
@@ -48,11 +49,11 @@ function loadCommands(dir) {
     }
 }
 
-// 1. טעינת פקודות (Commands)
+// 1. טעינת פקודות מהתיקיות
 const commandsPath = path.join(__dirname, 'commands');
 if (fs.existsSync(commandsPath)) {
-    loadCommands(commandsPath); // שימוש בטעינה הרקורסיבית
-    log(`[System] ✅ סה"כ נטענו ${client.commands.size} פקודות סלאש.`);
+    loadCommands(commandsPath);
+    log(`[System] ✅ נטענו מקומית ${client.commands.size} פקודות סלאש.`);
 }
 
 // 2. טעינת אירועים (Events)
@@ -69,11 +70,28 @@ if (fs.existsSync(eventsPath)) {
     }
 }
 
-// 3. אירוע עלייה לאוויר (Ready)
-client.once('ready', () => {
+// 3. אירוע עלייה לאוויר (Ready) + הפצת פקודות
+client.once('ready', async () => {
     log(`🤖 [Discord] Logged in as ${client.user.tag}`);
 
-    // אתחול מערכת ימי הולדת
+    // --- הפצת הפקודות לדיסקורד (Deploy) ---
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+    try {
+        log(`[System] 🔄 מפיץ ${commandsData.length} פקודות לשרתי דיסקורד (Global)...`);
+        
+        // שימוש ב-client.user.id מבטיח שאנחנו משתמשים ב-ID הנכון של הבוט
+        await rest.put(
+            Routes.applicationCommands(client.user.id),
+            { body: commandsData },
+        );
+        
+        log('[System] ✅ הפקודות (כולל /manage) נרשמו בהצלחה!');
+    } catch (error) {
+        console.error('[System] ❌ שגיאה בהפצת הפקודות:', error);
+    }
+    // ----------------------------------------
+
+    // אתחול ימי הולדת
     if (birthdayManager && typeof birthdayManager.init === 'function') {
         birthdayManager.init(client, null, null, null);
     }

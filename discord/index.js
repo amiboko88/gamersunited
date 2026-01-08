@@ -1,4 +1,21 @@
 // 📁 discord/index.js
+// --- שלב 0: בולמי זעזועים (חייב להיות ראשון) ---
+process.on('unhandledRejection', (reason, promise) => {
+    // השתקה מוחלטת של שגיאת ה-Timeout המפורסמת
+    if (reason && (reason.code === 'GuildMembersTimeout' || reason.message?.includes('Members didn\'t arrive'))) {
+        return; 
+    }
+    console.error('❌ [Critical Error] Unhandled Rejection:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+    if (error && (error.code === 'GuildMembersTimeout' || error.message?.includes('Members didn\'t arrive'))) {
+        return;
+    }
+    console.error('❌ [Critical Error] Uncaught Exception:', error);
+});
+
+// --- שלב 1: טעינת ספריות ---
 const { Client, GatewayIntentBits, Collection, Partials, REST, Routes } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -7,6 +24,7 @@ const { log } = require('../utils/logger');
 const scheduler = require('../handlers/scheduler');
 const birthdayManager = require('../handlers/birthday/manager');
 
+// --- שלב 2: הגדרת הקליינט ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -22,6 +40,7 @@ const client = new Client({
 client.commands = new Collection();
 const commandsData = []; 
 
+// טעינת פקודות
 function loadCommands(dir) {
     const files = fs.readdirSync(dir, { withFileTypes: true });
     for (const file of files) {
@@ -36,7 +55,7 @@ function loadCommands(dir) {
                     commandsData.push(command.data.toJSON());
                 }
             } catch (error) {
-                console.error(`[ERROR] Load command failed: ${fullPath}`, error);
+                console.error(`[Load Error] ${fullPath}:`, error);
             }
         }
     }
@@ -55,27 +74,17 @@ if (fs.existsSync(eventsPath)) {
     }
 }
 
-// --- Anti-Crash & Error Suppression ---
-// משתיק לחלוטין את שגיאות ה-Timeout המציקות
-process.on('unhandledRejection', (reason, promise) => {
-    if (reason && reason.code === 'GuildMembersTimeout') return; 
-    if (reason && reason.message && reason.message.includes('Members didn\'t arrive')) return;
-    console.error('❌ [Unhandled Rejection]:', reason);
-});
-
-process.on('uncaughtException', (error) => {
-    if (error && error.code === 'GuildMembersTimeout') return;
-    console.error('❌ [Uncaught Exception]:', error);
-});
-
-// --- Graceful Shutdown (Zombie Killer) ---
-// מבטיח שהבוט ימות כשרייל מבקש, ולא ישאיר תהליך תקוע
-process.on('SIGTERM', () => {
-    log('🛑 SIGTERM received. Closing connections...');
+// --- שלב 3: חיסול זומבים (Graceful Shutdown) ---
+// כשרייל שולח סיגנל סגירה, אנחנו הורגים את הכל מיד כדי למנוע כפילות
+const shutdown = () => {
+    log('🛑 Shutting down gracefully...');
     client.destroy();
     process.exit(0);
-});
+};
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
 
+// --- שלב 4: עלייה לאוויר ---
 client.once('ready', async () => {
     log(`🤖 [Discord] Logged in as ${client.user.tag}`);
 
@@ -85,15 +94,10 @@ client.once('ready', async () => {
         const clientId = client.user.id;
         
         if (guildId) {
-            log(`[System] 🧹 Cleaning global commands...`);
+            // ניקוי גלובלי והפצה מקומית (מונע כפילויות בסלאש)
             await rest.put(Routes.applicationCommands(clientId), { body: [] });
-
-            log(`[System] 🔄 Deploying ${commandsData.length} commands to Guild (${guildId})...`);
-            await rest.put(
-                Routes.applicationGuildCommands(clientId, guildId),
-                { body: commandsData },
-            );
-            log('[System] ✅ Commands registered successfully!');
+            await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commandsData });
+            log('[System] ✅ Commands synced to Guild (Instant).');
         } else {
             await rest.put(Routes.applicationCommands(clientId), { body: commandsData });
         }

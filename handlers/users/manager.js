@@ -11,7 +11,8 @@ const DAYS = {
 const IMMUNE_ROLES_NAMES = ['MVP', 'Server Booster', 'VIP'];
 
 class UserManager {
-
+    
+    // כתיבה למבנה הנקי בלבד
     async updateLastActive(userId) {
         try {
             const now = new Date().toISOString();
@@ -19,9 +20,7 @@ class UserManager {
                 meta: { lastActive: now, lastSeen: now },
                 tracking: { statusStage: 'active' }
             }, { merge: true });
-        } catch (error) {
-            log(`❌ Update Active Failed: ${error.message}`);
-        }
+        } catch (e) { }
     }
 
     async getInactivityStats(guild) {
@@ -33,14 +32,14 @@ class UserManager {
         const stats = {
             total: 0, humans: 0, active: 0, immune: 0,
             dead: [], review: [], sleeping: [], afk: [],
-            kickCandidates: [], 
+            kickCandidates: [], // רק מתים
             newMembers: 0, voiceNow: 0
         };
 
         try {
-            // נסיון משיכה שקט - אם נכשל, מתעלמים לחלוטין מהשגיאה
+            // Anti-Crash: מנסים למשוך, אם נכשל משתמשים בזיכרון. לא זורקים שגיאה.
             if (guild.memberCount !== guild.members.cache.size) {
-                try { await guild.members.fetch({ time: 5000 }); } catch (e) { }
+                try { await guild.members.fetch({ time: 8000 }); } catch (e) {}
             }
             
             const allMembers = guild.members.cache;
@@ -59,7 +58,6 @@ class UserManager {
 
             allMembers.forEach(member => {
                 if (member.user.bot) return;
-                
                 stats.humans++;
                 const userId = member.id;
                 const userData = usersMap.get(userId) || {};
@@ -69,6 +67,7 @@ class UserManager {
                 const isInVoice = member.voice && member.voice.channelId;
                 if (isInVoice) stats.voiceNow++;
 
+                // חישוב ימים
                 let daysInactive = 0;
                 if (isOnline || isInVoice) {
                     daysInactive = 0;
@@ -91,36 +90,34 @@ class UserManager {
                     return;
                 }
 
-                // סיווג חדש
+                // סיווג לפי הדרישות החדשות
                 if (daysInactive < DAYS.AFK) {
                     if (daysSinceJoin < 7) stats.newMembers++;
                     stats.active++;
                 } 
                 else if (daysInactive >= DAYS.DEAD) {
-                    // רק אלו הולכים לקיק!
+                    // רק 180 יום הולכים לקיק
                     stats.dead.push({ userId, days: daysInactive, name: member.displayName });
                     stats.kickCandidates.push({ userId, days: daysInactive, name: member.displayName });
                 }
                 else if (daysInactive >= DAYS.SUSPECT) {
-                    if (hasLegacy) stats.review.push({ userId, days: daysInactive, name: member.displayName });
-                    else stats.sleeping.push({ userId, days: daysInactive, name: member.displayName });
+                    if (hasLegacy) stats.review.push({ userId, days: daysInactive, name: member.displayName }); // לבדיקה
+                    else stats.sleeping.push({ userId, days: daysInactive, name: member.displayName }); // רדום
                 }
                 else {
                     if (daysSinceJoin < 60) stats.afk.push({ userId, days: daysInactive, name: member.displayName });
                     else stats.active++;
                 }
             });
-
             return stats;
-
         } catch (error) {
-            log(`❌ Stats Calc Error: ${error.message}`);
             return null;
         }
     }
 
     calculateLastSeen(member, userData, userGames) {
         let timestamps = [];
+        // לוגיקה שמסתמכת על ה-DB הנקי (אחרי הסקריפט)
         if (userData.meta) {
             if (userData.meta.lastSeen) timestamps.push(new Date(userData.meta.lastSeen).getTime());
             if (userData.meta.lastActive) timestamps.push(new Date(userData.meta.lastActive).getTime());
@@ -134,7 +131,6 @@ class UserManager {
                 if (game.lastPlayed) timestamps.push(new Date(game.lastPlayed).getTime());
             });
         }
-        
         timestamps.push(member.joinedTimestamp);
         return Math.max(...timestamps);
     }
@@ -145,11 +141,9 @@ class UserManager {
             try {
                 const member = await guild.members.fetch(userId).catch(() => null);
                 if (member) {
-                    await member.kick('Shimon Inactivity Cleanup (6+ Months)');
+                    await member.kick('Shimon: Inactive > 180 Days');
                     kicked.push(member.displayName);
-                    await db.collection('users').doc(userId).set({ 
-                        tracking: { status: 'kicked', kickedAt: new Date().toISOString() }
-                    }, { merge: true });
+                    await db.collection('users').doc(userId).set({ tracking: { status: 'kicked', kickedAt: new Date().toISOString() } }, { merge: true });
                 }
             } catch (e) { failed.push(userId); }
         }

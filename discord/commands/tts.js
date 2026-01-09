@@ -1,56 +1,68 @@
-const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const mediaStats = require('../../handlers/media/stats'); // ✅ נתיב מתוקן
-const { log } = require('../../utils/logger'); // ✅ נתיב מתוקן
+// 📁 discord/commands/tts.js
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const db = require('../../utils/firebase');
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('תווים')
-        .setDescription('📊 מציג דוח שימוש במנועי הדיבור (TTS)')
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+        .setName('tts')
+        .setDescription('📊 דוח שימוש אישי ב-AI (צריכת תווים ועלויות)'),
 
     async execute(interaction) {
-        log(`[SLASH] דוח תווים נדרש ע"י ${interaction.user.tag}`);
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        
+        await interaction.deferReply({ ephemeral: false });
+
         try {
-            const stats = await mediaStats.getTTSUsageReport();
-            
-            if (!stats) {
-                return interaction.editReply('📭 לא נמצאו נתוני שימוש במערכת.');
+            const userId = interaction.user.id;
+            const userDoc = await db.collection('users').doc(userId).get();
+            const userData = userDoc.data() || {};
+
+            // שליפת הנתון המדויק מהמיקום החדש
+            const charsUsed = userData.stats?.aiCharsUsed || 0;
+
+            // --- לוגיקת הדרגות ---
+            let rank = "אזרח תמים 😇";
+            let color = "#00FF00"; // ירוק
+            let limit = 2000; // יעד ראשון
+
+            if (charsUsed > 50000) {
+                rank = "💀 אויב האנושות (ויקר לכיס)";
+                color = "#FF0000"; // אדום בוהק
+                limit = 100000;
+            } else if (charsUsed > 10000) {
+                rank = "🤖 מכור ל-AI";
+                color = "#FF8C00"; // כתום
+                limit = 50000;
+            } else if (charsUsed > 2000) {
+                rank = "🗣️ חופר מתחיל";
+                color = "#FFFF00"; // צהוב
+                limit = 10000;
             }
 
-            // עיבוד הנתונים לתצוגה (Top 5)
-            const topUsers = Object.entries(stats.userUsage)
-                .sort(([, a], [, b]) => b - a)
-                .slice(0, 5)
-                .map(([name, count], i) => `**${i + 1}.** ${name}: \`${count.toLocaleString()}\` תווים`)
-                .join('\n') || 'אין נתונים';
+            // --- חישוב עלות משוערת (לפי תעריף GPT-4o ממוצע) ---
+            // נניח ש-1000 תווים הם בערך 0.03 דולר (כולל קלט/פלט)
+            const estimatedCost = (charsUsed / 1000) * 0.03;
 
-            const topProfiles = Object.entries(stats.profileUsage)
-                .sort(([, a], [, b]) => b - a)
-                .slice(0, 3)
-                .map(([name, count]) => `**-** \`${name}\`: ${count.toLocaleString()} שימושים`)
-                .join('\n') || 'אין נתונים';
+            // --- יצירת בר התקדמות ---
+            const percentage = Math.min((charsUsed / limit) * 100, 100);
+            const progressBlocks = Math.floor(percentage / 10); // 10 בלוקים סה"כ
+            const progressBar = '█'.repeat(progressBlocks) + '░'.repeat(10 - progressBlocks);
 
             const embed = new EmbedBuilder()
-                .setColor('#4285F4')
-                .setTitle('📊 דוח שימוש: מנוע TTS')
+                .setTitle(`📊 דוח צריכת AI: ${interaction.user.username}`)
+                .setColor(color)
                 .addFields(
-                    { name: '📈 סה"כ (כל הזמנים)', value: `\`${stats.totalCharsAllTime.toLocaleString()}\` תווים`, inline: false },
-                    { name: '📅 חודשי', value: `\`${stats.totalCharsMonth.toLocaleString()}\` תווים`, inline: true },
-                    { name: '☀️ יומי', value: `\`${stats.totalCharsToday.toLocaleString()}\` תווים`, inline: true },
-                    { name: '\u200B', value: '\u200B' },
-                    { name: '🏆 המשתמשים הכבדים', value: topUsers, inline: false },
-                    { name: '🎤 קולות פופולריים', value: topProfiles, inline: false }
+                    { name: '💬 סה"כ תווים שנצרכו', value: `**${charsUsed.toLocaleString()}** תווים`, inline: true },
+                    { name: '🏷️ דירוג התמכרות', value: `**${rank}**`, inline: true },
+                    { name: '💰 עלות משוערת לשמעון', value: `$${estimatedCost.toFixed(3)}`, inline: true },
+                    { name: `📈 התקדמות ליעד הבא (${limit.toLocaleString()})`, value: `\`[${progressBar}] ${percentage.toFixed(1)}%\``, inline: false }
                 )
-                .setFooter({ text: 'נתונים מתוך DB מאוחד • Shimon AI' })
+                .setFooter({ text: 'הנתונים כוללים שיחות טקסט, TTS וניתוח תמונות.', iconURL: interaction.user.displayAvatarURL() })
                 .setTimestamp();
 
             await interaction.editReply({ embeds: [embed] });
 
         } catch (error) {
-            log(`❌ [SLASH] שגיאה בדוח תווים: ${error.message}`);
-            await interaction.editReply('❌ אירעה שגיאה בשליפת הנתונים.');
+            console.error(error);
+            await interaction.editReply('❌ שגיאה בשליפת דוח השימוש.');
         }
     }
 };

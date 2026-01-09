@@ -2,15 +2,15 @@
 require('dotenv').config();
 const express = require('express'); 
 
-// ✅ ייבוא המערכות (שימוש בפונקציות השקה היכן שצריך)
+// ✅ ייבוא המערכות בצורה בטוחה
 const { connectToWhatsApp } = require('./whatsapp/index'); 
-const { launchTelegram } = require('./telegram/index'); // ✅ התיקון: מייבאים את הפונקציה
+const { launchTelegram } = require('./telegram/index');
+const { launchDiscord } = require('./discord/index'); // ✅ ייבוא הפונקציה החדשה
 
 // --- 🛡️ טיפול בשגיאות קריטיות (Anti-Crash) ---
-// זה מונע מהבוט לקרוס לחלוטין אם יש שגיאה לא מטופלת באחת המערכות
 process.on('unhandledRejection', (reason, promise) => {
-    // מסנן שגיאות ידועות של וואטסאפ שלא דורשות פאניקה
-    if (reason?.toString().includes('rate-overlimit')) return;
+    // התעלמות משגיאות Telegram Conflict זמניות בזמן ריסט
+    if (reason?.toString().includes('409') && reason?.toString().includes('Conflict')) return;
     console.error('❌ [CRITICAL] Unhandled Rejection:', reason);
 });
 
@@ -19,7 +19,6 @@ process.on('uncaughtException', (error) => {
 });
 
 // --- Server Setup (Railway / Health Check) ---
-// זה מה ששומר את הבוט "חי" בשרתים כמו Railway
 const app = express();
 const PORT = process.env.PORT || 8080;
 
@@ -46,8 +45,7 @@ app.listen(PORT, () => {
             console.error('❌ WhatsApp Init Failed:', err.message);
         }
 
-        // 2. הפעלת טלגרם (התיקון הגדול)
-        // עכשיו אנחנו קוראים לפונקציה במקום סתם לעשות require
+        // 2. הפעלת טלגרם
         try {
             console.log('🔄 [Init] Launching Telegram...');
             await launchTelegram();
@@ -55,11 +53,10 @@ app.listen(PORT, () => {
             console.error('❌ Telegram Init Failed:', e.message);
         }
 
-        // 3. הפעלת דיסקורד
-        // בדיסקורד המבנה הוא שונה (ה-require עצמו מפעיל את הלקוח בתוך הקובץ)
+        // 3. הפעלת דיסקורד (עכשיו בצורה מבוקרת!)
         try {
             console.log('🔄 [Init] Launching Discord...');
-            require('./discord/index');
+            await launchDiscord(); // ✅ קריאה לפונקציה במקום require
         } catch (e) {
             console.error('❌ Discord Init Failed:', e.message);
         }

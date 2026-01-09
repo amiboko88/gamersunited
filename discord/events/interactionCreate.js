@@ -4,10 +4,10 @@ const { log } = require('../../utils/logger');
 
 // ייבוא המטפלים (Handlers)
 const verificationHandler = require('../../handlers/users/verification');
-const handleMusicControls = require('../../discord/interactions/buttons/music_controls');
 const handleFifoButtons = require('../../discord/interactions/fifoButtons');
 const dashboardHandler = require('../../handlers/users/dashboard');
-const birthdayHandler = require('../../handlers/birthday/interaction'); // ✅ התוספת החדשה לימי הולדת
+const birthdayHandler = require('../../handlers/birthday/interaction');
+const audioHandler = require('../../handlers/audio/interaction'); // ✅ [PLANT] המטפל החדש ל-DJ
 
 module.exports = {
     name: Events.InteractionCreate,
@@ -35,14 +35,21 @@ module.exports = {
             }
 
             // -----------------------------------------
-            // 2. טיפול בכפתורים (Buttons)
+            // 2. טיפול בכפתורים ובתפריטים (Buttons & Menus)
             // -----------------------------------------
-            else if (interaction.isButton()) {
+            // ✅ [UPDATE] הוספנו תמיכה ב-SelectMenu עבור ה-DJ
+            else if (interaction.isButton() || interaction.isStringSelectMenu()) {
                 const id = interaction.customId;
 
+                // ✅ [PLANT] מערכת ה-DJ החדשה (תפריטים וכפתורים)
+                if (id.startsWith('audio_')) {
+                    if (id === 'audio_main_menu') await audioHandler.handleMenuSelection(interaction);
+                    else if (id.startsWith('audio_play_')) await audioHandler.handleFilePlay(interaction);
+                    else if (id.startsWith('audio_ctrl_')) await audioHandler.handleControls(interaction);
+                }
+
                 // --- ימי הולדת (מערכת חדשה) ---
-                // טיפול בכפתורי הגדרה, עריכה, פאנל ניהול ותזכורות
-                if (['btn_bd_set', 'btn_bd_edit', 'btn_bd_admin_panel', 'btn_bd_remind_all'].includes(id)) {
+                else if (['btn_bd_set', 'btn_bd_edit', 'btn_bd_admin_panel', 'btn_bd_remind_all'].includes(id)) {
                     if (id === 'btn_bd_set' || id === 'btn_bd_edit') await birthdayHandler.showModal(interaction);
                     else if (id === 'btn_bd_admin_panel') await birthdayHandler.showAdminPanel(interaction);
                     else if (id === 'btn_bd_remind_all') await birthdayHandler.sendReminders(interaction);
@@ -67,12 +74,6 @@ module.exports = {
                 else if (id === 'start_verification_process') {
                     await verificationHandler.showVerificationModal(interaction);
                 }
-
-                // --- מוזיקה ---
-                else if (['play_pause', 'skip', 'stop', 'loop', 'shuffle', 'lyrics'].includes(id)) {
-                    await handleMusicControls.execute(interaction);
-                }
-
                 // --- פיפו (הצבעות) ---
                 else if (id.startsWith('fifo_vote_') || id === 'fifo_replay') {
                     await handleFifoButtons.execute(interaction);

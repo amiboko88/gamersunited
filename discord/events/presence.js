@@ -1,6 +1,7 @@
 // 📁 discord/events/presence.js
 const { Events } = require('discord.js');
 const { log, logRoleChange } = require('../../utils/logger');
+// מוודאים שזה טוען את ה-Handler החדש והנקי שבנינו
 const statTracker = require('../../handlers/users/stats'); 
 const verificationHandler = require('../../handlers/users/verification');
 const db = require('../../utils/firebase');
@@ -41,12 +42,14 @@ class PresenceHandler {
         // 1. ניהול רולים
         await this.handleRoleManagement(member, isPlayingAny, gameName, presence);
 
-        // 2. עדכון סטטיסטיקה
+        // 2. עדכון סטטיסטיקה (שימוש ב-Handler החדש והבטוח)
         if (isPlayingAny) {
+            // שולחים 0 דקות כי זה רק עדכון "נראה לאחרונה"
+            // הלוגיקה של הוספת דקות תהיה בנפרד (ב-scheduler) כדי לא להעמיס
             statTracker.updateGameStats(member.id, gameName, 0).catch(e => console.error(e));
         }
 
-        // 3. אימות קונסולות אוטומטי
+        // 3. אימות קונסולות אוטומטי (שמרתי את הלוגיקה שלך)
         await this.checkForConsolePlayer(member, activities);
     }
 

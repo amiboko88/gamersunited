@@ -1,88 +1,69 @@
 // 📁 handlers/users/stats.js
 const db = require('../../utils/firebase');
-const admin = require('firebase-admin');
-const { getUserRef } = require('../../utils/userUtils');
+const { log } = require('../../utils/logger');
 
-// 🎚️ טבלת משקלים (XP Weights)
-const XP_RATES = {
-  message: 2,
-  command: 3,
-  sound: 2,
-  smart_reply: 4,
-  voice_minute: 10,
-  voice_join: 5,
-  podcast: 50,
-  media: 5
-};
-
-class StatTracker {
-
+class StatsHandler {
+    
     /**
-     * פונקציה גנרית לעדכון סטטיסטיקה ו-XP
+     * עדכון סטטיסטיקות משחק בצורה בטוחה
+     * @param {string} userId - ה-ID של המשתמש בדיסקורד
+     * @param {string} gameName - שם המשחק (כפי שמגיע מדיסקורד)
+     * @param {number} addedMinutes - כמה דקות להוסיף (0 אם זה רק עדכון "נראה לאחרונה")
      */
-    async track(userId, type, platform = 'discord', amount = 1) {
-        if (!userId) return;
-        const xpReward = (XP_RATES[type] || 1) * amount;
-        const fieldName = this.mapTypeToField(type);
+    async updateGameStats(userId, gameName, addedMinutes = 0) {
+        if (!userId || !gameName) return;
+
+        // ניקוי שם המשחק מתווים שיכולים לשבור נתיבים (למרות שאנחנו משתמשים באובייקטים, זה הרגל טוב)
+        // בפיירבייס מותר הכל חוץ מ / בתוך מפתח, אבל נהיה בטוחים
+        const cleanGameName = gameName.replace(/\//g, '-'); 
+
+        const userRef = db.collection('gameStats').doc(userId);
+        const now = new Date().toISOString();
 
         try {
-            // 1. עדכון המשתמש הראשי
-            const userRef = await getUserRef(userId, platform);
-            const updates = {
-                [`stats.${fieldName}`]: admin.firestore.FieldValue.increment(amount),
-                'economy.xp': admin.firestore.FieldValue.increment(xpReward),
-                'meta.lastActive': new Date().toISOString()
-            };
+            // טרנזקציה מבטיחה שלא נאבד דקות אם יש שני עדכונים במקביל
+            await db.runTransaction(async (t) => {
+                const doc = await t.get(userRef);
+                const data = doc.exists ? doc.data() : {};
+                
+                // שליפת הנתונים הקיימים למשחק הזה
+                const existingGameData = data[cleanGameName] || { minutes: 0, lastPlayed: now };
+                
+                // חישובים
+                const newMinutes = (existingGameData.minutes || 0) + addedMinutes;
+                
+                // בניית האובייקט לעדכון
+                // שים לב: אנחנו לא בונים מפתח עם נקודה!
+                // אנחנו מעדכנים את האובייקט השלם של המשחק
+                const gameUpdate = {
+                    minutes: newMinutes,
+                    lastPlayed: now
+                };
 
-            // 2. עדכון טבלה שבועית
-            const weekRef = db.collection('weeklyStats').doc(userId);
-            const weekUpdates = {
-                [fieldName]: admin.firestore.FieldValue.increment(amount),
-                xpThisWeek: admin.firestore.FieldValue.increment(xpReward),
-                platform: platform,
-                lastActive: new Date().toISOString()
-            };
+                // שימוש ב-merge כדי לא לדרוס משחקים אחרים
+                t.set(userRef, { 
+                    [cleanGameName]: gameUpdate 
+                }, { merge: true });
+            });
 
-            await Promise.all([
-                userRef.set(updates, { merge: true }),
-                weekRef.set(weekUpdates, { merge: true })
-            ]);
         } catch (error) {
-            console.error(`❌ [Stats] Error tracking ${type} for ${userId}:`, error.message);
+            log(`❌ [GameStats] Error updating ${cleanGameName} for ${userId}: ${error.message}`);
         }
     }
 
     /**
-     * ✅ עדכון זמן משחק (תוקן השם מ-trackGameTime ל-updateGameStats)
+     * שליפת כל הסטטיסטיקות למשתמש
      */
-    async updateGameStats(userId, gameName, minutes) {
-        if (!gameName) return;
+    async getUserStats(userId) {
         try {
-            // החלפת תווים בעייתיים בשם המשחק (כמו נקודות או סלאשים)
-            const safeGameName = gameName.replace(/[\/\.]/g, '_');
-            const ref = db.collection('gameStats').doc(userId);
-            
-            await ref.set({
-                [safeGameName]: {
-                    minutes: admin.firestore.FieldValue.increment(minutes),
-                    lastPlayed: new Date().toISOString()
-                }
-            }, { merge: true });
-        } catch (e) { console.error('Game Stats Error:', e); }
-    }
-
-    // המרת סוג פעולה לשם שדה ב-DB
-    mapTypeToField(type) {
-        const map = {
-            'message': 'messagesSent',
-            'command': 'commandsUsed',
-            'sound': 'soundsUsed',
-            'voice_minute': 'voiceMinutes',
-            'voice_join': 'timesJoinedVoice',
-            'podcast': 'podcastAppearances'
-        };
-        return map[type] || 'genericActions';
+            const doc = await db.collection('gameStats').doc(userId).get();
+            if (!doc.exists) return null;
+            return doc.data();
+        } catch (error) {
+            console.error('Error fetching game stats:', error);
+            return null;
+        }
     }
 }
 
-module.exports = new StatTracker();
+module.exports = new StatsHandler();

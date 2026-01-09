@@ -1,132 +1,209 @@
 // 📁 handlers/ranking/render.js
-const { createCanvas, loadImage, registerFont } = require('canvas');
-const path = require('path');
-const fs = require('fs');
-
-const ASSETS_PATH = path.join(__dirname, '../../assets');
-const FONT_PATH = path.join(ASSETS_PATH, 'Heebo-Bold.ttf'); // הפונט העברי שלך
-
-// רישום הפונט (חשוב לעברית)
-if (fs.existsSync(FONT_PATH)) {
-    registerFont(FONT_PATH, { family: 'HebrewFont' });
-}
+const puppeteer = require('puppeteer');
+const { log } = require('../../utils/logger');
 
 class RankingRenderer {
-    
-    async generateLeaderboardImage(users, weekNumber) {
-        const width = 1000;
-        const height = 1200;
-        const canvas = createCanvas(width, height);
-        const ctx = canvas.getContext('2d');
 
-        // 1. רקע "קרבי"
+    async generateLeaderboardImage(leaders, weekNum) {
+        if (!leaders || leaders.length === 0) return null;
+
+        const topPlayer = leaders[0]; // ה-MVP
+
+        // בניית שורות הטבלה (מקום 2 ומטה)
+        const listItems = leaders.slice(1).map((p, index) => `
+            <div class="row">
+                <div class="rank">#${index + 2}</div>
+                <div class="avatar-container">
+                    <img src="${p.avatar}" class="avatar-small" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+                </div>
+                <div class="info">
+                    <div class="name">${p.name}</div>
+                    <div class="sub-stats">🎙️ ${p.stats.voice}h | 🎮 ${p.stats.games}h | 💬 ${p.stats.msgs}</div>
+                </div>
+                <div class="score">${p.score.toLocaleString()} pts</div>
+            </div>
+        `).join('');
+
+        const html = `
+        <!DOCTYPE html>
+        <html lang="he" dir="rtl">
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;900&display=swap');
+                
+                body {
+                    margin: 0;
+                    padding: 40px;
+                    background: #1a1a1a;
+                    background-image: radial-gradient(circle at 50% 0%, #2a2a2a 0%, #1a1a1a 70%);
+                    font-family: 'Heebo', sans-serif;
+                    color: white;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    width: 800px;
+                    box-sizing: border-box;
+                }
+
+                .header {
+                    text-align: center;
+                    margin-bottom: 40px;
+                    position: relative;
+                    z-index: 2;
+                }
+                
+                .title {
+                    font-size: 48px;
+                    font-weight: 900;
+                    text-transform: uppercase;
+                    background: linear-gradient(to right, #ffd700, #ff8c00);
+                    -webkit-background-clip: text;
+                    -webkit-text-fill-color: transparent;
+                    text-shadow: 0 4px 15px rgba(255, 215, 0, 0.3);
+                }
+
+                .subtitle {
+                    font-size: 24px;
+                    color: #888;
+                    margin-top: 5px;
+                    letter-spacing: 2px;
+                }
+
+                /* MVP Section */
+                .mvp-card {
+                    background: linear-gradient(135deg, rgba(255,215,0,0.1), rgba(0,0,0,0));
+                    border: 2px solid #ffd700;
+                    border-radius: 20px;
+                    padding: 20px 40px;
+                    display: flex;
+                    align-items: center;
+                    gap: 30px;
+                    width: 100%;
+                    margin-bottom: 40px;
+                    box-shadow: 0 0 30px rgba(255,215,0,0.1);
+                    position: relative;
+                    overflow: hidden;
+                }
+                
+                .mvp-badge {
+                    position: absolute;
+                    top: 10px;
+                    left: 10px;
+                    background: #ffd700;
+                    color: black;
+                    padding: 5px 15px;
+                    border-radius: 10px;
+                    font-weight: bold;
+                    font-size: 14px;
+                }
+
+                .mvp-avatar {
+                    width: 100px;
+                    height: 100px;
+                    border-radius: 50%;
+                    border: 4px solid #ffd700;
+                    object-fit: cover;
+                }
+
+                .mvp-info h1 { margin: 0; font-size: 32px; }
+                .mvp-info p { margin: 5px 0 0; color: #ccc; font-size: 18px; }
+                .mvp-score { 
+                    margin-right: auto; 
+                    font-size: 42px; 
+                    font-weight: 900; 
+                    color: #ffd700;
+                }
+
+                /* List Section */
+                .list-container {
+                    width: 100%;
+                    background: rgba(255,255,255,0.03);
+                    border-radius: 20px;
+                    padding: 10px;
+                }
+
+                .row {
+                    display: flex;
+                    align-items: center;
+                    padding: 15px 20px;
+                    border-bottom: 1px solid rgba(255,255,255,0.05);
+                    transition: all 0.2s;
+                }
+
+                .row:last-child { border-bottom: none; }
+                
+                .rank {
+                    font-size: 24px;
+                    font-weight: bold;
+                    color: #666;
+                    width: 50px;
+                }
+
+                .avatar-small {
+                    width: 50px;
+                    height: 50px;
+                    border-radius: 50%;
+                    margin-left: 20px;
+                }
+
+                .info { flex-grow: 1; }
+                .name { font-size: 20px; font-weight: bold; }
+                .sub-stats { font-size: 14px; color: #888; margin-top: 2px; }
+                
+                .score {
+                    font-size: 24px;
+                    font-weight: bold;
+                    color: #4CAF50;
+                }
+
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div class="title">LEADERBOARD</div>
+                <div class="subtitle">WEEK #${weekNum} SUMMARY</div>
+            </div>
+
+            <div class="mvp-card">
+                <div class="mvp-badge">👑 MVP</div>
+                <img src="${topPlayer.avatar}" class="mvp-avatar" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+                <div class="mvp-info">
+                    <h1>${topPlayer.name}</h1>
+                    <p>🎙️ ${topPlayer.stats.voice}h • 🎮 ${topPlayer.stats.games}h • 💬 ${topPlayer.stats.msgs}</p>
+                </div>
+                <div class="mvp-score">${topPlayer.score.toLocaleString()}</div>
+            </div>
+
+            <div class="list-container">
+                ${listItems}
+            </div>
+        </body>
+        </html>`;
+
+        let browser = null;
         try {
-            const bgPath = path.join(ASSETS_PATH, 'war_bg.jpg'); // או png
-            if (fs.existsSync(bgPath)) {
-                const bg = await loadImage(bgPath);
-                ctx.drawImage(bg, 0, 0, width, height);
-            } else {
-                // רקע גיבוי גרדיינט
-                const grd = ctx.createLinearGradient(0, 0, 0, height);
-                grd.addColorStop(0, '#1a2a6c');
-                grd.addColorStop(1, '#b21f1f');
-                ctx.fillStyle = grd;
-                ctx.fillRect(0, 0, width, height);
-            }
-        } catch (e) {
-            ctx.fillStyle = '#111';
-            ctx.fillRect(0, 0, width, height);
-        }
-
-        // שכבת כהות לקריאות
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        ctx.fillRect(0, 0, width, height);
-
-        // 2. כותרת
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#FFD700'; // זהב
-        ctx.font = 'bold 70px "HebrewFont", sans-serif';
-        ctx.fillText(`🏆 אלופי השבוע #${weekNumber}`, width / 2, 100);
-
-        ctx.fillStyle = '#fff';
-        ctx.font = '30px "HebrewFont", sans-serif';
-        ctx.fillText('GAMERS UNITED ISRAEL', width / 2, 150);
-
-        // 3. הצגת המשתמשים
-        let yPos = 250;
-        
-        for (let i = 0; i < users.length; i++) {
-            const user = users[i];
-            const isMVP = i === 0;
+            browser = await puppeteer.launch({ 
+                headless: 'new', 
+                args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+            });
+            const page = await browser.newPage();
+            // רזולוציה גבוהה
+            await page.setViewport({ width: 880, height: 100, deviceScaleFactor: 2 }); 
+            await page.setContent(html, { waitUntil: 'networkidle0' });
             
-            await this.drawUserRow(ctx, user, i + 1, yPos, isMVP);
-            yPos += isMVP ? 180 : 130; // ה-MVP מקבל שורה גדולה יותר
+            // התאמת גובה דינמית
+            const bodyHeight = await page.evaluate(() => document.body.scrollHeight);
+            await page.setViewport({ width: 880, height: bodyHeight, deviceScaleFactor: 2 });
+
+            const buffer = await page.screenshot({ type: 'png', fullPage: true });
+            return buffer;
+        } catch (err) {
+            log(`❌ [RankingRender] Error: ${err.message}`);
+            return null;
+        } finally {
+            if (browser) await browser.close();
         }
-
-        return canvas.toBuffer();
-    }
-
-    async drawUserRow(ctx, user, rank, y, isMVP) {
-        const xStart = 50;
-        const rowWidth = 900;
-        const rowHeight = isMVP ? 150 : 100;
-        const radius = 20;
-
-        // רקע לשורה
-        ctx.fillStyle = isMVP ? 'rgba(255, 215, 0, 0.2)' : 'rgba(255, 255, 255, 0.1)';
-        ctx.strokeStyle = isMVP ? '#FFD700' : 'rgba(255, 255, 255, 0.3)';
-        ctx.lineWidth = isMVP ? 4 : 1;
-        
-        ctx.beginPath();
-        ctx.roundRect(xStart, y, rowWidth, rowHeight, radius);
-        ctx.fill();
-        ctx.stroke();
-
-        // מיקום (Rank)
-        ctx.fillStyle = isMVP ? '#FFD700' : '#FFF';
-        ctx.font = isMVP ? 'bold 60px sans-serif' : 'bold 40px sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText(`#${rank}`, xStart + 30, y + (rowHeight / 2) + 15);
-
-        // תמונת פרופיל (עגולה)
-        const avatarSize = isMVP ? 120 : 80;
-        const avatarY = y + (rowHeight - avatarSize) / 2;
-        const avatarX = xStart + 150;
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2);
-        ctx.closePath();
-        ctx.clip();
-        
-        try {
-            const avatarSrc = user.avatarUrl || path.join(ASSETS_PATH, 'logowa.webp');
-            const img = await loadImage(avatarSrc);
-            ctx.drawImage(img, avatarX, avatarY, avatarSize, avatarSize);
-        } catch (e) {
-            ctx.fillStyle = '#555';
-            ctx.fill();
-        }
-        ctx.restore();
-
-        // שם + תגית
-        ctx.textAlign = 'left';
-        ctx.fillStyle = '#FFF';
-        ctx.font = isMVP ? 'bold 50px "HebrewFont", sans-serif' : 'bold 35px "HebrewFont", sans-serif';
-        let name = user.name;
-        if (name.length > 12) name = name.substring(0, 10) + '..';
-        ctx.fillText(name, avatarX + avatarSize + 30, y + (rowHeight / 2) + 10);
-
-        // נתונים (ימין)
-        ctx.textAlign = 'right';
-        const rightEdge = xStart + rowWidth - 30;
-        
-        ctx.font = '25px "HebrewFont", sans-serif';
-        ctx.fillStyle = '#00ffcc'; // צבע הייטק
-        ctx.fillText(`🎤 ${user.stats.voiceMinutes} דק'`, rightEdge, y + (rowHeight / 2) - 10);
-        
-        ctx.fillStyle = '#ffa500'; // כתום
-        ctx.fillText(`💬 ${user.stats.messages} הודעות`, rightEdge, y + (rowHeight / 2) + 25);
     }
 }
 

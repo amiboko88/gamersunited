@@ -1,67 +1,63 @@
 // 📁 handlers/ranking/broadcaster.js
-const { AttachmentBuilder } = require('discord.js');
-const { sendToMainGroup } = require('../../whatsapp/index'); // הפונקציה שלך
-const axios = require('axios');
-const FormData = require('form-data');
-const fs = require('fs');
-const path = require('path');
+const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
+const { MessageMedia } = require('whatsapp-web.js'); 
+const { InputFile } = require('grammy'); 
+const { log } = require('../../utils/logger');
 
-const DISCORD_CHANNEL_ID = '1375415570937151519'; // ערוץ היכל התהילה
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+// הגדרת ערוצים קבועה
+const CHANNELS = {
+    DISCORD_LEADERBOARD: '1375415570937151519', // ✅ הערוץ שביקשת
+    TELEGRAM_MAIN: process.env.TELEGRAM_CHAT_ID
+};
 
 class RankingBroadcaster {
 
-    /**
-     * מפיץ את הדירוג לכל הפלטפורמות
-     * @param {Buffer} imageBuffer - התמונה שנוצרה
-     * @param {string} caption - הטקסט הנלווה
-     * @param {Object} discordClient - הקליינט לשימוש
-     */
-    async broadcastAll(imageBuffer, caption, discordClient) {
-        const promises = [];
+    async broadcastAll(imageBuffer, weekNum, clients) {
+        if (!imageBuffer) return;
 
-        // 1. WhatsApp (הכי חשוב)
-        promises.push(
-            sendToMainGroup(caption, [], imageBuffer)
-                .then(() => console.log('✅ Leaderboard sent to WhatsApp'))
-                .catch(e => console.error('❌ WhatsApp Send Error:', e.message))
-        );
+        const caption = `🏆 **טבלת האלופים - שבוע #${weekNum}**`;
 
-        // 2. Discord
-        if (discordClient) {
-            const channel = discordClient.channels.cache.get(DISCORD_CHANNEL_ID);
-            if (channel) {
-                const attachment = new AttachmentBuilder(imageBuffer, { name: 'leaderboard.png' });
-                promises.push(
-                    channel.send({ content: caption, files: [attachment] })
-                        .then(() => console.log('✅ Leaderboard sent to Discord'))
-                        .catch(e => console.error('❌ Discord Send Error:', e.message))
-                );
-            }
+        // 1. Discord
+        if (clients.discord) {
+            try {
+                const channel = await clients.discord.channels.fetch(CHANNELS.DISCORD_LEADERBOARD).catch(() => null);
+                
+                if (channel) {
+                    // אופציה עתידית: כאן אפשר להוסיף לוגיקה של מחיקת הודעה קודמת אם רוצים לשמור על הערוץ נקי
+                    // כרגע: שליחת הודעה חדשה
+                    const attachment = new AttachmentBuilder(imageBuffer, { name: 'leaderboard.png' });
+                    const embed = new EmbedBuilder()
+                        .setTitle(caption)
+                        .setColor('#FFD700')
+                        .setImage('attachment://leaderboard.png')
+                        .setFooter({ text: 'הנתונים מתאפסים בכל מוצ"ש ב-20:00' });
+
+                    await channel.send({ embeds: [embed], files: [attachment] });
+                    log(`✅ Discord Leaderboard sent to channel ${CHANNELS.DISCORD_LEADERBOARD}`);
+                } else {
+                    log(`⚠️ Discord Leaderboard Channel ${CHANNELS.DISCORD_LEADERBOARD} not found.`);
+                }
+            } catch (e) { log(`❌ Discord Board Fail: ${e.message}`); }
+        }
+
+        // 2. WhatsApp
+        if (clients.whatsapp && clients.waGroupId) {
+            try {
+                const b64 = imageBuffer.toString('base64');
+                const media = new MessageMedia('image/png', b64, 'leaderboard.png');
+                await clients.whatsapp.sendMessage(clients.waGroupId, media, { caption: `🏆 *סיכום שבועי #${weekNum}*` });
+            } catch (e) { log(`❌ WhatsApp Board Fail: ${e.message}`); }
         }
 
         // 3. Telegram
-        if (TELEGRAM_TOKEN && TELEGRAM_CHAT_ID) {
-            promises.push(
-                this.sendToTelegram(imageBuffer, caption)
-                    .then(() => console.log('✅ Leaderboard sent to Telegram'))
-                    .catch(e => console.error('❌ Telegram Send Error:', e.message))
-            );
+        if (clients.telegram && CHANNELS.TELEGRAM_MAIN) {
+            try {
+                await clients.telegram.api.sendPhoto(CHANNELS.TELEGRAM_MAIN, new InputFile(imageBuffer), {
+                    caption: caption,
+                    parse_mode: 'Markdown'
+                });
+            } catch (e) { log(`❌ Telegram Board Fail: ${e.message}`); }
         }
-
-        await Promise.all(promises);
-    }
-
-    async sendToTelegram(imageBuffer, caption) {
-        const form = new FormData();
-        form.append('chat_id', TELEGRAM_CHAT_ID);
-        form.append('caption', caption);
-        form.append('photo', imageBuffer, 'leaderboard.png');
-
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPhoto`, form, {
-            headers: form.getHeaders()
-        });
     }
 }
 

@@ -90,10 +90,15 @@ module.exports = {
                 if (id === 'modal_bd_submit') {
                     await birthdayHandler.handleModalSubmit(interaction);
                 }
-                
-                // --- אימות ---
-                else if (id === 'verification_modal_submit') {
-                    await verificationHandler.handleModalSubmit(interaction);
+
+                // ✅ התיקון: הוספנו את verify_me_button כדי לתמוך בכפתור הישן שנמצא בערוץ
+                else if (id === 'verify_me_button' || id === 'start_verification_process') {
+                    // בדיקה מהירה לחסכון בביצועים
+                    if (interaction.member.roles.cache.has('1120787309432938607')) {
+                        return interaction.reply({ content: '✅ אתה כבר מאומת!', ephemeral: true });
+                    }
+                    // מפנים להנדלר החכם שיחליט אם לפתוח מודאל או לאמת מיד
+                    await verificationHandler.showVerificationModal(interaction);
                 }
             }
 

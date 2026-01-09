@@ -1,7 +1,7 @@
 // 📁 handlers/users/verification.js
 const { EmbedBuilder, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const db = require('../../utils/firebase');
-const { log } = require('../../utils/logger');
+const { log, logRoleChange } = require('../../utils/logger'); // הוספתי logRoleChange למקרה הצורך
 const brain = require('../ai/brain'); 
 
 class VerificationHandler {
@@ -11,46 +11,34 @@ class VerificationHandler {
      */
     async showVerificationModal(interaction) {
         const userId = interaction.user.id;
-        // לוקחים את השם הכי עדכני מהדיסקורד עצמו כדי לא להגיד "Unknown"
         const currentName = interaction.member.displayName || interaction.user.username;
         
         try {
-            // שליפת המשתמש מה-DB
             const userDoc = await db.collection('users').doc(userId).get();
             const userData = userDoc.exists ? userDoc.data() : null;
 
-            // בדיקה אם המידע הקריטי כבר קיים
-            // אנחנו בודקים גם בתוך identity וגם בשורש למקרה של מידע ישן
             const hasPhone = userData?.identity?.whatsappPhone || userData?.whatsappPhone;
             const hasBirthday = userData?.identity?.birthday || userData?.birthday;
 
-            // תרחיש: המשתמש כבר מוכר ומלא בפרטים -> אימות מיידי ללא מודאל
+            // אימות שקט אם המידע קיים
             if (userData && hasPhone && hasBirthday) {
                 await interaction.deferReply({ ephemeral: true });
-                
-                // הרצת אימות "שקט" כדי לוודא רולים וסטטוס + תיקון השם ב-DB אם היה Unknown
                 const result = await this.verifyUser(interaction.member, {}, 'smart_check');
                 
-                // הודעה מותאמת אישית עם השם האמיתי
                 await interaction.editReply({ 
                     content: `👋 היי **${currentName}**!\nאני רואה שכל הפרטים שלך כבר מעודכנים אצלי.\n\n${result.message}` 
                 });
                 return;
             }
 
-            // תרחיש רגיל: חסרים פרטים -> פתיחת מודאל
             await this.openModal(interaction);
 
         } catch (error) {
             console.error('Smart Verify Error:', error);
-            // במקרה של שגיאה בבדיקה, נפתח את המודאל כגיבוי
             await this.openModal(interaction);
         }
     }
 
-    /**
-     * בניית והצגת המודאל (פונקציית עזר פנימית)
-     */
     async openModal(interaction) {
         const modal = new ModalBuilder()
             .setCustomId('verification_modal_submit')
@@ -80,11 +68,12 @@ class VerificationHandler {
             .setRequired(false)
             .setMaxLength(20);
 
-        const row1 = new ActionRowBuilder().addComponents(bdayInput);
-        const row2 = new ActionRowBuilder().addComponents(phoneInput);
-        const row3 = new ActionRowBuilder().addComponents(platformInput);
-
-        modal.addComponents(row1, row2, row3);
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(bdayInput),
+            new ActionRowBuilder().addComponents(phoneInput),
+            new ActionRowBuilder().addComponents(platformInput)
+        );
+        
         await interaction.showModal(modal);
     }
 
@@ -99,32 +88,59 @@ class VerificationHandler {
         await interaction.editReply({ content: result.message });
     }
 
+    /**
+     * הפונקציה הראשית - כאן בוצע התיקון ל-DB
+     */
     async verifyUser(member, data = {}, source = 'command') {
         try {
             const userId = member.id;
             const guild = member.guild;
-            // שימוש בשם התצוגה הנוכחי ללוג ול-DB
             const currentDisplayName = member.displayName;
 
             log(`[Verification] 🛡️ מתחיל תהליך אימות עבור ${currentDisplayName} (${userId}) דרך ${source}...`);
 
-            // 1. הכנת המידע ל-DB
-            // אנחנו דורסים את ה-displayName עם השם הנוכחי כדי להעיף את ה-Unknown
+            // --- ✅ תיקון קריטי: מבנה אובייקט מקונן (Nested Object) ---
+            // זה מונע את יצירת השדות עם הנקודות ('identity.name')
+            
             const updates = {
-                'identity.discordId': userId,
-                'identity.displayName': currentDisplayName, 
-                'identity.fullName': member.user.username,
-                'meta.isVerified': true,
-                'meta.verifiedAt': new Date().toISOString(),
-                'meta.verificationSource': source
+                identity: {
+                    discordId: userId,
+                    displayName: currentDisplayName,
+                    fullName: member.user.username,
+                    isBot: member.user.bot,
+                    avatarURL: member.user.displayAvatarURL()
+                },
+                meta: {
+                    isVerified: true,
+                    verifiedAt: new Date().toISOString(),
+                    verificationSource: source,
+                    lastSeen: new Date().toISOString()
+                }
             };
 
-            if (data.phone) updates['identity.whatsappPhone'] = data.phone; 
-            if (data.bday) updates['identity.birthday'] = data.bday;
-            if (data.platform) updates['gaming.primaryPlatform'] = data.platform;
+            // הוספת שדות אופציונליים רק אם קיימים
+            if (data.phone) updates.identity.whatsappPhone = data.phone; 
+            if (data.bday) {
+                // מנסה לפרק תאריך אם הגיע בפורמט טקסט
+                const parts = data.bday.split('/');
+                if (parts.length === 2) {
+                    updates.identity.birthday = { 
+                        day: parseInt(parts[0]), 
+                        month: parseInt(parts[1]) 
+                    };
+                } else {
+                    updates.identity.birthdayString = data.bday; // גיבוי
+                }
+            }
+            if (data.platform) {
+                updates.gaming = { primaryPlatform: data.platform };
+            }
 
+            // שמירה בטוחה
             await db.collection('users').doc(userId).set(updates, { merge: true });
             
+            // --- סוף תיקון DB ---
+
             // 2. טיפול ברול
             let role = null;
             if (process.env.VERIFIED_ROLE_ID) {
@@ -151,7 +167,7 @@ class VerificationHandler {
                 message = `✅ פרטיך נקלטו במערכת, אך לא נמצא רול מתאים בשרת.`;
             }
 
-            // 3. שליחת DM
+            // 3. שליחת DM עם המוח של שמעון
             if (source !== 'smart_check') {
                 this.sendWelcomeDM(member, data);
             }
@@ -166,12 +182,12 @@ class VerificationHandler {
 
     async sendWelcomeDM(member, data) {
         try {
-            let prompt = `המשתמש ${member.displayName} סיים אימות. `;
+            let prompt = `המשתמש ${member.displayName} סיים אימות בדיסקורד. `;
             
             if (!data.phone && !data.bday) {
-                prompt += "הוא לא מילא פרטים (טלפון/יומולדת). תברך אותו ותשאל אם הוא רוצה להשלים אותם.";
+                prompt += "הוא בחר לא למלא פרטים נוספים (טלפון/יומולדת). תברך אותו קצר ותציע לו בעדינות לעדכן בהמשך אם ירצה.";
             } else {
-                prompt += "הוא מילא את הפרטים. תודה לו.";
+                prompt += "הוא מילא את כל הפרטים כמו מלך. תודה לו בחום.";
             }
 
             const aiResponse = await brain.ask(member.id, 'discord', prompt);

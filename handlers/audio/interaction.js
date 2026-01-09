@@ -13,7 +13,7 @@ class AudioInteractionHandler {
             .setTitle('🎧 Shimon DJ Console')
             .setDescription('מערכת הסאונד המרכזית.\nבחר קטגוריה כדי לטעון קבצים.')
             .setColor('#2b2d31')
-            .setImage('https://media1.tenor.com/m/mL2z5_g-pXAAAAAC/dj-cat.gif') // גיף אווירה
+            .setImage('https://media1.tenor.com/m/zNmd9nLLAlQAAAAd/cat-gato.gif') // גיף אווירה
             .addFields(
                 { name: '🎵 נגן כעת', value: manager.currentTrack ? `**${manager.currentTrack.name}**` : 'שקט...', inline: true },
                 { name: '🎚️ סטטוס', value: manager.connection ? 'מחובר 🟢' : 'מנותק 🔴', inline: true }

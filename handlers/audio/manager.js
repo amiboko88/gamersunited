@@ -4,7 +4,8 @@ const {
     createAudioPlayer, 
     createAudioResource, 
     AudioPlayerStatus, 
-    VoiceConnectionStatus 
+    VoiceConnectionStatus,
+    entersState
 } = require('@discordjs/voice');
 const { log } = require('../../utils/logger');
 const path = require('path');
@@ -26,21 +27,29 @@ class AudioManager {
     }
 
     setupListeners() {
-        // כשהמוזיקה נגמרת
+        // --- מוזיקה ---
         this.musicPlayer.on(AudioPlayerStatus.Idle, () => {
             if (this.isLooping && this.currentTrack) {
-                this.playTrack(this.currentTrack.path, this.currentTrack.name); // Loop
+                this.playTrack(this.currentTrack.path, this.currentTrack.name);
             } else {
                 this.currentTrack = null;
             }
         });
 
-        // כשהאפקט נגמר -> חוזרים למוזיקה
+        this.musicPlayer.on('error', error => {
+            log(`❌ [MusicPlayer Error] ${error.message}`);
+        });
+
+        // --- אפקטים ---
         this.effectPlayer.on(AudioPlayerStatus.Idle, () => {
             if (this.connection && this.currentTrack) {
                 this.connection.subscribe(this.musicPlayer);
-                this.musicPlayer.unpause(); // ממשיך מאותה נקודה
+                this.musicPlayer.unpause();
             }
+        });
+
+        this.effectPlayer.on('error', error => {
+            log(`❌ [EffectPlayer Error] ${error.message}`);
         });
     }
 
@@ -54,7 +63,9 @@ class AudioManager {
                 adapterCreator: channel.guild.voiceAdapterCreator,
             });
             
-            // ברירת מחדל: מחובר לנגן המוזיקה
+            // וידוא שהחיבור התבסס
+            await entersState(this.connection, VoiceConnectionStatus.Ready, 5000);
+            
             this.connection.subscribe(this.musicPlayer);
             return true;
         } catch (error) {
@@ -67,9 +78,12 @@ class AudioManager {
         if (!this.connection) return "NotConnected";
         
         try {
-            const resource = createAudioResource(filePath);
+            // הוספת inlineVolume: true מכריחה שימוש ב-FFmpeg ופותרת בעיות שקט
+            const resource = createAudioResource(filePath, { inlineVolume: true });
+            resource.volume.setVolume(1.0); // ווליום רגיל
+
             this.musicPlayer.play(resource);
-            this.connection.subscribe(this.musicPlayer); // וודא ששומעים את המוזיקה
+            this.connection.subscribe(this.musicPlayer);
             this.currentTrack = { path: filePath, name: trackName };
             return true;
         } catch (error) {
@@ -82,14 +96,17 @@ class AudioManager {
         if (!this.connection) return "NotConnected";
 
         try {
-            // לוגיקת Ducking: עוצרים מוזיקה -> מנגנים אפקט -> ה-Listener למעלה יחזיר את המוזיקה
+            // Ducking: הנמכת המוזיקה
             if (this.currentTrack) {
                 this.musicPlayer.pause();
             }
 
-            const resource = createAudioResource(filePath);
+            // יצירת משאב עם FFmpeg מובנה
+            const resource = createAudioResource(filePath, { inlineVolume: true });
+            resource.volume.setVolume(1.0);
+
             this.effectPlayer.play(resource);
-            this.connection.subscribe(this.effectPlayer); // מחליפים את השידור לאפקט
+            this.connection.subscribe(this.effectPlayer);
             
             return true;
         } catch (error) {
@@ -102,6 +119,10 @@ class AudioManager {
         this.musicPlayer.stop();
         this.effectPlayer.stop();
         this.currentTrack = null;
+        if (this.connection) {
+            this.connection.destroy();
+            this.connection = null;
+        }
     }
 
     togglePause() {

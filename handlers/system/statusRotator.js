@@ -1,14 +1,15 @@
-// 📁 discord/utils/statusRotator.js
+// 📁 handlers/system/statusRotator.js
 const { ActivityType } = require('discord.js');
 const db = require('../../utils/firebase');
+const { log } = require('../../utils/logger');
 
 let currentIndex = 0;
 
 /**
- * מחליף את הסטטוס של הבוט
+ * פונקציה פנימית שמבצעת את החלפת הסטטוס בפועל
  */
 async function rotateStatus(client) {
-    if (!client.user) return; // הגנה למקרה שהבוט עדיין לא התחבר
+    if (!client.user) return; 
 
     const statuses = [
         { name: 'Warzone | !פיפו', type: ActivityType.Competing },
@@ -16,7 +17,7 @@ async function rotateStatus(client) {
         { name: `על ${client.guilds.cache.size} שרתים`, type: ActivityType.Watching },
     ];
 
-    // הוספת סטטוס דינמי: כמות אנשים בחדרים
+    // 1. סטטוס דינמי: כמות אנשים בחדרים
     let totalVoice = 0;
     client.guilds.cache.forEach(g => {
         g.channels.cache.forEach(c => {
@@ -28,20 +29,19 @@ async function rotateStatus(client) {
         statuses.push({ name: `${totalVoice} שחקנים בחדרים 🎤`, type: ActivityType.Listening });
     }
 
-    // הוספת סטטוס דינמי: ה-MVP הנוכחי (מה-DB)
+    // 2. סטטוס דינמי: MVP מה-DB
     try {
         const mvpDoc = await db.collection('system_metadata').doc('mvp_status').get();
         if (mvpDoc.exists && mvpDoc.data().currentMvpName) {
             statuses.push({ name: `👑 MVP: ${mvpDoc.data().currentMvpName}`, type: ActivityType.Watching });
         }
     } catch (e) {
-        // מתעלמים משגיאות DB זמניות כדי לא לתקוע את הסטטוס
+        // מתעלמים משגיאות רגעיות ב-DB
     }
 
-    // ביצוע ההחלפה
+    // בחירת הסטטוס הבא
     const status = statuses[currentIndex % statuses.length];
     
-    // שימוש ב-setPresence לעדכון יציב יותר
     client.user.setPresence({
         activities: [{ name: status.name, type: status.type }],
         status: 'online'
@@ -50,10 +50,13 @@ async function rotateStatus(client) {
     currentIndex++;
 }
 
-module.exports = (client) => {
-    // ✅ הפעלה ראשונית מיידית (כדי שלא נחכה 30 שניות עד שיראו סטטוס)
-    rotateStatus(client);
-    
-    // הפעלה במחזוריות
-    setInterval(() => rotateStatus(client), 30000); // כל 30 שניות
+module.exports = {
+    /**
+     * הפונקציה שנקראת מ-ready.js
+     */
+    start: (client) => {
+        rotateStatus(client); // הרצה ראשונית מיידית
+        setInterval(() => rotateStatus(client), 30000); // רוטציה כל 30 שניות
+        log('[StatusSystem] ✅ מערכת הסטטוסים הופעלה.');
+    }
 };

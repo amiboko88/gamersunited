@@ -3,6 +3,10 @@ const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, 
 const scanner = require('./scanner');
 const manager = require('./manager');
 
+// ניהול ספאם
+const userCooldowns = new Map();
+const COOLDOWN_SECONDS = 3; // זמן המתנה בין לחיצות
+
 class AudioInteractionHandler {
 
     /**
@@ -13,23 +17,21 @@ class AudioInteractionHandler {
             .setTitle('🎧 Shimon DJ Console')
             .setDescription('מערכת הסאונד המרכזית.\nבחר קטגוריה כדי לטעון קבצים.')
             .setColor('#2b2d31')
-            .setImage('https://media1.tenor.com/m/zNmd9nLLAlQAAAAd/cat-gato.gif') // גיף אווירה
+            .setImage('https://media1.tenor.com/m/zNmd9nLLAlQAAAAd/cat-gato.gif')
             .addFields(
                 { name: '🎵 נגן כעת', value: manager.currentTrack ? `**${manager.currentTrack.name}**` : 'שקט...', inline: true },
                 { name: '🎚️ סטטוס', value: manager.connection ? 'מחובר 🟢' : 'מנותק 🔴', inline: true }
             );
 
-        // תפריט ראשי
         const menu = new StringSelectMenuBuilder()
             .setCustomId('audio_main_menu')
             .setPlaceholder('בחר ספרייה...')
             .addOptions([
-                { label: 'מוזיקה (Tracks)', description: 'שירים מלאים מתיקיית tracks', value: 'mode_tracks', emoji: '🎵' },
-                { label: 'סאונדבורד (Effects)', description: 'אפקטים מתיקיית effects', value: 'mode_effects', emoji: '📣' },
+                { label: 'מוזיקה (Tracks)', description: 'שירים מלאים', value: 'mode_tracks', emoji: '🎵' },
+                { label: 'סאונדבורד (Effects)', description: 'אפקטים קצרים', value: 'mode_effects', emoji: '📣' },
                 { label: 'עצור הכל והתנתק', value: 'mode_stop', emoji: '🛑' }
             ]);
 
-        // כפתורי שליטה בסיסיים
         const controls = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('audio_ctrl_pause').setEmoji('⏯️').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('audio_ctrl_loop').setEmoji('🔁').setStyle(manager.isLooping ? ButtonStyle.Success : ButtonStyle.Secondary),
@@ -49,7 +51,6 @@ class AudioInteractionHandler {
     async handleMenuSelection(interaction) {
         const selection = interaction.values[0];
 
-        // בדיקת ערוץ
         if (!interaction.member.voice.channel) {
             return interaction.reply({ content: '❌ אתה חייב להיות בערוץ קול!', ephemeral: true });
         }
@@ -57,10 +58,9 @@ class AudioInteractionHandler {
 
         if (selection === 'mode_stop') {
             manager.stop();
-            return interaction.update({ content: '🛑 הנגן נעצר.', embeds: [], components: [] });
+            return interaction.update({ content: '🛑 הנגן נעצר והתנתק.', embeds: [], components: [] });
         }
 
-        // טעינת קבצים
         let files = [];
         let type = '';
         
@@ -76,10 +76,8 @@ class AudioInteractionHandler {
             return interaction.reply({ content: '❌ התיקייה ריקה. גרור לשם קבצים!', ephemeral: true });
         }
 
-        // בניית תפריט בחירה לקבצים
-        // (דיסקורד מגביל ל-25, אז לוקחים את ה-25 הראשונים כרגע)
         const fileOptions = files.slice(0, 25).map(f => ({
-            label: f.name.substring(0, 99), // הגבלת אורך
+            label: f.name.substring(0, 99),
             value: f.filename,
             emoji: type === 'track' ? '💿' : '🔊'
         }));
@@ -97,13 +95,23 @@ class AudioInteractionHandler {
     }
 
     /**
-     * טיפול בניגון קובץ
+     * טיפול בניגון קובץ (עם Cooldown)
      */
     async handleFilePlay(interaction) {
+        // --- בדיקת Cooldown ---
+        const userId = interaction.user.id;
+        const now = Date.now();
+        const lastPress = userCooldowns.get(userId) || 0;
+
+        if (now - lastPress < COOLDOWN_SECONDS * 1000) {
+            return interaction.reply({ content: '⏳ תן אוויר, חכה כמה שניות.', ephemeral: true });
+        }
+        userCooldowns.set(userId, now);
+        // ---------------------
+
         const filename = interaction.values[0];
         const type = interaction.customId.includes('track') ? 'track' : 'effect';
         
-        // מציאת הנתיב המלא
         const list = type === 'track' ? scanner.getTracks() : scanner.getEffects();
         const fileObj = list.find(f => f.filename === filename);
 
@@ -120,9 +128,6 @@ class AudioInteractionHandler {
         }
     }
 
-    /**
-     * כפתורי שליטה (Pause/Loop)
-     */
     async handleControls(interaction) {
         const action = interaction.customId.replace('audio_ctrl_', '');
         

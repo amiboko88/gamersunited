@@ -12,34 +12,10 @@ class DashboardHandler {
             
             if (!stats) return interaction.editReply('❌ נתונים בטעינה... נסה שוב.');
 
-            // חישוב אחוז פעילות (ציון בריאות לשרת)
+            // חישוב אחוז פעילות
             const activePercentage = Math.round(((stats.active + stats.newMembers) / stats.humans) * 100) || 0;
 
-            // --- גרף מד מהירות (Gauge) ---
-            // זה נראה הרבה יותר מרשים מפאי רגיל
-            const chartConfig = {
-                type: 'radialGauge',
-                data: {
-                    datasets: [{
-                        data: [activePercentage],
-                        backgroundColor: activePercentage > 50 ? '#4CAF50' : (activePercentage > 20 ? '#FF9800' : '#F44336')
-                    }]
-                },
-                options: {
-                    trackColor: '#333333',
-                    centerPercentage: 80,
-                    roundedCorners: true,
-                    title: {
-                        display: true,
-                        text: 'Server Health',
-                        fontColor: 'white',
-                        fontSize: 20
-                    }
-                }
-            };
-            
-            // אנחנו משתמשים ב-API חיצוני שמאפשר להוסיף טקסט על התמונה
-            // בגלל המגבלות, נחזור ל-Doughnut אבל בעיצוב HUD (תצוגה עלית) שחור לגמרי
+            // עיצוב HUD שחור
             const hudConfig = {
                 type: 'doughnut',
                 data: {
@@ -68,7 +44,7 @@ class DashboardHandler {
             const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(hudConfig))}&backgroundColor=%23121212&width=800&height=400`;
 
             const embed = new EmbedBuilder()
-                .setColor('#121212') // שחור מלא
+                .setColor('#121212')
                 .setTitle(`📡 MONITOR: ${guild.name.toUpperCase()}`)
                 .setImage(chartUrl)
                 .addFields(
@@ -117,12 +93,41 @@ class DashboardHandler {
     async executeKick(interaction) {
         await interaction.update({ content: '🚀 PURGING...', components: [], embeds: [] });
         const stats = await userManager.getInactivityStats(interaction.guild);
+        
+        // הגנה: אם אין את מי להעיף
+        if (!stats.kickCandidates || stats.kickCandidates.length === 0) {
+             return interaction.followUp({ content: '❌ הרשימה ריקה, לא בוצע ניקוי.', ephemeral: true });
+        }
+
         const result = await userManager.executeKickBatch(interaction.guild, stats.kickCandidates.map(c => c.userId));
 
         const summaryEmbed = new EmbedBuilder().setTitle('🧹 PURGE COMPLETE').setColor('Green')
             .setDescription(`**REMOVED:** ${result.kicked.length}\n**FAILED:** ${result.failed.length}\n\n${result.kicked.join(', ')}`);
 
         await interaction.followUp({ embeds: [summaryEmbed], ephemeral: true });
+    }
+
+    // ✅ הוספתי את הפונקציה החסרה למקרה שתרצה להציג רשימות מפורטות בעתיד
+    async getListEmbed(interaction, type) {
+        const stats = await userManager.getInactivityStats(interaction.guild);
+        let list = [];
+        let title = '';
+
+        switch (type) {
+            case 'dead': list = stats.dead; title = '💀 Dead Users (>180 Days)'; break;
+            case 'sleeping': list = stats.sleeping; title = '💤 Sleeping Users (>30 Days)'; break;
+            case 'review': list = stats.review; title = '⚠️ Review Needed'; break;
+            default: return { content: 'Invalid selection', embeds: [] };
+        }
+
+        const text = list.map(u => `<@${u.userId}> (${u.days} days)`).join('\n') || 'None';
+        
+        const embed = new EmbedBuilder()
+            .setTitle(title)
+            .setDescription(text.slice(0, 4000))
+            .setColor('#333');
+
+        return { embeds: [embed] };
     }
 }
 

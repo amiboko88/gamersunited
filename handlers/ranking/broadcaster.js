@@ -1,12 +1,11 @@
 // 📁 handlers/ranking/broadcaster.js
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
-const { MessageMedia } = require('whatsapp-web.js'); 
 const { InputFile } = require('grammy'); 
 const { log } = require('../../utils/logger');
 
 // הגדרת ערוצים קבועה
 const CHANNELS = {
-    DISCORD_LEADERBOARD: '1375415570937151519', // ✅ הערוץ שביקשת
+    DISCORD_LEADERBOARD: '1375415570937151519',
     TELEGRAM_MAIN: process.env.TELEGRAM_CHAT_ID
 };
 
@@ -23,8 +22,6 @@ class RankingBroadcaster {
                 const channel = await clients.discord.channels.fetch(CHANNELS.DISCORD_LEADERBOARD).catch(() => null);
                 
                 if (channel) {
-                    // אופציה עתידית: כאן אפשר להוסיף לוגיקה של מחיקת הודעה קודמת אם רוצים לשמור על הערוץ נקי
-                    // כרגע: שליחת הודעה חדשה
                     const attachment = new AttachmentBuilder(imageBuffer, { name: 'leaderboard.png' });
                     const embed = new EmbedBuilder()
                         .setTitle(caption)
@@ -40,12 +37,14 @@ class RankingBroadcaster {
             } catch (e) { log(`❌ Discord Board Fail: ${e.message}`); }
         }
 
-        // 2. WhatsApp
+        // 2. WhatsApp (תיקון: שליחה ישירה ללא ספרייה חיצונית)
         if (clients.whatsapp && clients.waGroupId) {
             try {
-                const b64 = imageBuffer.toString('base64');
-                const media = new MessageMedia('image/png', b64, 'leaderboard.png');
-                await clients.whatsapp.sendMessage(clients.waGroupId, media, { caption: `🏆 *סיכום שבועי #${weekNum}*` });
+                // Baileys יודע לקבל Buffer ישירות בשדה image
+                await clients.whatsapp.sendMessage(clients.waGroupId, { 
+                    image: imageBuffer, 
+                    caption: `🏆 *סיכום שבועי #${weekNum}*` 
+                });
             } catch (e) { log(`❌ WhatsApp Board Fail: ${e.message}`); }
         }
 

@@ -5,20 +5,17 @@ const {
     createAudioResource, 
     AudioPlayerStatus, 
     VoiceConnectionStatus,
-    entersState
+    entersState,
+    StreamType
 } = require('@discordjs/voice');
 const { log } = require('../../utils/logger');
-const path = require('path');
+const fs = require('fs');
 
 class AudioManager {
     constructor() {
         this.connection = null;
-        
-        // נגן ראשי (למוזיקה)
         this.musicPlayer = createAudioPlayer();
-        
-        // נגן משני (לאפקטים)
-        this.effectPlayer = createAudioPlayer();
+        this.effectPlayer = createAudioPlayer(); // שחקן נפרד לאפקטים
         
         this.currentTrack = null;
         this.isLooping = false;
@@ -41,15 +38,12 @@ class AudioManager {
         });
 
         // --- אפקטים ---
+        // כשאפקט נגמר, מחזירים את הווליום של המוזיקה (אם הייתה)
         this.effectPlayer.on(AudioPlayerStatus.Idle, () => {
             if (this.connection && this.currentTrack) {
                 this.connection.subscribe(this.musicPlayer);
                 this.musicPlayer.unpause();
             }
-        });
-
-        this.effectPlayer.on('error', error => {
-            log(`❌ [EffectPlayer Error] ${error.message}`);
         });
     }
 
@@ -63,9 +57,7 @@ class AudioManager {
                 adapterCreator: channel.guild.voiceAdapterCreator,
             });
             
-            // וידוא שהחיבור התבסס
             await entersState(this.connection, VoiceConnectionStatus.Ready, 5000);
-            
             this.connection.subscribe(this.musicPlayer);
             return true;
         } catch (error) {
@@ -74,13 +66,20 @@ class AudioManager {
         }
     }
 
+    /**
+     * מנגן שיר ארוך (Track)
+     */
     async playTrack(filePath, trackName) {
         if (!this.connection) return "NotConnected";
         
         try {
-            // הוספת inlineVolume: true מכריחה שימוש ב-FFmpeg ופותרת בעיות שקט
-            const resource = createAudioResource(filePath, { inlineVolume: true });
-            resource.volume.setVolume(1.0); // ווליום רגיל
+            // ✅ השימוש ב-fs.createReadStream עם StreamType.Arbitrary פותר את השקט
+            const stream = fs.createReadStream(filePath);
+            const resource = createAudioResource(stream, { 
+                inputType: StreamType.Arbitrary,
+                inlineVolume: true 
+            });
+            resource.volume.setVolume(1.0);
 
             this.musicPlayer.play(resource);
             this.connection.subscribe(this.musicPlayer);
@@ -92,17 +91,24 @@ class AudioManager {
         }
     }
 
+    /**
+     * מנגן אפקט קצר (Effect)
+     * עוצר זמנית את המוזיקה, מנגן את האפקט, ואז ממשיך
+     */
     async playEffect(filePath) {
         if (!this.connection) return "NotConnected";
 
         try {
-            // Ducking: הנמכת המוזיקה
+            // אם יש מוזיקה, עוצרים אותה רגע
             if (this.currentTrack) {
                 this.musicPlayer.pause();
             }
 
-            // יצירת משאב עם FFmpeg מובנה
-            const resource = createAudioResource(filePath, { inlineVolume: true });
+            const stream = fs.createReadStream(filePath);
+            const resource = createAudioResource(stream, { 
+                inputType: StreamType.Arbitrary,
+                inlineVolume: true 
+            });
             resource.volume.setVolume(1.0);
 
             this.effectPlayer.play(resource);

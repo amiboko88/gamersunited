@@ -6,7 +6,8 @@ const { log } = require('../../utils/logger');
 const verificationHandler = require('../../handlers/users/verification');
 const handleMusicControls = require('../../discord/interactions/buttons/music_controls');
 const handleFifoButtons = require('../../discord/interactions/fifoButtons');
-const dashboardHandler = require('../../handlers/users/dashboard'); // ✅ התוספת החדשה
+const dashboardHandler = require('../../handlers/users/dashboard');
+const birthdayHandler = require('../../handlers/birthday/interaction'); // ✅ התוספת החדשה לימי הולדת
 
 module.exports = {
     name: Events.InteractionCreate,
@@ -39,14 +40,17 @@ module.exports = {
             else if (interaction.isButton()) {
                 const id = interaction.customId;
 
-                // --- אימות ---
-                if (id === 'start_verification_process') {
-                    await verificationHandler.showVerificationModal(interaction);
+                // --- ימי הולדת (מערכת חדשה) ---
+                // טיפול בכפתורי הגדרה, עריכה, פאנל ניהול ותזכורות
+                if (['btn_bd_set', 'btn_bd_edit', 'btn_bd_admin_panel', 'btn_bd_remind_all'].includes(id)) {
+                    if (id === 'btn_bd_set' || id === 'btn_bd_edit') await birthdayHandler.showModal(interaction);
+                    else if (id === 'btn_bd_admin_panel') await birthdayHandler.showAdminPanel(interaction);
+                    else if (id === 'btn_bd_remind_all') await birthdayHandler.sendReminders(interaction);
                 }
-                
-                // --- ניהול ודשבורד (חדש!) ---
+
+                // --- ניהול ודשבורד ---
                 else if (id === 'btn_manage_refresh') {
-                    await interaction.deferUpdate(); // מונע שגיאת אינטראקציה
+                    await interaction.deferUpdate();
                     await dashboardHandler.showMainDashboard(interaction);
                 }
                 else if (id === 'btn_manage_kick_prep') {
@@ -57,6 +61,11 @@ module.exports = {
                 }
                 else if (id === 'btn_manage_cancel') {
                     await interaction.update({ content: '✅ הפעולה בוטלה.', embeds: [], components: [], files: [] });
+                }
+
+                // --- אימות ---
+                else if (id === 'start_verification_process') {
+                    await verificationHandler.showVerificationModal(interaction);
                 }
 
                 // --- מוזיקה ---
@@ -76,7 +85,13 @@ module.exports = {
             else if (interaction.isModalSubmit()) {
                 const id = interaction.customId;
 
-                if (id === 'verification_modal_submit') {
+                // --- ימי הולדת ---
+                if (id === 'modal_bd_submit') {
+                    await birthdayHandler.handleModalSubmit(interaction);
+                }
+                
+                // --- אימות ---
+                else if (id === 'verification_modal_submit') {
                     await verificationHandler.handleModalSubmit(interaction);
                 }
             }

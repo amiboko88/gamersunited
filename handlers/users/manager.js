@@ -23,6 +23,43 @@ class UserManager {
         } catch (e) { }
     }
 
+    /**
+     * ✅ פונקציה חדשה: סריקה וסינכרון שמות Unknown מהדיסקורד ל-DB
+     */
+    async syncUnknownUsers(guild) {
+        if (!guild) return { success: false, message: 'Guild not found' };
+        
+        log('🔍 [UserManager] מתחיל סנכרון שמות Unknown...');
+        const snapshot = await db.collection('users').get();
+        let updateCount = 0;
+
+        for (const doc of snapshot.docs) {
+            const userId = doc.id;
+            const data = doc.data();
+
+            // בודקים אם זה מזהה דיסקורד (ספרות בלבד) והשם Unknown
+            const isDiscordId = /^\d+$/.test(userId) && userId.length > 15;
+            const isUnknown = !data.identity?.displayName || data.identity.displayName === "Unknown";
+
+            if (isDiscordId && isUnknown) {
+                try {
+                    const member = await guild.members.fetch(userId).catch(() => null);
+                    if (member) {
+                        const bestName = member.nickname || member.user.displayName || member.user.username;
+                        
+                        if (bestName && bestName !== "Unknown") {
+                            await db.collection('users').doc(userId).set({
+                                identity: { displayName: bestName }
+                            }, { merge: true });
+                            updateCount++;
+                        }
+                    }
+                } catch (e) { continue; }
+            }
+        }
+        return { success: true, count: updateCount };
+    }
+
     async getInactivityStats(guild) {
         if (!guild) return null;
         
@@ -37,7 +74,6 @@ class UserManager {
         };
 
         try {
-            // Anti-Crash: מנסים למשוך, אם נכשל משתמשים בזיכרון. לא זורקים שגיאה.
             if (guild.memberCount !== guild.members.cache.size) {
                 try { await guild.members.fetch({ time: 8000 }); } catch (e) {}
             }
@@ -67,7 +103,6 @@ class UserManager {
                 const isInVoice = member.voice && member.voice.channelId;
                 if (isInVoice) stats.voiceNow++;
 
-                // חישוב ימים
                 let daysInactive = 0;
                 if (isOnline || isInVoice) {
                     daysInactive = 0;
@@ -79,7 +114,6 @@ class UserManager {
                 const daysSinceJoin = Math.floor((now - member.joinedTimestamp) / msPerDay);
                 const hasLegacy = (userData.economy?.xp > 100) || (userData.stats?.messagesSent > 10);
 
-                // חסינות
                 const isImmune = member.roles.cache.some(r => 
                     IMMUNE_ROLES_NAMES.some(immuneName => r.name.includes(immuneName)) ||
                     r.id === process.env.ROLE_MVP_ID
@@ -90,19 +124,17 @@ class UserManager {
                     return;
                 }
 
-                // סיווג לפי הדרישות החדשות
                 if (daysInactive < DAYS.AFK) {
                     if (daysSinceJoin < 7) stats.newMembers++;
                     stats.active++;
                 } 
                 else if (daysInactive >= DAYS.DEAD) {
-                    // רק 180 יום הולכים לקיק
                     stats.dead.push({ userId, days: daysInactive, name: member.displayName });
                     stats.kickCandidates.push({ userId, days: daysInactive, name: member.displayName });
                 }
                 else if (daysInactive >= DAYS.SUSPECT) {
-                    if (hasLegacy) stats.review.push({ userId, days: daysInactive, name: member.displayName }); // לבדיקה
-                    else stats.sleeping.push({ userId, days: daysInactive, name: member.displayName }); // רדום
+                    if (hasLegacy) stats.review.push({ userId, days: daysInactive, name: member.displayName });
+                    else stats.sleeping.push({ userId, days: daysInactive, name: member.displayName });
                 }
                 else {
                     if (daysSinceJoin < 60) stats.afk.push({ userId, days: daysInactive, name: member.displayName });
@@ -117,7 +149,6 @@ class UserManager {
 
     calculateLastSeen(member, userData, userGames) {
         let timestamps = [];
-        // לוגיקה שמסתמכת על ה-DB הנקי (אחרי הסקריפט)
         if (userData.meta) {
             if (userData.meta.lastSeen) timestamps.push(new Date(userData.meta.lastSeen).getTime());
             if (userData.meta.lastActive) timestamps.push(new Date(userData.meta.lastActive).getTime());

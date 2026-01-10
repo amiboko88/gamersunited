@@ -1,19 +1,12 @@
 // 📁 discord/commands/management.js
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const dashboardHandler = require('../../handlers/users/dashboard');
-const userManager = require('../../handlers/users/manager');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('manage') 
-        .setDescription('📊 פאנל ניהול וסינכרון המערכת')
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-        .addSubcommand(sub => 
-            sub.setName('panel')
-               .setDescription('פתיחת דשבורד הניהול המלא (סטטיסטיקות וניקוי)'))
-        .addSubcommand(sub => 
-            sub.setName('sync-names')
-               .setDescription('סנכרון שמות Unknown מהשרת ל-DB המאוחד')),
+        .setDescription('📊 פאנל ניהול המערכת (סטטיסטיקות, ניקוי וסנכרון)')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async execute(interaction) {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
@@ -23,22 +16,9 @@ module.exports = {
             });
         }
 
-        const sub = interaction.options.getSubcommand();
-
-        if (sub === 'panel') {
-            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-            await dashboardHandler.showMainDashboard(interaction);
-        } 
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         
-        else if (sub === 'sync-names') {
-            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-            const result = await userManager.syncUnknownUsers(interaction.guild);
-            
-            if (result.success) {
-                await interaction.editReply(`✅ הסנכרון הסתיים! עודכנו **${result.count}** שמות במערכת.`);
-            } else {
-                await interaction.editReply(`❌ שגיאה בסנכרון: ${result.message}`);
-            }
-        }
+        // קריאה להצגת הדשבורד הראשי (שם יהיה כפתור הסנכרון)
+        await dashboardHandler.showMainDashboard(interaction);
     }
 };

@@ -12,10 +12,8 @@ class DashboardHandler {
             
             if (!stats) return interaction.editReply('❌ נתונים בטעינה... נסה שוב.');
 
-            // חישוב אחוז פעילות
             const activePercentage = Math.round(((stats.active + stats.newMembers) / stats.humans) * 100) || 0;
 
-            // עיצוב HUD שחור
             const hudConfig = {
                 type: 'doughnut',
                 data: {
@@ -54,8 +52,10 @@ class DashboardHandler {
                 )
                 .setFooter({ text: `SYSTEM STATUS: ONLINE | ${new Date().toLocaleTimeString("he-IL", { timeZone: "Asia/Jerusalem" })}` });
 
+            // שורת כפתורים מעודכנת עם כפתור סנכרון
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('btn_manage_refresh').setLabel('REFRESH SYSTEM').setStyle(ButtonStyle.Secondary).setEmoji('🔄'),
+                new ButtonBuilder().setCustomId('btn_manage_refresh').setLabel('REFRESH').setStyle(ButtonStyle.Secondary).setEmoji('🔄'),
+                new ButtonBuilder().setCustomId('btn_manage_sync_names').setLabel('SYNC UNKNOWN').setStyle(ButtonStyle.Primary).setEmoji('🆔'),
                 new ButtonBuilder().setCustomId('btn_manage_kick_prep').setLabel(`PURGE DEAD (${stats.dead.length})`).setStyle(ButtonStyle.Danger).setDisabled(stats.dead.length === 0).setEmoji('💀')
             );
 
@@ -71,7 +71,7 @@ class DashboardHandler {
     async showKickCandidateList(interaction) {
         await interaction.deferReply({ ephemeral: true });
         const stats = await userManager.getInactivityStats(interaction.guild);
-        const candidates = stats.kickCandidates; // רק מתים
+        const candidates = stats.kickCandidates;
 
         if (candidates.length === 0) return interaction.editReply('✅ SYSTEM CLEAN. NO DEAD USERS FOUND.');
 
@@ -94,7 +94,6 @@ class DashboardHandler {
         await interaction.update({ content: '🚀 PURGING...', components: [], embeds: [] });
         const stats = await userManager.getInactivityStats(interaction.guild);
         
-        // הגנה: אם אין את מי להעיף
         if (!stats.kickCandidates || stats.kickCandidates.length === 0) {
              return interaction.followUp({ content: '❌ הרשימה ריקה, לא בוצע ניקוי.', ephemeral: true });
         }
@@ -107,7 +106,6 @@ class DashboardHandler {
         await interaction.followUp({ embeds: [summaryEmbed], ephemeral: true });
     }
 
-    // ✅ הוספתי את הפונקציה החסרה למקרה שתרצה להציג רשימות מפורטות בעתיד
     async getListEmbed(interaction, type) {
         const stats = await userManager.getInactivityStats(interaction.guild);
         let list = [];
@@ -121,12 +119,7 @@ class DashboardHandler {
         }
 
         const text = list.map(u => `<@${u.userId}> (${u.days} days)`).join('\n') || 'None';
-        
-        const embed = new EmbedBuilder()
-            .setTitle(title)
-            .setDescription(text.slice(0, 4000))
-            .setColor('#333');
-
+        const embed = new EmbedBuilder().setTitle(title).setDescription(text.slice(0, 4000)).setColor('#333');
         return { embeds: [embed] };
     }
 }

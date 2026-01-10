@@ -1,7 +1,8 @@
 // 📁 discord/events/interactionCreate.js
-const { Events, MessageFlags } = require('discord.js');
+const { Events } = require('discord.js');
 const { log } = require('../../utils/logger');
-const { ensureUserExists } = require('../../utils/userUtils'); // ✅ ייבוא חובה
+const { ensureUserExists } = require('../../utils/userUtils');
+const userManager = require('../../handlers/users/manager'); // ✅ ייבוא חובה לסנכרון
 
 // ייבוא המטפלים
 const verificationHandler = require('../../handlers/users/verification');
@@ -11,7 +12,6 @@ const audioHandler = require('../../handlers/audio/interaction');
 const fifoHandler = require('../../handlers/fifo/interaction');
 const activityMonitor = require('../../handlers/users/activity');
 
-// רול מאומת (שים את ה-ID האמיתי שלך כאן)
 const VERIFIED_ROLE_ID = '1120791404583587971'; 
 
 module.exports = {
@@ -26,7 +26,7 @@ module.exports = {
                     await command.execute(interaction);
                 } catch (error) {
                     console.error(`Error executing ${interaction.commandName}:`, error);
-                    if (!interaction.replied) await interaction.reply({ content: '❌ שגיאה בפקודה.', flags: MessageFlags.Ephemeral });
+                    if (!interaction.replied) await interaction.reply({ content: '❌ שגיאה בפקודה.', flags: 64 });
                 }
             }
 
@@ -34,20 +34,15 @@ module.exports = {
             else if (interaction.isButton() || interaction.isStringSelectMenu()) {
                 const id = interaction.customId;
 
-                // --- ✅ אימות (התיקון המלא) ---
+                // --- אימות ---
                 if (id === 'verify_me_button') {
-                    // דיווח למשתמש שאנחנו עובדים
                     await interaction.deferReply({ ephemeral: true });
-
                     try {
-                        // 1. שמירה ב-DB החדש והמסודר
                         await ensureUserExists(
                             interaction.user.id, 
                             interaction.member.displayName || interaction.user.username, 
                             'discord'
                         );
-
-                        // 2. נתינת רול
                         if (!interaction.member.roles.cache.has(VERIFIED_ROLE_ID)) {
                             await interaction.member.roles.add(VERIFIED_ROLE_ID);
                             await interaction.editReply({ content: '✅ **אימות הושלם!** פרטיך נשמרו בבסיס הנתונים המאוחד.' });
@@ -61,12 +56,17 @@ module.exports = {
                     }
                 }
                 
-                // כפתור התחלת תהליך (אם קיים במקום אחר)
-                else if (id === 'start_verification_process') {
-                     await verificationHandler.showVerificationModal(interaction);
+                // --- כפתור סנכרון שמות Unknown (חדש!) ---
+                else if (id === 'btn_manage_sync_names') {
+                    await interaction.deferUpdate();
+                    const result = await userManager.syncUnknownUsers(interaction.guild);
+                    await interaction.followUp({ 
+                        content: `✅ הסנכרון הסתיים! עודכנו **${result.count}** שמות שהיו Unknown.`, 
+                        ephemeral: true 
+                    });
                 }
 
-                // --- שאר המערכות (ללא שינוי) ---
+                else if (id === 'start_verification_process') await verificationHandler.showVerificationModal(interaction);
                 else if (id === 'activity_iam_alive') await activityMonitor.handleAliveResponse(interaction);
                 else if (id === 'repartition_now') await fifoHandler.handleRepartition(interaction);
                 else if (id.startsWith('fifo_')) await fifoHandler.handleVoteOrLobby(interaction);

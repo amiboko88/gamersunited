@@ -110,6 +110,12 @@ async function launchDiscord() {
         console.error('❌ [Discord] Login Failed:', error);
     }
 }
+async function stopDiscord() {
+    if (client && client.isReady()) {
+        log("🛑 [DISCORD] מנתק חיבור...");
+        await client.destroy();
+    }
+}
 
-// ייצוא הלקוח והפונקציה
-module.exports = { client, launchDiscord };
+// ייצוא מעודכן
+module.exports = { client, launchDiscord, stopDiscord };

@@ -2,64 +2,74 @@
 require('dotenv').config();
 const express = require('express'); 
 
-// ✅ ייבוא המערכות בצורה בטוחה
-const { connectToWhatsApp } = require('./whatsapp/index'); 
-const { launchTelegram } = require('./telegram/index');
-const { launchDiscord } = require('./discord/index'); // ✅ ייבוא הפונקציה החדשה
+// ✅ ייבוא המערכות עם פונקציות הכיבוי
+const { connectToWhatsApp, disconnectWhatsApp } = require('./whatsapp/index'); 
+const { launchTelegram, stopTelegram } = require('./telegram/index');
+const { launchDiscord, stopDiscord } = require('./discord/index');
 
-// --- 🛡️ טיפול בשגיאות קריטיות (Anti-Crash) ---
+// --- 🛡️ טיפול בשגיאות ---
 process.on('unhandledRejection', (reason, promise) => {
-    // התעלמות משגיאות Telegram Conflict זמניות בזמן ריסט
-    if (reason?.toString().includes('409') && reason?.toString().includes('Conflict')) return;
+    // מתעלמים משגיאות התנגשות ידועות בזמן ריסט
+    if (reason?.toString().includes('Conflict') || reason?.toString().includes('409') || reason?.toString().includes('440')) return;
     console.error('❌ [CRITICAL] Unhandled Rejection:', reason);
 });
-
 process.on('uncaughtException', (error) => {
     console.error('❌ [CRITICAL] Uncaught Exception:', error);
 });
 
-// --- Server Setup (Railway / Health Check) ---
+// --- Server Setup ---
 const app = express();
 const PORT = process.env.PORT || 8080;
-
 app.use(express.json());
+app.get('/', (req, res) => res.status(200).send('🤖 Shimon AI 2026 is Online.'));
 
-app.get('/', (req, res) => {
-    res.status(200).send('🤖 Shimon AI 2026 is Online & Healthy.');
-});
-
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`🌍 Server listening on port ${PORT}`);
 });
 
-// --- 🚀 הפעלת הבוט (Main Entry Point) ---
+// --- 🛑 מנגנון כיבוי מסודר (Graceful Shutdown) ---
+async function gracefulShutdown(signal) {
+    console.log(`\n🛑 [System] Received ${signal}. Shutting down...`);
+    
+    server.close(); // סוגר את הפורט
+
+    // מכבה את הבוטים כדי לשחרר את הטוקנים
+    await Promise.all([
+        disconnectWhatsApp().catch(e => console.error(e.message)),
+        stopTelegram().catch(e => console.error(e.message)),
+        stopDiscord().catch(e => console.error(e.message))
+    ]);
+    
+    console.log('👋 [System] Goodbye.');
+    process.exit(0);
+}
+
+process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.once('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// --- 🚀 הפעלת הבוט ---
 (async () => {
     try {
+        // ✅ התיקון הקריטי: המתנה למוות של התהליך הקודם
+        console.log('⏳ [System] Waiting 5 seconds for previous instance to cleanup...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
         console.log('🚀 [System] Starting Shimon AI 2026...');
 
         // 1. הפעלת וואטסאפ
         try {
-            console.log('🔄 [Init] Launching WhatsApp...');
             await connectToWhatsApp();
-        } catch (err) {
-            console.error('❌ WhatsApp Init Failed:', err.message);
-        }
+        } catch (err) { console.error('❌ WhatsApp Init Failed:', err.message); }
 
         // 2. הפעלת טלגרם
         try {
-            console.log('🔄 [Init] Launching Telegram...');
             await launchTelegram();
-        } catch (e) {
-            console.error('❌ Telegram Init Failed:', e.message);
-        }
+        } catch (e) { console.error('❌ Telegram Init Failed:', e.message); }
 
-        // 3. הפעלת דיסקורד (עכשיו בצורה מבוקרת!)
+        // 3. הפעלת דיסקורד
         try {
-            console.log('🔄 [Init] Launching Discord...');
-            await launchDiscord(); // ✅ קריאה לפונקציה במקום require
-        } catch (e) {
-            console.error('❌ Discord Init Failed:', e.message);
-        }
+            await launchDiscord();
+        } catch (e) { console.error('❌ Discord Init Failed:', e.message); }
 
     } catch (error) {
         console.error('🔥 [System] Fatal Start Error:', error);

@@ -127,6 +127,17 @@ async function launchTelegram() {
         }
     });
 }
+async function stopTelegram() {
+    if (bot) {
+        try {
+            console.log("🛑 [TELEGRAM] עוצר את הבוט...");
+            await bot.stop(); 
+            bot = null;
+        } catch (e) {
+            console.error("Error stopping Telegram:", e.message);
+        }
+    }
+}
 
-// שינוי קריטי: אנחנו מייצאים את פונקציית האתחול, לא את הבוט עצמו שרץ מיד
-module.exports = { launchTelegram };
+// ותעדכן את הייצוא:
+module.exports = { launchTelegram, stopTelegram };

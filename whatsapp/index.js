@@ -4,6 +4,8 @@ const { DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets
 const pino = require('pino');
 const { useFirestoreAuthState } = require('./auth'); 
 const coreLogic = require('./logic/core'); 
+const { ensureUserExists } = require('../utils/userUtils'); // ✅ חובה לסינכרון DB
+const { log } = require('../utils/logger'); // שימוש בלוגר המרכזי
 
 let sock; // משתנה גלובלי להחזקת החיבור
 const msgRetryCounterCache = new Map();
@@ -54,6 +56,27 @@ async function connectToWhatsApp() {
 
         sock.ev.on('creds.update', saveCreds);
 
+        // --- ✅ תוספת 1: זיהוי כניסה/יציאה מקבוצות (ברוכים הבאים) ---
+        sock.ev.on('group-participants.update', async (notification) => {
+            if (notification.id !== MAIN_GROUP_ID) return;
+
+            const { action, participants } = notification;
+            
+            for (const participant of participants) {
+                const phone = participant.split('@')[0];
+                
+                if (action === 'add') {
+                    console.log(`👋 [WhatsApp] משתמש הצטרף: ${phone}`);
+                    // רישום ראשוני ב-DB (שם זמני עד שישלח הודעה)
+                    await ensureUserExists(participant, "Gamer (New)", "whatsapp");
+
+                    // הודעת ברוכים הבאים
+                    const welcomeText = `👋 ברוך הבא לקבוצה @${phone}!\nתציג את עצמך שנכיר.`;
+                    await sock.sendMessage(MAIN_GROUP_ID, { text: welcomeText, mentions: [participant] });
+                } 
+            }
+        });
+
         sock.ev.on('messages.upsert', async (m) => {
             try {
                 const msg = m.messages[0];
@@ -64,6 +87,16 @@ async function connectToWhatsApp() {
                              msg.message.extendedTextMessage?.text || 
                              msg.message.imageMessage?.caption || "";
                 
+                // --- ✅ תוספת 2: עדכון פרטי משתמש ב-DB בכל הודעה ---
+                // זה מה שמבטיח שהשם והמספר יסתנכרנו תמיד ולא יהיו "Unknown"
+                const senderJid = msg.key.participant || msg.key.remoteJid;
+                const pushName = msg.pushName;
+                
+                if (pushName) {
+                     // שליחה אסינכרונית כדי לא לעכב את הבוט
+                     ensureUserExists(senderJid, pushName, "whatsapp").catch(e => console.error('[DB Sync Error]', e.message));
+                }
+
                 // שליחה ללוגיקה
                 if (coreLogic && coreLogic.handleMessageLogic) {
                     await coreLogic.handleMessageLogic(sock, msg, text);
@@ -91,7 +124,6 @@ async function sendToMainGroup(text, mentions = [], imageBuffer = null) {
     } catch (err) { console.error('❌ [WhatsApp Send Error]:', err.message); }
 }
 
-// ✅ פונקציית הכיבוי שחסרה הייתה ב-Root
 async function disconnectWhatsApp() {
     if (sock) {
         console.log('🛑 [WhatsApp] מנתק חיבור יזום...');
@@ -104,4 +136,9 @@ async function disconnectWhatsApp() {
     }
 }
 
-module.exports = { connectToWhatsApp, sendToMainGroup, disconnectWhatsApp };
+// --- ✅ תוספת 3: חשיפת הסוקט למערכות חיצוניות (כמו Leaderboard) ---
+function getWhatsAppSock() {
+    return sock;
+}
+
+module.exports = { connectToWhatsApp, sendToMainGroup, disconnectWhatsApp, getWhatsAppSock };

@@ -7,6 +7,8 @@ const visual = require('./visual');
 const broadcaster = require('./broadcaster');
 
 const GIFT_AMOUNT = 500;
+// ✅ הפניה לקובץ הטיימרים החדש (מונע כפילויות בריסטרט)
+const TIMERS_REF = db.collection('system_metadata').doc('timers');
 
 class BirthdayManager {
     constructor() {
@@ -20,10 +22,10 @@ class BirthdayManager {
         this.clients = { discord: discordClient, whatsapp: waSock, waGroupId, telegram: telegramBot };
         
         // 1. חגיגה יומית ב-08:00
-        cron.schedule('0 8 * * *', () => this.runDailyCheck());
+        cron.schedule('0 8 * * *', () => this.runDailyCheck(), { timezone: "Asia/Jerusalem" });
         
-        // 2. תזכורת חודשית ב-1 לחודש ב-12:00 (השדרוג שביקשת)
-        cron.schedule('0 12 1 * *', () => this.runMonthlyReminder());
+        // 2. תזכורת חודשית ב-1 לחודש ב-12:00
+        cron.schedule('0 12 1 * *', () => this.runMonthlyReminder(), { timezone: "Asia/Jerusalem" });
 
         log('[BirthdayManager] ✅ מודול ימי הולדת נטען (Daily & Monthly).');
     }
@@ -55,25 +57,49 @@ class BirthdayManager {
 
     /**
      * הריצה היומית (08:00)
+     * ✅ משודרג: בודק ב-system_metadata לפני הרצה
      */
     async runDailyCheck() {
         const now = new Date();
         const todayDay = now.getDate();
         const todayMonth = now.getMonth() + 1;
 
-        log(`[BirthdayManager] 🎂 בודק ימי הולדת ל-${todayDay}/${todayMonth}...`);
+        log(`[BirthdayManager] 🎂 מתחיל בדיקת ימי הולדת ל-${todayDay}/${todayMonth}...`);
 
         try {
+            // --- 🛡️ בדיקת בטיחות (הקוד החדש) ---
+            // בודקים אם כבר רץ היום כדי למנוע כפילויות במקרה של ריסטרט
+            const timerDoc = await TIMERS_REF.get();
+            if (timerDoc.exists) {
+                const lastCheck = timerDoc.data().lastBirthdayCheck;
+                if (lastCheck) {
+                    const lastDate = new Date(lastCheck);
+                    // אם התאריך שנשמר הוא היום - עוצרים
+                    if (lastDate.getDate() === todayDay && lastDate.getMonth() + 1 === todayMonth && lastDate.getFullYear() === now.getFullYear()) {
+                        log('[BirthdayManager] ⏳ הבדיקה כבר בוצעה היום. מדלג.');
+                        return;
+                    }
+                }
+            }
+            // ------------------------------------
+
             const snapshot = await db.collection('users')
                 .where('identity.birthday.day', '==', todayDay)
                 .where('identity.birthday.month', '==', todayMonth)
                 .get();
 
-            if (snapshot.empty) return;
-
-            for (const doc of snapshot.docs) {
-                await this.celebrate(doc.id, doc.data());
+            if (snapshot.empty) {
+                log('[BirthdayManager] 📅 אין ימי הולדת היום.');
+            } else {
+                log(`[BirthdayManager] 🎉 נמצאו ${snapshot.size} חוגגים!`);
+                for (const doc of snapshot.docs) {
+                    await this.celebrate(doc.id, doc.data());
+                }
             }
+
+            // ✅ עדכון הטיימר ב-DB שסיימנו להיום
+            await TIMERS_REF.set({ lastBirthdayCheck: now.toISOString() }, { merge: true });
+
         } catch (error) {
             log(`❌ [BirthdayManager] שגיאה יומית: ${error.message}`);
         }
@@ -115,7 +141,7 @@ class BirthdayManager {
     async celebrate(userId, userData) {
         const currentYear = new Date().getFullYear();
         
-        // מניעת כפילות
+        // מניעת כפילות ברמת המשתמש (הגנה כפולה)
         if (userData.tracking?.lastBirthdayCelebrated === currentYear) return;
 
         // חישוב גיל עדכני

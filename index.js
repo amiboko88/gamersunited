@@ -2,12 +2,13 @@
 require('dotenv').config();
 const express = require('express'); 
 
-// ✅ ייבוא המערכות - חייב לוודא שהקבצים בתיקיות מייצאים את הפונקציות האלו!
-const { connectToWhatsApp, disconnectWhatsApp } = require('./whatsapp/index'); 
-const { launchTelegram, stopTelegram } = require('./telegram/index');
-const { launchDiscord, stopDiscord } = require('./discord/index');
+// ✅ ייבוא המערכות - שימוש ב-getWhatsAppSock החדש
+const { connectToWhatsApp, disconnectWhatsApp, getWhatsAppSock } = require('./whatsapp/index'); 
+const { launchTelegram, stopTelegram, bot: telegramBot } = require('./telegram/index'); // וודא שאתה מייצא את bot מטלגרם
+const { launchDiscord, stopDiscord, client: discordClient } = require('./discord/index'); // וודא שאתה מייצא את client מדיסקורד
+const rankingManager = require('./handlers/ranking/manager'); // ✅ ייבוא מנהל הדירוג
 
-// --- 🛡️ טיפול בשגיאות גלובלי ---
+// --- 🛡️ טיפול בשגיאות ---
 process.on('unhandledRejection', (reason, promise) => {
     if (reason?.toString().includes('Conflict') || reason?.toString().includes('409') || reason?.toString().includes('440')) return;
     console.error('❌ [CRITICAL] Unhandled Rejection:', reason);
@@ -16,7 +17,7 @@ process.on('uncaughtException', (error) => {
     console.error('❌ [CRITICAL] Uncaught Exception:', error);
 });
 
-// --- Server Setup (חובה בשביל Railway) ---
+// --- Server Setup ---
 const app = express();
 const PORT = process.env.PORT || 8080;
 app.use(express.json());
@@ -26,24 +27,19 @@ const server = app.listen(PORT, () => {
     console.log(`🌍 Server listening on port ${PORT}`);
 });
 
-// --- 🛑 מנגנון כיבוי מסודר (Graceful Shutdown) ---
+// --- 🛑 מנגנון כיבוי ---
 let isShuttingDown = false;
 
 async function gracefulShutdown(signal) {
     if (isShuttingDown) return;
     isShuttingDown = true;
-    
     console.log(`\n🛑 [System] Received ${signal}. Shutting down...`);
-    
-    server.close(); // סוגר את הפורט HTTP
-
-    // מכבה את הבוטים כדי לשחרר את הטוקנים והסוקטים
+    server.close(); 
     await Promise.all([
-        disconnectWhatsApp().catch(e => console.error('WA Disconnect Error:', e.message)),
-        stopTelegram().catch(e => console.error('TG Stop Error:', e.message)),
-        stopDiscord().catch(e => console.error('DS Stop Error:', e.message))
+        disconnectWhatsApp().catch(e => console.error('WA Error:', e.message)),
+        stopTelegram().catch(e => console.error('TG Error:', e.message)),
+        stopDiscord().catch(e => console.error('DS Error:', e.message))
     ]);
-    
     console.log('👋 [System] Goodbye.');
     process.exit(0);
 }
@@ -54,26 +50,26 @@ process.once('SIGINT', () => gracefulShutdown('SIGINT'));
 // --- 🚀 הפעלת הבוט ---
 (async () => {
     try {
-        // המתנה לניקוי התהליך הקודם ב-Railway
-        console.log('⏳ [System] Waiting 5 seconds for previous instance to cleanup...');
+        console.log('⏳ [System] Waiting 5 seconds for cleanup...');
         await new Promise(resolve => setTimeout(resolve, 5000));
-
         console.log('🚀 [System] Starting Shimon AI 2026...');
 
-        // 1. הפעלת וואטסאפ
-        try {
-            await connectToWhatsApp();
-        } catch (err) { console.error('❌ WhatsApp Init Failed:', err.message); }
+        // 1. הפעלת פלטפורמות
+        await connectToWhatsApp().catch(e => console.error('❌ WhatsApp Init Failed:', e.message));
+        await launchTelegram().catch(e => console.error('❌ Telegram Init Failed:', e.message));
+        await launchDiscord().catch(e => console.error('❌ Discord Init Failed:', e.message));
 
-        // 2. הפעלת טלגרם
-        try {
-            await launchTelegram();
-        } catch (e) { console.error('❌ Telegram Init Failed:', e.message); }
-
-        // 3. הפעלת דיסקורד
-        try {
-            await launchDiscord();
-        } catch (e) { console.error('❌ Discord Init Failed:', e.message); }
+        // 2. ✅ הפעלת מנהל הדירוג (החלק שהיה חסר!)
+        // אנחנו מעבירים לו את הקליינטים שהופעלו הרגע
+        if (rankingManager) {
+            console.log('🏆 [System] Initializing Ranking Manager...');
+            rankingManager.init(
+                discordClient, 
+                getWhatsAppSock(), // שליפת הסוקט החי
+                process.env.WHATSAPP_MAIN_GROUP_ID,
+                telegramBot
+            );
+        }
 
     } catch (error) {
         console.error('🔥 [System] Fatal Start Error:', error);

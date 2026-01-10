@@ -52,15 +52,21 @@ class DashboardHandler {
                 )
                 .setFooter({ text: `SYSTEM STATUS: ONLINE | ${new Date().toLocaleTimeString("he-IL", { timeZone: "Asia/Jerusalem" })}` });
 
-            // שורת כפתורים מעודכנת עם כפתור סנכרון
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('btn_manage_refresh').setLabel('REFRESH').setStyle(ButtonStyle.Secondary).setEmoji('🔄'),
+            // שורה 1: רענון, סנכרון שמות וניקוי מתים
+            const row1 = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('btn_manage_refresh').setLabel('REFRESH SYSTEM').setStyle(ButtonStyle.Secondary).setEmoji('🔄'),
                 new ButtonBuilder().setCustomId('btn_manage_sync_names').setLabel('SYNC UNKNOWN').setStyle(ButtonStyle.Primary).setEmoji('🆔'),
                 new ButtonBuilder().setCustomId('btn_manage_kick_prep').setLabel(`PURGE DEAD (${stats.dead.length})`).setStyle(ButtonStyle.Danger).setDisabled(stats.dead.length === 0).setEmoji('💀')
             );
 
-            if (interaction.deferred || interaction.replied) await interaction.editReply({ embeds: [embed], components: [row] });
-            else await interaction.reply({ embeds: [embed], components: [row], flags: 64 });
+            // שורה 2: ניקוי רפאים וסגירה
+            const row2 = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('btn_manage_purge_ghosts').setLabel('CLEAN GHOSTS').setStyle(ButtonStyle.Secondary).setEmoji('🧹'),
+                new ButtonBuilder().setCustomId('btn_manage_cancel').setLabel('CLOSE PANEL').setStyle(ButtonStyle.Secondary)
+            );
+
+            if (interaction.deferred || interaction.replied) await interaction.editReply({ embeds: [embed], components: [row1, row2] });
+            else await interaction.reply({ embeds: [embed], components: [row1, row2], flags: 64 });
 
         } catch (error) {
             log(`Dashboard Error: ${error.message}`);

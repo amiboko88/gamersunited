@@ -1,116 +1,100 @@
 // 📁 handlers/voice/logistics.js
 const { ChannelType, PermissionFlagsBits } = require('discord.js');
 const { log } = require('../../utils/logger');
-const musicPlayer = require('../music/player'); // חיבור לנגן
+const musicPlayer = require('../audio/manager'); // חיבור למערכת השמע החדשה
 const path = require('path');
 const fs = require('fs');
 
-// הגדרות (מתוך הקבצים שלך)
 const CONFIG = {
-    FIFO_CHANNEL: process.env.FIFO_CHANNEL_ID,
-    FIFO_ROLE: 'FIFO',
-    BF6_CHANNEL: '1403121794235240489',
-    COUNTER_CAT: '689124379019313214',
+    FIFO_FIXED_CHANNEL: '1231453923387379783', // הערוץ הקבוע שעליו שמעון שומר
+    COUNTER_CAT: '689124379019313214',         // הקטגוריה שבה ייוצר ה-In Voice
     COUNTER_PREFIX: '🔊 In Voice:',
-    // נתיב לתיקיית המוזיקה של BF6
-    BF6_DIR: path.join(__dirname, '../../music/bf6')
+    BF6_CHANNEL: '1403121794235240489',        // ערוץ הכרוז
+    BF6_DIR: path.join(__dirname, '../../assets/audio/bf6')
 };
 
-// רשימת קבצי BF6
-const bf6Sounds = [
-    'theme1.mp3', 'theme2.mp3', 'theme3.mp3', 'theme4.mp3', 'theme5.mp3', 'theme6.mp3', 'theme7.mp3', 'theme8.mp3'
-];
-
 class VoiceLogistics {
-
     constructor() {
-        this.voiceCounterChannelId = null;
-        this.checkBf6Files(); // בדיקה בעלייה
-    }
-
-    checkBf6Files() {
-        if (!fs.existsSync(CONFIG.BF6_DIR)) {
-            log(`❌ [BF6] התיקייה "music/bf6" לא קיימת. יוצר אותה...`);
-            fs.mkdirSync(CONFIG.BF6_DIR, { recursive: true });
-        }
+        this.activeCounterId = null;
     }
 
     /**
-     * עדכון ערוץ מונה המשתמשים
+     * המנוע הראשי: מעדכן את המונה או מוחק אותו בהתאם למצב ב-FIFO
      */
-    async updateCounter(client) {
-        if (!client || !client.guilds || !client.guilds.cache) return;
-        
-        const guild = client.guilds.cache.first();
-        if (!guild) return;
+    async updateVoiceIndicator(guild) {
+        try {
+            const fifoChannel = guild.channels.cache.get(CONFIG.FIFO_FIXED_CHANNEL);
+            if (!fifoChannel) return;
 
-        // ספירת כל המחוברים (ללא בוטים)
-        let total = 0;
-        guild.channels.cache.forEach(c => {
-            if (c.type === ChannelType.GuildVoice) total += c.members.filter(m => !m.user.bot).size;
-        });
+            // 1. ספירת משתמשים (ללא בוטים) בערוץ ה-FIFO הספציפי
+            const usersInFifo = fifoChannel.members.filter(m => !m.user.bot).size;
 
-        const channelName = `${CONFIG.COUNTER_PREFIX} ${total}`;
-        
-        // שימוש ב-ID שמור או חיפוש
-        let targetChannel = this.voiceCounterChannelId ? guild.channels.cache.get(this.voiceCounterChannelId) : null;
+            // 2. חיפוש ערוץ ה-In Voice הקיים (בדיקה בזיכרון או בשרת)
+            let counterChannel = this.activeCounterId ? guild.channels.cache.get(this.activeCounterId) : null;
+            if (!counterChannel) {
+                counterChannel = guild.channels.cache.find(c => 
+                    c.parentId === CONFIG.COUNTER_CAT && 
+                    c.name.startsWith(CONFIG.COUNTER_PREFIX)
+                );
+            }
 
-        if (!targetChannel) {
-            targetChannel = guild.channels.cache.find(c => c.name.startsWith(CONFIG.COUNTER_PREFIX) && c.parentId === CONFIG.COUNTER_CAT);
-        }
-
-        if (targetChannel) {
-            this.voiceCounterChannelId = targetChannel.id;
-            if (targetChannel.name !== channelName) await targetChannel.setName(channelName).catch(() => {});
-        } else {
-            // יצירה אם לא קיים
-            try {
-                const newChannel = await guild.channels.create({
-                    name: channelName,
-                    type: ChannelType.GuildVoice,
-                    parent: CONFIG.COUNTER_CAT,
-                    permissionOverwrites: [{ id: guild.id, deny: [PermissionFlagsBits.Connect] }]
-                });
-                this.voiceCounterChannelId = newChannel.id;
-            } catch (e) { console.error('Voice Counter Create Error:', e); }
+            // --- תרחיש א': יש אנשים בחדר ---
+            if (usersInFifo > 0) {
+                const newName = `${CONFIG.COUNTER_PREFIX} ${usersInFifo}`;
+                
+                if (!counterChannel) {
+                    // יוצרים ערוץ חדש כי הוא לא קיים
+                    const newChan = await guild.channels.create({
+                        name: newName,
+                        type: ChannelType.GuildVoice,
+                        parent: CONFIG.COUNTER_CAT,
+                        permissionOverwrites: [
+                            { id: guild.id, deny: [PermissionFlagsBits.Connect], allow: [PermissionFlagsBits.ViewChannel] }
+                        ]
+                    });
+                    this.activeCounterId = newChan.id;
+                    log(`✨ [Voice] נוצר ערוץ אינדיקטור: ${newName}`);
+                } else {
+                    // מעדכנים שם רק אם הוא השתנה (כדי למנוע Rate Limit)
+                    this.activeCounterId = counterChannel.id;
+                    if (counterChannel.name !== newName) {
+                        await counterChannel.setName(newName).catch(() => {});
+                    }
+                }
+            } 
+            // --- תרחיש ב': החדר ריק ---
+            else if (counterChannel) {
+                log(`🧹 [Voice] חדר FIFO התרוקן. מוחק אינדיקטור...`);
+                await counterChannel.delete('FIFO Empty').catch(() => {});
+                this.activeCounterId = null;
+            }
+        } catch (error) {
+            log(`❌ [VoiceLogistics] Error: ${error.message}`);
         }
     }
 
     /**
-     * ניהול רול FIFO (נותן/לוקח רול בכניסה לחדר)
-     */
-    async handleFIFO(member, channelId) {
-        if (!CONFIG.FIFO_CHANNEL) return;
-        
-        const fifoRole = member.guild.roles.cache.find(r => r.name === CONFIG.FIFO_ROLE);
-        if (!fifoRole) return;
-
-        const isInFifo = channelId === CONFIG.FIFO_CHANNEL;
-        const hasRole = member.roles.cache.has(fifoRole.id);
-
-        if (isInFifo && !hasRole) await member.roles.add(fifoRole).catch(() => {});
-        else if (!isInFifo && hasRole) await member.roles.remove(fifoRole).catch(() => {});
-    }
-
-    /**
-     * כרוז BF6 (מנגן מוזיקה רנדומלית בכניסה)
+     * כרוז BF6 (פתיח מוזיקלי)
      */
     async handleBF6Announcer(member, channelId) {
         if (channelId !== CONFIG.BF6_CHANNEL) return;
-        
-        // בחירת שיר רנדומלי
-        const randomSound = bf6Sounds[Math.floor(Math.random() * bf6Sounds.length)];
-        const filePath = path.join(CONFIG.BF6_DIR, randomSound);
 
-        if (!fs.existsSync(filePath)) {
-            log(`⚠️ [BF6] קובץ חסר: ${randomSound}`);
-            return;
+        try {
+            if (!fs.existsSync(CONFIG.BF6_DIR)) return;
+            const files = fs.readdirSync(CONFIG.BF6_DIR).filter(f => f.endsWith('.mp3'));
+            if (files.length === 0) return;
+
+            const randomSound = files[Math.floor(Math.random() * files.length)];
+            const filePath = path.join(CONFIG.BF6_DIR, randomSound);
+
+            log(`[BF6] מנגן פתיח: ${randomSound} עבור ${member.displayName}`);
+            
+            if (musicPlayer && musicPlayer.playLocalFile) {
+                await musicPlayer.playLocalFile(member.guild.id, channelId, filePath);
+            }
+        } catch (e) {
+            log(`❌ [BF6 Announcer] Error: ${e.message}`);
         }
-
-        log(`[BF6] מנגן את ${randomSound} עבור ${member.displayName}`);
-        
-        // שימוש בנגן החדש
-        musicPlayer.addToQueue(member.guild.id, channelId, filePath, member.client, 'BF6_THEME');
     }
 }
 

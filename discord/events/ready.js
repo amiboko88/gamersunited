@@ -8,8 +8,8 @@ const path = require('path');
 const scheduler = require('../../handlers/scheduler');
 const birthdayManager = require('../../handlers/birthday/manager');
 const fifoCleaner = require('../../handlers/fifo/cleaner');
-// ✅ תיקון נתיב: מצביע לתיקייה החדשה במקום לישנה
 const statusRotator = require('../../handlers/system/statusRotator'); 
+const voiceLogistics = require('../../handlers/voice/logistics'); // ✅ תוספת למערכת הקולית
 
 // הגדרות ערוץ האימות
 const VERIFY_CHANNEL_ID = '1120791404583587971';
@@ -21,6 +21,12 @@ module.exports = {
     once: true,
     async execute(client) {
         log(`🤖 [Discord] Logged in as ${client.user.tag}`);
+
+        // --- סנכרון קולי ראשוני בעלייה ---
+        const guild = client.guilds.cache.first();
+        if (guild) {
+            await voiceLogistics.updateVoiceIndicator(guild);
+        }
 
         // 1. אתחול ימי הולדת
         birthdayManager.init(client, null, null, null);

@@ -4,6 +4,9 @@ const { log } = require('../../utils/logger');
 
 class RankingRenderer {
 
+    /**
+     * מייצר תמונת לידרבורד איכותית באמצעות Puppeteer
+     */
     async generateLeaderboardImage(leaders, weekNum) {
         if (!leaders || leaders.length === 0) return null;
 
@@ -183,26 +186,44 @@ class RankingRenderer {
 
         let browser = null;
         try {
+            // אופטימיזציה לריצה ב-Railway/Docker
             browser = await puppeteer.launch({ 
                 headless: 'new', 
-                args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+                args: [
+                    '--no-sandbox', 
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu'
+                ] 
             });
+
             const page = await browser.newPage();
-            // רזולוציה גבוהה
-            await page.setViewport({ width: 880, height: 100, deviceScaleFactor: 2 }); 
+            
+            // רזולוציה ראשונית
+            await page.setViewport({ width: 880, height: 1000, deviceScaleFactor: 2 }); 
+            
+            // טעינת ה-HTML עם המתנה לנכסים חיצוניים (כמו פונטים)
             await page.setContent(html, { waitUntil: 'networkidle0' });
             
-            // התאמת גובה דינמית
+            // חישוב גובה דינמי מדויק
             const bodyHeight = await page.evaluate(() => document.body.scrollHeight);
             await page.setViewport({ width: 880, height: bodyHeight, deviceScaleFactor: 2 });
 
-            const buffer = await page.screenshot({ type: 'png', fullPage: true });
+            const buffer = await page.screenshot({ 
+                type: 'png', 
+                fullPage: true,
+                omitBackground: false 
+            });
+
             return buffer;
         } catch (err) {
-            log(`❌ [RankingRender] Error: ${err.message}`);
+            log(`❌ [RankingRender] Error during image generation: ${err.message}`);
             return null;
         } finally {
-            if (browser) await browser.close();
+            if (browser) {
+                // סגירה בטוחה של ה-Browser למניעת דליפות זיכרון
+                await browser.close().catch(() => {});
+            }
         }
     }
 }

@@ -1,14 +1,12 @@
 // 📁 handlers/ranking/manager.js
 const cron = require('node-cron');
-const db = require('../../utils/firebase'); // ✅ חיבור ל-DB
+const db = require('../../utils/firebase');
 const rankingCore = require('./core');
 const rankingRenderer = require('./render');
 const rankingBroadcaster = require('./broadcaster');
 const { log } = require('../../utils/logger');
-// וודא שיש לך את הקובץ הזה, או שתשתמש בפונקציית העזר למטה
-const { getWeekNumber } = require('../../whatsapp/utils/timeHandler'); 
 
-// רפרנס למסמך ששומר את ה-ID של ההודעה
+// רפרנס למסמך ששומר את ה-ID של ההודעה הקבועה לעריכה
 const META_REF = db.collection('system_metadata').doc('weeklyLeaderboard');
 
 class RankingManager {
@@ -16,54 +14,70 @@ class RankingManager {
         this.clients = {};
     }
 
+    /**
+     * אתחול המנהל עם כל הקליינטים מה-index.js
+     */
     init(discordClient, waSock, waGroupId, telegramBot) {
-        this.clients = { discord: discordClient, whatsapp: waSock, waGroupId, telegram: telegramBot };
+        this.clients = { 
+            discord: discordClient, 
+            whatsapp: waSock, 
+            waGroupId, 
+            telegram: telegramBot 
+        };
 
-        // תזמון: יום שבת (6) בשעה 20:00
+        // תזמון: בכל מוצ"ש (יום 6) בשעה 20:00
         cron.schedule('0 20 * * 6', async () => {
-            log('⏰ Starting Weekly Leaderboard Automation...');
+            log('⏰ [Ranking] Starting Weekly Leaderboard Automation...');
             await this.runWeeklyProcess();
         }, {
             timezone: "Asia/Jerusalem"
         });
 
-        log('[RankingManager] ✅ מודול דירוג אוטומטי נטען (שבת 20:00).');
+        log('[RankingManager] ✅ מודול דירוג אוטומטי נטען (מוצ"ש 20:00).');
     }
 
     /**
-     * פונקציה להרצה ידנית (לבדיקות או אם פספסנו)
+     * פונקציה להרצה ידנית (לבדיקות או אם השרת היה כבוי בזמן הקרון)
      */
     async forceRun() {
-        log('⚠️ Force running Weekly Leaderboard...');
+        log('⚠️ [Ranking] Force running Weekly Leaderboard...');
         await this.runWeeklyProcess();
     }
 
+    /**
+     * התהליך המרכזי: שליפה, רינדור והפצה
+     */
     async runWeeklyProcess() {
         try {
-            log('📊 מחשב לידרבורד שבועי...');
+            log('📊 [Ranking] מחשב לידרבורד שבועי...');
             
-            // 1. שליפת נתונים
+            // 1. שליפת נתוני הטופ 10 מה-DB
             const leaders = await rankingCore.getWeeklyLeaderboard(10);
             if (!leaders || leaders.length === 0) {
-                log('⚠️ Weekly Leaderboard: No data found (Empty).');
+                log('⚠️ [Ranking] No data found (Empty). Skipping broadcast.');
                 return;
             }
 
-            // 2. חישוב שבוע (נקי ומסודר)
-            const weekNum = getWeekNumber ? getWeekNumber() : this._fallbackWeekCalc();
+            // 2. חישוב מספר השבוע (מסונכרן לפורמט הפקודה)
+            const weekNum = this._getWeekNumber();
 
-            // 3. יצירת תמונה (הטבלה המשתנה)
-            log(`🎨 מייצר תמונה לשבוע #${weekNum}...`);
+            // 3. יצירת התמונה (Puppeteer)
+            log(`🎨 [Ranking] מייצר תמונה לשבוע #${weekNum}...`);
             const imageBuffer = await rankingRenderer.generateLeaderboardImage(leaders, weekNum);
 
-            // 4. שליפת ה-ID האחרון מה-DB
+            if (!imageBuffer) {
+                log('❌ [Ranking] Image generation failed.');
+                return;
+            }
+
+            // 4. שליפת מזהה ההודעה הקודמת לעריכה מדיסקורד
             let lastMessageId = null;
             const metaDoc = await META_REF.get();
             if (metaDoc.exists) {
                 lastMessageId = metaDoc.data().messageId;
             }
 
-            // 5. הפצה (ה-Broadcaster יחזיר את ה-ID החדש/הקיים)
+            // 5. הפצה לדיסקורד (עריכה חכמה)
             const newMessageId = await rankingBroadcaster.broadcastDiscord(
                 this.clients.discord, 
                 imageBuffer, 
@@ -71,31 +85,33 @@ class RankingManager {
                 lastMessageId
             );
 
-            // 6. הפצה לשאר הפלטפורמות (ללא עריכה, תמיד חדש)
+            // 6. הפצה לשאר הפלטפורמות (שליחה כהודעה חדשה)
             await rankingBroadcaster.broadcastOthers(this.clients, imageBuffer, weekNum);
 
-            // 7. עדכון ה-DB ב-ID העדכני
+            // 7. שמירת המזהה החדש ב-DB לעדכון בשבוע הבא
             if (newMessageId) {
                 await META_REF.set({ 
                     messageId: newMessageId,
                     lastUpdate: new Date().toISOString(),
                     week: weekNum
                 }, { merge: true });
-                log(`✅ DB עודכן עם Message ID: ${newMessageId}`);
+                log(`✅ [Ranking] המערכת עודכנה ב-DB עם Message ID: ${newMessageId}`);
             }
 
         } catch (error) {
-            log(`❌ Weekly Leaderboard Error: ${error.message}`);
+            log(`❌ [Ranking] Weekly Leaderboard Error: ${error.message}`);
             console.error(error);
         }
     }
 
-    // גיבוי למקרה שהפונקציה החיצונית לא קיימת
-    _fallbackWeekCalc() {
+    /**
+     * פונקציית עזר פנימית לחישוב מספר השבוע
+     */
+    _getWeekNumber() {
         const d = new Date();
-        const startDate = new Date(d.getFullYear(), 0, 1);
-        const days = Math.floor((d - startDate) / (24 * 60 * 60 * 1000));
-        return Math.ceil(days / 7);
+        d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+        const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+        return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
     }
 }
 

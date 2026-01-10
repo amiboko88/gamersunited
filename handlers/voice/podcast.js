@@ -1,98 +1,94 @@
 // 📁 handlers/voice/podcast.js
 const { log } = require('../../utils/logger');
-// שים לב: אנחנו עדיין משתמשים במנוע TTS הישן שנמצא בתיקייה tts/
-// אל תמחק את תיקיית tts עדיין!
-const ttsEngine = require('./openaiTTS'); // ✅ המנוע החדש שיושב לידו באותה תיקייה
-const { getUserData } = require('../../utils/userUtils'); // DB מאוחד
-const musicPlayer = require('../music/player'); // הנגן החדש
+const ttsEngine = require('./openaiTTS'); 
+const { getUserData } = require('../../utils/userUtils'); 
+const audioManager = require('../audio/manager'); 
+const { OpenAI } = require('openai'); // ✅ הוספת OpenAI לגנרציית תסריט
 
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const MIN_USERS = 3;
-const COOLDOWN = 30 * 60 * 1000; // 30 דקות בין פודקאסטים
+const COOLDOWN = 30 * 60 * 1000; 
 let lastPodcastTime = 0;
 let activeChannelId = null;
 
 class PodcastManager {
 
-    /**
-     * בודק האם להפעיל פודקאסט כשיש תנועה בחדרים
-     * (נקרא מתוך discord/events/voiceStateUpdate)
-     */
     async handleVoiceStateUpdate(oldState, newState) {
         const channel = newState.channel;
         
-        // אם הפודקאסט רץ ומישהו יצא - בודקים אם לעצור
         if (activeChannelId && oldState.channelId === activeChannelId) {
             const currentMembers = oldState.channel.members.filter(m => !m.user.bot).size;
             if (currentMembers < MIN_USERS) {
-                log('[Podcast] אין מספיק קהל. עוצר את השידור.');
-                musicPlayer.stop(oldState.guild.id);
+                log('[Podcast] אין מספיק קהל. עוצר.');
+                if (audioManager.stop) audioManager.stop(oldState.guild.id);
                 activeChannelId = null;
             }
             return;
         }
 
-        // אם אין ערוץ חדש או שהפודקאסט כבר רץ - מתעלמים
         if (!channel || activeChannelId) return;
-
-        // בדיקת קולדאון
         const now = Date.now();
         if (now - lastPodcastTime < COOLDOWN) return;
 
-        // בדיקת כמות אנשים
-        const humans = channel.members.filter(m => !m.user.bot);
-        if (humans.size >= MIN_USERS) {
-            log(`[Podcast] 🎙️ מתחיל פודקאסט בערוץ ${channel.name}`);
+        const humans = Array.from(channel.members.filter(m => !m.user.bot).values());
+        if (humans.length >= MIN_USERS) {
             lastPodcastTime = now;
             activeChannelId = channel.id;
-
-            // בחירת קורבן (רנדומלי)
-            const victim = humans.random();
+            const victim = humans[Math.floor(Math.random() * humans.length)];
             await this.playPersonalPodcast(channel, victim);
         }
     }
 
     async playPersonalPodcast(voiceChannel, member) {
         try {
-            const userName = member.displayName;
+            log(`[Podcast] מגנרט תסריט AI עבור ${member.displayName}...`);
             const userData = await getUserData(member.id, 'discord');
             
-            // שליפת ירידות מה-DB
-            let roasts = userData?.brain?.roasts || [];
-            if (roasts.length === 0) {
-                roasts = [
-                    `שמעת ש-${userName} נכנס? ה-IQ בחדר צנח.`, 
-                    `תגיד, ${userName} משחק או רק נושם במיקרופון?`,
-                    `יאללה ${userName}, תראה לנו מה אתה יודע חוץ מלהפסיד.`
-                ];
-            }
+            // איסוף הנתונים מה-DB לתוך ה-Prompt
+            const roasts = userData?.brain?.roasts || [];
+            const facts = userData?.brain?.facts?.map(f => f.content) || [];
+            
+            // --- 🧠 OpenAI Script Generation ---
+            const prompt = `
+            You are writing a short, funny, and mean podcast script for a Discord bot named "Shimon" and his co-host "Shirly".
+            The target (victim) is ${member.displayName}.
+            Here is what we know about him:
+            Facts: ${facts.join(', ')}
+            Common Roasts: ${roasts.join(', ')}
+            
+            The script should be in Hebrew. 
+            Shimon is cynical, "Arsi", and aggressive. 
+            Shirly is sharp, sarcastic, and backs Shimon up.
+            
+            Format:
+            shimon: [text]
+            shirly: [text]
+            shimon: [text]
+            
+            Keep it under 4 lines total. Make it very funny and relevant to the facts.
+            `;
 
-            // יצירת תסריט פשוט
-            const script = [
-                { speaker: 'shimon', text: `ערב טוב מאזינים, כאן רדיו שמעון בשידור חי.` },
-                { speaker: 'shirly', text: `וואי וואי, תראה מי נכנס. זה ${userName}.` },
-                { speaker: 'shimon', text: roasts[Math.floor(Math.random() * roasts.length)] },
-                { speaker: 'shimon', text: `יאללה, תהנו יא בוטים. שירלי, תני בראש.` }
-            ];
+            const completion = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: [{ role: "system", content: "You are a professional roast writer for a Discord podcast." }, { role: "user", content: prompt }]
+            });
 
-            // יצירת אודיו (משתמש במנוע הקיים)
+            const rawScript = completion.choices[0].message.content;
+            const script = rawScript.split('\n').filter(l => l.includes(':')).map(line => {
+                const [speaker, ...textParts] = line.split(':');
+                return { speaker: speaker.trim().toLowerCase(), text: textParts.join(':').trim() };
+            });
+
+            // יצירת האודיו ושליחה לנגן
             const audioFiles = await ttsEngine.synthesizeConversation(script, member);
-
-            // הוספה לתור בנגן החדש
             for (const file of audioFiles) {
-                await musicPlayer.addToQueue(
-                    voiceChannel.guild.id, 
-                    voiceChannel.id, 
-                    file, 
-                    member.client, 
-                    'PODCAST'
-                );
+                await audioManager.playLocalFile(voiceChannel.guild.id, voiceChannel.id, file);
             }
 
-            // איפוס מזהה הערוץ הפעיל אחרי זמן סביר (למשל דקה)
             setTimeout(() => { activeChannelId = null; }, 60000);
 
         } catch (error) {
-            log(`❌ Podcast Error: ${error.message}`);
+            log(`❌ Podcast Script Error: ${error.message}`);
             activeChannelId = null;
         }
     }

@@ -2,7 +2,7 @@
 const { Events } = require('discord.js');
 const { log } = require('../../utils/logger');
 const { ensureUserExists } = require('../../utils/userUtils');
-const userManager = require('../../handlers/users/manager'); // ✅ ייבוא חובה לסנכרון
+const userManager = require('../../handlers/users/manager');
 
 // ייבוא המטפלים
 const verificationHandler = require('../../handlers/users/verification');
@@ -56,12 +56,22 @@ module.exports = {
                     }
                 }
                 
-                // --- כפתור סנכרון שמות Unknown (חדש!) ---
+                // --- כפתור סנכרון שמות Unknown ---
                 else if (id === 'btn_manage_sync_names') {
                     await interaction.deferUpdate();
                     const result = await userManager.syncUnknownUsers(interaction.guild);
                     await interaction.followUp({ 
-                        content: `✅ הסנכרון הסתיים! עודכנו **${result.count}** שמות שהיו Unknown.`, 
+                        content: `✅ סנכרון הושלם! עודכנו **${result.count}** שמות שהיו Unknown.`, 
+                        ephemeral: true 
+                    });
+                }
+
+                // --- כפתור ניקוי רפאים (Ghosts) ---
+                else if (id === 'btn_manage_purge_ghosts') {
+                    await interaction.deferUpdate();
+                    const result = await userManager.purgeGhostUsers(interaction.guild);
+                    await interaction.followUp({ 
+                        content: `🧹 ניקוי הושלם! נמחקו **${result.count}** משתמשי רפאים ללא היסטוריה מה-DB.`, 
                         ephemeral: true 
                     });
                 }

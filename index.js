@@ -2,14 +2,13 @@
 require('dotenv').config();
 const express = require('express'); 
 
-// ✅ ייבוא המערכות עם פונקציות הכיבוי
+// ✅ ייבוא המערכות - חייב לוודא שהקבצים בתיקיות מייצאים את הפונקציות האלו!
 const { connectToWhatsApp, disconnectWhatsApp } = require('./whatsapp/index'); 
 const { launchTelegram, stopTelegram } = require('./telegram/index');
 const { launchDiscord, stopDiscord } = require('./discord/index');
 
-// --- 🛡️ טיפול בשגיאות ---
+// --- 🛡️ טיפול בשגיאות גלובלי ---
 process.on('unhandledRejection', (reason, promise) => {
-    // מתעלמים משגיאות התנגשות ידועות בזמן ריסט
     if (reason?.toString().includes('Conflict') || reason?.toString().includes('409') || reason?.toString().includes('440')) return;
     console.error('❌ [CRITICAL] Unhandled Rejection:', reason);
 });
@@ -17,7 +16,7 @@ process.on('uncaughtException', (error) => {
     console.error('❌ [CRITICAL] Uncaught Exception:', error);
 });
 
-// --- Server Setup ---
+// --- Server Setup (חובה בשביל Railway) ---
 const app = express();
 const PORT = process.env.PORT || 8080;
 app.use(express.json());
@@ -28,16 +27,21 @@ const server = app.listen(PORT, () => {
 });
 
 // --- 🛑 מנגנון כיבוי מסודר (Graceful Shutdown) ---
+let isShuttingDown = false;
+
 async function gracefulShutdown(signal) {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    
     console.log(`\n🛑 [System] Received ${signal}. Shutting down...`);
     
-    server.close(); // סוגר את הפורט
+    server.close(); // סוגר את הפורט HTTP
 
-    // מכבה את הבוטים כדי לשחרר את הטוקנים
+    // מכבה את הבוטים כדי לשחרר את הטוקנים והסוקטים
     await Promise.all([
-        disconnectWhatsApp().catch(e => console.error(e.message)),
-        stopTelegram().catch(e => console.error(e.message)),
-        stopDiscord().catch(e => console.error(e.message))
+        disconnectWhatsApp().catch(e => console.error('WA Disconnect Error:', e.message)),
+        stopTelegram().catch(e => console.error('TG Stop Error:', e.message)),
+        stopDiscord().catch(e => console.error('DS Stop Error:', e.message))
     ]);
     
     console.log('👋 [System] Goodbye.');
@@ -50,7 +54,7 @@ process.once('SIGINT', () => gracefulShutdown('SIGINT'));
 // --- 🚀 הפעלת הבוט ---
 (async () => {
     try {
-        // ✅ התיקון הקריטי: המתנה למוות של התהליך הקודם
+        // המתנה לניקוי התהליך הקודם ב-Railway
         console.log('⏳ [System] Waiting 5 seconds for previous instance to cleanup...');
         await new Promise(resolve => setTimeout(resolve, 5000));
 

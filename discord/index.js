@@ -1,29 +1,16 @@
 // 📁 discord/index.js
-// --- שלב 0: בולמי זעזועים ---
-process.on('unhandledRejection', (reason, promise) => {
-    if (reason && (reason.code === 'GuildMembersTimeout' || reason.message?.includes('Members didn\'t arrive'))) {
-        return; 
-    }
-    console.error('❌ [Critical Error] Unhandled Rejection:', reason);
-});
-
-process.on('uncaughtException', (error) => {
-    if (error && (error.code === 'GuildMembersTimeout' || error.message?.includes('Members didn\'t arrive'))) {
-        return;
-    }
-    console.error('❌ [Critical Error] Uncaught Exception:', error);
-});
-
-// --- שלב 1: טעינת ספריות ---
 const { Client, GatewayIntentBits, Collection, Partials, REST, Routes } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const { log } = require('../utils/logger');
+const { log } = require('../utils/logger'); // וודא שהנתיב ללוגר תקין
 
-// הערה: מחקנו את scheduler ו-birthdayManager מכאן כי הם כבר ב-events/ready.js
-// זה מונע כפילות בריצה.
+// --- בולמי זעזועים ---
+process.on('unhandledRejection', (reason) => {
+    if (reason?.code === 'GuildMembersTimeout') return;
+    console.error('❌ [Discord Error] Unhandled Rejection:', reason);
+});
 
-// --- שלב 2: הגדרת הקליינט ---
+// --- הגדרת הקליינט ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -39,7 +26,7 @@ const client = new Client({
 client.commands = new Collection();
 const commandsData = []; 
 
-// טעינת פקודות
+// --- טעינת פקודות ---
 function loadCommands(dir) {
     const files = fs.readdirSync(dir, { withFileTypes: true });
     for (const file of files) {
@@ -54,7 +41,7 @@ function loadCommands(dir) {
                     commandsData.push(command.data.toJSON());
                 }
             } catch (error) {
-                console.error(`[Load Error] ${fullPath}:`, error);
+                console.error(`[Load Error] ${file.name}:`, error);
             }
         }
     }
@@ -63,7 +50,7 @@ function loadCommands(dir) {
 const commandsPath = path.join(__dirname, 'commands');
 if (fs.existsSync(commandsPath)) loadCommands(commandsPath);
 
-// טעינת אירועים (Events)
+// --- טעינת אירועים ---
 const eventsPath = path.join(__dirname, 'events');
 if (fs.existsSync(eventsPath)) {
     const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
@@ -74,48 +61,42 @@ if (fs.existsSync(eventsPath)) {
     }
 }
 
-// --- שלב 3: סנכרון פקודות (Deploy) ---
-// אנחנו משאירים את זה כאן כדי שיקרה רק בעלייה
-client.once('ready', async () => {
-    // את הלוגים והאתחולים העברנו ל-events/ready.js
-    // כאן נשאר רק רישום ה-Slash Commands
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-    try {
-        const guildId = process.env.GUILD_ID;
-        const clientId = client.user.id;
-        
-        if (guildId) {
-            await rest.put(Routes.applicationCommands(clientId), { body: [] });
-            await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commandsData });
-            log('[System] ✅ Commands synced to Guild (Instant).');
-        } else {
-            await rest.put(Routes.applicationCommands(clientId), { body: commandsData });
-        }
-    } catch (error) {
-        console.error('[System] ❌ Deploy Error:', error);
-    }
-});
+// --- פונקציות הפעלה וכיבוי (Exported) ---
 
-// --- שלב 4: הפעלה מבוקרת (התיקון הגדול) ---
-// במקום להפעיל ישר, אנחנו עוטפים בפונקציה
 async function launchDiscord() {
     if (!process.env.DISCORD_TOKEN) {
-        log('❌ [Discord] Missing Token!');
+        console.error('❌ [Discord] Missing Token!');
         return;
     }
     
+    // Deploy Commands (רק בעלייה)
+    client.once('ready', async () => {
+        const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+        try {
+             // שים לב: זה יבצע רישום גלובלי או לשרת ספציפי תלוי ב-ENV
+            const route = process.env.GUILD_ID 
+                ? Routes.applicationGuildCommands(client.user.id, process.env.GUILD_ID)
+                : Routes.applicationCommands(client.user.id);
+            
+            await rest.put(route, { body: commandsData });
+            console.log('[System] ✅ Discord Commands Synced.');
+        } catch (error) {
+            console.error('[System] ❌ Deploy Error:', error);
+        }
+    });
+
     try {
         await client.login(process.env.DISCORD_TOKEN);
     } catch (error) {
         console.error('❌ [Discord] Login Failed:', error);
     }
 }
+
 async function stopDiscord() {
     if (client && client.isReady()) {
-        log("🛑 [DISCORD] מנתק חיבור...");
+        console.log("🛑 [DISCORD] מנתק חיבור...");
         await client.destroy();
     }
 }
 
-// ייצוא מעודכן
 module.exports = { client, launchDiscord, stopDiscord };

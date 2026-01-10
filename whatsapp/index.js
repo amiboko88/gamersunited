@@ -5,25 +5,17 @@ const pino = require('pino');
 const { useFirestoreAuthState } = require('./auth'); 
 const coreLogic = require('./logic/core'); 
 
-let sock; // משתנה גלובלי
+let sock; // משתנה גלובלי להחזקת החיבור
 const msgRetryCounterCache = new Map();
 const MAIN_GROUP_ID = process.env.WHATSAPP_MAIN_GROUP_ID;
 
 async function connectToWhatsApp() {
-    // ... (כל הקוד המקורי שלך נשאר זהה עד ה-catch) ...
-    // אני לא מעתיק את הכל כדי לחסוך מקום, תשאיר את הפונקציה הזו כמו שהיא אצלך
-    // רק תוודא שהיא מתחילה ב: try { const { version } ...
-    
-    // בתוך ה-try, תוסיף בהתחלה:
+    // 1. סגירת חיבור ישן אם קיים (מונע כפילויות)
     if (sock) {
         console.log('⚠️ [WhatsApp] סוגר חיבור ישן לפני חיבור חדש...');
-        sock.end(undefined);
+        try { sock.end(undefined); } catch(e){}
     }
-    
-    // ... המשך הקוד הרגיל ...
-    
-    // --- שים את הקוד המקורי שלך כאן ---
-    
+
     try {
         const { version } = await fetchLatestBaileysVersion();
         const { state, saveCreds } = await useFirestoreAuthState();
@@ -49,7 +41,7 @@ async function connectToWhatsApp() {
 
             if (connection === 'close') {
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
-                // תיקון: אם זה 440 (הוחלף) או 503 (שרת עמוס), לא מנסים מייד
+                // לא מתחבר מחדש אם נותקנו בגלל לוגאוט או החלפת חיבור (440)
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 440; 
                 
                 console.log(`❌ [WhatsApp] נותק (${statusCode}). מתחבר מחדש: ${shouldReconnect}`);
@@ -72,7 +64,10 @@ async function connectToWhatsApp() {
                              msg.message.extendedTextMessage?.text || 
                              msg.message.imageMessage?.caption || "";
                 
-                await coreLogic.handleMessageLogic(sock, msg, text);
+                // שליחה ללוגיקה
+                if (coreLogic && coreLogic.handleMessageLogic) {
+                    await coreLogic.handleMessageLogic(sock, msg, text);
+                }
 
             } catch (err) {
                 console.error('❌ [WhatsApp Logic Error]:', err);
@@ -96,7 +91,7 @@ async function sendToMainGroup(text, mentions = [], imageBuffer = null) {
     } catch (err) { console.error('❌ [WhatsApp Send Error]:', err.message); }
 }
 
-// ✅ הפונקציה החדשה שחייבים להוסיף!
+// ✅ פונקציית הכיבוי שחסרה הייתה ב-Root
 async function disconnectWhatsApp() {
     if (sock) {
         console.log('🛑 [WhatsApp] מנתק חיבור יזום...');
@@ -109,5 +104,4 @@ async function disconnectWhatsApp() {
     }
 }
 
-// אל תשכח לייצא את הפונקציה החדשה
 module.exports = { connectToWhatsApp, sendToMainGroup, disconnectWhatsApp };

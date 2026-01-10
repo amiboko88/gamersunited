@@ -1,19 +1,33 @@
 // 📁 whatsapp/logic/core.js
 const { log } = require('../../utils/logger');
 const bufferSystem = require('./buffer'); // מנגנון באפר למניעת ספאם
-const { isSystemActive } = require('../utils/timeHandler'); // ✅ חובה: ייבוא הבודק שעות
+const { isSystemActive } = require('../utils/timeHandler'); // בודק שעות פעילות
 
 // --- ייבוא כל המערכות המרכזיות (Handlers) ---
-// אלו המערכות ששידרגנו לתיקייה הראשית כדי למנוע כפילויות
 const shimonBrain = require('../../handlers/ai/brain');         // המוח (עזרה ושיחה)
 const learningEngine = require('../../handlers/ai/learning');   // הצופה השקט (למידה)
 const birthdayManager = require('../../handlers/birthday/manager'); // ימי הולדת
 const casinoSystem = require('../../handlers/economy/casino');  // קזינו
 const rouletteSystem = require('../../handlers/economy/roulette'); // רולטה
 const visionSystem = require('../../handlers/media/vision');    // ראייה (ניתוח תמונות)
-const generatorSystem = require('../../handlers/media/generator'); // יצירת תמונות (Replicate)
-const mediaDirector = require('../../handlers/media/director'); // הבמאי החדש (במקום triggers)
-const userManager = require('../../handlers/users/manager');    // ניהול משתמשים (פעילות)
+const generatorSystem = require('../../handlers/media/generator'); // יצירת תמונות
+const mediaDirector = require('../../handlers/media/director'); // הבמאי החדש
+const userManager = require('../../handlers/users/manager');    // ניהול משתמשים
+
+// --- 🕯️ הגדרות שבת וחגים ("שמעון המסורתי") 🕯️ ---
+const shabbatSpamCounter = new Map(); // מונה הצקות לשבת
+
+const RELIGIOUS_RESPONSES = [
+    "ששש... 🤫 מנחה עכשיו. דבר איתי במוצ\"ש.",
+    "הלו? שבת היום! אין לך בית כנסת ללכת אליו?",
+    "אחי, גזל שינה בשבת תענוג. שחרר אותי באמאשך.",
+    "בורא פרי הגפן... 🍷 בדיוק באמצע הקידוש. אל תפריע.",
+    "מי זה צועק בשבת קודש? חילול ה' מה שקורה פה בקבוצה.",
+    "שבת היום יא צדיק. תנוח, תאכל צ'ולנט, עזוב את הטלפון.",
+    "אסור לכתוב בשבת! (כן אני בוט, לי מותר, לך אסור).",
+    "שמע ישראל... תנו לישון צהריים בשקט!",
+    "מלאכים עכשיו שרים לי באוזן, ואתה חופר לי בווצאפ? קישטה."
+];
 
 // --- 🛠️ הגדרות מצב תחזוקה חכם 🛠️ ---
 let lastCrashReply = 0;
@@ -37,10 +51,9 @@ function getSmartErrorResponse() {
     }
     return null;
 }
-// ----------------------------------------
 
 // עזרים
-const isDirectCall = (text) => text.includes('שמעון') || text.includes('בוט') || text.includes('@');
+const isDirectCall = (text) => text.includes('שמעון') || text.includes('בוט') || text.includes('@') || text.includes('שימי');
 
 /**
  * נקודת הכניסה ללוגיקה (אחרי Buffer)
@@ -53,11 +66,42 @@ async function handleMessageLogic(sock, msg, text) {
 
     // --- 🛑 בדיקה 0: שעות פעילות (שבת/לילה/צהריים) ---
     const systemStatus = isSystemActive();
-    if (!systemStatus.active) {
-        const isAdmin = senderId === '972526800647' || senderId === '526800647';
-        if (!isAdmin) {
-            return; 
+    
+    // אם המערכת לא פעילה בגלל שבת (או סיבה אחרת)
+    if (!systemStatus.active && systemStatus.reason === "Shabbat") {
+        
+        // 1. מעקף למנהל (כדי שתוכל לבדוק תמיד)
+        // הוספתי את המספרים שראיתי בלוגים שלך
+        const isAdmin = senderId === '972526800647' || senderId === '508753233'; 
+
+        if (isAdmin) {
+             // אם זה אתה - תתעלם מהשבת ותמשיך רגיל לקוד למטה
+             log(`[Shabbat Bypass] המנהל ${senderId} דיבר בשבת. מאשר גישה.`);
+        } else {
+            // 2. לוגיקת "הצקות" למשתמשים רגילים ("חוק יוגי")
+            // בודקים אם הם קראו לשמעון בשמו
+            if (text.includes('שמעון') || text.includes('שימי')) {
+                const currentCount = (shabbatSpamCounter.get(senderId) || 0) + 1;
+                shabbatSpamCounter.set(senderId, currentCount);
+
+                log(`[Shabbat] ${senderId} הציק פעם ${currentCount} (טריגר: ${text})`);
+
+                // רק בפעם ה-3 בדיוק - הוא עונה!
+                if (currentCount === 3) {
+                    const randomResponse = RELIGIOUS_RESPONSES[Math.floor(Math.random() * RELIGIOUS_RESPONSES.length)];
+                    await sock.sendMessage(chatJid, { text: randomResponse }, { quoted: msg });
+                    
+                    // מאפסים את המונה כדי שיוכלו לחטוף שוב בסבב הבא
+                    shabbatSpamCounter.set(senderId, 0); 
+                }
+            }
+            // בכל מקרה - אם זה לא אדמין, יוצאים כאן. הבוט לא מעבד את הבקשה.
+            return;
         }
+    } else if (!systemStatus.active) {
+        // אם זה לא פעיל מסיבה אחרת (לילה/שנ"צ) ולא שבת - סתם יוצאים (אלא אם אדמין)
+         const isAdmin = senderId === '972526800647' || senderId === '508753233';
+         if (!isAdmin) return;
     }
 
     // מכאן ממשיך הקוד הרגיל (Buffer וכו')...
@@ -100,7 +144,7 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
                 await sock.sendMessage(chatJid, { text: `✅ רשמתי! יום הולדת ב-${res.day}/${res.month}. נחגוג לך בגיל ${res.age}!` }, { quoted: msg });
                 return;
             } catch (e) {
-                // תאריך לא תקין
+                // תאריך לא תקין - מתעלמים
             }
         }
 
@@ -154,7 +198,7 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
             // א. למידה שקטה
             await learningEngine.learnFromContext(senderId, senderName, 'whatsapp', text);
             
-            // ב. במאי המדיה
+            // ב. במאי המדיה (תגובות חכמות ללא תיוג)
             const smartMedia = await mediaDirector.handleSmartResponse(text, senderId, 'whatsapp', senderName);
             
             if (smartMedia) {
@@ -171,13 +215,15 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
 
         // --- 🧠 6. המוח המרכזי (AI Chat & Help) ---
         await sock.sendPresenceUpdate('composing', chatJid);
-        const isAdmin = senderId === '972526800647' || senderId === '526800647'; 
+        
+        // עדכון רשימת אדמינים גם כאן ליתר ביטחון
+        const isAdmin = senderId === '972526800647' || senderId === '508753233'; 
         const aiResponse = await shimonBrain.ask(senderId, 'whatsapp', text, isAdmin);
 
         await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });
 
     } catch (error) {
-        // ✅ התיקון היחיד: טיפול חכם בשגיאות במקום סתם לוג
+        // טיפול חכם בשגיאות
         log(`❌ [Core] Fatal Error inside executeCoreLogic: ${error.message}`);
         
         const smartResponse = getSmartErrorResponse();

@@ -3,8 +3,17 @@ const db = require('./firebase');
 const admin = require('firebase-admin');
 
 /**
+ * 🛠️ פונקציית העזר הקריטית: מנקה כל סוג של מזהה וואטסאפ (lid, s.whatsapp.net, וכו')
+ * מחזירה רק את רצף המספרים הנקי.
+ */
+function cleanWhatsAppId(id) {
+    if (!id) return id;
+    // לוקח רק את מה שלפני ה-@ ומנקה כל תו שאינו ספרה (מסיר +, WA:, רווחים וכו')
+    return id.split('@')[0].replace(/\D/g, '');
+}
+
+/**
  * מחזיר את הרפרנס למסמך המשתמש הראשי.
- * משתמש בשאילתה פנימית במקום ב-lookup חיצוני.
  */
 async function getUserRef(id, platform = 'discord') {
     // 1. בדיקה עבור דיסקורד (ID ישיר)
@@ -21,13 +30,11 @@ async function getUserRef(id, platform = 'discord') {
     const searchField = fieldMap[platform];
 
     if (searchField) {
-        // ניקוי יסודי של ה-ID (כולל הסרת + אם קיים)
-        const cleanId = platform === 'whatsapp' 
-            ? id.replace('@s.whatsapp.net', '').replace('WA:', '').replace('+', '')
-            : id.toString();
+        // שימוש במנקה האגרסיבי לוואטסאפ
+        const cleanId = platform === 'whatsapp' ? cleanWhatsAppId(id) : id.toString();
 
         try {
-            // שאילתה: האם המספר הזה כבר רשום אצל מישהו?
+            // שאילתה: האם המספר הנקי הזה כבר רשום אצל מישהו?
             const snapshot = await db.collection('users')
                 .where(searchField, '==', cleanId)
                 .limit(1)
@@ -40,7 +47,7 @@ async function getUserRef(id, platform = 'discord') {
             console.error(`❌ [UserUtils] Lookup Error (${platform}:${id}):`, error);
         }
 
-        // אם לא מצאנו - מחזירים רפרנס למסמך חדש המבוסס על המספר
+        // אם לא מצאנו - מחזירים רפרנס למסמך חדש המבוסס על המספר הנקי בלבד!
         return db.collection('users').doc(cleanId);
     }
 
@@ -63,12 +70,9 @@ async function getUserData(id, platform = 'discord') {
  * ✅ פונקציה קריטית: מוודא שמשתמש קיים, יוצר אם לא, ומעדכן פרטים חסרים.
  */
 async function ensureUserExists(id, displayName, platform = 'discord') {
+    // ניקוי המזהה לפני כל פעולה
+    const cleanId = platform === 'whatsapp' ? cleanWhatsAppId(id) : id;
     const ref = await getUserRef(id, platform);
-    
-    // הכנה של ה-CleanID לשימוש פנימי
-    const cleanId = platform === 'whatsapp' 
-        ? id.replace('@s.whatsapp.net', '').replace('WA:', '').replace('+', '')
-        : id;
 
     try {
         await db.runTransaction(async (t) => {
@@ -76,13 +80,12 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
 
             // תרחיש 1: משתמש חדש לגמרי - יצירה נקייה
             if (!doc.exists) {
-                console.log(`🆕 [UserUtils] Creating new profile for: ${displayName}`);
+                console.log(`🆕 [UserUtils] Creating new profile for: ${displayName} (${cleanId})`);
                 
                 const newUser = {
                     identity: {
                         displayName: displayName || "Unknown Gamer",
                         joinedAt: new Date().toISOString(),
-                        // שומרים גם בתוך הזהות לגיבוי
                         [platform === 'whatsapp' ? 'whatsappPhone' : 'telegramId']: cleanId
                     },
                     platforms: {
@@ -98,7 +101,7 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
                         voiceMinutes: 0,
                         casinoWins: 0,
                         casinoLosses: 0,
-                        mvpWins: 0 // ✅ הועבר ל-stats כדי להתאים למיגרציה
+                        mvpWins: 0 
                     },
                     brain: { 
                         facts: [], 
@@ -117,41 +120,37 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
             // תרחיש 2: משתמש קיים - עדכון חכם (Self Healing)
             else {
                 const data = doc.data();
-                
-                // אובייקט העדכון
-                const updates = {
-                    meta: { 
-                        ...data.meta, // שומר על שדות קיימים ב-meta
-                        lastActive: new Date().toISOString() 
-                    }
+                const updates = {};
+
+                // עדכון זמן פעילות בתוך meta
+                updates.meta = { 
+                    ...data.meta,
+                    lastActive: new Date().toISOString() 
                 };
 
-                // 1. עדכון שם - רק אם השם החדש תקין והישן הוא גנרי/Unknown
+                // 1. עדכון שם - רק אם השם הנוכחי גנרי/חסר
                 const currentName = data.identity?.displayName;
                 if (displayName && displayName !== "Unknown" && displayName !== "Gamer") {
                     if (currentName === "Unknown" || currentName === "Gamer" || !currentName) {
-                        updates.identity = {
-                            ...data.identity,
-                            displayName: displayName
-                        };
+                        if (!updates.identity) updates.identity = { ...data.identity };
+                        updates.identity.displayName = displayName;
                     }
                 }
 
-                // 2. ✅ התיקון הקריטי: אם חסר לו הפלטפורמה במסמך - נוסיף אותה!
-                // זה מטפל במקרים של משתמשים "שבורים" כמו החבר שחזר
+                // 2. עדכון פלטפורמות וטלפון אם חסר (סנכרון זהויות)
                 if (!data.platforms || !data.platforms[platform]) {
                     updates.platforms = {
-                        ...data.platforms,
+                        ...(data.platforms || {}),
                         [platform]: cleanId
                     };
-                    // מעדכן גם בזהות אם חסר
+                    
                     if (platform === 'whatsapp' && !data.identity?.whatsappPhone) {
-                        if (!updates.identity) updates.identity = { ...data.identity };
+                        if (!updates.identity) updates.identity = { ...(data.identity || {}) };
                         updates.identity.whatsappPhone = cleanId;
                     }
                 }
 
-                // ביצוע העדכון עם merge כדי לא לדרוס שדות אחרים
+                // ביצוע העדכון עם merge
                 t.set(ref, updates, { merge: true });
             }
         });

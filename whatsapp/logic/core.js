@@ -2,6 +2,7 @@
 const { log } = require('../../utils/logger');
 const bufferSystem = require('./buffer'); // מנגנון באפר למניעת ספאם
 const { isSystemActive } = require('../utils/timeHandler'); // בודק שעות פעילות
+const { getUserRef } = require('../../utils/userUtils'); // ✅ ייבוא חובה לזיהוי משתמש אמיתי
 
 // --- ייבוא כל המערכות המרכזיות (Handlers) ---
 const shimonBrain = require('../../handlers/ai/brain');         // המוח (עזרה ושיחה)
@@ -62,7 +63,9 @@ const isDirectCall = (text) => text.includes('שמעון') || text.includes('ב�
 async function handleMessageLogic(sock, msg, text) {
     const chatJid = msg.key.remoteJid;
     const senderFullJid = msg.key.participant || msg.participant || chatJid;
-    const senderId = senderFullJid.split('@')[0];
+    
+    // זיהוי מספר הטלפון הנקי (לצורך בדיקות שבת ואדמין)
+    const senderPhone = senderFullJid.split('@')[0];
 
     // --- 🛑 בדיקה 0: שעות פעילות (שבת/לילה/צהריים) ---
     const systemStatus = isSystemActive();
@@ -71,42 +74,49 @@ async function handleMessageLogic(sock, msg, text) {
     if (!systemStatus.active && systemStatus.reason === "Shabbat") {
         
         // 1. מעקף למנהל (כדי שתוכל לבדוק תמיד)
-        // הוספתי את המספרים שראיתי בלוגים שלך
-        const isAdmin = senderId === '972526800647' || senderId === '508753233'; 
+        const isAdmin = senderPhone === '972526800647' || senderPhone === '508753233'; 
 
         if (isAdmin) {
              // אם זה אתה - תתעלם מהשבת ותמשיך רגיל לקוד למטה
-             log(`[Shabbat Bypass] המנהל ${senderId} דיבר בשבת. מאשר גישה.`);
+             log(`[Shabbat Bypass] המנהל ${senderPhone} דיבר בשבת. מאשר גישה.`);
         } else {
             // 2. לוגיקת "הצקות" למשתמשים רגילים ("חוק יוגי")
-            // בודקים אם הם קראו לשמעון בשמו
             if (text.includes('שמעון') || text.includes('שימי')) {
-                const currentCount = (shabbatSpamCounter.get(senderId) || 0) + 1;
-                shabbatSpamCounter.set(senderId, currentCount);
+                const currentCount = (shabbatSpamCounter.get(senderPhone) || 0) + 1;
+                shabbatSpamCounter.set(senderPhone, currentCount);
 
-                log(`[Shabbat] ${senderId} הציק פעם ${currentCount} (טריגר: ${text})`);
+                log(`[Shabbat] ${senderPhone} הציק פעם ${currentCount} (טריגר: ${text})`);
 
                 // רק בפעם ה-3 בדיוק - הוא עונה!
                 if (currentCount === 3) {
                     const randomResponse = RELIGIOUS_RESPONSES[Math.floor(Math.random() * RELIGIOUS_RESPONSES.length)];
                     await sock.sendMessage(chatJid, { text: randomResponse }, { quoted: msg });
                     
-                    // מאפסים את המונה כדי שיוכלו לחטוף שוב בסבב הבא
-                    shabbatSpamCounter.set(senderId, 0); 
+                    // מאפסים את המונה
+                    shabbatSpamCounter.set(senderPhone, 0); 
                 }
             }
-            // בכל מקרה - אם זה לא אדמין, יוצאים כאן. הבוט לא מעבד את הבקשה.
             return;
         }
     } else if (!systemStatus.active) {
-        // אם זה לא פעיל מסיבה אחרת (לילה/שנ"צ) ולא שבת - סתם יוצאים (אלא אם אדמין)
-         const isAdmin = senderId === '972526800647' || senderId === '508753233';
+        // אם זה לא פעיל מסיבה אחרת (לילה/שנ"צ) ולא שבת
+         const isAdmin = senderPhone === '972526800647' || senderPhone === '508753233';
          if (!isAdmin) return;
     }
 
-    // מכאן ממשיך הקוד הרגיל (Buffer וכו')...
-    bufferSystem.addToBuffer(senderId, msg, text, (finalMsg, combinedText, mediaMsg) => {
-        executeCoreLogic(sock, finalMsg, combinedText, mediaMsg, senderId, chatJid);
+    // --- ✅ זהות כפולה - תיקון (Ghost Buster) ---
+    // לפני שמעבירים ל-Buffer, מבררים את ה-ID האמיתי ב-DB
+    let realUserId = senderPhone;
+    try {
+        const userRef = await getUserRef(senderFullJid, 'whatsapp');
+        realUserId = userRef.id; // אם מקושר, זה יהיה ה-ID של דיסקורד
+    } catch (e) {
+        console.error('Identity Resolution Failed:', e);
+    }
+
+    // מכאן ממשיך הקוד הרגיל, אבל עם realUserId במקום הטלפון
+    bufferSystem.addToBuffer(realUserId, msg, text, (finalMsg, combinedText, mediaMsg) => {
+        executeCoreLogic(sock, finalMsg, combinedText, mediaMsg, realUserId, chatJid);
     });
 }
 
@@ -116,6 +126,10 @@ async function handleMessageLogic(sock, msg, text) {
 async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
     const senderName = msg.pushName || "גיימר";
 
+    // שחזור מספר טלפון לבדיקת אדמין (כי senderId יכול להיות דיסקורד ID עכשיו)
+    const senderFullJid = msg.key.participant || msg.participant || chatJid;
+    const senderPhone = senderFullJid.split('@')[0];
+
     // --- 0. עדכון זמן פעילות (User Activity) ---
     try {
         await userManager.updateLastActive(senderId);
@@ -123,7 +137,7 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
         console.error('Error updating last active:', e);
     }
 
-    // --- 1. הגנה מספאם (אם הבאפר סימן כ-BLOCKED) ---
+    // --- 1. הגנה מספאם ---
     if (text === "BLOCKED_SPAM") {
         const roast = await shimonBrain.ask(senderId, 'whatsapp', "אני מציף את הקבוצה בהודעות ספאם. רד עלי חזק.", false);
         await sock.sendMessage(chatJid, { text: `🚨 ${roast}` }, { quoted: msg });
@@ -131,7 +145,7 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
     }
 
     try {
-        // --- 🎂 2. מערכת ימי הולדת (זיהוי תאריך אוטומטי) ---
+        // --- 🎂 2. מערכת ימי הולדת ---
         const dateMatch = text.match(/\b(\d{1,2})[\.\/](\d{1,2})(?:[\.\/](\d{2,4}))?\b/);
         if (dateMatch && text.length < 30) {
             const day = parseInt(dateMatch[1]);
@@ -143,43 +157,31 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
                 const res = await birthdayManager.registerUser(senderId, 'whatsapp', day, month, year);
                 await sock.sendMessage(chatJid, { text: `✅ רשמתי! יום הולדת ב-${res.day}/${res.month}. נחגוג לך בגיל ${res.age}!` }, { quoted: msg });
                 return;
-            } catch (e) {
-                // תאריך לא תקין - מתעלמים
-            }
+            } catch (e) { }
         }
 
-        // --- 🎰 3. מערכת משחקים וכלכלה ---
-        
-        // רולטה
+        // --- 🎰 3. מערכת משחקים ---
         if (text.includes('רולטה')) {
             const result = await rouletteSystem.spinRoulette();
             if (result) {
-                if (result.type === 'sticker') {
-                    await sock.sendMessage(chatJid, { sticker: { url: result.path } });
-                } else {
-                    await sock.sendMessage(chatJid, { video: { url: result.url }, gifPlayback: true });
-                }
+                if (result.type === 'sticker') await sock.sendMessage(chatJid, { sticker: { url: result.path } });
+                else await sock.sendMessage(chatJid, { video: { url: result.url }, gifPlayback: true });
             }
             return;
         }
 
-        // קזינו / הימורים
         if (text.includes('הימור') || text.includes('בט') || (text.includes('שם') && text.match(/\d+/))) {
             const betRes = await casinoSystem.placeBet(senderId, senderName, 'whatsapp', text);
-            
             if (betRes.status === 'success') {
-                if (betRes.asset.endsWith('.mp4')) {
-                    await sock.sendMessage(chatJid, { video: { url: betRes.asset }, caption: betRes.caption, gifPlayback: true }, { quoted: msg });
-                } else {
-                    await sock.sendMessage(chatJid, { text: betRes.caption }, { quoted: msg });
-                }
+                if (betRes.asset.endsWith('.mp4')) await sock.sendMessage(chatJid, { video: { url: betRes.asset }, caption: betRes.caption, gifPlayback: true }, { quoted: msg });
+                else await sock.sendMessage(chatJid, { text: betRes.caption }, { quoted: msg });
             } else {
                 await sock.sendMessage(chatJid, { text: betRes.message }, { quoted: msg });
             }
             return;
         }
 
-        // --- 👁️ 4. מערכת Vision (אם יש תמונה) ---
+        // --- 👁️ 4. מערכת Vision ---
         if (mediaMsg) {
             if (text.includes('דמג') || text.includes('לוח') || text.includes('סקור') || text.includes('ראה')) {
                 const imageBuffer = await visionSystem.downloadWhatsAppImage(mediaMsg, sock);
@@ -193,46 +195,34 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
             }
         }
 
-        // --- 🕵️ 5. הצופה השקט + במאי המדיה (כשלא פנו לבוט) ---
+        // --- 🕵️ 5. הצופה השקט + במאי המדיה ---
         if (!isDirectCall(text)) {
-            // א. למידה שקטה
             await learningEngine.learnFromContext(senderId, senderName, 'whatsapp', text);
-            
-            // ב. במאי המדיה (תגובות חכמות ללא תיוג)
             const smartMedia = await mediaDirector.handleSmartResponse(text, senderId, 'whatsapp', senderName);
             
             if (smartMedia) {
-                if (smartMedia.type === 'audio_buffer') {
-                    await sock.sendMessage(chatJid, { audio: smartMedia.data, mimetype: 'audio/mpeg', ptt: true }, { quoted: msg });
-                } else if (smartMedia.type === 'sticker_url') {
-                    await sock.sendMessage(chatJid, { sticker: { url: smartMedia.url } });
-                } else if (smartMedia.type === 'video') {
-                    await sock.sendMessage(chatJid, { video: { url: smartMedia.url }, gifPlayback: true });
-                }
+                if (smartMedia.type === 'audio_buffer') await sock.sendMessage(chatJid, { audio: smartMedia.data, mimetype: 'audio/mpeg', ptt: true }, { quoted: msg });
+                else if (smartMedia.type === 'sticker_url') await sock.sendMessage(chatJid, { sticker: { url: smartMedia.url } });
+                else if (smartMedia.type === 'video') await sock.sendMessage(chatJid, { video: { url: smartMedia.url }, gifPlayback: true });
             }
             return;
         }
 
-        // --- 🧠 6. המוח המרכזי (AI Chat & Help) ---
+        // --- 🧠 6. המוח המרכזי ---
         await sock.sendPresenceUpdate('composing', chatJid);
         
-        // עדכון רשימת אדמינים גם כאן ליתר ביטחון
-        const isAdmin = senderId === '972526800647' || senderId === '508753233'; 
+        // בדיקת אדמין (לפי טלפון, כי ה-ID יכול להיות כבר של דיסקורד)
+        const isAdmin = senderPhone === '972526800647' || senderPhone === '508753233'; 
+        
         const aiResponse = await shimonBrain.ask(senderId, 'whatsapp', text, isAdmin);
-
         await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });
 
     } catch (error) {
-        // טיפול חכם בשגיאות
         log(`❌ [Core] Fatal Error inside executeCoreLogic: ${error.message}`);
         
         const smartResponse = getSmartErrorResponse();
         if (smartResponse) {
-            try {
-                await sock.sendMessage(chatJid, { text: smartResponse });
-            } catch (sendErr) {
-                console.error('Failed to send error response:', sendErr);
-            }
+            try { await sock.sendMessage(chatJid, { text: smartResponse }); } catch (sendErr) { }
         }
     }
 }

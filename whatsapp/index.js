@@ -7,7 +7,7 @@ const { ensureUserExists } = require('../utils/userUtils');
 const { log } = require('../utils/logger'); 
 const whatsappScout = require('./utils/scout');
 const matchmaker = require('../handlers/matchmaker'); 
-const store = require('./store'); // ✅ השימוש ב-Store הפרטי שלנו
+const store = require('./store'); // ✅ שימוש ב-Store הפרטי שלנו
 
 let sock; 
 const msgRetryCounterCache = new Map();
@@ -27,12 +27,6 @@ function getRealPhoneNumber(jid) {
     // חיפוש ב-Store הפרטי שלנו
     const contacts = store.contacts;
     
-    // בדיקה ישירה
-    if (contacts[jid] && contacts[jid].id) {
-        // לפעמים ה-LID מצביע על אובייקט שמכיל את ה-JID האמיתי, תלוי איך וואטסאפ שלחו
-        // אבל לרוב נצטרך לחפש הפוך: מי מכל אנשי הקשר מחזיק את ה-LID הזה?
-    }
-
     // חיפוש הפוך: עוברים על אנשי הקשר ומחפשים למי יש את ה-LID הזה
     const found = Object.values(contacts).find(c => c.lid === jid);
     if (found && found.id) {
@@ -105,11 +99,15 @@ async function connectToWhatsApp() {
                 
                 if (action === 'add') {
                     console.log(`👋 [WhatsApp] משתמש הצטרף: ${realPhone}`);
+                    
+                    // מנסים לוודא קיום ב-DB. אם לא קיים - יחזור null.
                     const userRef = await ensureUserExists(realPhone, "New Gamer", "whatsapp");
                     
-                    // ברכה נשלחת תמיד
+                    // הודעת ברוכים הבאים נשלחת בכל מקרה
                     const welcomeText = `👋 ברוך הבא לקבוצה @${realPhone}!\nתציג את עצמך שנכיר.`;
                     await sock.sendMessage(MAIN_GROUP_ID, { text: welcomeText, mentions: [participant] });
+
+                    // אם userRef == null, ה-Matchmaker יטפל בו בהודעה הראשונה שיכתוב
                 } 
             }
         });
@@ -125,31 +123,37 @@ async function connectToWhatsApp() {
                              msg.message.imageMessage?.caption || "";
                 
                 const rawJid = msg.key.participant || msg.key.remoteJid;
+                
+                // 🕵️ פענוח המספר האמיתי
                 const realSenderPhone = getRealPhoneNumber(rawJid);
                 const pushName = msg.pushName || "Unknown";
                 
-                // 1. נסיון לעדכון/בדיקת קיום ב-DB
+                // 1. נסיון שליפה מה-DB
+                // לאכיליס (שלא קיים ב-DB) הפונקציה הזו תחזיר NULL!
                 const userRef = await ensureUserExists(realSenderPhone, pushName, "whatsapp");
 
-                // אם userRef הוא null (כי חסמנו יצירה), או שהמסמך לא קיים
+                // 2. טיפול במשתמש לא מזוהה
                 if (!userRef) {
-                    console.log(`🛡️ [WhatsApp] משתמש לא מזוהה: ${realSenderPhone} (${pushName}). מפעיל שדכן.`);
+                    console.log(`🛑 [WhatsApp Block] משתמש לא מקושר זוהה: ${realSenderPhone} (${pushName}).`);
+                    console.log(`👉 מפעיל את השדכן (Matchmaker)...`);
                     
                     const isNameConfirmed = await matchmaker.confirmNameMatch(sock, realSenderPhone, text, pushName);
                     
                     if (!isNameConfirmed) {
                         await matchmaker.handleStranger(sock, realSenderPhone, pushName);
                     }
-                    return; 
+                    return; // עוצרים כאן! לא נותנים לו להגיע למוח
                 }
 
+                // בדיקה כפולה: המסמך באמת קיים?
                 const userDoc = await userRef.get();
                 if (!userDoc.exists) {
-                     console.log(`🛡️ [WhatsApp] משתמש זוהה כרפאים. מפעיל שדכן.`);
+                     console.log(`👻 [WhatsApp Ghost] יש רפרנס אבל אין מסמך. מפעיל שדכן.`);
                      await matchmaker.handleStranger(sock, realSenderPhone, pushName);
                      return;
                 }
 
+                // 3. משתמש מאומת - ממשיכים ללוגיקה
                 if (coreLogic && coreLogic.handleMessageLogic) {
                     await coreLogic.handleMessageLogic(sock, msg, text);
                 }

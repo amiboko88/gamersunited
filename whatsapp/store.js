@@ -1,4 +1,6 @@
 // 📁 whatsapp/store.js
+const { log } = require('../utils/logger');
+
 class SimpleStore {
     constructor() {
         this.contacts = {};
@@ -12,12 +14,12 @@ class SimpleStore {
         ev.on('contacts.upsert', (contacts) => {
             for (const contact of contacts) {
                 // שומרים את איש הקשר לפי ה-ID שלו
-                // המידע מכיל גם LID וגם מספרים, וזה מה שחשוב לנו
                 this.contacts[contact.id] = { 
                     ...(this.contacts[contact.id] || {}), 
                     ...contact 
                 };
             }
+            log(`🧠 [Store] נטענו ${contacts.length} אנשי קשר לזיכרון.`);
         });
 
         // האזנה לשינויים באנשי קשר
@@ -33,10 +35,10 @@ class SimpleStore {
     }
 
     /**
-     * מחפש איש קשר לפי ID (תומך LID)
+     * מחזיר את כל הזיכרון (לדיבוג)
      */
-    getContact(id) {
-        return this.contacts[id];
+    getAll() {
+        return this.contacts;
     }
 }
 

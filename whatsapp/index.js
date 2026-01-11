@@ -1,12 +1,5 @@
 // 📁 whatsapp/index.js
-// תיקון הייבוא: מייבאים את הכל מאובייקט אחד
-const { 
-    default: makeWASocket, 
-    DisconnectReason, 
-    fetchLatestBaileysVersion, 
-    makeInMemoryStore 
-} = require('@whiskeysockets/baileys');
-
+const { default: makeWASocket, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const { useFirestoreAuthState } = require('./auth'); 
 const coreLogic = require('./logic/core'); 
@@ -14,15 +7,7 @@ const { ensureUserExists } = require('../utils/userUtils');
 const { log } = require('../utils/logger'); 
 const whatsappScout = require('./utils/scout');
 const matchmaker = require('../handlers/matchmaker'); 
-
-// בדיקת שפיות: אם הפונקציה עדיין לא קיימת, נמנע קריסה
-if (typeof makeInMemoryStore !== 'function') {
-    console.error("❌ Critical Error: 'makeInMemoryStore' is not defined. Please run: npm update @whiskeysockets/baileys");
-    process.exit(1);
-}
-
-// ✅ אתחול הזיכרון (Store)
-const store = makeInMemoryStore({ logger: pino({ level: 'silent' }) });
+const store = require('./store'); // ✅ השימוש ב-Store הפרטי שלנו
 
 let sock; 
 const msgRetryCounterCache = new Map();
@@ -34,16 +19,27 @@ const MAIN_GROUP_ID = process.env.WHATSAPP_MAIN_GROUP_ID;
 function getRealPhoneNumber(jid) {
     if (!jid) return '';
     
+    // אם זה כבר נראה כמו מספר טלפון (JID), נחזיר אותו נקי
     if (jid.includes('@s.whatsapp.net') && !jid.includes(':')) {
         return jid.split('@')[0];
     }
 
-    const contact = store.contacts[jid] || Object.values(store.contacts).find(c => c.lid === jid);
+    // חיפוש ב-Store הפרטי שלנו
+    const contacts = store.contacts;
     
-    if (contact && contact.id) {
-        return contact.id.split('@')[0];
+    // בדיקה ישירה
+    if (contacts[jid] && contacts[jid].id) {
+        // לפעמים ה-LID מצביע על אובייקט שמכיל את ה-JID האמיתי, תלוי איך וואטסאפ שלחו
+        // אבל לרוב נצטרך לחפש הפוך: מי מכל אנשי הקשר מחזיק את ה-LID הזה?
     }
 
+    // חיפוש הפוך: עוברים על אנשי הקשר ומחפשים למי יש את ה-LID הזה
+    const found = Object.values(contacts).find(c => c.lid === jid);
+    if (found && found.id) {
+        return found.id.split('@')[0];
+    }
+
+    // אם לא מצאנו, מחזירים את המקור ומנקים
     return jid.split('@')[0];
 }
 
@@ -71,7 +67,7 @@ async function connectToWhatsApp() {
             syncFullHistory: false
         });
 
-        // ✅ מחברים את ה-Store לאירועים של הסוקט
+        // ✅ מחברים את ה-Store הפרטי שלנו
         store.bind(sock.ev);
 
         sock.ev.on('connection.update', (update) => {
@@ -111,11 +107,7 @@ async function connectToWhatsApp() {
                     console.log(`👋 [WhatsApp] משתמש הצטרף: ${realPhone}`);
                     const userRef = await ensureUserExists(realPhone, "New Gamer", "whatsapp");
                     
-                    if (!userRef) {
-                        // אם המשתמש לא קיים (ensure החזיר null), ה-Matchmaker יטפל בו בהודעה הראשונה
-                        // אבל הודעת ברוכים הבאים תמיד נחמד לשלוח
-                    }
-
+                    // ברכה נשלחת תמיד
                     const welcomeText = `👋 ברוך הבא לקבוצה @${realPhone}!\nתציג את עצמך שנכיר.`;
                     await sock.sendMessage(MAIN_GROUP_ID, { text: welcomeText, mentions: [participant] });
                 } 
@@ -151,15 +143,13 @@ async function connectToWhatsApp() {
                     return; 
                 }
 
-                // בדיקה נוספת למקרה שה-ref קיים אבל המסמך נמחק ידנית
                 const userDoc = await userRef.get();
                 if (!userDoc.exists) {
-                     console.log(`🛡️ [WhatsApp] משתמש זוהה כרפאים (Ref קיים, Doc חסר). מפעיל שדכן.`);
+                     console.log(`🛡️ [WhatsApp] משתמש זוהה כרפאים. מפעיל שדכן.`);
                      await matchmaker.handleStranger(sock, realSenderPhone, pushName);
                      return;
                 }
 
-                // 2. אם המשתמש קיים - ממשיכים רגיל
                 if (coreLogic && coreLogic.handleMessageLogic) {
                     await coreLogic.handleMessageLogic(sock, msg, text);
                 }

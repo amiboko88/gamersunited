@@ -40,7 +40,7 @@ async function getUserRef(id, platform = 'discord') {
         if (!snapshot.empty) return snapshot.docs[0].ref;
     }
 
-    // אם לא מצאנו - מחזירים כתובת למסמך חדש (אבל ensureUserExists יחליט אם ליצור אותו)
+    // אם לא מצאנו - מחזירים כתובת למסמך חדש
     return db.collection('users').doc(cleanId);
 }
 
@@ -58,7 +58,7 @@ async function getUserData(id, platform = 'discord') {
 
 /**
  * ✅ הפונקציה הקריטית: יוצרת או מעדכנת משתמש.
- * כוללת הגנה מלאה: לא יוצרת משתמשי וואטסאפ חדשים (מחזירה null).
+ * כוללת הגנה מפני יצירת "זבל" (LID ללא קישור).
  */
 async function ensureUserExists(id, displayName, platform = 'discord') {
     const cleanId = platform === 'whatsapp' ? cleanWhatsAppId(id) : id;
@@ -72,15 +72,13 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
 
             // תרחיש 1: משתמש חדש
             if (!doc.exists) {
-                
-                // 🛑 עצור! אם זה וואטסאפ - אנחנו לא יוצרים כלום.
-                // מחזירים null כדי שה-Matchmaker ייכנס לפעולה.
+                // 🛑 חסימה קריטית: אם זה LID/וואטסאפ לא מזוהה - לא יוצרים!
+                // בגרסה שלך החלטנו שאם זה LID לא יוצרים, וגם אם זה וואטסאפ בכלל לא יוצרים כדי שהשדכן יעבוד
                 if (platform === 'whatsapp') {
-                    console.warn(`🛡️ [UserUtils] משתמש וואטסאפ לא מזוהה (${cleanId}). מדלג על יצירה.`);
-                    return; // מחזיר undefined/null
+                    console.warn(`🛡️ [UserUtils] נמנעה יצירת פרופיל זבל ל: ${cleanId} (${displayName})`);
+                    return; 
                 }
 
-                // לדיסקורד אנחנו כן יוצרים (כי הוא המקור)
                 console.log(`🆕 [UserUtils] Creating new profile for: ${displayName} (${cleanId})`);
                 
                 const newUser = {
@@ -98,25 +96,22 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
                 };
                 t.set(ref, newUser);
             } 
-            // תרחיש 2: משתמש קיים (עדכון בלבד)
+            // תרחיש 2: משתמש קיים
             else {
                 const data = doc.data();
                 const updates = { 'meta.lastActive': new Date().toISOString() };
 
-                // אם זה LID, נשמור אותו בשדה צדדי כדי שנכיר אותו לפעם הבאה
                 if (isLid) {
                     if (data.platforms?.whatsapp_lid !== cleanId) {
                         updates['platforms.whatsapp_lid'] = cleanId;
                         console.log(`🔗 [UserUtils] קושר LID (${cleanId}) למשתמש קיים.`);
                     }
                 } else {
-                    // אם זה מספר רגיל, נעדכן כרגיל
                     if (!data.platforms || !data.platforms[platform]) {
                         updates[`platforms.${platform}`] = cleanId;
                     }
                 }
 
-                // עדכון שם רק אם חסר
                 if (displayName && displayName !== "Unknown" && displayName !== "WhatsApp User" && 
                    (!data.identity?.displayName || data.identity.displayName === "Unknown")) {
                     updates['identity.displayName'] = displayName;
@@ -125,13 +120,7 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
                 t.set(ref, updates, { merge: true });
             }
         });
-        
-        // כאן התיקון החשוב: אנחנו בודקים אם המסמך נוצר בטרנזקציה. 
-        // אבל מכיוון שהטרנזקציה היא אסינכרונית, הדרך הכי טובה היא לבדוק שוב מבחוץ
-        // או להסתמך על זה שאם החזרנו ref והוא לא קיים - המערכת תדע.
-        // נחזיר את ה-ref בכל מקרה, ובקוד הקורא (index.js) נבדוק אם הוא קיים.
         return ref;
-
     } catch (error) {
         console.error(`❌ [UserUtils] Transaction Error:`, error);
         return ref;

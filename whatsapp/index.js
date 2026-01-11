@@ -7,7 +7,7 @@ const { ensureUserExists } = require('../utils/userUtils');
 const { log } = require('../utils/logger'); 
 const whatsappScout = require('./utils/scout');
 const matchmaker = require('../handlers/matchmaker'); 
-const store = require('./store'); // ✅ ה-Store המשודרג
+const store = require('./store'); 
 
 let sock; 
 const msgRetryCounterCache = new Map();
@@ -15,11 +15,9 @@ const MAIN_GROUP_ID = process.env.WHATSAPP_MAIN_GROUP_ID;
 
 /**
  * 🔍 פונקציית הקסם: ממירה כל מזהה (LID/JID) למספר טלפון אמיתי
- * משתמשת במנוע המשודרג של ה-Store
  */
 function getRealPhoneNumber(jid) {
     if (!jid) return '';
-    // ה-Store החדש יודע לחפש גם בהיסטוריה וגם במיפויים
     return store.getPhoneById(jid);
 }
 
@@ -44,10 +42,9 @@ async function connectToWhatsApp() {
             keepAliveIntervalMs: 10000,
             emitOwnEvents: false,
             browser: ["Shimon Bot", "Chrome", "1.0.0"],
-            syncFullHistory: true // ✅ מבקשים היסטוריה מלאה (חשוב למיפוי)
+            syncFullHistory: true 
         });
 
-        // ✅ מחברים את ה-Store
         store.bind(sock.ev);
 
         sock.ev.on('connection.update', (update) => {
@@ -61,11 +58,10 @@ async function connectToWhatsApp() {
             } 
             else if (connection === 'open') {
                 console.log('✅ [WhatsApp] מחובר ומוכן!');
-                // מפעילים את הסייר (Scout) רק אחרי זמן מה, לתת להיסטוריה להיטען
                 if (MAIN_GROUP_ID) {
                     setTimeout(() => {
                         whatsappScout.syncGroupMembers(sock, MAIN_GROUP_ID);
-                    }, 15000); // נותנים 15 שניות להיסטוריה לטעון את ה-LIDs
+                    }, 15000); 
                 }
             }
         });
@@ -81,8 +77,6 @@ async function connectToWhatsApp() {
                 if (action === 'add') {
                     console.log(`👋 [WhatsApp] משתמש הצטרף: ${realPhone}`);
                     const userRef = await ensureUserExists(realPhone, "New Gamer", "whatsapp");
-                    
-                    // ברוכים הבאים
                     const welcomeText = `👋 ברוך הבא לקבוצה @${realPhone}!\nתציג את עצמך שנכיר.`;
                     await sock.sendMessage(MAIN_GROUP_ID, { text: welcomeText, mentions: [participant] });
                 } 
@@ -99,40 +93,29 @@ async function connectToWhatsApp() {
                              msg.message.extendedTextMessage?.text || 
                              msg.message.imageMessage?.caption || "";
                 
-                // הכתובת לזיהוי המשתמש (יכולה להיות LID)
                 const senderIdentifier = msg.key.participant || msg.key.remoteJid;
-                
-                // נסיון פענוח למספר אמיתי דרך ה-Store המשודרג
                 const realSenderPhone = getRealPhoneNumber(senderIdentifier);
                 const pushName = msg.pushName || "Unknown";
                 
-                // לוג דיבוג קטן לראות אם ההמרה הצליחה
-                if (senderIdentifier !== realSenderPhone) {
-                    // console.log(`🔍 [Debug] LID Converted: ${senderIdentifier} -> ${realSenderPhone}`);
-                }
-
                 // 1. נסיון שליפה מה-DB
-                // עכשיו, כש realSenderPhone הוא המספר האמיתי שלך (972...), הפונקציה תמצא אותך!
                 const userRef = await ensureUserExists(realSenderPhone, pushName, "whatsapp");
 
-                // 2. משתמש לא מזוהה (עדיין חוסמים זרים)
+                // 2. משתמש לא מזוהה -> דוח לאדמין
                 if (!userRef) {
-                    console.log(`🛑 [WhatsApp Block] משתמש לא מקושר: ${realSenderPhone} (${pushName}). מפעיל שדכן.`);
+                    console.log(`🛑 [WhatsApp Block] זיהוי לא מוכר: ${realSenderPhone}.`);
                     
-                    // כתובת למענה
-                    const replyToJid = msg.key.remoteJid; 
-                    
-                    const isNameConfirmed = await matchmaker.confirmNameMatch(sock, replyToJid, realSenderPhone, text, pushName);
-                    if (!isNameConfirmed) {
-                        await matchmaker.handleStranger(sock, replyToJid, realSenderPhone, pushName);
+                    // מדווחים לאדמין רק אם זה בקבוצה (כדי למנוע הצפות סתמיות)
+                    if (msg.key.remoteJid.endsWith('@g.us')) {
+                        await matchmaker.consultWithAdmin(sock, realSenderPhone, pushName, text);
                     }
                     return; 
                 }
 
-                // בדיקת שפיות
                 const userDoc = await userRef.get();
                 if (!userDoc.exists) {
-                     await matchmaker.handleStranger(sock, msg.key.remoteJid, realSenderPhone, pushName);
+                     if (msg.key.remoteJid.endsWith('@g.us')) {
+                        await matchmaker.consultWithAdmin(sock, realSenderPhone, pushName, text);
+                     }
                      return;
                 }
 

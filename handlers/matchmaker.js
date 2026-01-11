@@ -2,151 +2,113 @@
 const db = require('../utils/firebase');
 const { log } = require('../utils/logger'); 
 
+// רשימת המתנה כדי לא לחפור לך על אותו LID כל דקה
+const pendingLids = new Set();
+const ADMIN_PHONE = "972526800647"; // ✅ הטלפון שלך לקבלת דוחות
+
 class Matchmaker {
     
     /**
-     * מטפל במשתמש זר.
-     * מקבל את ה-JID המקורי (כולל ה-Domain) כדי להבטיח שההודעה תגיע.
+     * מופעל כשמזוהה LID זר בקבוצה.
+     * שולח דוח מודיעין לאדמין בפרטי.
      */
-    async handleStranger(sock, originalJid, phoneOrLid, pushName) {
-        if (!originalJid) return;
+    async consultWithAdmin(sock, lid, pushName, messageContent) {
+        // אם כבר שאלנו אותך על ה-LID הזה לאחרונה, לא נחפור שוב
+        if (pendingLids.has(lid)) return;
+
+        log(`🕵️ [Matchmaker] LID זר (${lid}). מדווח לאדמין.`);
         
-        // לוגיקה לזיהוי מספר נקי לתצוגה
-        const displayId = phoneOrLid || originalJid.split('@')[0];
-
-        log(`🕵️ [Matchmaker] בודק משתמש חדש: ${pushName} (${displayId})`);
-
-        // 1. נסיון הצלבה חכם לפי שם (Smart Name Match)
-        if (pushName && pushName !== "Unknown") {
-            try {
-                // בדיקה מדויקת
-                let nameSnapshot = await db.collection('users')
-                    .where('identity.displayName', '==', pushName).limit(1).get();
-
-                // אם לא מצאנו, ננסה חיפוש "מכיל" (רק אם השם ארוך מספיק)
-                // זה פתרון לבעיית "Amos Ami Bokobza" vs "Ami"
-                if (nameSnapshot.empty) {
-                     // שליפת כל המשתמשים (זהירות, רק אם ה-DB קטן יחסית. אם ענק, ותרו על זה)
-                     // כאן נניח שלא, ונשאיר את זה מדויק למניעת טעויות, 
-                     // אבל נשלח לוג שאפשר לקשר ידנית.
-                }
-
-                if (!nameSnapshot.empty) {
-                    const userDoc = nameSnapshot.docs[0];
-                    log(`✨ [Matchmaker] נמצאה התאמה לשם! שולח הודעה ל-${pushName}`);
-                    
-                    const msg = `אהלן ${pushName}, שמעון כאן.\n` +
-                                `אני רואה שאתה חדש בוואטסאפ, אבל יש לי משתמש בדיסקורד בשם הזה.\n` +
-                                `אם זה אתה, פשוט תגיב כאן: **"אני ${pushName}"** ואני אחבר ביניכם.`;
-                    
-                    // ✅ שליחה לכתובת המקורית הבטוחה
-                    await sock.sendMessage(originalJid, { text: msg });
-                    return;
-                }
-            } catch (e) {
-                log(`❌ [Matchmaker] שגיאה בחיפוש שם: ${e.message}`);
-            }
-        }
-
-        // 2. אין התאמה - שולחים להזדהות בדיסקורד
-        log(`🛡️ [Matchmaker] אין התאמה אוטומטית. שולח בקשת הזדהות ל-${originalJid}`);
-        
-        const inviteMsg = `שלום צדיק 👋\n` +
-                          `אני לא מזהה את המספר שלך במערכת (${displayId}).\n\n` +
-                          `כדי לחבר את הניקוד שלך:\n` +
-                          `1. כנס לדיסקורד.\n` +
-                          `2. שלח לי **בהודעה פרטית** את הקוד הבא:\n` +
-                          `\`${displayId}\`\n\n` + // שולחים לו את ה-LID כדי שישלח לנו חזרה!
-                          `מחכה לך שם.`;
-
-        // ✅ שליחה לכתובת המקורית הבטוחה
-        await sock.sendMessage(originalJid, { text: inviteMsg });
-    }
-
-    // --- הטיפול בדיסקורד (נשאר זהה, אבל עם תיקון לוגי קטן) ---
-    async handleDiscordDM(message) {
-        if (message.author.bot) return;
-
-        const text = message.content.trim();
-        // אנחנו מצפים שהמשתמש ישלח את המספר/LID שהופיע לו בהודעה בוואטסאפ
-        // לכן אנחנו לא מנקים באגרסיביות את ה-972 אם זה LID
-        const inputId = text.replace(/\D/g, '');
-
-        if (inputId.length < 5) return; // הגנה מינימלית
-
-        log(`🔗 [Matchmaker] בקשת קישור מדיסקורד: ${message.author.tag} -> ${inputId}`);
-
-        // בדיקה אם המספר הזה כבר תפוס
-        // שים לב: אנחנו מחפשים גם ב-whatsapp וגם ב-whatsapp_lid
-        let existingUser = await db.collection('users').where('platforms.whatsapp', '==', inputId).get();
-        if (existingUser.empty) {
-             existingUser = await db.collection('users').where('platforms.whatsapp_lid', '==', inputId).get();
-        }
-
-        if (!existingUser.empty) {
-            if (existingUser.docs[0].id === message.author.id) {
-                message.reply(`✅ כבר מחובר אלינו נשמה, הכל טוב.`);
-            } else {
-                message.reply(`❌ המזהה הזה (${inputId}) כבר מקושר למשתמש אחר.`);
-            }
-            return;
-        }
+        const report = `🕵️ *דוח מודיעין חדש*\n` +
+                       `------------------\n` +
+                       `גורם זר מדבר בקבוצה.\n\n` +
+                       `👤 *כינוי:* ${pushName}\n` +
+                       `💬 *תוכן:* "${messageContent.substring(0, 50)}..."\n` +
+                       `🔑 *מזהה (LID):*\n\`${lid}\`\n\n` +
+                       `כדי לאשר אותו:\n` +
+                       `⬅️ **צטט (Reply)** הודעה זו\n` +
+                       `📱 כתוב את המספר האמיתי שלו (למשל 050...)`;
 
         try {
-            const userRef = db.collection('users').doc(message.author.id);
+            // שליחה אליך בפרטי
+            await sock.sendMessage(ADMIN_PHONE + '@s.whatsapp.net', { text: report });
             
-            // אנחנו שומרים את מה שהמשתמש שלח. אם זה LID - נשמור ב-LID. אם טלפון - בטלפון.
-            const updates = { meta: { lastActive: new Date().toISOString() } };
+            // סימון שנשלח (כדי לא להציף אותך)
+            pendingLids.add(lid);
             
-            if (inputId.length > 14) {
-                updates['platforms.whatsapp_lid'] = inputId;
-                // אופציונלי: לשים גם ב-whatsapp הרגיל כדי שהמערכת תעבוד חלק, 
-                // אבל עדיף להפריד אם רוצים סדר. כרגע נשים בשניהם ליתר ביטחון תפעולי:
-                updates['platforms.whatsapp'] = inputId; 
-            } else {
-                updates['platforms.whatsapp'] = inputId;
-                updates['identity.whatsappPhone'] = inputId;
-            }
-
-            await userRef.set(updates, { merge: true });
-
-            message.reply(`✅ **בוצע!**\nחיברתי את החשבון שלך למזהה: \`${inputId}\`.\nעכשיו תנסה לכתוב שוב בוואטסאפ.`);
-            log(`✅ [Matchmaker] שידוך מוצלח: ${message.author.tag} <-> ${inputId}`);
-
-        } catch (error) {
-            console.error(error);
-            message.reply(`תקלה טכנית בקישור.`);
+            // ניקוי מהזיכרון אחרי שעה
+            setTimeout(() => pendingLids.delete(lid), 1000 * 60 * 60);
+        } catch (e) {
+            console.error('Failed to send report to admin:', e);
         }
     }
 
-    // --- אישור שם ("אני משה") ---
-    async confirmNameMatch(sock, originalJid, phoneOrLid, text, pushName) {
-        if (!text || !pushName) return false;
+    /**
+     * מטפל בתשובה שלך (Reply) עם המספר
+     * נקרא מתוך core.js
+     */
+    async handleAdminResponse(sock, msg, text) {
+        // 1. האם זה ציטוט?
+        const quotedMsg = msg.message?.extendedTextMessage?.contextInfo;
+        if (!quotedMsg || !quotedMsg.quotedMessage) return false;
+
+        // 2. האם הציטוט מכיל LID? (אנחנו מחפשים את ה-LID בתוך הטקסט ששמעון שלח לך)
+        const quotedText = quotedMsg.quotedMessage.conversation || quotedMsg.quotedMessage.extendedTextMessage?.text || "";
         
-        if (text.toLowerCase().includes(`אני ${pushName.toLowerCase()}`)) {
-             const nameSnapshot = await db.collection('users')
-                .where('identity.displayName', '==', pushName).limit(1).get();
+        // חילוץ ה-LID מבין הגרשיים בדוח (`12345`)
+        const lidMatch = quotedText.match(/`(\d+)`/); 
 
-            if (!nameSnapshot.empty) {
-                const userRef = nameSnapshot.docs[0].ref;
-                
-                // עדכון ב-DB
-                const updates = { 
-                    'platforms.whatsapp': phoneOrLid, // שומרים את ה-LID/Phone שזיהינו
-                    'meta.lastActive': new Date().toISOString()
-                };
-                if (phoneOrLid.length > 14) updates['platforms.whatsapp_lid'] = phoneOrLid;
+        if (!lidMatch) return false; // לא ציטטת דוח מודיעין תקין
 
-                await userRef.set(updates, { merge: true });
+        const targetLid = lidMatch[1];
+        const targetRealPhone = text.replace(/\D/g, ''); // המספר שכתבת
 
-                // ✅ שליחה לכתובת המקורית
-                await sock.sendMessage(originalJid, { text: `✅ אש עליך! חיברתי אותך.` });
-                log(`✅ [Matchmaker] משתמש אישר זהות בוואטסאפ: ${pushName}`);
-                return true;
-            }
+        if (targetRealPhone.length < 9) {
+            await sock.sendMessage(msg.key.remoteJid, { text: '❌ מספר לא תקין. נסה שוב.' }, { quoted: msg });
+            return true;
         }
-        return false;
+
+        // נרמול ל-972
+        const formattedPhone = targetRealPhone.startsWith('05') ? '972' + targetRealPhone.substring(1) : targetRealPhone;
+
+        log(`🔗 [Matchmaker] האדמין קישר: LID ${targetLid} -> PHONE ${formattedPhone}`);
+
+        // 3. ביצוע הקישור ב-DB
+        // נחפש את המשתמש לפי הטלפון שנתת (הוא אמור להיות קיים ב-DB כי יצרת אותו ידנית)
+        let targetRef = null;
+        
+        // חיפוש לפי identity.whatsappPhone
+        const userSnapshot = await db.collection('users').where('identity.whatsappPhone', 'in', [formattedPhone, targetRealPhone]).limit(1).get();
+        if (!userSnapshot.empty) targetRef = userSnapshot.docs[0].ref;
+        
+        // חיפוש גיבוי לפי platforms.whatsapp
+        if (!targetRef) {
+            const platSnapshot = await db.collection('users').where('platforms.whatsapp', '==', formattedPhone).limit(1).get();
+            if (!platSnapshot.empty) targetRef = platSnapshot.docs[0].ref;
+        }
+
+        if (targetRef) {
+            // שמירת ה-LID בתיק האישי
+            await targetRef.set({
+                platforms: { whatsapp_lid: targetLid },
+                meta: { lastLinked: new Date().toISOString() }
+            }, { merge: true });
+
+            await sock.sendMessage(msg.key.remoteJid, { text: `✅ **בוצע!**\nהסוכן ${formattedPhone} מקושר מעכשיו ל-LID הזה.\nהוא לא יופיע יותר בדוחות.` }, { quoted: msg });
+            
+            // מחיקה מהרשימה השחורה הזמנית
+            pendingLids.delete(targetLid);
+
+        } else {
+            await sock.sendMessage(msg.key.remoteJid, { text: `❌ לא מצאתי ב-DB משתמש עם הטלפון ${formattedPhone}.\nתוודא שהמספר תואם למה ששמרת ב-DB (למשל 972...).` }, { quoted: msg });
+        }
+
+        return true; // סמן שטופל
     }
+    
+    // פונקציות ישנות (משאירים ריק או לוגיקה מינימלית למקרה הצורך, כדי לא לשבור תלויות)
+    async handleStranger(sock, jid, phone, name) { /* מבוטל - לא שולח כלום */ }
+    async handleDiscordDM(msg) { /* מבוטל */ }
+    async confirmNameMatch() { return false; }
 }
 
 module.exports = new Matchmaker();

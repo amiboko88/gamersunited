@@ -35,9 +35,16 @@ class RankingRenderer {
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;900&display=swap');
                 
+                /* ✅ תיקון גלובלי לחישוב גדלים */
+                * {
+                    box-sizing: border-box;
+                }
+
                 body {
                     margin: 0;
                     padding: 40px;
+                    width: 880px; /* ✅ התאמה לרוחב ה-Viewport */
+                    min-height: 100vh;
                     background: #1a1a1a;
                     background-image: radial-gradient(circle at 50% 0%, #2a2a2a 0%, #1a1a1a 70%);
                     font-family: 'Heebo', sans-serif;
@@ -45,8 +52,6 @@ class RankingRenderer {
                     display: flex;
                     flex-direction: column;
                     align-items: center;
-                    width: 800px;
-                    box-sizing: border-box;
                 }
 
                 .header {
@@ -54,6 +59,7 @@ class RankingRenderer {
                     margin-bottom: 40px;
                     position: relative;
                     z-index: 2;
+                    width: 100%;
                 }
                 
                 .title {
@@ -64,6 +70,7 @@ class RankingRenderer {
                     -webkit-background-clip: text;
                     -webkit-text-fill-color: transparent;
                     text-shadow: 0 4px 15px rgba(255, 215, 0, 0.3);
+                    margin: 0;
                 }
 
                 .subtitle {
@@ -75,7 +82,7 @@ class RankingRenderer {
 
                 /* MVP Section */
                 .mvp-card {
-                    background: linear-gradient(135deg, rgba(255,215,0,0.1), rgba(0,0,0,0));
+                    background: linear-gradient(135deg, rgba(255,215,0,0.15), rgba(0,0,0,0.2)); /* קצת יותר כהה */
                     border: 2px solid #ffd700;
                     border-radius: 20px;
                     padding: 20px 40px;
@@ -84,38 +91,50 @@ class RankingRenderer {
                     gap: 30px;
                     width: 100%;
                     margin-bottom: 40px;
-                    box-shadow: 0 0 30px rgba(255,215,0,0.1);
+                    box-shadow: 0 0 40px rgba(255,215,0,0.15); /* צל מרוכך */
                     position: relative;
                     overflow: hidden;
                 }
                 
                 .mvp-badge {
                     position: absolute;
-                    top: 10px;
-                    left: 10px;
+                    top: 0;
+                    left: 0;
                     background: #ffd700;
                     color: black;
-                    padding: 5px 15px;
-                    border-radius: 10px;
-                    font-weight: bold;
+                    padding: 8px 20px;
+                    border-bottom-right-radius: 15px;
+                    font-weight: 900;
                     font-size: 14px;
+                    box-shadow: 2px 2px 10px rgba(0,0,0,0.3);
                 }
 
                 .mvp-avatar {
-                    width: 100px;
-                    height: 100px;
+                    width: 110px;
+                    height: 110px;
                     border-radius: 50%;
                     border: 4px solid #ffd700;
-                    object-fit: cover; /* מבטיח עיגול מושלם */
+                    object-fit: cover;
+                    flex-shrink: 0; /* מונע כיווץ */
+                    background-color: #333; /* רקע למקרה שהתמונה שקופה */
                 }
 
-                .mvp-info h1 { margin: 0; font-size: 32px; margin-right: 15px; }
-                .mvp-info p { margin: 5px 0 0; color: #ccc; font-size: 18px; margin-right: 15px; }
+                .mvp-info {
+                    flex-grow: 1;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                }
+
+                .mvp-info h1 { margin: 0; font-size: 36px; line-height: 1.2; }
+                .mvp-info p { margin: 5px 0 0; color: #ccc; font-size: 18px; }
+                
                 .mvp-score { 
-                    margin-right: auto; 
-                    font-size: 42px; 
+                    font-size: 48px; 
                     font-weight: 900; 
                     color: #ffd700;
+                    text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+                    white-space: nowrap;
                 }
 
                 /* List Section */
@@ -123,43 +142,56 @@ class RankingRenderer {
                     width: 100%;
                     background: rgba(255,255,255,0.03);
                     border-radius: 20px;
-                    padding: 10px;
+                    padding: 10px 0; /* ריווח פנימי אנכי */
+                    border: 1px solid rgba(255,255,255,0.05);
                 }
 
                 .row {
                     display: flex;
                     align-items: center;
-                    padding: 15px 20px;
+                    padding: 15px 30px;
                     border-bottom: 1px solid rgba(255,255,255,0.05);
-                    transition: all 0.2s;
                 }
 
                 .row:last-child { border-bottom: none; }
                 
                 .rank {
                     font-size: 24px;
-                    font-weight: bold;
+                    font-weight: 900;
                     color: #666;
-                    width: 50px;
+                    width: 60px;
+                    text-align: center;
+                }
+
+                .avatar-container {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 70px;
                 }
 
                 .avatar-small {
-                    width: 50px;
-                    height: 50px;
+                    width: 54px;
+                    height: 54px;
                     border-radius: 50%;
-                    margin-left: 20px;
-                    object-fit: cover; /* מבטיח עיגול מושלם */
-                    border: 2px solid rgba(255,255,255,0.1);
+                    object-fit: cover;
+                    border: 2px solid rgba(255,255,255,0.2);
+                    background-color: #333;
                 }
 
-                .info { flex-grow: 1; }
-                .name { font-size: 20px; font-weight: bold; }
-                .sub-stats { font-size: 14px; color: #888; margin-top: 2px; letter-spacing: 1px; }
+                .info { 
+                    flex-grow: 1; 
+                    padding-right: 20px;
+                }
+                
+                .name { font-size: 22px; font-weight: bold; margin-bottom: 4px; }
+                .sub-stats { font-size: 15px; color: #999; font-weight: 400; }
                 
                 .score {
-                    font-size: 24px;
+                    font-size: 26px;
                     font-weight: bold;
                     color: #4CAF50;
+                    text-shadow: 0 2px 5px rgba(0,0,0,0.3);
                 }
 
             </style>
@@ -194,21 +226,35 @@ class RankingRenderer {
                     '--no-sandbox', 
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
-                    '--disable-gpu'
+                    '--disable-gpu',
+                    '--font-render-hinting=none' // משפר רינדור פונטים
                 ] 
             });
 
             const page = await browser.newPage();
-            await page.setViewport({ width: 880, height: 1000, deviceScaleFactor: 2 }); 
-            await page.setContent(html, { waitUntil: 'networkidle0' });
             
+            // ✅ טיפול בתמונות שבורות: הגדרת User-Agent של דפדפן אמיתי
+            // זה מונע מ-Discord CDN לחסום את הבקשה
+            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36');
+
+            // הגדרת רוחב מדויק התואם ל-CSS
+            await page.setViewport({ width: 880, height: 1000, deviceScaleFactor: 2 }); 
+            
+            await page.setContent(html, { 
+                waitUntil: ['networkidle0', 'domcontentloaded'],
+                timeout: 10000 
+            });
+            
+            // וידוא שהפונטים נטענו
+            await page.evaluate(() => document.fonts.ready);
+
             const bodyHeight = await page.evaluate(() => document.body.scrollHeight);
             await page.setViewport({ width: 880, height: bodyHeight, deviceScaleFactor: 2 });
 
             const buffer = await page.screenshot({ 
                 type: 'png', 
                 fullPage: true,
-                omitBackground: false 
+                omitBackground: true 
             });
 
             return buffer;

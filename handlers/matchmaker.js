@@ -2,176 +2,69 @@
 const db = require('../utils/firebase');
 const { log } = require('../utils/logger'); 
 
-const pendingLids = new Set();
-const ADMIN_PHONE = "972526800647"; 
-
-// ניהול שיחות פתוחות עם המנהל
-const adminSessions = new Map();
+// מאגר זמני של משתמשים לא מזוהים (LID -> פרטים)
+// המפתח הוא ה-LID
+const orphanLids = new Map(); 
 
 class Matchmaker {
     
     /**
-     * דוח מודיעין לאדמין
+     * במקום לשלוח הודעה, רק שומרים ברשימה ומחכים לפקודה בדיסקורד
      */
-    async consultWithAdmin(sock, lid, pushName, messageContent) {
-        if (pendingLids.has(lid)) return;
-
-        log(`🕵️ [Matchmaker] זיהוי LID זר (${lid}). שולח דוח.`);
+    async registerOrphan(lid, pushName, messageContent) {
+        // אם כבר שמרנו אותו, נעדכן רק את הזמן וההודעה האחרונה
+        const existing = orphanLids.get(lid);
         
-        const report = `🕵️ *דוח מודיעין חדש*\n` +
-                       `------------------\n` +
-                       `משתמש לא מזוהה בקבוצה.\n\n` +
-                       `👤 *כינוי:* ${pushName}\n` +
-                       `💬 *הודעה:* "${messageContent.substring(0, 30)}..."\n` +
-                       `🔑 *מזהה (LID):*\n${lid}\n\n` + // הורדתי את הגרשיים כדי למנוע בעיות
-                       `📋 *שלב 1: זיהוי דיסקורד*\n` +
-                       `תעתיק את ה-Discord ID שלו, צטט הודעה זו, ושלח לי.`;
+        const orphanData = {
+            lid: lid,
+            name: pushName || (existing ? existing.name : "Unknown"),
+            lastMsg: messageContent ? messageContent.substring(0, 30) : (existing ? existing.lastMsg : "..."),
+            timestamp: Date.now()
+        };
 
-        try {
-            await sock.sendMessage(ADMIN_PHONE + '@s.whatsapp.net', { text: report });
-            pendingLids.add(lid);
-            setTimeout(() => pendingLids.delete(lid), 1000 * 60 * 60);
-        } catch (e) {
-            console.error('Failed to report to admin:', e);
+        orphanLids.set(lid, orphanData);
+        
+        // לוג רק בפעם הראשונה בדקה האחרונה (כדי לא להספים את הקונסולה)
+        if (!existing || Date.now() - existing.timestamp > 60000) {
+            log(`🕵️ [Matchmaker] LID זר (${lid}) נשמר במאגר להמתנה.`);
         }
     }
 
     /**
-     * המוח שמנהל את הדו-שיח איתך
+     * מחזיר את הרשימה (עבור הפקודה בדיסקורד)
      */
-    async handleAdminResponse(sock, msg, text) {
-        const remoteJid = msg.key.remoteJid;
-        const sender = remoteJid.split('@')[0]; 
-
-        // 1. בדיקה: האם אנחנו כבר באמצע שיחה (מחכים לטלפון)?
-        if (adminSessions.has(sender)) {
-            return await this.handleStepTwoPhone(sock, msg, text, sender);
-        }
-
-        // 2. אם לא, זה כנראה שלב 1 (קבלת Discord ID)
-        return await this.handleStepOneId(sock, msg, text, sender);
+    getOrphans() {
+        return Array.from(orphanLids.values());
     }
 
     /**
-     * שלב 1: קבלת Discord ID וחיבור ה-LID
+     * ביצוע הקישור הסופי (נקרא מהפקודה בדיסקורד)
      */
-    async handleStepOneId(sock, msg, text, sender) {
-        const quotedMsg = msg.message?.extendedTextMessage?.contextInfo;
-        
-        // לוג דיבוג לראות מה הבוט רואה
-        // console.log("🔍 [Matchmaker Debug] הודעה נכנסת:", text);
-        // console.log("🔍 [Matchmaker Debug] ציטוט:", quotedMsg?.quotedMessage?.conversation || "אין ציטוט");
-
-        if (!quotedMsg || !quotedMsg.quotedMessage) return false;
-
-        const quotedText = quotedMsg.quotedMessage.conversation || quotedMsg.quotedMessage.extendedTextMessage?.text || "";
-        
-        // תיקון קריטי: חיפוש גמיש יותר של ה-LID בתוך הטקסט המצוטט
-        // מחפש את המילה LID ואחריה מספרים (מתעלם מתווים באמצע)
-        const lidMatch = quotedText.match(/LID[\D]*(\d{10,20})/); 
-
-        if (!lidMatch) {
-            console.log("❌ [Matchmaker] לא הצלחתי לחלץ LID מהציטוט.");
-            return false; 
-        }
-
-        const targetLid = lidMatch[1];
-        
-        // חילוץ Discord ID (מצפה ל-17 עד 20 ספרות)
-        const discordIdMatch = text.match(/\d{17,20}/);
-        
-        if (!discordIdMatch) {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ לא זיהיתי ID תקין של דיסקורד. נסה שוב.' }, { quoted: msg });
-            return true;
-        }
-
-        const targetDiscordId = discordIdMatch[0];
-        log(`🔗 [Matchmaker] מנסה לחבר: Discord ${targetDiscordId} <-> LID ${targetLid}`);
-
+    async linkUser(discordId, lid) {
         try {
-            const userRef = db.collection('users').doc(targetDiscordId);
+            const userRef = db.collection('users').doc(discordId);
             const doc = await userRef.get();
 
-            if (!doc.exists) {
-                await sock.sendMessage(msg.key.remoteJid, { text: `❌ המשתמש ${targetDiscordId} לא קיים ב-DB.\nתבדוק בדיסקורד שהעתקת נכון.` }, { quoted: msg });
-                return true;
-            }
+            if (!doc.exists) return { success: false, error: "User not found" };
 
-            // חיבור ה-LID
+            // ביצוע הקישור ב-DB
             await userRef.set({
-                platforms: { whatsapp_lid: targetLid },
+                platforms: { 
+                    whatsapp_lid: lid,
+                    whatsapp: lid // שומרים גם כאן לגיבוי
+                },
                 meta: { lastLinked: new Date().toISOString() }
             }, { merge: true });
 
-            const userData = doc.data();
-            const userName = userData.identity?.displayName || "המשתמש";
-
-            // פתיחת סשן לשלב ב'
-            adminSessions.set(sender, {
-                stage: 'WAITING_PHONE',
-                discordId: targetDiscordId,
-                lid: targetLid,
-                name: userName
-            });
-
-            await sock.sendMessage(msg.key.remoteJid, { 
-                text: `✅ מעולה! ה-LID חובר למשתמש **${userName}**.\n` +
-                      `📱 *שלב 2: עדכון טלפון*\n` +
-                      `תן לי את הנייד האמיתי שלו (למשל 054...) כדי לסגור את הפינה.` 
-            }, { quoted: msg });
+            // הסרה מהרשימה
+            orphanLids.delete(lid);
+            log(`🔗 [Matchmaker] קישור בוצע דרך דיסקורד: ${discordId} <-> ${lid}`);
             
-            pendingLids.delete(targetLid);
-
+            return { success: true };
         } catch (error) {
             console.error(error);
-            await sock.sendMessage(msg.key.remoteJid, { text: `❌ שגיאה טכנית ב-DB.` }, { quoted: msg });
+            return { success: false, error: error.message };
         }
-
-        return true;
-    }
-
-    /**
-     * שלב 2: קבלת טלפון
-     */
-    async handleStepTwoPhone(sock, msg, text, sender) {
-        const session = adminSessions.get(sender);
-        const rawPhone = text.replace(/\D/g, '');
-
-        if (rawPhone.length < 9) {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ מספר לא תקין. נסה שוב (או כתוב "ביטול").' }, { quoted: msg });
-            return true;
-        }
-
-        if (text.includes('ביטול')) {
-            adminSessions.delete(sender);
-            await sock.sendMessage(msg.key.remoteJid, { text: '👍 בוטל.' }, { quoted: msg });
-            return true;
-        }
-
-        const formattedPhone = rawPhone.startsWith('05') ? '972' + rawPhone.substring(1) : rawPhone;
-
-        try {
-            const userRef = db.collection('users').doc(session.discordId);
-            
-            await userRef.set({
-                platforms: { whatsapp: formattedPhone },
-                identity: { whatsappPhone: formattedPhone }
-            }, { merge: true });
-
-            await sock.sendMessage(msg.key.remoteJid, { 
-                text: `🏁 **סיימנו!**\n` +
-                      `המשתמש: **${session.name}** מחובר עכשיו מלא.\n` +
-                      `גם LID וגם טלפון מסונכרנים.` 
-            }, { quoted: msg });
-
-            adminSessions.delete(sender);
-
-        } catch (error) {
-            console.error(error);
-            await sock.sendMessage(msg.key.remoteJid, { text: `❌ שגיאה בעדכון הטלפון.` }, { quoted: msg });
-        }
-
-        return true;
     }
 }
 

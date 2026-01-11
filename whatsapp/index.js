@@ -13,9 +13,6 @@ let sock;
 const msgRetryCounterCache = new Map();
 const MAIN_GROUP_ID = process.env.WHATSAPP_MAIN_GROUP_ID;
 
-/**
- * 🔍 פונקציית הקסם: ממירה כל מזהה (LID/JID) למספר טלפון אמיתי
- */
 function getRealPhoneNumber(jid) {
     if (!jid) return '';
     return store.getPhoneById(jid);
@@ -100,22 +97,16 @@ async function connectToWhatsApp() {
                 // 1. נסיון שליפה מה-DB
                 const userRef = await ensureUserExists(realSenderPhone, pushName, "whatsapp");
 
-                // 2. משתמש לא מזוהה -> דוח לאדמין
+                // 2. משתמש לא מזוהה -> רישום למאגר (במקום הודעה)
                 if (!userRef) {
-                    console.log(`🛑 [WhatsApp Block] זיהוי לא מוכר: ${realSenderPhone}.`);
-                    
-                    // מדווחים לאדמין רק אם זה בקבוצה (כדי למנוע הצפות סתמיות)
-                    if (msg.key.remoteJid.endsWith('@g.us')) {
-                        await matchmaker.consultWithAdmin(sock, realSenderPhone, pushName, text);
-                    }
+                    console.log(`🛑 [WhatsApp Block] זיהוי לא מוכר: ${realSenderPhone}. נשמר לטיפול בדיסקורד.`);
+                    await matchmaker.registerOrphan(realSenderPhone, pushName, text);
                     return; 
                 }
 
                 const userDoc = await userRef.get();
                 if (!userDoc.exists) {
-                     if (msg.key.remoteJid.endsWith('@g.us')) {
-                        await matchmaker.consultWithAdmin(sock, realSenderPhone, pushName, text);
-                     }
+                     await matchmaker.registerOrphan(realSenderPhone, pushName, text);
                      return;
                 }
 

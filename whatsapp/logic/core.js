@@ -3,7 +3,6 @@ const { log } = require('../../utils/logger');
 const bufferSystem = require('./buffer'); 
 const { isSystemActive } = require('../utils/timeHandler'); 
 const { getUserRef } = require('../../utils/userUtils'); 
-const matchmaker = require('../../handlers/matchmaker'); // ✅ ייבוא השדכן
 
 // --- ייבוא המערכות ---
 const shimonBrain = require('../../handlers/ai/brain'); 
@@ -59,19 +58,9 @@ async function handleMessageLogic(sock, msg, text) {
     const senderFullJid = msg.key.participant || msg.participant || chatJid;
     const senderPhone = senderFullJid.split('@')[0];
 
-    // --- 👑 נוהל מפעיל: טיפול בתשובת אדמין ---
-    // האם זה האדמין, בפרטי, ועושה Reply?
-    const isAdmin = senderPhone === '972526800647' || senderPhone === '508753233'; 
-    const isDM = !chatJid.endsWith('@g.us');
-
-    if (isAdmin && isDM) {
-        // בודקים אם האדמין הגיב לדוח מודיעין של השדכן
-        const handled = await matchmaker.handleAdminResponse(sock, msg, text);
-        if (handled) return; // אם זה היה פקודת קישור - עוצרים כאן ולא ממשיכים ל-AI
-    }
-
     // --- 🛑 בדיקה 0: שעות פעילות (שבת/לילה/צהריים) ---
     const systemStatus = isSystemActive();
+    const isAdmin = senderPhone === '972526800647' || senderPhone === '508753233'; 
     
     if (!systemStatus.active && systemStatus.reason === "Shabbat") {
         if (isAdmin) {
@@ -190,7 +179,7 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
 
         // --- 🧠 6. המוח המרכזי ---
         await sock.sendPresenceUpdate('composing', chatJid);
-        const isAdmin = senderPhone === '972526800647' || senderPhone === '508753233'; 
+        // האדמין מחושב למעלה כבר
         const aiResponse = await shimonBrain.ask(senderId, 'whatsapp', text, isAdmin);
         await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });
 

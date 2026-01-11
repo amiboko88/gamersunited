@@ -1,15 +1,27 @@
 // 📁 whatsapp/index.js
-const makeWASocket = require('@whiskeysockets/baileys').default;
-const { DisconnectReason, fetchLatestBaileysVersion, makeInMemoryStore } = require('@whiskeysockets/baileys'); // ✅ נוסף Store
+// תיקון הייבוא: מייבאים את הכל מאובייקט אחד
+const { 
+    default: makeWASocket, 
+    DisconnectReason, 
+    fetchLatestBaileysVersion, 
+    makeInMemoryStore 
+} = require('@whiskeysockets/baileys');
+
 const pino = require('pino');
 const { useFirestoreAuthState } = require('./auth'); 
 const coreLogic = require('./logic/core'); 
-const { ensureUserExists, getUserRef } = require('../utils/userUtils'); // צריך גם getUserRef לבדיקה חיצונית
+const { ensureUserExists } = require('../utils/userUtils'); 
 const { log } = require('../utils/logger'); 
 const whatsappScout = require('./utils/scout');
-const matchmaker = require('../handlers/matchmaker'); // ✅ השדכן
+const matchmaker = require('../handlers/matchmaker'); 
 
-// ✅ אתחול הזיכרון (Store) - נשמר גלובלית
+// בדיקת שפיות: אם הפונקציה עדיין לא קיימת, נמנע קריסה
+if (typeof makeInMemoryStore !== 'function') {
+    console.error("❌ Critical Error: 'makeInMemoryStore' is not defined. Please run: npm update @whiskeysockets/baileys");
+    process.exit(1);
+}
+
+// ✅ אתחול הזיכרון (Store)
 const store = makeInMemoryStore({ logger: pino({ level: 'silent' }) });
 
 let sock; 
@@ -21,13 +33,17 @@ const MAIN_GROUP_ID = process.env.WHATSAPP_MAIN_GROUP_ID;
  */
 function getRealPhoneNumber(jid) {
     if (!jid) return '';
+    
     if (jid.includes('@s.whatsapp.net') && !jid.includes(':')) {
         return jid.split('@')[0];
     }
+
     const contact = store.contacts[jid] || Object.values(store.contacts).find(c => c.lid === jid);
+    
     if (contact && contact.id) {
         return contact.id.split('@')[0];
     }
+
     return jid.split('@')[0];
 }
 
@@ -72,7 +88,6 @@ async function connectToWhatsApp() {
             else if (connection === 'open') {
                 console.log('✅ [WhatsApp] מחובר ומוכן!');
                 
-                // מפעילים את הסייר (Scout) אחרי שה-Store הספיק להיטען קצת
                 if (MAIN_GROUP_ID) {
                     setTimeout(() => {
                         whatsappScout.syncGroupMembers(sock, MAIN_GROUP_ID);
@@ -94,14 +109,15 @@ async function connectToWhatsApp() {
                 
                 if (action === 'add') {
                     console.log(`👋 [WhatsApp] משתמש הצטרף: ${realPhone}`);
-                    // כאן ensureUserExists יחזיר null אם הוא לא קיים, אז לא ייווצר זבל
-                    // אבל אנחנו עדיין רוצים לברך
                     const userRef = await ensureUserExists(realPhone, "New Gamer", "whatsapp");
                     
+                    if (!userRef) {
+                        // אם המשתמש לא קיים (ensure החזיר null), ה-Matchmaker יטפל בו בהודעה הראשונה
+                        // אבל הודעת ברוכים הבאים תמיד נחמד לשלוח
+                    }
+
                     const welcomeText = `👋 ברוך הבא לקבוצה @${realPhone}!\nתציג את עצמך שנכיר.`;
                     await sock.sendMessage(MAIN_GROUP_ID, { text: welcomeText, mentions: [participant] });
-
-                    // אם הוא לא קיים ב-DB, השדכן ישלח לו הודעה בפרטי אוטומטית בהודעה הראשונה שלו
                 } 
             }
         });
@@ -116,34 +132,34 @@ async function connectToWhatsApp() {
                              msg.message.extendedTextMessage?.text || 
                              msg.message.imageMessage?.caption || "";
                 
-                // ✅ פענוח השולח למספר אמיתי
                 const rawJid = msg.key.participant || msg.key.remoteJid;
                 const realSenderPhone = getRealPhoneNumber(rawJid);
                 const pushName = msg.pushName || "Unknown";
                 
                 // 1. נסיון לעדכון/בדיקת קיום ב-DB
-                // ensureUserExists לא יוצר יותר משתמשים חדשים לוואטסאפ!
                 const userRef = await ensureUserExists(realSenderPhone, pushName, "whatsapp");
 
-                // 2. בדיקה: האם המשתמש קיים בפועל?
-                // אנחנו בודקים את המסמך עצמו, כי userRef תמיד מוחזר (ככתובת)
-                const userDoc = await userRef.get();
-
-                if (!userDoc.exists) {
-                    // 🛑 זיהוי זר! המשתמש לא קיים ב-DB
+                // אם userRef הוא null (כי חסמנו יצירה), או שהמסמך לא קיים
+                if (!userRef) {
                     console.log(`🛡️ [WhatsApp] משתמש לא מזוהה: ${realSenderPhone} (${pushName}). מפעיל שדכן.`);
                     
-                    // בדיקה אם המשתמש מנסה לאשר התאמת שם ("אני משה")
                     const isNameConfirmed = await matchmaker.confirmNameMatch(sock, realSenderPhone, text, pushName);
                     
                     if (!isNameConfirmed) {
-                        // אם לא, שולחים לו את הודעת ההזמנה לדיסקורד
                         await matchmaker.handleStranger(sock, realSenderPhone, pushName);
                     }
-                    return; // עוצרים כאן, לא מעבדים את ההודעה בלוגיקה
+                    return; 
                 }
 
-                // 3. אם המשתמש קיים - ממשיכים רגיל ללוגיקה
+                // בדיקה נוספת למקרה שה-ref קיים אבל המסמך נמחק ידנית
+                const userDoc = await userRef.get();
+                if (!userDoc.exists) {
+                     console.log(`🛡️ [WhatsApp] משתמש זוהה כרפאים (Ref קיים, Doc חסר). מפעיל שדכן.`);
+                     await matchmaker.handleStranger(sock, realSenderPhone, pushName);
+                     return;
+                }
+
+                // 2. אם המשתמש קיים - ממשיכים רגיל
                 if (coreLogic && coreLogic.handleMessageLogic) {
                     await coreLogic.handleMessageLogic(sock, msg, text);
                 }
@@ -182,7 +198,6 @@ async function disconnectWhatsApp() {
     }
 }
 
-// חשיפת הסוקט וה-Resolver (לשימוש בסייר)
 function getWhatsAppSock() { return sock; }
 function getResolver() { return getRealPhoneNumber; } 
 

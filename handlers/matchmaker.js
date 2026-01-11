@@ -2,113 +2,180 @@
 const db = require('../utils/firebase');
 const { log } = require('../utils/logger'); 
 
-// רשימת המתנה כדי לא לחפור לך על אותו LID כל דקה
 const pendingLids = new Set();
-const ADMIN_PHONE = "972526800647"; // ✅ הטלפון שלך לקבלת דוחות
+const ADMIN_PHONE = "972526800647"; 
+
+// ניהול שיחות פתוחות עם המנהל
+// המבנה: Map<AdminPhone, { stage: 'WAITING_PHONE', discordId: '...', lid: '...' }>
+const adminSessions = new Map();
 
 class Matchmaker {
     
     /**
-     * מופעל כשמזוהה LID זר בקבוצה.
-     * שולח דוח מודיעין לאדמין בפרטי.
+     * דוח מודיעין לאדמין (מתחיל את התהליך)
      */
     async consultWithAdmin(sock, lid, pushName, messageContent) {
-        // אם כבר שאלנו אותך על ה-LID הזה לאחרונה, לא נחפור שוב
         if (pendingLids.has(lid)) return;
 
-        log(`🕵️ [Matchmaker] LID זר (${lid}). מדווח לאדמין.`);
+        log(`🕵️ [Matchmaker] זיהוי LID זר (${lid}). שולח דוח.`);
         
         const report = `🕵️ *דוח מודיעין חדש*\n` +
                        `------------------\n` +
-                       `גורם זר מדבר בקבוצה.\n\n` +
+                       `משתמש לא מזוהה בקבוצה.\n\n` +
                        `👤 *כינוי:* ${pushName}\n` +
-                       `💬 *תוכן:* "${messageContent.substring(0, 50)}..."\n` +
+                       `💬 *הודעה:* "${messageContent.substring(0, 30)}..."\n` +
                        `🔑 *מזהה (LID):*\n\`${lid}\`\n\n` +
-                       `כדי לאשר אותו:\n` +
-                       `⬅️ **צטט (Reply)** הודעה זו\n` +
-                       `📱 כתוב את המספר האמיתי שלו (למשל 050...)`;
+                       `📋 *שלב 1: זיהוי דיסקורד*\n` +
+                       `תעתיק את ה-Discord ID שלו, צטט הודעה זו, ושלח לי.`;
 
         try {
-            // שליחה אליך בפרטי
             await sock.sendMessage(ADMIN_PHONE + '@s.whatsapp.net', { text: report });
-            
-            // סימון שנשלח (כדי לא להציף אותך)
             pendingLids.add(lid);
-            
-            // ניקוי מהזיכרון אחרי שעה
+            // מנקים כדי לא לחפור, אבל משאירים זמן לתגובה
             setTimeout(() => pendingLids.delete(lid), 1000 * 60 * 60);
         } catch (e) {
-            console.error('Failed to send report to admin:', e);
+            console.error('Failed to report to admin:', e);
         }
     }
 
     /**
-     * מטפל בתשובה שלך (Reply) עם המספר
-     * נקרא מתוך core.js
+     * המוח שמנהל את הדו-שיח איתך
      */
     async handleAdminResponse(sock, msg, text) {
-        // 1. האם זה ציטוט?
+        const remoteJid = msg.key.remoteJid;
+        const sender = remoteJid.split('@')[0]; // המספר שלך
+
+        // 1. בדיקה: האם אנחנו כבר באמצע שיחה (מחכים לטלפון)?
+        if (adminSessions.has(sender)) {
+            return await this.handleStepTwoPhone(sock, msg, text, sender);
+        }
+
+        // 2. אם לא, זה כנראה שלב 1 (קבלת Discord ID)
+        return await this.handleStepOneId(sock, msg, text, sender);
+    }
+
+    /**
+     * שלב 1: קבלת Discord ID וחיבור ה-LID
+     */
+    async handleStepOneId(sock, msg, text, sender) {
+        // בדיקת ציטוט (חובה כדי לדעת על איזה LID מדובר)
         const quotedMsg = msg.message?.extendedTextMessage?.contextInfo;
         if (!quotedMsg || !quotedMsg.quotedMessage) return false;
 
-        // 2. האם הציטוט מכיל LID? (אנחנו מחפשים את ה-LID בתוך הטקסט ששמעון שלח לך)
         const quotedText = quotedMsg.quotedMessage.conversation || quotedMsg.quotedMessage.extendedTextMessage?.text || "";
-        
-        // חילוץ ה-LID מבין הגרשיים בדוח (`12345`)
         const lidMatch = quotedText.match(/`(\d+)`/); 
 
-        if (!lidMatch) return false; // לא ציטטת דוח מודיעין תקין
+        if (!lidMatch) return false; // לא ציטטת דוח תקין
 
         const targetLid = lidMatch[1];
-        const targetRealPhone = text.replace(/\D/g, ''); // המספר שכתבת
-
-        if (targetRealPhone.length < 9) {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ מספר לא תקין. נסה שוב.' }, { quoted: msg });
-            return true;
+        
+        // חילוץ Discord ID מתוך הטקסט שלך (עמיד בפני טקסטים נוספים)
+        const discordIdMatch = text.match(/\d{17,20}/);
+        
+        if (!discordIdMatch) {
+            await sock.sendMessage(msg.key.remoteJid, { text: '❌ לא מצאתי מזהה דיסקורד תקין (17-20 ספרות). נסה שוב.' }, { quoted: msg });
+            return true; // עצרנו את הבוט מלהגיב ב-AI, מחכים לתיקון שלך
         }
 
-        // נרמול ל-972
-        const formattedPhone = targetRealPhone.startsWith('05') ? '972' + targetRealPhone.substring(1) : targetRealPhone;
+        const targetDiscordId = discordIdMatch[0];
 
-        log(`🔗 [Matchmaker] האדמין קישר: LID ${targetLid} -> PHONE ${formattedPhone}`);
+        try {
+            const userRef = db.collection('users').doc(targetDiscordId);
+            const doc = await userRef.get();
 
-        // 3. ביצוע הקישור ב-DB
-        // נחפש את המשתמש לפי הטלפון שנתת (הוא אמור להיות קיים ב-DB כי יצרת אותו ידנית)
-        let targetRef = null;
-        
-        // חיפוש לפי identity.whatsappPhone
-        const userSnapshot = await db.collection('users').where('identity.whatsappPhone', 'in', [formattedPhone, targetRealPhone]).limit(1).get();
-        if (!userSnapshot.empty) targetRef = userSnapshot.docs[0].ref;
-        
-        // חיפוש גיבוי לפי platforms.whatsapp
-        if (!targetRef) {
-            const platSnapshot = await db.collection('users').where('platforms.whatsapp', '==', formattedPhone).limit(1).get();
-            if (!platSnapshot.empty) targetRef = platSnapshot.docs[0].ref;
-        }
+            if (!doc.exists) {
+                await sock.sendMessage(msg.key.remoteJid, { text: `❌ המשתמש ${targetDiscordId} לא קיים ב-DB.\nתבדוק בדיסקורד שהעתקת נכון.` }, { quoted: msg });
+                return true;
+            }
 
-        if (targetRef) {
-            // שמירת ה-LID בתיק האישי
-            await targetRef.set({
+            // ✅ חיבור ה-LID (החלק הקריטי לזיהוי בוואטסאפ)
+            await userRef.set({
                 platforms: { whatsapp_lid: targetLid },
                 meta: { lastLinked: new Date().toISOString() }
             }, { merge: true });
 
-            await sock.sendMessage(msg.key.remoteJid, { text: `✅ **בוצע!**\nהסוכן ${formattedPhone} מקושר מעכשיו ל-LID הזה.\nהוא לא יופיע יותר בדוחות.` }, { quoted: msg });
+            const userData = doc.data();
+            const userName = userData.identity?.displayName || "המשתמש";
+
+            // פתיחת סשן לשלב ב'
+            adminSessions.set(sender, {
+                stage: 'WAITING_PHONE',
+                discordId: targetDiscordId,
+                lid: targetLid,
+                name: userName
+            });
+
+            // בקשת הטלפון
+            await sock.sendMessage(msg.key.remoteJid, { 
+                text: `✅ יופי! ה-LID חובר למשתמש **${userName}**.\n` +
+                      `📱 *שלב 2: עדכון טלפון*\n` +
+                      `כדי שהכל יהיה מושלם, כתוב לי עכשיו את המספר הנייד האמיתי שלו (למשל 054...).` 
+            }, { quoted: msg });
             
-            // מחיקה מהרשימה השחורה הזמנית
+            // מחיקה מהרשימה השחורה כדי שלא ידווח שוב
             pendingLids.delete(targetLid);
 
-        } else {
-            await sock.sendMessage(msg.key.remoteJid, { text: `❌ לא מצאתי ב-DB משתמש עם הטלפון ${formattedPhone}.\nתוודא שהמספר תואם למה ששמרת ב-DB (למשל 972...).` }, { quoted: msg });
+        } catch (error) {
+            console.error(error);
+            await sock.sendMessage(msg.key.remoteJid, { text: `❌ שגיאה טכנית ב-DB.` }, { quoted: msg });
         }
 
-        return true; // סמן שטופל
+        return true;
     }
-    
-    // פונקציות ישנות (משאירים ריק או לוגיקה מינימלית למקרה הצורך, כדי לא לשבור תלויות)
-    async handleStranger(sock, jid, phone, name) { /* מבוטל - לא שולח כלום */ }
-    async handleDiscordDM(msg) { /* מבוטל */ }
-    async confirmNameMatch() { return false; }
+
+    /**
+     * שלב 2: קבלת טלפון וסגירת מעגל
+     */
+    async handleStepTwoPhone(sock, msg, text, sender) {
+        const session = adminSessions.get(sender);
+        
+        // חילוץ מספר טלפון נקי
+        const rawPhone = text.replace(/\D/g, '');
+
+        // בדיקת תקינות מינימלית
+        if (rawPhone.length < 9) {
+            await sock.sendMessage(msg.key.remoteJid, { text: '❌ זה לא נראה כמו מספר טלפון. נסה שוב (או כתוב "ביטול").' }, { quoted: msg });
+            return true;
+        }
+
+        // ביטול יזום
+        if (text.includes('ביטול') || text.includes('עזוב')) {
+            adminSessions.delete(sender);
+            await sock.sendMessage(msg.key.remoteJid, { text: '👍 סבבה, עצרנו כאן. (ה-LID כבר מקושר, רק הטלפון לא עודכן).' }, { quoted: msg });
+            return true;
+        }
+
+        // נרמול ל-972
+        const formattedPhone = rawPhone.startsWith('05') ? '972' + rawPhone.substring(1) : rawPhone;
+
+        try {
+            const userRef = db.collection('users').doc(session.discordId);
+            
+            // עדכון סופי של הטלפון
+            await userRef.set({
+                platforms: { whatsapp: formattedPhone },
+                identity: { whatsappPhone: formattedPhone }
+            }, { merge: true });
+
+            await sock.sendMessage(msg.key.remoteJid, { 
+                text: `🏁 **התהליך הושלם!**\n` +
+                      `המשתמש: **${session.name}**\n` +
+                      `Discord ID: ${session.discordId}\n` +
+                      `LID: המזהה הארוך (מקושר)\n` +
+                      `Phone: ${formattedPhone} (מקושר)\n\n` +
+                      `שמעון מכיר אותו עכשיו פיקס.` 
+            }, { quoted: msg });
+
+            // סגירת הסשן
+            adminSessions.delete(sender);
+
+        } catch (error) {
+            console.error(error);
+            await sock.sendMessage(msg.key.remoteJid, { text: `❌ שגיאה בעדכון הטלפון.` }, { quoted: msg });
+        }
+
+        return true;
+    }
 }
 
 module.exports = new Matchmaker();

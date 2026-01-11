@@ -21,7 +21,7 @@ class RankingRenderer {
                 </div>
                 <div class="info">
                     <div class="name">${p.name}</div>
-                    <div class="sub-stats">🎙️ ${p.stats.voice}h | 🎮 ${p.stats.games}h | 💬 ${p.stats.msgs}</div>
+                    <div class="sub-stats">VOICE: ${p.stats.voice}h | MSGS: ${p.stats.msgs}</div>
                 </div>
                 <div class="score">${p.score.toLocaleString()} pts</div>
             </div>
@@ -106,11 +106,11 @@ class RankingRenderer {
                     height: 100px;
                     border-radius: 50%;
                     border: 4px solid #ffd700;
-                    object-fit: cover;
+                    object-fit: cover; /* מבטיח עיגול מושלם */
                 }
 
-                .mvp-info h1 { margin: 0; font-size: 32px; }
-                .mvp-info p { margin: 5px 0 0; color: #ccc; font-size: 18px; }
+                .mvp-info h1 { margin: 0; font-size: 32px; margin-right: 15px; }
+                .mvp-info p { margin: 5px 0 0; color: #ccc; font-size: 18px; margin-right: 15px; }
                 .mvp-score { 
                     margin-right: auto; 
                     font-size: 42px; 
@@ -148,11 +148,13 @@ class RankingRenderer {
                     height: 50px;
                     border-radius: 50%;
                     margin-left: 20px;
+                    object-fit: cover; /* מבטיח עיגול מושלם */
+                    border: 2px solid rgba(255,255,255,0.1);
                 }
 
                 .info { flex-grow: 1; }
                 .name { font-size: 20px; font-weight: bold; }
-                .sub-stats { font-size: 14px; color: #888; margin-top: 2px; }
+                .sub-stats { font-size: 14px; color: #888; margin-top: 2px; letter-spacing: 1px; }
                 
                 .score {
                     font-size: 24px;
@@ -164,16 +166,16 @@ class RankingRenderer {
         </head>
         <body>
             <div class="header">
-                <div class="title">LEADERBOARD</div>
+                <div class="title">TOP LEGENDS</div>
                 <div class="subtitle">WEEK #${weekNum} SUMMARY</div>
             </div>
 
             <div class="mvp-card">
-                <div class="mvp-badge">👑 MVP</div>
+                <div class="mvp-badge">👑 WEEKLY MVP</div>
                 <img src="${topPlayer.avatar}" class="mvp-avatar" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
                 <div class="mvp-info">
                     <h1>${topPlayer.name}</h1>
-                    <p>🎙️ ${topPlayer.stats.voice}h • 🎮 ${topPlayer.stats.games}h • 💬 ${topPlayer.stats.msgs}</p>
+                    <p>VOICE: ${topPlayer.stats.voice}h • MSGS: ${topPlayer.stats.msgs}</p>
                 </div>
                 <div class="mvp-score">${topPlayer.score.toLocaleString()}</div>
             </div>
@@ -186,7 +188,6 @@ class RankingRenderer {
 
         let browser = null;
         try {
-            // אופטימיזציה לריצה ב-Railway/Docker
             browser = await puppeteer.launch({ 
                 headless: 'new', 
                 args: [
@@ -198,14 +199,9 @@ class RankingRenderer {
             });
 
             const page = await browser.newPage();
-            
-            // רזולוציה ראשונית
             await page.setViewport({ width: 880, height: 1000, deviceScaleFactor: 2 }); 
-            
-            // טעינת ה-HTML עם המתנה לנכסים חיצוניים (כמו פונטים)
             await page.setContent(html, { waitUntil: 'networkidle0' });
             
-            // חישוב גובה דינמי מדויק
             const bodyHeight = await page.evaluate(() => document.body.scrollHeight);
             await page.setViewport({ width: 880, height: bodyHeight, deviceScaleFactor: 2 });
 
@@ -217,13 +213,10 @@ class RankingRenderer {
 
             return buffer;
         } catch (err) {
-            log(`❌ [RankingRender] Error during image generation: ${err.message}`);
+            log(`❌ [RankingRender] Error: ${err.message}`);
             return null;
         } finally {
-            if (browser) {
-                // סגירה בטוחה של ה-Browser למניעת דליפות זיכרון
-                await browser.close().catch(() => {});
-            }
+            if (browser) await browser.close().catch(() => {});
         }
     }
 }

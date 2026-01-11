@@ -1,7 +1,7 @@
 // 📁 handlers/voice/logistics.js
 const { ChannelType, PermissionFlagsBits } = require('discord.js');
 const { log } = require('../../utils/logger');
-const musicPlayer = require('../audio/manager'); // חיבור למערכת השמע החדשה
+const musicPlayer = require('../audio/manager'); // חיבור למערכת השמע המעודכנת
 const path = require('path');
 const fs = require('fs');
 
@@ -80,18 +80,24 @@ class VoiceLogistics {
         if (channelId !== CONFIG.BF6_CHANNEL) return;
 
         try {
-            if (!fs.existsSync(CONFIG.BF6_DIR)) return;
+            if (!fs.existsSync(CONFIG.BF6_DIR)) {
+                log(`⚠️ [BF6] תיקייה חסרה בנתיב: ${CONFIG.BF6_DIR}`);
+                return;
+            }
             const files = fs.readdirSync(CONFIG.BF6_DIR).filter(f => f.endsWith('.mp3'));
-            if (files.length === 0) return;
+            if (files.length === 0) {
+                log(`⚠️ [BF6] לא נמצאו קבצי mp3 בתיקייה.`);
+                return;
+            }
 
             const randomSound = files[Math.floor(Math.random() * files.length)];
             const filePath = path.join(CONFIG.BF6_DIR, randomSound);
 
             log(`[BF6] מנגן פתיח: ${randomSound} עבור ${member.displayName}`);
             
-            if (musicPlayer && musicPlayer.playLocalFile) {
-                await musicPlayer.playLocalFile(member.guild.id, channelId, filePath);
-            }
+            // שימוש בפונקציה החדשה ב-AudioManager
+            await musicPlayer.playLocalFile(member.guild.id, channelId, filePath);
+
         } catch (e) {
             log(`❌ [BF6 Announcer] Error: ${e.message}`);
         }

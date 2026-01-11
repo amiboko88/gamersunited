@@ -38,7 +38,6 @@ class AudioManager {
         });
 
         // --- אפקטים ---
-        // כשאפקט נגמר, מחזירים את הווליום של המוזיקה (אם הייתה)
         this.effectPlayer.on(AudioPlayerStatus.Idle, () => {
             if (this.connection && this.currentTrack) {
                 this.connection.subscribe(this.musicPlayer);
@@ -67,13 +66,32 @@ class AudioManager {
     }
 
     /**
+     * ✅ פונקציה חדשה: מנגנת קובץ מקומי ומחברת את הבוט אם צריך
+     */
+    async playLocalFile(guildId, channelId, filePath) {
+        try {
+            // אם לא מחובר או מחובר לערוץ אחר - מתחבר מחדש
+            if (!this.connection || this.connection.joinConfig.channelId !== channelId) {
+                const guild = await db.client?.guilds.fetch(guildId).catch(() => null);
+                const channel = guild?.channels.cache.get(channelId);
+                if (channel) await this.joinChannel(channel);
+            }
+
+            // השמעת הקובץ כאפקט (כדי לא לעצור מוזיקה אם קיימת בעתיד)
+            return await this.playEffect(filePath);
+        } catch (e) {
+            log(`❌ [AudioManager] playLocalFile Error: ${e.message}`);
+            return false;
+        }
+    }
+
+    /**
      * מנגן שיר ארוך (Track)
      */
     async playTrack(filePath, trackName) {
         if (!this.connection) return "NotConnected";
         
         try {
-            // ✅ השימוש ב-fs.createReadStream עם StreamType.Arbitrary פותר את השקט
             const stream = fs.createReadStream(filePath);
             const resource = createAudioResource(stream, { 
                 inputType: StreamType.Arbitrary,
@@ -93,13 +111,11 @@ class AudioManager {
 
     /**
      * מנגן אפקט קצר (Effect)
-     * עוצר זמנית את המוזיקה, מנגן את האפקט, ואז ממשיך
      */
     async playEffect(filePath) {
         if (!this.connection) return "NotConnected";
 
         try {
-            // אם יש מוזיקה, עוצרים אותה רגע
             if (this.currentTrack) {
                 this.musicPlayer.pause();
             }

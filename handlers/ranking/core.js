@@ -5,16 +5,19 @@ const { log } = require('../../utils/logger');
 class RankingCore {
 
     /**
-     * מחשב ושולף את המובילים של השבוע
+     * מחשב ושולף את המובילים של השבוע (על בסיס הפרש מה-Snapshot)
      * @param {number} limit כמות המשתמשים להצגה (ברירת מחדל 10)
      */
     async getWeeklyLeaderboard(limit = 10) {
         try {
-            // 1. שליפת כל הנתונים (Users + GameStats) במקביל
-            const [usersSnapshot, gameStatsSnapshot] = await Promise.all([
+            // 1. שליפת כל הנתונים (Users + GameStats) וצילום תחילת השבוע במקביל
+            const [usersSnapshot, gameStatsSnapshot, weeklyMeta] = await Promise.all([
                 db.collection('users').get(),
-                db.collection('gameStats').get()
+                db.collection('gameStats').get(),
+                db.collection('system_metadata').doc('weekly_snapshot').get()
             ]);
+
+            const startOfWeekData = weeklyMeta.exists ? weeklyMeta.data().stats : {};
 
             // מיפוי מהיר של משחקים לפי ID משתמש
             const gamesMap = new Map();
@@ -27,6 +30,7 @@ class RankingCore {
                 const userData = doc.data();
                 const userId = doc.id;
                 const gameData = gamesMap.get(userId) || {};
+                const startStats = startOfWeekData[userId] || { voice: 0, msgs: 0 };
 
                 // --- סינון בסיסי ---
                 // א. דילוג על בוטים
@@ -35,37 +39,31 @@ class RankingCore {
                 // ב. סינון "הצבא המת" - אם השם הוא Unknown ואין לו כמעט XP, הוא לא נכנס לטבלה
                 const displayName = userData.identity?.displayName || userData.identity?.fullName;
                 if (!displayName || displayName === "Unknown") {
-                    // אם הוא Unknown אבל יש לו מעל 100 XP אולי נרצה להציג אותו, אחרת - בחוץ
                     if ((userData.economy?.xp || 0) < 50) return;
                 }
 
-                // --- נוסחת הניקוד (The Algorithm) ---
-                
-                // א. הודעות (2 נקודות להודעה)
-                const msgPoints = (userData.stats?.messagesSent || 0) * 2;
-                
-                // ב. קול (1 נקודה לכל דקת שיחה)
-                const voicePoints = (userData.stats?.voiceMinutes || 0);
+                // --- חישוב הפרש שבועי (נתונים נוכחיים פחות תחילת שבוע) ---
+                const weeklyVoiceMinutes = Math.max(0, (userData.stats?.voiceMinutes || 0) - (startStats.voice || 0));
+                const weeklyMsgsSent = Math.max(0, (userData.stats?.messagesSent || 0) - (startStats.msgs || 0));
 
-                // ג. משחקים (0.5 נקודה לכל דקת משחק)
-                let gameMinutes = 0;
-                Object.values(gameData).forEach(game => {
-                    // בדיקה בטוחה: גם אם זה מספר ישיר וגם אם זה אובייקט עם שדה minutes
-                    if (typeof game === 'number') {
-                        gameMinutes += game;
-                    } else if (game && typeof game.minutes === 'number') {
-                        gameMinutes += game.minutes;
-                    }
-                });
-                const gamePoints = Math.floor(gameMinutes * 0.5);
+                // --- נוסחת הניקוד (The Algorithm 2026) ---
+                
+                // א. הודעות (2 נקודות להודעה שבועות)
+                const msgPoints = weeklyMsgsSent * 2;
+                
+                // ב. קול (10 נקודות לכל דקת שיחה שבועית - נותן משקל כבד לקול כפי שביקשת)
+                const voicePoints = weeklyVoiceMinutes * 10;
 
-                // ד. XP כללי (בונוס קטן: 1 נקודה על כל 10 XP)
+                // ג. משחקים (מבוטל לבקשתך - 0 נקודות)
+                let gameMinutes = 0; // לא נספר בניקוד
+
+                // ד. XP כללי (בונוס קטן מה-Total XP: נקודה אחת לכל 10 XP)
                 const xpPoints = Math.floor((userData.economy?.xp || 0) / 10);
 
-                const totalScore = msgPoints + voicePoints + gamePoints + xpPoints;
+                const totalScore = msgPoints + voicePoints + xpPoints;
 
                 // אם אין פעילות בכלל השבוע - מדלגים
-                if (totalScore === 0) return;
+                if (totalScore === 0 || (weeklyVoiceMinutes === 0 && weeklyMsgsSent === 0)) return;
 
                 // בניית אובייקט משתמש לטבלה
                 participants.push({
@@ -74,9 +72,9 @@ class RankingCore {
                     avatar: userData.identity?.avatarURL || 'https://cdn.discordapp.com/embed/avatars/0.png',
                     score: totalScore,
                     stats: {
-                        msgs: userData.stats?.messagesSent || 0,
-                        voice: Math.floor((userData.stats?.voiceMinutes || 0) / 60), // המרה לשעות לתצוגה
-                        games: Math.floor(gameMinutes / 60) // המרה לשעות לתצוגה
+                        msgs: weeklyMsgsSent,
+                        voice: (weeklyVoiceMinutes / 60).toFixed(1), // המרה לשעות לתצוגה
+                        games: 0 // מבוטל
                     }
                 });
             });
@@ -84,13 +82,35 @@ class RankingCore {
             // 3. מיון לפי ניקוד גבוה וחיתוך לפי המגבלה
             participants.sort((a, b) => b.score - a.score);
             
-            log(`📊 [Ranking] חושב דירוג עבור ${participants.length} משתתפים פעילים.`);
+            log(`📊 [Ranking] חושב דירוג עבור ${participants.length} משתתפים פעילים השבוע.`);
             return participants.slice(0, limit);
 
         } catch (error) {
             log(`❌ [RankingCore] Error: ${error.message}`);
             return [];
         }
+    }
+
+    /**
+     * פונקציה לאיפוס המדדים השבועיים (שמירת Snapshot חדש)
+     */
+    async resetWeeklyStats() {
+        try {
+            const usersSnapshot = await db.collection('users').get();
+            const stats = {};
+            usersSnapshot.forEach(doc => {
+                const data = doc.data();
+                stats[doc.id] = {
+                    voice: data.stats?.voiceMinutes || 0,
+                    msgs: data.stats?.messagesSent || 0
+                };
+            });
+            await db.collection('system_metadata').doc('weekly_snapshot').set({
+                lastReset: new Date().toISOString(),
+                stats: stats
+            });
+            log('🔄 [Ranking] Weekly statistics snapshot updated.');
+        } catch (e) { log(`❌ [Ranking] Reset Error: ${e.message}`); }
     }
 }
 

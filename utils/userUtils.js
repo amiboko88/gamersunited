@@ -10,11 +10,14 @@ function cleanWhatsAppId(id) {
 async function getUserRef(id, platform = 'discord') {
     if (platform === 'discord') return db.collection('users').doc(id);
 
-    const cleanId = platform === 'whatsapp' ? cleanWhatsAppId(id) : id.toString();
-    const isLid = platform === 'whatsapp' && cleanId.length > 14; 
+    // ✅ תמיכה ב-Scout: מתייחסים אליו כוואטסאפ רגיל בחיפוש
+    const searchPlatform = (platform === 'whatsapp_scout') ? 'whatsapp' : platform;
+
+    const cleanId = platform === 'whatsapp' || platform === 'whatsapp_scout' ? cleanWhatsAppId(id) : id.toString();
+    const isLid = (platform === 'whatsapp' || platform === 'whatsapp_scout') && cleanId.length > 14; 
 
     // 1. חיפוש ראשי בתיקי האב (users)
-    let snapshot = await db.collection('users').where(`platforms.${platform}`, '==', cleanId).limit(1).get();
+    let snapshot = await db.collection('users').where(`platforms.${searchPlatform}`, '==', cleanId).limit(1).get();
     if (!snapshot.empty) return snapshot.docs[0].ref;
 
     // 2. חיפוש LID
@@ -24,7 +27,7 @@ async function getUserRef(id, platform = 'discord') {
     }
 
     // 3. חיפוש מספר ישן
-    if (platform === 'whatsapp' && !isLid) {
+    if (searchPlatform === 'whatsapp' && !isLid) {
         const possibleOldId = cleanId.startsWith('972') ? cleanId : `972${cleanId.replace(/^0+/, '')}`;
         snapshot = await db.collection('users').where('identity.whatsappPhone', 'in', [cleanId, possibleOldId]).limit(1).get();
         if (!snapshot.empty) return snapshot.docs[0].ref;
@@ -47,8 +50,10 @@ async function getUserData(id, platform = 'discord') {
 }
 
 async function ensureUserExists(id, displayName, platform = 'discord') {
-    const cleanId = platform === 'whatsapp' ? cleanWhatsAppId(id) : id;
-    const isLid = platform === 'whatsapp' && cleanId.length > 14; 
+    const cleanId = (platform === 'whatsapp' || platform === 'whatsapp_scout') ? cleanWhatsAppId(id) : id;
+    const isLid = (platform === 'whatsapp' || platform === 'whatsapp_scout') && cleanId.length > 14; 
+    
+    // מעבירים את ה-platform המקורי ל-getUserRef כדי שיידע לטפל ב-scout
     const ref = await getUserRef(id, platform);
 
     try {
@@ -57,26 +62,33 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
 
             // תרחיש 1: המשתמש לא קיים ב-DB
             if (!doc.exists) {
-                // 🛑 וואטסאפ: לא יוצרים!
+                // 🛑 וואטסאפ רגיל: לא יוצרים (חוסמים ספאם)
                 if (platform === 'whatsapp') {
                     console.warn(`🛡️ [UserUtils] משתמש לא מזוהה (${cleanId}). מחזיר NULL לשדכן.`);
-                    return; // מחזיר undefined -> ייחשב כ-false ב-index
+                    return; 
                 }
 
-                // דיסקורד: יוצרים כרגיל
-                console.log(`🆕 [UserUtils] Creating Discord profile: ${displayName}`);
+                // ✅ אם זה Scout - אנחנו מאשרים יצירה!
+                const isScout = (platform === 'whatsapp_scout');
+                const realPlatform = isScout ? 'whatsapp' : platform;
+
+                // דיסקורד או Scout: יוצרים פרופיל
+                console.log(`🆕 [UserUtils] Creating profile: ${displayName} (${realPlatform})`);
+                
                 const newUser = {
                     identity: {
                         displayName: displayName || "Unknown",
                         joinedAt: new Date().toISOString(),
-                        discordId: id
+                        discordId: (platform === 'discord') ? id : null // רק לדיסקורד יש ID וודאי בהתחלה
                     },
-                    platforms: { discord: id },
+                    platforms: { 
+                        [realPlatform]: cleanId // שומרים תחת 'whatsapp' ולא 'whatsapp_scout'
+                    },
                     economy: { xp: 0, level: 1, balance: 0 },
                     stats: { messagesSent: 0, voiceMinutes: 0 },
                     brain: { facts: [], roasts: [] },
                     meta: { firstSeen: new Date().toISOString(), lastActive: new Date().toISOString() },
-                    tracking: { status: 'active' }
+                    tracking: { status: isScout ? 'guest' : 'active' } // מסמנים כאורח עד לקישור מלא
                 };
                 t.set(ref, newUser);
             } 
@@ -84,6 +96,9 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
             else {
                 const data = doc.data();
                 const updates = { 'meta.lastActive': new Date().toISOString() };
+                
+                // נרמול שם הפלטפורמה (אם הגענו מ-scout, זה בעצם whatsapp)
+                const realPlatform = (platform === 'whatsapp_scout') ? 'whatsapp' : platform;
 
                 // קישור LID אם צריך
                 if (isLid) {
@@ -92,8 +107,8 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
                         console.log(`🔗 [UserUtils] קושר LID (${cleanId}) למשתמש קיים.`);
                     }
                 } else {
-                    if (!data.platforms || !data.platforms[platform]) {
-                        updates[`platforms.${platform}`] = cleanId;
+                    if (!data.platforms || !data.platforms[realPlatform]) {
+                        updates[`platforms.${realPlatform}`] = cleanId;
                     }
                 }
                 
@@ -101,8 +116,6 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
             }
         });
         
-        // טריק קטן: אם הטרנזקציה לא יצרה מסמך (כי החזרנו return באמצע), ה-Ref עדיין קיים כאובייקט
-        // אבל ב-Index אנחנו נבדוק שוב עם get()
         return ref;
 
     } catch (error) {

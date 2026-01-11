@@ -93,12 +93,14 @@ async function handleMessageLogic(sock, msg, text) {
         console.error('Identity Resolution Failed:', e);
     }
 
+    // ✅ התיקון: מעבירים את isAdmin ל-Callback של הבאפר
     bufferSystem.addToBuffer(realUserId, msg, text, (finalMsg, combinedText, mediaMsg) => {
-        executeCoreLogic(sock, finalMsg, combinedText, mediaMsg, realUserId, chatJid);
+        executeCoreLogic(sock, finalMsg, combinedText, mediaMsg, realUserId, chatJid, isAdmin);
     });
 }
 
-async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
+// ✅ התיקון: מקבלים את isAdmin כפרמטר
+async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, isAdmin) {
     const senderName = msg.pushName || "גיימר";
     const senderFullJid = msg.key.participant || msg.participant || chatJid;
     const senderPhone = senderFullJid.split('@')[0];
@@ -179,8 +181,10 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid) {
 
         // --- 🧠 6. המוח המרכזי ---
         await sock.sendPresenceUpdate('composing', chatJid);
-        // האדמין מחושב למעלה כבר
+        
+        // ✅ שימוש במשתנה isAdmin שהועבר כפרמטר!
         const aiResponse = await shimonBrain.ask(senderId, 'whatsapp', text, isAdmin);
+        
         await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });
 
     } catch (error) {

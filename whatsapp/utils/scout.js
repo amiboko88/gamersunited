@@ -1,14 +1,12 @@
 // 📁 whatsapp/utils/scout.js
 const { log } = require('../../utils/logger');
 const userUtils = require('../../utils/userUtils');
-// אנחנו ניגש ל-Index בצורה דינמית או נבקש להעביר את ה-Resolver
-// כדי להימנע ממעגל תלויות (Circular Dependency), נעביר את ה-Resolver כפרמטר
+const db = require('../../utils/firebase'); // ✅ הוספה קריטית לבדיקת LID
 
 class WhatsAppScout {
     
     /**
      * סורק את הקבוצה הראשית ומעדכן את כל המשתמשים ב-DB
-     * מקבל את ה-Resolver מה-Index הראשי
      */
     async syncGroupMembers(sock, mainGroupId) {
         if (!sock || !mainGroupId) return;
@@ -29,19 +27,30 @@ class WhatsAppScout {
             let updatedUsers = 0;
 
             for (const p of participants) {
-                // p.id עשוי להיות LID. נפענח אותו למספר אמיתי בעזרת ה-Store!
+                // p.id הוא ה-LID (למשל: 123456@lid)
+                const lid = p.id.split('@')[0];
+
+                // 🛑 שלב 1: האם ה-LID הזה כבר מקושר למשתמש כלשהו ב-DB?
+                // אם כן, אנחנו מדלגים עליו מיד. זה פותר את הבעיה שהם מופיעים כ"לא מזוהים".
+                const existingLid = await db.collection('users').where('platforms.whatsapp_lid', '==', lid).limit(1).get();
+                if (!existingLid.empty) {
+                    continue; // המשתמש כבר קיים ומקושר, דלג.
+                }
+
+                // 🛑 שלב 2: פענוח מספר טלפון אמיתי
                 const realPhoneNumber = resolveJid(p.id);
                 
                 // בדיקת שפיות: אם המספר קצר מדי, משהו לא תקין
-                if (realPhoneNumber.length < 9) continue;
+                if (!realPhoneNumber || realPhoneNumber.length < 9) continue;
 
-                // עדכון ב-DB עם המספר האמיתי
-                // אנחנו נשתמש ב-"WhatsApp User" זמנית, ה-ensure לא ידרוס אם יש שם קיים
-                await userUtils.ensureUserExists(realPhoneNumber, "WhatsApp User", 'whatsapp');
+                // 🛑 שלב 3: יצירה/עדכון ב-DB
+                // שינוי קריטי: אנחנו שולחים 'whatsapp_scout' כפלטפורמה.
+                // זה יגרום ל-UserUtils להבין שזה ה-Scout ולא סתם הודעה, ויאפשר את היצירה.
+                await userUtils.ensureUserExists(realPhoneNumber, "WhatsApp User", 'whatsapp_scout');
                 updatedUsers++;
             }
 
-            log(`✅ [WhatsApp Scout] סריקה הושלמה. ${updatedUsers} משתמשים אומתו.`);
+            log(`✅ [WhatsApp Scout] סריקה הושלמה. ${updatedUsers} משתמשים חדשים/לא מקושרים עובדו.`);
 
         } catch (error) {
             log(`❌ [WhatsApp Scout] שגיאה בסריקה: ${error.message}`);

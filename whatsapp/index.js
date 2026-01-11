@@ -1,16 +1,35 @@
 // 📁 whatsapp/index.js
 const makeWASocket = require('@whiskeysockets/baileys').default;
-const { DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { DisconnectReason, fetchLatestBaileysVersion, makeInMemoryStore } = require('@whiskeysockets/baileys'); // ✅ נוסף Store
 const pino = require('pino');
 const { useFirestoreAuthState } = require('./auth'); 
 const coreLogic = require('./logic/core'); 
-const { ensureUserExists } = require('../utils/userUtils'); 
+const { ensureUserExists, getUserRef } = require('../utils/userUtils'); // צריך גם getUserRef לבדיקה חיצונית
 const { log } = require('../utils/logger'); 
-const whatsappScout = require('./utils/scout'); // ✅ תוספת: ייבוא הסייר
+const whatsappScout = require('./utils/scout');
+const matchmaker = require('../handlers/matchmaker'); // ✅ השדכן
+
+// ✅ אתחול הזיכרון (Store) - נשמר גלובלית
+const store = makeInMemoryStore({ logger: pino({ level: 'silent' }) });
 
 let sock; 
 const msgRetryCounterCache = new Map();
 const MAIN_GROUP_ID = process.env.WHATSAPP_MAIN_GROUP_ID;
+
+/**
+ * 🔍 פונקציית הקסם: ממירה כל מזהה (LID/JID) למספר טלפון אמיתי
+ */
+function getRealPhoneNumber(jid) {
+    if (!jid) return '';
+    if (jid.includes('@s.whatsapp.net') && !jid.includes(':')) {
+        return jid.split('@')[0];
+    }
+    const contact = store.contacts[jid] || Object.values(store.contacts).find(c => c.lid === jid);
+    if (contact && contact.id) {
+        return contact.id.split('@')[0];
+    }
+    return jid.split('@')[0];
+}
 
 async function connectToWhatsApp() {
     if (sock) {
@@ -36,6 +55,9 @@ async function connectToWhatsApp() {
             syncFullHistory: false
         });
 
+        // ✅ מחברים את ה-Store לאירועים של הסוקט
+        store.bind(sock.ev);
+
         sock.ev.on('connection.update', (update) => {
             const { connection, lastDisconnect, qr } = update;
 
@@ -44,19 +66,17 @@ async function connectToWhatsApp() {
             if (connection === 'close') {
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 440; 
-                
                 console.log(`❌ [WhatsApp] נותק (${statusCode}). מתחבר מחדש: ${shouldReconnect}`);
-                
                 if (shouldReconnect) setTimeout(connectToWhatsApp, 3000);
             } 
             else if (connection === 'open') {
                 console.log('✅ [WhatsApp] מחובר ומוכן!');
                 
-                // ✅ תוספת: הפעלת הסייר מיד בעלייה כדי לתפוס מספרים אמיתיים
+                // מפעילים את הסייר (Scout) אחרי שה-Store הספיק להיטען קצת
                 if (MAIN_GROUP_ID) {
                     setTimeout(() => {
                         whatsappScout.syncGroupMembers(sock, MAIN_GROUP_ID);
-                    }, 5000); // דיליי קצר כדי לוודא יציבות
+                    }, 10000); 
                 }
             }
         });
@@ -70,15 +90,18 @@ async function connectToWhatsApp() {
             const { action, participants } = notification;
             
             for (const participant of participants) {
-                const phone = participant.split('@')[0]; // זה המספר האמיתי!
+                const realPhone = getRealPhoneNumber(participant);
                 
                 if (action === 'add') {
-                    console.log(`👋 [WhatsApp] משתמש הצטרף: ${phone}`);
-                    // יצירה מיידית עם המספר האמיתי
-                    await ensureUserExists(phone, "New Gamer", "whatsapp");
-
-                    const welcomeText = `👋 ברוך הבא לקבוצה @${phone}!\nתציג את עצמך שנכיר.`;
+                    console.log(`👋 [WhatsApp] משתמש הצטרף: ${realPhone}`);
+                    // כאן ensureUserExists יחזיר null אם הוא לא קיים, אז לא ייווצר זבל
+                    // אבל אנחנו עדיין רוצים לברך
+                    const userRef = await ensureUserExists(realPhone, "New Gamer", "whatsapp");
+                    
+                    const welcomeText = `👋 ברוך הבא לקבוצה @${realPhone}!\nתציג את עצמך שנכיר.`;
                     await sock.sendMessage(MAIN_GROUP_ID, { text: welcomeText, mentions: [participant] });
+
+                    // אם הוא לא קיים ב-DB, השדכן ישלח לו הודעה בפרטי אוטומטית בהודעה הראשונה שלו
                 } 
             }
         });
@@ -93,14 +116,34 @@ async function connectToWhatsApp() {
                              msg.message.extendedTextMessage?.text || 
                              msg.message.imageMessage?.caption || "";
                 
-                // עדכון שוטף (כאן ייתכן שיתקבל LID, אבל ה-DB כבר יכיל את המספר האמיתי מהסריקה)
-                const senderJid = msg.key.participant || msg.key.remoteJid;
-                const pushName = msg.pushName;
+                // ✅ פענוח השולח למספר אמיתי
+                const rawJid = msg.key.participant || msg.key.remoteJid;
+                const realSenderPhone = getRealPhoneNumber(rawJid);
+                const pushName = msg.pushName || "Unknown";
                 
-                if (pushName) {
-                     ensureUserExists(senderJid, pushName, "whatsapp").catch(e => console.error('[DB Sync Error]', e.message));
+                // 1. נסיון לעדכון/בדיקת קיום ב-DB
+                // ensureUserExists לא יוצר יותר משתמשים חדשים לוואטסאפ!
+                const userRef = await ensureUserExists(realSenderPhone, pushName, "whatsapp");
+
+                // 2. בדיקה: האם המשתמש קיים בפועל?
+                // אנחנו בודקים את המסמך עצמו, כי userRef תמיד מוחזר (ככתובת)
+                const userDoc = await userRef.get();
+
+                if (!userDoc.exists) {
+                    // 🛑 זיהוי זר! המשתמש לא קיים ב-DB
+                    console.log(`🛡️ [WhatsApp] משתמש לא מזוהה: ${realSenderPhone} (${pushName}). מפעיל שדכן.`);
+                    
+                    // בדיקה אם המשתמש מנסה לאשר התאמת שם ("אני משה")
+                    const isNameConfirmed = await matchmaker.confirmNameMatch(sock, realSenderPhone, text, pushName);
+                    
+                    if (!isNameConfirmed) {
+                        // אם לא, שולחים לו את הודעת ההזמנה לדיסקורד
+                        await matchmaker.handleStranger(sock, realSenderPhone, pushName);
+                    }
+                    return; // עוצרים כאן, לא מעבדים את ההודעה בלוגיקה
                 }
 
+                // 3. אם המשתמש קיים - ממשיכים רגיל ללוגיקה
                 if (coreLogic && coreLogic.handleMessageLogic) {
                     await coreLogic.handleMessageLogic(sock, msg, text);
                 }
@@ -139,8 +182,8 @@ async function disconnectWhatsApp() {
     }
 }
 
-function getWhatsAppSock() {
-    return sock;
-}
+// חשיפת הסוקט וה-Resolver (לשימוש בסייר)
+function getWhatsAppSock() { return sock; }
+function getResolver() { return getRealPhoneNumber; } 
 
-module.exports = { connectToWhatsApp, sendToMainGroup, disconnectWhatsApp, getWhatsAppSock };
+module.exports = { connectToWhatsApp, sendToMainGroup, disconnectWhatsApp, getWhatsAppSock, getResolver };

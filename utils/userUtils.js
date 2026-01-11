@@ -3,70 +3,45 @@ const db = require('./firebase');
 const admin = require('firebase-admin');
 
 /**
- * 🛠️ פונקציית העזר הקריטית: מנקה כל סוג של מזהה וואטסאפ (lid, s.whatsapp.net, וכו')
- * מחזירה רק את רצף המספרים הנקי.
+ * מנקה מזהה וואטסאפ.
  */
 function cleanWhatsAppId(id) {
     if (!id) return id;
-    // אם זה כבר מספר נקי (רק ספרות), מחזירים אותו
     if (/^\d+$/.test(id)) return id;
-    // לוקח רק את מה שלפני ה-@ ומנקה כל תו שאינו ספרה (מסיר +, WA:, רווחים וכו')
     return id.split('@')[0].replace(/\D/g, '');
 }
 
 /**
- * מחזיר את הרפרנס למסמך המשתמש הראשי.
- * מבצע חיפוש כפול כדי למנוע כפילויות (LID מול JID).
+ * מחזיר רפרנס למסמך.
+ * כולל חיפוש חכם ל-LID קיים (אם כבר קישרנו בעבר).
  */
 async function getUserRef(id, platform = 'discord') {
-    // 1. בדיקה עבור דיסקורד (ID ישיר)
-    if (platform === 'discord') {
-        return db.collection('users').doc(id);
-    }
+    if (platform === 'discord') return db.collection('users').doc(id);
 
-    // 2. פלטפורמות אחרות (וואטסאפ/טלגרם)
     const cleanId = platform === 'whatsapp' ? cleanWhatsAppId(id) : id.toString();
-    const fieldMap = {
-        'whatsapp': 'platforms.whatsapp',
-        'telegram': 'platforms.telegram'
-    };
-    const searchField = fieldMap[platform];
+    
+    // בדיקה האם זה LID (מזהה ארוך של וואטסאפ)
+    const isLid = platform === 'whatsapp' && cleanId.length > 14; 
 
-    if (searchField) {
-        try {
-            // חיפוש 1: האם המספר הנקי הזה כבר רשום כ-ID ראשי בפלטפורמה?
-            let snapshot = await db.collection('users')
-                .where(searchField, '==', cleanId)
-                .limit(1)
-                .get();
+    // 1. חיפוש לפי השדה הישיר (בין אם זה טלפון או LID שכבר שמרנו)
+    let snapshot = await db.collection('users').where(`platforms.${platform}`, '==', cleanId).limit(1).get();
+    if (!snapshot.empty) return snapshot.docs[0].ref;
 
-            if (!snapshot.empty) {
-                return snapshot.docs[0].ref; 
-            }
-
-            // חיפוש 2 (גיבוי לוואטסאפ): האם זה LID והמספר הישן רשום ב-identity?
-            if (platform === 'whatsapp') {
-                const possibleOldId = cleanId.startsWith('972') ? cleanId : `972${cleanId.replace(/^0+/, '')}`;
-                snapshot = await db.collection('users')
-                    .where('identity.whatsappPhone', 'in', [cleanId, possibleOldId])
-                    .limit(1)
-                    .get();
-                
-                if (!snapshot.empty) {
-                    console.log(`🔗 [UserUtils] זיהיתי משתמש לפי מספר ישן: ${cleanId} -> מאחד רשומות.`);
-                    return snapshot.docs[0].ref;
-                }
-            }
-
-        } catch (error) {
-            console.error(`❌ [UserUtils] Lookup Error (${platform}:${id}):`, error);
-        }
-
-        // אם לא מצאנו - מחזירים רפרנס למסמך חדש המבוסס על המספר הנקי בלבד!
-        return db.collection('users').doc(cleanId);
+    // 2. אם זה LID, ננסה לחפש אם שמרנו אותו בשדה מיוחד 'platforms.whatsapp_lid'
+    if (isLid) {
+        snapshot = await db.collection('users').where('platforms.whatsapp_lid', '==', cleanId).limit(1).get();
+        if (!snapshot.empty) return snapshot.docs[0].ref;
     }
 
-    return db.collection('users').doc(id);
+    // 3. אם זה טלפון רגיל, ננסה לחפש במספר הישן
+    if (platform === 'whatsapp' && !isLid) {
+        const possibleOldId = cleanId.startsWith('972') ? cleanId : `972${cleanId.replace(/^0+/, '')}`;
+        snapshot = await db.collection('users').where('identity.whatsappPhone', 'in', [cleanId, possibleOldId]).limit(1).get();
+        if (!snapshot.empty) return snapshot.docs[0].ref;
+    }
+
+    // אם לא מצאנו - מחזירים כתובת למסמך חדש (אבל ensureUserExists יחליט אם ליצור אותו)
+    return db.collection('users').doc(cleanId);
 }
 
 async function getUserData(id, platform = 'discord') {
@@ -82,21 +57,30 @@ async function getUserData(id, platform = 'discord') {
 }
 
 /**
- * ✅ פונקציה קריטית: מוודא שמשתמש קיים, יוצר אם לא, ומעדכן פרטים חסרים.
+ * ✅ הפונקציה הקריטית: יוצרת או מעדכנת משתמש.
+ * כוללת הגנה מלאה: לא יוצרת משתמשי וואטסאפ חדשים (מחזירה null).
  */
 async function ensureUserExists(id, displayName, platform = 'discord') {
-    // ניקוי המזהה לפני כל פעולה
     const cleanId = platform === 'whatsapp' ? cleanWhatsAppId(id) : id;
-    
-    // קריאה לפונקציה החכמה שתחזיר רפרנס (קיים או חדש)
+    const isLid = platform === 'whatsapp' && cleanId.length > 14; 
+
     const ref = await getUserRef(id, platform);
 
     try {
         await db.runTransaction(async (t) => {
             const doc = await t.get(ref);
 
-            // תרחיש 1: משתמש חדש לגמרי - יצירה נקייה
+            // תרחיש 1: משתמש חדש
             if (!doc.exists) {
+                
+                // 🛑 עצור! אם זה וואטסאפ - אנחנו לא יוצרים כלום.
+                // מחזירים null כדי שה-Matchmaker ייכנס לפעולה.
+                if (platform === 'whatsapp') {
+                    console.warn(`🛡️ [UserUtils] משתמש וואטסאפ לא מזוהה (${cleanId}). מדלג על יצירה.`);
+                    return; // מחזיר undefined/null
+                }
+
+                // לדיסקורד אנחנו כן יוצרים (כי הוא המקור)
                 console.log(`🆕 [UserUtils] Creating new profile for: ${displayName} (${cleanId})`);
                 
                 const newUser = {
@@ -105,69 +89,47 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
                         joinedAt: new Date().toISOString(),
                         [platform === 'whatsapp' ? 'whatsappPhone' : 'telegramId']: cleanId
                     },
-                    platforms: {
-                        [platform]: cleanId
-                    },
-                    economy: { 
-                        xp: 0, 
-                        level: 1, 
-                        balance: 0 
-                    },
-                    stats: { 
-                        messagesSent: 0, 
-                        voiceMinutes: 0,
-                        casinoWins: 0,
-                        casinoLosses: 0,
-                        mvpWins: 0 
-                    },
-                    brain: { 
-                        facts: [], 
-                        roasts: [],
-                        sentiment: 0
-                    },
-                    meta: { 
-                        firstSeen: new Date().toISOString(), 
-                        lastActive: new Date().toISOString() 
-                    },
+                    platforms: { [platform]: cleanId },
+                    economy: { xp: 0, level: 1, balance: 0 },
+                    stats: { messagesSent: 0, voiceMinutes: 0, casinoWins: 0, casinoLosses: 0, mvpWins: 0 },
+                    brain: { facts: [], roasts: [], sentiment: 0 },
+                    meta: { firstSeen: new Date().toISOString(), lastActive: new Date().toISOString() },
                     tracking: { status: 'active' }
                 };
-                
                 t.set(ref, newUser);
             } 
-            // תרחיש 2: משתמש קיים - עדכון חכם (Self Healing)
+            // תרחיש 2: משתמש קיים (עדכון בלבד)
             else {
                 const data = doc.data();
-                const updates = {};
+                const updates = { 'meta.lastActive': new Date().toISOString() };
 
-                // עדכון זמן פעילות בתוך meta
-                updates['meta.lastActive'] = new Date().toISOString();
-
-                // 1. עדכון שם - רק אם השם הנוכחי גנרי/חסר
-                const currentName = data.identity?.displayName;
-                if (displayName && displayName !== "Unknown" && displayName !== "Gamer") {
-                    if (currentName === "Unknown" || currentName === "Gamer" || !currentName) {
-                        updates['identity.displayName'] = displayName;
+                // אם זה LID, נשמור אותו בשדה צדדי כדי שנכיר אותו לפעם הבאה
+                if (isLid) {
+                    if (data.platforms?.whatsapp_lid !== cleanId) {
+                        updates['platforms.whatsapp_lid'] = cleanId;
+                        console.log(`🔗 [UserUtils] קושר LID (${cleanId}) למשתמש קיים.`);
+                    }
+                } else {
+                    // אם זה מספר רגיל, נעדכן כרגיל
+                    if (!data.platforms || !data.platforms[platform]) {
+                        updates[`platforms.${platform}`] = cleanId;
                     }
                 }
 
-                // 2. עדכון פלטפורמות וטלפון אם חסר (סנכרון זהויות)
-                // זה החלק שיחבר את ה-LID החדש לפרופיל הישן לתמיד
-                if (!data.platforms || !data.platforms[platform] || data.platforms[platform] !== cleanId) {
-                    updates[`platforms.${platform}`] = cleanId;
-                    console.log(`🔄 [UserUtils] Linking new ${platform} ID (${cleanId}) to existing user.`);
-                }
-                
-                if (platform === 'whatsapp' && !data.identity?.whatsappPhone) {
-                    updates['identity.whatsappPhone'] = cleanId;
+                // עדכון שם רק אם חסר
+                if (displayName && displayName !== "Unknown" && displayName !== "WhatsApp User" && 
+                   (!data.identity?.displayName || data.identity.displayName === "Unknown")) {
+                    updates['identity.displayName'] = displayName;
                 }
 
-                // ביצוע העדכון עם merge רק אם יש שינויים
-                if (Object.keys(updates).length > 0) {
-                    t.set(ref, updates, { merge: true });
-                }
+                t.set(ref, updates, { merge: true });
             }
         });
         
+        // כאן התיקון החשוב: אנחנו בודקים אם המסמך נוצר בטרנזקציה. 
+        // אבל מכיוון שהטרנזקציה היא אסינכרונית, הדרך הכי טובה היא לבדוק שוב מבחוץ
+        // או להסתמך על זה שאם החזרנו ref והוא לא קיים - המערכת תדע.
+        // נחזיר את ה-ref בכל מקרה, ובקוד הקורא (index.js) נבדוק אם הוא קיים.
         return ref;
 
     } catch (error) {

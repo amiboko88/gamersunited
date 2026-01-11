@@ -1,7 +1,8 @@
 // 📁 discord/events/messageCreate.js
-const { Events } = require('discord.js');
+const { Events, ChannelType } = require('discord.js'); // ChannelType חובה לזיהוי DM
 const brain = require('../../handlers/ai/brain');
 const xpManager = require('../../handlers/economy/xpManager');
+const matchmaker = require('../../handlers/matchmaker'); // ✅ השדכן
 
 module.exports = {
     name: Events.MessageCreate,
@@ -10,16 +11,21 @@ module.exports = {
         if (message.author.bot) return;
 
         try {
-            // 1. XP - משתמש ב-Manager המרכזי (שמחובר ל-DB החדש)
+            // 0. בדיקת DM עבור ה-Matchmaker
+            if (message.channel.type === ChannelType.DM) {
+                await matchmaker.handleDiscordDM(message);
+                return; // עוצרים כאן בפרטי
+            }
+
+            // 1. XP - משתמש ב-Manager המרכזי
             await xpManager.handleXP(message.author.id, 'discord', message.content, message, (msg) => message.reply(msg));
 
             // 2. תשובה לשמעון
             const isMentioned = message.mentions.has(message.client.user);
             const content = message.content.toLowerCase();
             const hasTrigger = content.includes('שמעון') || content.includes('שימי');
-            const isDM = !message.guild; 
-
-            if (isMentioned || hasTrigger || isDM) {
+            
+            if (isMentioned || hasTrigger) {
                 await message.channel.sendTyping();
 
                 // ניקוי תיוגים מהטקסט שנשלח ל-AI

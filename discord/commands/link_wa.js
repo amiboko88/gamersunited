@@ -1,5 +1,14 @@
 // 📁 discord/commands/link_wa.js
-const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, UserSelectMenuBuilder, PermissionFlagsBits } = require('discord.js');
+const { 
+    SlashCommandBuilder, 
+    ActionRowBuilder, 
+    StringSelectMenuBuilder, 
+    UserSelectMenuBuilder, 
+    PermissionFlagsBits,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle 
+} = require('discord.js');
 const matchmaker = require('../../handlers/matchmaker');
 
 module.exports = {
@@ -15,8 +24,7 @@ module.exports = {
             return interaction.reply({ content: '✅ הכל נקי. אין משתמשים לא מזוהים כרגע.', ephemeral: true });
         }
 
-        // שלב 1: בחירת ה-LID מהרשימה
-        // Discord מגביל ל-25 אפשרויות בתפריט
+        // שלב 1: תפריט בחירת LID
         const options = orphans.slice(0, 25).map(o => ({
             label: `${o.name} (${o.lid.substring(0, 5)}...)`,
             description: `הודעה: ${o.lastMsg}`,
@@ -37,10 +45,7 @@ module.exports = {
             ephemeral: true
         });
 
-        // יצירת קולקטור לאירועים של התפריטים
         const collector = response.createMessageComponentCollector({ time: 60000 });
-        
-        // משתנה לשמירת ה-LID שנבחר (זמני לריצה הזו)
         let selectedLid = null;
 
         collector.on('collect', async i => {
@@ -48,7 +53,6 @@ module.exports = {
             if (i.customId === 'select_lid') {
                 selectedLid = i.values[0];
                 
-                // יצירת תפריט בחירת משתמש דיסקורד (UserSelectMenuBuilder ✅)
                 const userSelectRow = new ActionRowBuilder()
                     .addComponents(
                         new UserSelectMenuBuilder()
@@ -70,18 +74,64 @@ module.exports = {
                     return i.update({ content: '❌ שגיאה: נא לבחור קודם LID.', components: [] });
                 }
 
+                // 1. ביצוע הקישור הראשוני (LID בלבד)
                 const result = await matchmaker.linkUser(targetUserId, selectedLid);
 
-                if (result.success) {
+                if (!result.success) {
+                    await i.update({ content: `❌ שגיאה: ${result.error}`, components: [] });
+                    collector.stop();
+                    return;
+                }
+
+                // תרחיש א': יש מספר טלפון - סיימנו
+                if (result.status === 'complete') {
                     await i.update({ 
-                        content: `✅ **בוצע בהצלחה!**\nהמשתמש מוואטסאפ (\`${selectedLid}\`) חובר למשתמש הדיסקורד <@${targetUserId}>.\nמעכשיו שמעון יזהה אותו.`, 
+                        content: `✅ **בוצע בהצלחה!**\nהמשתמש <@${targetUserId}> חובר ל-LID.\n📱 טלפון קיים: ${result.phone} (לא נדרס).`, 
                         components: [] 
                     });
-                } else {
-                    await i.update({ content: `❌ שגיאה בביצוע הקישור: ${result.error}`, components: [] });
+                    collector.stop();
+                } 
+                // תרחיש ב': חסר מספר טלפון - פותחים טופס (Modal)
+                else if (result.status === 'needs_phone') {
+                    // כדי לפתוח מודל חייבים להשתמש ב-showModal כתגובה לאינטראקציה
+                    // אנחנו לא יכולים לעשות update וגם showModal. 
+                    // הדרך הנכונה בדיסקורד היא להציג את המודל *במקום* לעדכן את ההודעה, או למחוק ולפתוח.
+                    
+                    const modal = new ModalBuilder()
+                        .setCustomId(`phone_modal_${targetUserId}`)
+                        .setTitle('השלמת פרטי משתמש');
+
+                    const phoneInput = new TextInputBuilder()
+                        .setCustomId('phone_number')
+                        .setLabel("הזן מספר טלפון (05X-XXXXXXX)")
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                        .setPlaceholder('0541234567');
+
+                    const firstActionRow = new ActionRowBuilder().addComponents(phoneInput);
+                    modal.addComponents(firstActionRow);
+
+                    await i.showModal(modal);
+                    
+                    // מאזינים להגשת הטופס
+                    try {
+                        const submitted = await i.awaitModalSubmit({ time: 60000, filter: m => m.customId === `phone_modal_${targetUserId}` });
+                        const phone = submitted.fields.getTextInputValue('phone_number');
+                        
+                        // עדכון המספר ב-DB
+                        const updateRes = await matchmaker.updateUserPhone(targetUserId, phone);
+                        
+                        if (updateRes.success) {
+                            await submitted.reply({ content: `✅ **תהליך הושלם!**\n<@${targetUserId}> קושר ל-LID ועודכן עם הטלפון: ${updateRes.phone}.`, ephemeral: true });
+                        } else {
+                            await submitted.reply({ content: `⚠️ ה-LID קושר, אך הייתה שגיאה בשמירת הטלפון: ${updateRes.error}`, ephemeral: true });
+                        }
+                    } catch (err) {
+                        // אם לא הגישו בזמן
+                         console.log("Modal timed out or error", err);
+                    }
+                    collector.stop();
                 }
-                
-                collector.stop();
             }
         });
     }

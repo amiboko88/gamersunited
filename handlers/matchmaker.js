@@ -6,13 +6,12 @@ const pendingLids = new Set();
 const ADMIN_PHONE = "972526800647"; 
 
 // ניהול שיחות פתוחות עם המנהל
-// המבנה: Map<AdminPhone, { stage: 'WAITING_PHONE', discordId: '...', lid: '...' }>
 const adminSessions = new Map();
 
 class Matchmaker {
     
     /**
-     * דוח מודיעין לאדמין (מתחיל את התהליך)
+     * דוח מודיעין לאדמין
      */
     async consultWithAdmin(sock, lid, pushName, messageContent) {
         if (pendingLids.has(lid)) return;
@@ -24,14 +23,13 @@ class Matchmaker {
                        `משתמש לא מזוהה בקבוצה.\n\n` +
                        `👤 *כינוי:* ${pushName}\n` +
                        `💬 *הודעה:* "${messageContent.substring(0, 30)}..."\n` +
-                       `🔑 *מזהה (LID):*\n\`${lid}\`\n\n` +
+                       `🔑 *מזהה (LID):*\n${lid}\n\n` + // הורדתי את הגרשיים כדי למנוע בעיות
                        `📋 *שלב 1: זיהוי דיסקורד*\n` +
                        `תעתיק את ה-Discord ID שלו, צטט הודעה זו, ושלח לי.`;
 
         try {
             await sock.sendMessage(ADMIN_PHONE + '@s.whatsapp.net', { text: report });
             pendingLids.add(lid);
-            // מנקים כדי לא לחפור, אבל משאירים זמן לתגובה
             setTimeout(() => pendingLids.delete(lid), 1000 * 60 * 60);
         } catch (e) {
             console.error('Failed to report to admin:', e);
@@ -43,7 +41,7 @@ class Matchmaker {
      */
     async handleAdminResponse(sock, msg, text) {
         const remoteJid = msg.key.remoteJid;
-        const sender = remoteJid.split('@')[0]; // המספר שלך
+        const sender = remoteJid.split('@')[0]; 
 
         // 1. בדיקה: האם אנחנו כבר באמצע שיחה (מחכים לטלפון)?
         if (adminSessions.has(sender)) {
@@ -58,26 +56,37 @@ class Matchmaker {
      * שלב 1: קבלת Discord ID וחיבור ה-LID
      */
     async handleStepOneId(sock, msg, text, sender) {
-        // בדיקת ציטוט (חובה כדי לדעת על איזה LID מדובר)
         const quotedMsg = msg.message?.extendedTextMessage?.contextInfo;
+        
+        // לוג דיבוג לראות מה הבוט רואה
+        // console.log("🔍 [Matchmaker Debug] הודעה נכנסת:", text);
+        // console.log("🔍 [Matchmaker Debug] ציטוט:", quotedMsg?.quotedMessage?.conversation || "אין ציטוט");
+
         if (!quotedMsg || !quotedMsg.quotedMessage) return false;
 
         const quotedText = quotedMsg.quotedMessage.conversation || quotedMsg.quotedMessage.extendedTextMessage?.text || "";
-        const lidMatch = quotedText.match(/`(\d+)`/); 
+        
+        // תיקון קריטי: חיפוש גמיש יותר של ה-LID בתוך הטקסט המצוטט
+        // מחפש את המילה LID ואחריה מספרים (מתעלם מתווים באמצע)
+        const lidMatch = quotedText.match(/LID[\D]*(\d{10,20})/); 
 
-        if (!lidMatch) return false; // לא ציטטת דוח תקין
+        if (!lidMatch) {
+            console.log("❌ [Matchmaker] לא הצלחתי לחלץ LID מהציטוט.");
+            return false; 
+        }
 
         const targetLid = lidMatch[1];
         
-        // חילוץ Discord ID מתוך הטקסט שלך (עמיד בפני טקסטים נוספים)
+        // חילוץ Discord ID (מצפה ל-17 עד 20 ספרות)
         const discordIdMatch = text.match(/\d{17,20}/);
         
         if (!discordIdMatch) {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ לא מצאתי מזהה דיסקורד תקין (17-20 ספרות). נסה שוב.' }, { quoted: msg });
-            return true; // עצרנו את הבוט מלהגיב ב-AI, מחכים לתיקון שלך
+            await sock.sendMessage(msg.key.remoteJid, { text: '❌ לא זיהיתי ID תקין של דיסקורד. נסה שוב.' }, { quoted: msg });
+            return true;
         }
 
         const targetDiscordId = discordIdMatch[0];
+        log(`🔗 [Matchmaker] מנסה לחבר: Discord ${targetDiscordId} <-> LID ${targetLid}`);
 
         try {
             const userRef = db.collection('users').doc(targetDiscordId);
@@ -88,7 +97,7 @@ class Matchmaker {
                 return true;
             }
 
-            // ✅ חיבור ה-LID (החלק הקריטי לזיהוי בוואטסאפ)
+            // חיבור ה-LID
             await userRef.set({
                 platforms: { whatsapp_lid: targetLid },
                 meta: { lastLinked: new Date().toISOString() }
@@ -105,14 +114,12 @@ class Matchmaker {
                 name: userName
             });
 
-            // בקשת הטלפון
             await sock.sendMessage(msg.key.remoteJid, { 
-                text: `✅ יופי! ה-LID חובר למשתמש **${userName}**.\n` +
+                text: `✅ מעולה! ה-LID חובר למשתמש **${userName}**.\n` +
                       `📱 *שלב 2: עדכון טלפון*\n` +
-                      `כדי שהכל יהיה מושלם, כתוב לי עכשיו את המספר הנייד האמיתי שלו (למשל 054...).` 
+                      `תן לי את הנייד האמיתי שלו (למשל 054...) כדי לסגור את הפינה.` 
             }, { quoted: msg });
             
-            // מחיקה מהרשימה השחורה כדי שלא ידווח שוב
             pendingLids.delete(targetLid);
 
         } catch (error) {
@@ -124,49 +131,39 @@ class Matchmaker {
     }
 
     /**
-     * שלב 2: קבלת טלפון וסגירת מעגל
+     * שלב 2: קבלת טלפון
      */
     async handleStepTwoPhone(sock, msg, text, sender) {
         const session = adminSessions.get(sender);
-        
-        // חילוץ מספר טלפון נקי
         const rawPhone = text.replace(/\D/g, '');
 
-        // בדיקת תקינות מינימלית
         if (rawPhone.length < 9) {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ זה לא נראה כמו מספר טלפון. נסה שוב (או כתוב "ביטול").' }, { quoted: msg });
+            await sock.sendMessage(msg.key.remoteJid, { text: '❌ מספר לא תקין. נסה שוב (או כתוב "ביטול").' }, { quoted: msg });
             return true;
         }
 
-        // ביטול יזום
-        if (text.includes('ביטול') || text.includes('עזוב')) {
+        if (text.includes('ביטול')) {
             adminSessions.delete(sender);
-            await sock.sendMessage(msg.key.remoteJid, { text: '👍 סבבה, עצרנו כאן. (ה-LID כבר מקושר, רק הטלפון לא עודכן).' }, { quoted: msg });
+            await sock.sendMessage(msg.key.remoteJid, { text: '👍 בוטל.' }, { quoted: msg });
             return true;
         }
 
-        // נרמול ל-972
         const formattedPhone = rawPhone.startsWith('05') ? '972' + rawPhone.substring(1) : rawPhone;
 
         try {
             const userRef = db.collection('users').doc(session.discordId);
             
-            // עדכון סופי של הטלפון
             await userRef.set({
                 platforms: { whatsapp: formattedPhone },
                 identity: { whatsappPhone: formattedPhone }
             }, { merge: true });
 
             await sock.sendMessage(msg.key.remoteJid, { 
-                text: `🏁 **התהליך הושלם!**\n` +
-                      `המשתמש: **${session.name}**\n` +
-                      `Discord ID: ${session.discordId}\n` +
-                      `LID: המזהה הארוך (מקושר)\n` +
-                      `Phone: ${formattedPhone} (מקושר)\n\n` +
-                      `שמעון מכיר אותו עכשיו פיקס.` 
+                text: `🏁 **סיימנו!**\n` +
+                      `המשתמש: **${session.name}** מחובר עכשיו מלא.\n` +
+                      `גם LID וגם טלפון מסונכרנים.` 
             }, { quoted: msg });
 
-            // סגירת הסשן
             adminSessions.delete(sender);
 
         } catch (error) {

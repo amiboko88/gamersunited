@@ -1,5 +1,5 @@
 // 📁 discord/commands/link_wa.js
-const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, UserSelectBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, UserSelectMenuBuilder, PermissionFlagsBits } = require('discord.js');
 const matchmaker = require('../../handlers/matchmaker');
 
 module.exports = {
@@ -48,10 +48,10 @@ module.exports = {
             if (i.customId === 'select_lid') {
                 selectedLid = i.values[0];
                 
-                // יצירת תפריט בחירת משתמש דיסקורד
+                // יצירת תפריט בחירת משתמש דיסקורד (UserSelectMenuBuilder ✅)
                 const userSelectRow = new ActionRowBuilder()
                     .addComponents(
-                        new UserSelectBuilder()
+                        new UserSelectMenuBuilder()
                             .setCustomId('select_discord_user')
                             .setPlaceholder('בחר את המשתמש בדיסקורד')
                     );

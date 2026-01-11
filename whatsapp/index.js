@@ -4,15 +4,15 @@ const { DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets
 const pino = require('pino');
 const { useFirestoreAuthState } = require('./auth'); 
 const coreLogic = require('./logic/core'); 
-const { ensureUserExists } = require('../utils/userUtils'); // ✅ חובה לסינכרון DB
-const { log } = require('../utils/logger'); // שימוש בלוגר המרכזי
+const { ensureUserExists } = require('../utils/userUtils'); 
+const { log } = require('../utils/logger'); 
+const whatsappScout = require('./utils/scout'); // ✅ תוספת: ייבוא הסייר
 
-let sock; // משתנה גלובלי להחזקת החיבור
+let sock; 
 const msgRetryCounterCache = new Map();
 const MAIN_GROUP_ID = process.env.WHATSAPP_MAIN_GROUP_ID;
 
 async function connectToWhatsApp() {
-    // 1. סגירת חיבור ישן אם קיים (מונע כפילויות)
     if (sock) {
         console.log('⚠️ [WhatsApp] סוגר חיבור ישן לפני חיבור חדש...');
         try { sock.end(undefined); } catch(e){}
@@ -43,34 +43,40 @@ async function connectToWhatsApp() {
 
             if (connection === 'close') {
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
-                // לא מתחבר מחדש אם נותקנו בגלל לוגאוט או החלפת חיבור (440)
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 440; 
                 
                 console.log(`❌ [WhatsApp] נותק (${statusCode}). מתחבר מחדש: ${shouldReconnect}`);
                 
                 if (shouldReconnect) setTimeout(connectToWhatsApp, 3000);
-            } else if (connection === 'open') {
+            } 
+            else if (connection === 'open') {
                 console.log('✅ [WhatsApp] מחובר ומוכן!');
+                
+                // ✅ תוספת: הפעלת הסייר מיד בעלייה כדי לתפוס מספרים אמיתיים
+                if (MAIN_GROUP_ID) {
+                    setTimeout(() => {
+                        whatsappScout.syncGroupMembers(sock, MAIN_GROUP_ID);
+                    }, 5000); // דיליי קצר כדי לוודא יציבות
+                }
             }
         });
 
         sock.ev.on('creds.update', saveCreds);
 
-        // --- ✅ תוספת 1: זיהוי כניסה/יציאה מקבוצות (ברוכים הבאים) ---
+        // --- ניהול כניסות/יציאות ---
         sock.ev.on('group-participants.update', async (notification) => {
             if (notification.id !== MAIN_GROUP_ID) return;
 
             const { action, participants } = notification;
             
             for (const participant of participants) {
-                const phone = participant.split('@')[0];
+                const phone = participant.split('@')[0]; // זה המספר האמיתי!
                 
                 if (action === 'add') {
                     console.log(`👋 [WhatsApp] משתמש הצטרף: ${phone}`);
-                    // רישום ראשוני ב-DB (שם זמני עד שישלח הודעה)
-                    await ensureUserExists(participant, "Gamer (New)", "whatsapp");
+                    // יצירה מיידית עם המספר האמיתי
+                    await ensureUserExists(phone, "New Gamer", "whatsapp");
 
-                    // הודעת ברוכים הבאים
                     const welcomeText = `👋 ברוך הבא לקבוצה @${phone}!\nתציג את עצמך שנכיר.`;
                     await sock.sendMessage(MAIN_GROUP_ID, { text: welcomeText, mentions: [participant] });
                 } 
@@ -87,17 +93,14 @@ async function connectToWhatsApp() {
                              msg.message.extendedTextMessage?.text || 
                              msg.message.imageMessage?.caption || "";
                 
-                // --- ✅ תוספת 2: עדכון פרטי משתמש ב-DB בכל הודעה ---
-                // זה מה שמבטיח שהשם והמספר יסתנכרנו תמיד ולא יהיו "Unknown"
+                // עדכון שוטף (כאן ייתכן שיתקבל LID, אבל ה-DB כבר יכיל את המספר האמיתי מהסריקה)
                 const senderJid = msg.key.participant || msg.key.remoteJid;
                 const pushName = msg.pushName;
                 
                 if (pushName) {
-                     // שליחה אסינכרונית כדי לא לעכב את הבוט
                      ensureUserExists(senderJid, pushName, "whatsapp").catch(e => console.error('[DB Sync Error]', e.message));
                 }
 
-                // שליחה ללוגיקה
                 if (coreLogic && coreLogic.handleMessageLogic) {
                     await coreLogic.handleMessageLogic(sock, msg, text);
                 }
@@ -136,7 +139,6 @@ async function disconnectWhatsApp() {
     }
 }
 
-// --- ✅ תוספת 3: חשיפת הסוקט למערכות חיצוניות (כמו Leaderboard) ---
 function getWhatsAppSock() {
     return sock;
 }

@@ -1,12 +1,9 @@
 // 📁 discord/commands/leaderboard.js
 const { SlashCommandBuilder } = require('discord.js');
 const rankingCore = require('../../handlers/ranking/core');
-const rankingRenderer = require('../../handlers/ranking/render');
+const graphics = require('../../handlers/graphics/index'); // ✅ תיקון: חיבור למנוע הגרפי החדש
 const { log } = require('../../utils/logger');
 
-/**
- * חישוב מספר שבוע נוכחי
- */
 function getWeekNumber() {
     const d = new Date();
     d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
@@ -20,28 +17,24 @@ module.exports = {
         .setDescription('🏆 צפייה בטבלת האלופים הנוכחית (סטטוס חי)'),
 
     async execute(interaction) {
-        // התשובה תמיד אישית למשתמש - לא מציף את הערוץ
         await interaction.deferReply({ ephemeral: true });
-
         try {
-            // 1. שליפת נתוני זמן אמת מה-DB
             const leaders = await rankingCore.getWeeklyLeaderboard(10);
             if (!leaders || leaders.length === 0) {
                 return interaction.editReply('❌ אין מספיק נתונים פעילים השבוע ליצירת טבלה.');
             }
 
             const weekNum = getWeekNumber();
-
-            // 2. יצירת התמונה (Puppeteer)
-            const imageBuffer = await rankingRenderer.generateLeaderboardImage(leaders, weekNum);
-
+            
+            // ✅ קריאה לפונקציה החדשה
+            const imageBuffer = await graphics.leaderboard.generateImage(leaders, weekNum);
+            
             if (!imageBuffer) {
-                return interaction.editReply('❌ שגיאה בייצור תמונת הדירוג. נסה שוב מאוחר יותר.');
+                return interaction.editReply('❌ שגיאה בייצור תמונת הדירוג.');
             }
 
-            // 3. הצגת התוצאה למשתמש
             await interaction.editReply({
-                content: `📊 **טבלת האלופים - שבוע ${weekNum} (מצב נוכחי)**\nהנתונים מתעדכנים כל הזמן. הטבלה הרשמית תפורסם במוצ"ש ב-20:00.`,
+                content: `📊 **טבלת האלופים - שבוע ${weekNum} (מצב נוכחי)**`,
                 files: [{ attachment: imageBuffer, name: `leaderboard_preview_w${weekNum}.png` }]
             });
 

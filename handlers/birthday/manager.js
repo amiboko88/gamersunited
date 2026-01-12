@@ -3,7 +3,8 @@ const cron = require('node-cron');
 const db = require('../../utils/firebase');
 const { log } = require('../../utils/logger');
 const { getUserRef } = require('../../utils/userUtils');
-const visual = require('./visual');
+// const visual = require('./visual'); // ❌ נמחק
+const graphics = require('../graphics/index'); // ✅ המערכת הגרפית החדשה
 const broadcaster = require('./broadcaster');
 
 const GIFT_AMOUNT = 500;
@@ -161,8 +162,8 @@ class BirthdayManager {
         userData.identity.birthday.age = newAge;
 
         try {
-            // 2. יצירת תמונה
-            const cardBuffer = await visual.generateCard(userData);
+            // 2. יצירת תמונה דרך המערכת החדשה ✅
+            const cardBuffer = await graphics.birthday.generateCard(userData);
             
             // 3. שידור לכל הפלטפורמות
             await broadcaster.broadcastCelebration(this.clients, userData, cardBuffer);

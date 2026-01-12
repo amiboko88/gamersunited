@@ -5,19 +5,19 @@ const { isSystemActive } = require('../utils/timeHandler');
 const { getUserRef } = require('../../utils/userUtils'); 
 const visionSystem = require('../../handlers/media/vision'); 
 
-// מערכות AI
+// מערכות
 const shimonBrain = require('../../handlers/ai/brain'); 
 const learningEngine = require('../../handlers/ai/learning'); 
 const userManager = require('../../handlers/users/manager'); 
+const xpManager = require('../../handlers/economy/xpManager'); // ✅ 1. ייבוא מערכת ה-XP
 
 const activeConversations = new Map(); 
 const CONVERSATION_TIMEOUT = 120 * 1000; 
 
 function isTriggered(text, msg, sock) {
     const chatJid = msg.key.remoteJid;
-    const isPrivate = !chatJid.endsWith('@g.us'); // זיהוי צ'אט פרטי
+    const isPrivate = !chatJid.endsWith('@g.us'); 
 
-    // בפרטי - תמיד מופעל (לא צריך לקרוא לו בשם)
     if (isPrivate) return true;
 
     const botId = sock.user?.id?.split(':')[0] || sock.user?.id?.split('@')[0];
@@ -33,7 +33,7 @@ function isTriggered(text, msg, sock) {
     const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant;
     if (botId && quotedParticipant && quotedParticipant.includes(botId)) return true;
 
-    // 4. מילות מפתח (מעיר את ה-AI)
+    // 4. מילות מפתח
     const wakeWords = ['רולטה', 'הימור', 'בט', 'סקור', 'דמג', 'תנגן', 'שיר', 'מתי', 'יום הולדת', 'יומולדת'];
     if (wakeWords.some(word => text.includes(word))) return true;
 
@@ -46,29 +46,20 @@ async function handleMessageLogic(sock, msg, text) {
     const senderPhone = senderFullJid.split('@')[0];
     const isPrivate = !chatJid.endsWith('@g.us');
 
-    // --- בדיקת שעות פעילות (AI מלא) ---
+    // --- בדיקת שעות פעילות ---
     const systemStatus = isSystemActive();
     const isAdmin = senderPhone === '972526800647'; 
     
-    // אם המערכת מושבתת (שבת/שנ"צ/לילה) והמשתמש לא אדמין
     if (!systemStatus.active && !isAdmin) {
-        
-        // האם המשתמש מנסה ליצור אינטראקציה? (בפרטי תמיד כן, בקבוצה רק אם קראו לו)
         const isInteraction = isPrivate || text.includes('שמעון') || text.includes('שימי') || text.includes('בוט');
+        if (!isInteraction) return; 
 
-        if (!isInteraction) return; // סתם הודעה בקבוצה בזמן מנוחה - מתעלמים.
-
-        // אנחנו לא מכתיבים לו את התשובה!
-        // אנחנו שולחים למוח "הוראת מערכת" והוא יגיב לטקסט המקורי של המשתמש.
-        
         const modeDescription = {
             "Shabbat": "SHABBAT_MODE (Religious/Rest day)",
             "Siesta": "SIESTA_MODE (Afternoon Nap/Food - Do not disturb)",
             "Night": "NIGHT_MODE (Sleeping - Do not disturb)"
         }[systemStatus.reason] || "REST_MODE";
 
-        // הפרומפט המתוחכם:
-        // "המערכת במצב X. המשתמש כתב: Y. תגיב לו בהתאם לאופי שלך ולעובדה שאסור לך לעבוד עכשיו."
         const contextInjection = `
         [SYSTEM OVERRIDE]: Currently in ${modeDescription}.
         User message: "${text}".
@@ -81,8 +72,6 @@ async function handleMessageLogic(sock, msg, text) {
         await sock.sendMessage(chatJid, { text: refusalResponse }, { quoted: msg });
         return;
     }
-
-    // --- המשך לוגיקה רגילה (כשהמערכת פעילה) ---
 
     let realUserId = senderPhone;
     try {
@@ -100,19 +89,26 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, is
 
     if (text === "BLOCKED_SPAM") return; 
 
+    // ✅ 2. דיווח XP על ההודעה
+    // אנחנו שולחים את ההודעה למנהל ה-XP כדי שיספור אותה ויבדוק עליית רמה
+    xpManager.handleXP(senderId, 'whatsapp', text, { sock, chatId: chatJid }, async (response) => {
+        // פונקציית תגובה (במקרה של עליית רמה, הטקסט יישלח פה אם אין תמונה)
+        // אבל ה-XP Manager החדש שלך כבר יודע לשלוח תמונה לבד דרך ה-socket שהעברנו ב-contextObj
+        if (typeof response === 'string') {
+             await sock.sendMessage(chatJid, { text: response }, { quoted: msg });
+        }
+    });
+
     try {
-        // --- בדיקת טריגר ---
         const isExplicitCall = isTriggered(text, msg, sock);
         const lastInteraction = activeConversations.get(senderId);
         const isInConversation = lastInteraction && (Date.now() - lastInteraction < CONVERSATION_TIMEOUT);
 
-        // אם לא קראו לנו ואין הקשר -> צופה שקט בלבד
         if (!isExplicitCall && !isInConversation) {
             await learningEngine.learnFromContext(senderId, "Gamer", 'whatsapp', text);
             return; 
         }
 
-        // --- ה-AI נכנס לפעולה! ---
         activeConversations.set(senderId, Date.now());
         await sock.sendPresenceUpdate('composing', chatJid);
 

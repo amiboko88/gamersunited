@@ -2,7 +2,8 @@
 const cron = require('node-cron');
 const db = require('../../utils/firebase');
 const rankingCore = require('./core');
-const rankingRenderer = require('./render');
+// const rankingRenderer = require('./render'); // ❌ נמחק
+const graphics = require('../graphics/index'); // ✅ המערכת הגרפית החדשה
 const rankingBroadcaster = require('./broadcaster');
 const { log } = require('../../utils/logger');
 
@@ -61,9 +62,9 @@ class RankingManager {
             // 2. חישוב מספר השבוע (מסונכרן לפורמט הפקודה)
             const weekNum = this._getWeekNumber();
 
-            // 3. יצירת התמונה (Puppeteer)
+            // 3. יצירת התמונה (Puppeteer) דרך המנוע החדש ✅
             log(`🎨 [Ranking] מייצר תמונה לשבוע #${weekNum}...`);
-            const imageBuffer = await rankingRenderer.generateLeaderboardImage(leaders, weekNum);
+            const imageBuffer = await graphics.leaderboard.generateImage(leaders, weekNum);
 
             if (!imageBuffer) {
                 log('❌ [Ranking] Image generation failed.');

@@ -1,40 +1,53 @@
 // 📁 handlers/ai/tools/identity.js
-const db = require('../../../utils/firebase');
+const { getUserRef } = require('../../utils/userUtils');
+const graphics = require('../../graphics/index');
 
 module.exports = {
     definition: {
         type: "function",
         function: {
-            name: "update_user_info",
-            description: "Update user profile (birthday, name) in DB.",
+            name: "get_user_profile",
+            description: "Get user profile card (XP, Level, Balance). Use when user asks 'my stats' or 'who am i'.",
             parameters: {
                 type: "object",
                 properties: {
-                    birth_day: { type: "integer" },
-                    birth_month: { type: "integer" },
-                    full_name: { type: "string" }
+                    target_user: { type: "string", description: "Name/Phone/ID (optional, default is sender)" }
                 }
             }
         }
     },
 
-    async execute(args, userId) {
-        const updates = {};
-        let feedback = "";
+    async execute(args, userId, chatId) {
+        const { getWhatsAppSock } = require('../../../whatsapp/index');
+        const sock = getWhatsAppSock();
 
-        if (args.birth_day && args.birth_month) {
-            updates['identity.birthday'] = { day: args.birth_day, month: args.birth_month };
-            feedback += `יום הולדת עודכן (${args.birth_day}/${args.birth_month}). `;
-        }
-        if (args.full_name) {
-            updates['identity.fullName'] = args.full_name;
-            feedback += `שם עודכן. `;
-        }
+        try {
+            const userRef = await getUserRef(userId, 'whatsapp');
+            const doc = await userRef.get();
+            
+            if (!doc.exists) return "לא מצאתי נתונים עליך. תתחיל לדבר!";
 
-        if (Object.keys(updates).length > 0) {
-            await db.collection('users').doc(userId).set(updates, { merge: true });
-            return feedback || "עודכן.";
+            const data = doc.data();
+            const name = data.identity?.displayName || "Gamer";
+            const level = data.economy?.level || 1;
+            const xp = data.economy?.xp || 0;
+            const avatar = data.identity?.avatarURL || "https://cdn.discordapp.com/embed/avatars/0.png";
+
+            // יצירת הכרטיס
+            const cardBuffer = await graphics.profile.generateLevelUpCard(name, level, xp, avatar);
+
+            if (sock && chatId && cardBuffer) {
+                await sock.sendMessage(chatId, { 
+                    image: cardBuffer, 
+                    caption: `📊 **הפרופיל של ${name}**\n💰 יתרה: ₪${data.economy?.balance || 0}`
+                });
+                return "שלחתי את כרטיס הפרופיל.";
+            }
+
+            return `רמה: ${level} | XP: ${xp}`;
+
+        } catch (err) {
+            return "שגיאה בשליפת פרופיל.";
         }
-        return "לא סופק מידע לשינוי.";
     }
 };

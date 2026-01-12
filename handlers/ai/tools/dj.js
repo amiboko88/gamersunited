@@ -1,6 +1,6 @@
 // 📁 handlers/ai/tools/dj.js
 const audioScanner = require('../../audio/scanner');
-const playlistRenderer = require('../../audio/render');
+const graphics = require('../../graphics/index'); // ✅ תיקון נתיב
 const fs = require('fs');
 
 module.exports = {
@@ -20,12 +20,10 @@ module.exports = {
         }
     },
 
-    // ✅ מקבל chatId מהפרמטרים
     async execute(args, userId, chatId) {
         const { getWhatsAppSock } = require('../../../whatsapp/index');
         const sock = getWhatsAppSock();
         
-        // אם לא הועבר chatId (למשל מדיסקורד), נשתמש בקבוצה הראשית כברירת מחדל, אבל בוואטסאפ זה יגיע נכון.
         const targetJid = chatId || process.env.WHATSAPP_MAIN_GROUP_ID;
 
         if (!sock) return "שמעון לא מחובר לוואטסאפ.";
@@ -35,7 +33,9 @@ module.exports = {
             const tracks = audioScanner.getTracks();
             if (tracks.length === 0) return "אין שירים.";
 
-            const imageBuffer = await playlistRenderer.generatePlaylistImage(tracks);
+            // ✅ קריאה נכונה לרינדור החדש
+            const imageBuffer = await graphics.playlist.generateImage(tracks);
+            
             if (imageBuffer) {
                 await sock.sendMessage(targetJid, { 
                     image: imageBuffer, 
@@ -60,12 +60,10 @@ module.exports = {
 
             try {
                 const audioBuffer = fs.readFileSync(found.fullPath);
-                
-                // ✅ תיקון קריטי לאייפון: audio/mpeg במקום mp4
                 await sock.sendMessage(targetJid, { 
                     audio: audioBuffer, 
                     mimetype: 'audio/mpeg', 
-                    ptt: true // נשאר כהודעה קולית
+                    ptt: true 
                 });
                 return `✅ שלחתי את **${found.name}**.`;
             } catch (err) {

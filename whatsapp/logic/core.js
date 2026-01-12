@@ -17,7 +17,7 @@ const CONVERSATION_TIMEOUT = 120 * 1000;
 function isTriggered(text, msg, sock) {
     const botId = sock.user?.id?.split(':')[0] || sock.user?.id?.split('@')[0];
     
-    // 1. קריאה מפורשת
+    // 1. קריאה מפורשת בשם
     if (text.includes('שמעון') || text.includes('שימי') || text.includes('בוט')) return true;
     
     // 2. תיוג ישיר
@@ -28,8 +28,15 @@ function isTriggered(text, msg, sock) {
     const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant;
     if (botId && quotedParticipant && quotedParticipant.includes(botId)) return true;
 
-    // 4. מילות מפתח קריטיות (כדי להעיר את ה-AI למשחקים)
-    const wakeWords = ['רולטה', 'הימור', 'בט', 'סקור', 'דמג', 'תנגן', 'שיר'];
+    // 4. מילות מפתח שמעירות את ה-AI (במקום לבדוק ידנית בקוד, ה-AI יטפל בהן)
+    const wakeWords = [
+        'רולטה', 'הימור', 'בט', // קזינו
+        'סקור', 'דמג', 'לוח',   // Vision
+        'תנגן', 'שיר', 'פלייליסט', // DJ
+        'יום הולדת', 'יומולדת', 'תאריך לידה' // ימי הולדת
+    ];
+    
+    // בדיקה אם אחת המילות מופיעה (אבל לא סתם כחלק ממילה, אלא כמילה בפני עצמה או הקשר ברור)
     if (wakeWords.some(word => text.includes(word))) return true;
 
     return false;
@@ -42,33 +49,23 @@ async function handleMessageLogic(sock, msg, text) {
 
     // --- שעות פעילות ---
     const systemStatus = isSystemActive();
-    
-    // ✅ תיקון מספר האדמין
     const isAdmin = senderPhone === '972526800647'; 
     
     if (!systemStatus.active && systemStatus.reason === "Shabbat") {
         if (isAdmin) { 
-            // אדמין עוקף שבת
+            // Bypass
         } else {
-            // לוגיקת שבת מבוססת AI
-            // אנחנו עדיין שומרים על מנגנון נגד הצפה (מגיב רק כל הודעה שלישית) כדי לא לחלל שבת בעצמו יותר מדי
             if (text.includes('שמעון')) {
                 const count = (shabbatSpamCounter.get(senderPhone) || 0) + 1;
                 shabbatSpamCounter.set(senderPhone, count);
                 
                 if (count === 3) {
-                    // ✅ קריאה ל-AI במקום רשימה קבועה!
-                    const shabbatRoast = await shimonBrain.ask(
-                        senderPhone, 
-                        'whatsapp', 
-                        "המערכת מזהה שעכשיו שבת ואני מדבר איתך. תנזוף בי שאני מפריע לך במנוחה/תפילה. תהיה דתי-ערס.", 
-                        false
-                    );
+                    const shabbatRoast = await shimonBrain.ask(senderPhone, 'whatsapp', "זה שבת ואני מדבר איתך. תנזוף בי דתי-ערס.", false);
                     await sock.sendMessage(chatJid, { text: shabbatRoast }, { quoted: msg });
                     shabbatSpamCounter.set(senderPhone, 0); 
                 }
             }
-            return; // לא ממשיכים ללוגיקה הרגילה בשבת
+            return; 
         }
     } else if (!systemStatus.active && !isAdmin) return;
 
@@ -104,14 +101,21 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, is
         activeConversations.set(senderId, Date.now());
         await sock.sendPresenceUpdate('composing', chatJid);
 
-        // הורדת תמונה (אם יש) ל-Vision
         let imageBuffer = null;
         if (mediaMsg) {
             imageBuffer = await visionSystem.downloadWhatsAppImage(mediaMsg, sock);
         }
 
-        // 🧠 המוח
-        const aiResponse = await shimonBrain.ask(senderId, 'whatsapp', text, isAdmin, imageBuffer);
+        // 🧠 המוח מקבל הכל: טקסט, תמונה, ואת ה-ID של הצ'אט (כדי לדעת לאן לענות)
+        // כאן הקסם: אין יותר IF/ELSE. הכל הולך ל-AI.
+        const aiResponse = await shimonBrain.ask(
+            senderId, 
+            'whatsapp', 
+            text, 
+            isAdmin, 
+            imageBuffer, 
+            chatJid // ✅ קריטי: מעבירים את ה-Chat ID
+        );
         
         if (aiResponse) {
             await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });

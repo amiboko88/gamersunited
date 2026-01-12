@@ -36,12 +36,12 @@ class AudioScanner {
             return files
                 .filter(file => file.endsWith('.mp3') || file.endsWith('.wav') || file.endsWith('.ogg'))
                 .map(file => ({
-                    name: file.replace(/\.[^/.]+$/, ""), // הסרת סיומת לתצוגה יפה
-                    filename: file,
-                    path: path.join(folderPath, file)
+                    name: file.replace(/\.[^/.]+$/, ""), // שם נקי לתצוגה
+                    filename: file, // שם הקובץ המקורי
+                    fullPath: path.join(folderPath, file) // ✅ נתיב מלא לשליחה
                 }));
         } catch (error) {
-            console.error(`[AudioScanner] Error scanning ${folderPath}:`, error);
+            console.error(`Error scanning audio folder: ${error.message}`);
             return [];
         }
     }

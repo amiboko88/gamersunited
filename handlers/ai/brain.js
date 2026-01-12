@@ -4,7 +4,7 @@ const config = require('./config');
 const contextManager = require('./context');
 const memoryManager = require('./memory');
 const toolsManager = require('./tools/index');
-const learningEngine = require('./learning'); // ✅ שימוש בקוד הקיים שלך
+const learningEngine = require('./learning'); 
 const { log } = require('../../utils/logger');
 const db = require('../../utils/firebase');
 const admin = require('firebase-admin');
@@ -13,30 +13,40 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 class ShimonBrain {
 
-    async ask(userId, platform, userQuery, isAdmin = false) {
+    // ✅ הוספתי פרמטר imageBuffer
+    async ask(userId, platform, userQuery, isAdmin = false, imageBuffer = null) {
         try {
-            // 1. שליפת היסטוריה
+            // 1. הקשרים והיסטוריה
             const history = memoryManager.getHistory(platform, userId);
-
-            // 2. בניית פרופיל חכם (זומבי/כסף)
             const techContext = await contextManager.buildContext(userId, platform);
-            
-            // 3. שליפת עובדות אישיות (מהקובץ הקיים שלך!)
             const factsContext = await learningEngine.getUserProfile(userId, platform);
 
-            // 4. הרכבת הפרומפט
+            // 2. בניית הודעת המשתמש (טקסט + תמונה אם יש)
+            let userContent = [];
+            if (userQuery) userContent.push({ type: "text", text: userQuery });
+            
+            if (imageBuffer) {
+                const base64Image = imageBuffer.toString('base64');
+                userContent.push({
+                    type: "image_url",
+                    image_url: { url: `data:image/jpeg;base64,${base64Image}` }
+                });
+                log(`[Brain] 👁️ תמונה צורפה לבקשה של ${userId}`);
+            }
+
+            // 3. הרכבת רשימת ההודעות
             const messages = [
                 { 
                     role: "system", 
                     content: `${config.SYSTEM_PROMPT}\n\n${techContext}\n\n${factsContext}` 
                 },
                 ...history,
-                { role: "user", content: userQuery }
+                { role: "user", content: userContent }
             ];
 
             if (isAdmin) messages[0].content += "\n[ADMIN USER DETECTED - Respect Level: 100]";
 
-            // 5. ריצה מול OpenAI
+            // 4. שליחה ל-OpenAI
             const runner = await openai.chat.completions.create({
                 model: config.MODEL,
                 messages: messages,
@@ -49,9 +59,10 @@ class ShimonBrain {
             const msg = runner.choices[0].message;
             let finalResponse = "";
 
-            // 6. טיפול בכלים (אם ה-AI החליט להפעיל)
+            // 5. ביצוע כלים (Tools Execution)
             if (msg.tool_calls) {
-                messages.push(msg); // מוסיפים את הבקשה להיסטוריה
+                // חייבים להוסיף את הודעת ה-Assistant המקורית להיסטוריה של הריצה הנוכחית
+                messages.push(msg); 
 
                 for (const toolCall of msg.tool_calls) {
                     log(`🛠️ [Brain] Executing tool: ${toolCall.function.name}`);
@@ -69,7 +80,7 @@ class ShimonBrain {
                     });
                 }
 
-                // ריצה שניה לקבלת התשובה הסופית
+                // ריצה שניה לקבלת התשובה הסופית (ה-AI מסכם את מה שהכלים עשו)
                 const secondRun = await openai.chat.completions.create({
                     model: config.MODEL,
                     messages: messages
@@ -79,14 +90,13 @@ class ShimonBrain {
                 finalResponse = msg.content;
             }
 
-            // 7. סיום: שמירה בזיכרון, למידה, וסטטיסטיקה
-            memoryManager.addMessage(platform, userId, "user", userQuery);
+            // 6. שמירה וסטטיסטיקה
+            // בזיכרון נשמור רק את הטקסט (חוסך מקום)
+            memoryManager.addMessage(platform, userId, "user", userQuery || "[Image Uploaded]");
             memoryManager.addMessage(platform, userId, "assistant", finalResponse);
             
-            // שימוש בקוד הקיים שלך ללמידת עובדות חדשות
             learningEngine.learnFromContext(userId, "User", platform, userQuery);
-            
-            this.trackStats(userId, finalResponse.length);
+            this.trackStats(userId, finalResponse?.length || 0);
 
             return finalResponse;
 

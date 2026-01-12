@@ -1,6 +1,6 @@
 // 📁 handlers/ai/tools/identity.js
-const { getUserRef } = require('../../utils/userUtils');
-const graphics = require('../../graphics/index');
+const { getUserRef } = require('../../../utils/userUtils'); // ✅ תיקון נתיב: עליה של 3 רמות
+const graphics = require('../../graphics/index'); // גם כאן הנתיב היה גבולי, עדיף לדייק
 
 module.exports = {
     definition: {
@@ -18,10 +18,12 @@ module.exports = {
     },
 
     async execute(args, userId, chatId) {
-        const { getWhatsAppSock } = require('../../../whatsapp/index');
+        // ייבוא דינמי כדי למנוע מעגליות אם קיימת, ותיקון נתיב לוואטסאפ
+        const { getWhatsAppSock } = require('../../../whatsapp/index'); 
         const sock = getWhatsAppSock();
 
         try {
+            // שימוש ב-userId כפי שהוא (הפונקציה getUserRef כבר יודעת לטפל בו)
             const userRef = await getUserRef(userId, 'whatsapp');
             const doc = await userRef.get();
             
@@ -47,6 +49,7 @@ module.exports = {
             return `רמה: ${level} | XP: ${xp}`;
 
         } catch (err) {
+            console.error("Identity Tool Error:", err);
             return "שגיאה בשליפת פרופיל.";
         }
     }

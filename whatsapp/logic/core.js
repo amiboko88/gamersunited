@@ -10,14 +10,19 @@ const shimonBrain = require('../../handlers/ai/brain');
 const learningEngine = require('../../handlers/ai/learning'); 
 const userManager = require('../../handlers/users/manager'); 
 
-const shabbatSpamCounter = new Map(); 
 const activeConversations = new Map(); 
 const CONVERSATION_TIMEOUT = 120 * 1000; 
 
 function isTriggered(text, msg, sock) {
+    const chatJid = msg.key.remoteJid;
+    const isPrivate = !chatJid.endsWith('@g.us'); // זיהוי צ'אט פרטי
+
+    // בפרטי - תמיד מופעל (לא צריך לקרוא לו בשם)
+    if (isPrivate) return true;
+
     const botId = sock.user?.id?.split(':')[0] || sock.user?.id?.split('@')[0];
     
-    // 1. קריאה מפורשת בשם
+    // 1. קריאה מפורשת
     if (text.includes('שמעון') || text.includes('שימי') || text.includes('בוט')) return true;
     
     // 2. תיוג ישיר
@@ -28,15 +33,8 @@ function isTriggered(text, msg, sock) {
     const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant;
     if (botId && quotedParticipant && quotedParticipant.includes(botId)) return true;
 
-    // 4. מילות מפתח שמעירות את ה-AI (במקום לבדוק ידנית בקוד, ה-AI יטפל בהן)
-    const wakeWords = [
-        'רולטה', 'הימור', 'בט', // קזינו
-        'סקור', 'דמג', 'לוח',   // Vision
-        'תנגן', 'שיר', 'פלייליסט', // DJ
-        'יום הולדת', 'יומולדת', 'תאריך לידה' // ימי הולדת
-    ];
-    
-    // בדיקה אם אחת המילות מופיעה (אבל לא סתם כחלק ממילה, אלא כמילה בפני עצמה או הקשר ברור)
+    // 4. מילות מפתח (מעיר את ה-AI)
+    const wakeWords = ['רולטה', 'הימור', 'בט', 'סקור', 'דמג', 'תנגן', 'שיר', 'מתי', 'יום הולדת', 'יומולדת'];
     if (wakeWords.some(word => text.includes(word))) return true;
 
     return false;
@@ -46,28 +44,45 @@ async function handleMessageLogic(sock, msg, text) {
     const chatJid = msg.key.remoteJid;
     const senderFullJid = msg.key.participant || msg.participant || chatJid;
     const senderPhone = senderFullJid.split('@')[0];
+    const isPrivate = !chatJid.endsWith('@g.us');
 
-    // --- שעות פעילות ---
+    // --- בדיקת שעות פעילות (AI מלא) ---
     const systemStatus = isSystemActive();
     const isAdmin = senderPhone === '972526800647'; 
     
-    if (!systemStatus.active && systemStatus.reason === "Shabbat") {
-        if (isAdmin) { 
-            // Bypass
-        } else {
-            if (text.includes('שמעון')) {
-                const count = (shabbatSpamCounter.get(senderPhone) || 0) + 1;
-                shabbatSpamCounter.set(senderPhone, count);
-                
-                if (count === 3) {
-                    const shabbatRoast = await shimonBrain.ask(senderPhone, 'whatsapp', "זה שבת ואני מדבר איתך. תנזוף בי דתי-ערס.", false);
-                    await sock.sendMessage(chatJid, { text: shabbatRoast }, { quoted: msg });
-                    shabbatSpamCounter.set(senderPhone, 0); 
-                }
-            }
-            return; 
-        }
-    } else if (!systemStatus.active && !isAdmin) return;
+    // אם המערכת מושבתת (שבת/שנ"צ/לילה) והמשתמש לא אדמין
+    if (!systemStatus.active && !isAdmin) {
+        
+        // האם המשתמש מנסה ליצור אינטראקציה? (בפרטי תמיד כן, בקבוצה רק אם קראו לו)
+        const isInteraction = isPrivate || text.includes('שמעון') || text.includes('שימי') || text.includes('בוט');
+
+        if (!isInteraction) return; // סתם הודעה בקבוצה בזמן מנוחה - מתעלמים.
+
+        // אנחנו לא מכתיבים לו את התשובה!
+        // אנחנו שולחים למוח "הוראת מערכת" והוא יגיב לטקסט המקורי של המשתמש.
+        
+        const modeDescription = {
+            "Shabbat": "SHABBAT_MODE (Religious/Rest day)",
+            "Siesta": "SIESTA_MODE (Afternoon Nap/Food - Do not disturb)",
+            "Night": "NIGHT_MODE (Sleeping - Do not disturb)"
+        }[systemStatus.reason] || "REST_MODE";
+
+        // הפרומפט המתוחכם:
+        // "המערכת במצב X. המשתמש כתב: Y. תגיב לו בהתאם לאופי שלך ולעובדה שאסור לך לעבוד עכשיו."
+        const contextInjection = `
+        [SYSTEM OVERRIDE]: Currently in ${modeDescription}.
+        User message: "${text}".
+        INSTRUCTION: You are NOT allowed to process commands or help right now. 
+        Instead, scold the user or dismiss them creatively based on your persona and the current time/reason.
+        `;
+
+        await sock.sendPresenceUpdate('composing', chatJid);
+        const refusalResponse = await shimonBrain.ask(senderPhone, 'whatsapp', contextInjection, false, null, chatJid);
+        await sock.sendMessage(chatJid, { text: refusalResponse }, { quoted: msg });
+        return;
+    }
+
+    // --- המשך לוגיקה רגילה (כשהמערכת פעילה) ---
 
     let realUserId = senderPhone;
     try {
@@ -86,7 +101,7 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, is
     if (text === "BLOCKED_SPAM") return; 
 
     try {
-        // --- בדיקת הפעלה ---
+        // --- בדיקת טריגר ---
         const isExplicitCall = isTriggered(text, msg, sock);
         const lastInteraction = activeConversations.get(senderId);
         const isInConversation = lastInteraction && (Date.now() - lastInteraction < CONVERSATION_TIMEOUT);
@@ -106,15 +121,13 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, is
             imageBuffer = await visionSystem.downloadWhatsAppImage(mediaMsg, sock);
         }
 
-        // 🧠 המוח מקבל הכל: טקסט, תמונה, ואת ה-ID של הצ'אט (כדי לדעת לאן לענות)
-        // כאן הקסם: אין יותר IF/ELSE. הכל הולך ל-AI.
         const aiResponse = await shimonBrain.ask(
             senderId, 
             'whatsapp', 
             text, 
             isAdmin, 
             imageBuffer, 
-            chatJid // ✅ קריטי: מעבירים את ה-Chat ID
+            chatJid 
         );
         
         if (aiResponse) {

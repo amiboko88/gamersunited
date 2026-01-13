@@ -1,10 +1,11 @@
 // 📁 handlers/economy/gameManager.js
-const { getDiscordClient } = require('../../discord/index');
-const { getWhatsAppSock } = require('../../whatsapp/index');
+
+const { getSocket } = require('../../whatsapp/socket');
 const graphics = require('../graphics/index'); // ✅ ייבוא המערכת הגרפית המודולרית
 const { getUserRef } = require('../../utils/userUtils');
 const admin = require('firebase-admin');
 const db = admin.firestore();
+const { economy } = require('../../config/settings');
 
 class GameManager {
     constructor() {
@@ -45,7 +46,9 @@ class GameManager {
     }
 
     async checkAvailability(p1Name, p2Name) {
-        const client = getDiscordClient();
+        // ✅ Lazy Load כדי למנוע מעגל: Brain -> Match -> GameManager -> Discord -> Brain
+        const { client } = require('../../discord/index');
+
         if (!client) return { available: false, reason: "Discord Disconnected" };
 
         const guild = client.guilds.cache.first();
@@ -127,7 +130,7 @@ class GameManager {
         this.currentMatch.pot += amount;
         this.currentMatch.bets.push({ userId, amount, onWho });
 
-        if (amount >= 50) await this.broadcastUpdate(`💰 הימור כבד! מישהו שם ${amount} על ${onWho}`);
+        if (amount >= economy.bigBetThreshold) await this.broadcastUpdate(`💰 הימור כבד! מישהו שם ${amount} על ${onWho}`);
 
         return "Bet Accepted";
     }
@@ -164,7 +167,7 @@ class GameManager {
     }
 
     async broadcastUpdate(caption) {
-        const sock = getWhatsAppSock();
+        const sock = getSocket();
         if (!sock || !this.currentMatch.chatId) return;
 
         // ✅ שימוש במערכת המודולרית החדשה

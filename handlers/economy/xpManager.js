@@ -1,10 +1,9 @@
-// 📁 handlers/economy/xpManager.js
 const { getUserRef } = require('../../utils/userUtils');
 const { log } = require('../../utils/logger');
 const graphics = require('../graphics/index');
+const { economy } = require('../../config/settings');
 
-const LEVEL_FORMULA = level => 5 * (level ** 2) + 50 * level + 100;
-const COOLDOWN_SECONDS = 60;
+const LEVEL_FORMULA = level => economy.levelMultiplier * (level ** 2) + economy.levelLinear * level + economy.levelBase;
 const lastMessageTimestamps = new Map();
 
 class XPManager {
@@ -17,12 +16,12 @@ class XPManager {
 
         if (lastMessageTimestamps.has(cooldownKey)) {
             const last = lastMessageTimestamps.get(cooldownKey);
-            if ((now - last) / 1000 < COOLDOWN_SECONDS) return;
+            if ((now - last) / 1000 < economy.xpCooldown) return;
         }
         lastMessageTimestamps.set(cooldownKey, now);
 
         const charCount = content.length;
-        const xpGain = Math.min(Math.floor(charCount / 10) + 5, 50);
+        const xpGain = Math.min(Math.floor(charCount / economy.charsPerXp) + economy.minXpPerMsg, economy.maxXpPerMsg);
 
         try {
             const userRef = await getUserRef(userId, platform);

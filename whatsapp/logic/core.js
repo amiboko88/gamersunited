@@ -1,30 +1,30 @@
 // 📁 whatsapp/logic/core.js
 const { log } = require('../../utils/logger');
-const bufferSystem = require('./buffer'); 
-const { isSystemActive } = require('../utils/timeHandler'); 
-const { getUserRef } = require('../../utils/userUtils'); 
-const visionSystem = require('../../handlers/media/vision'); 
+const bufferSystem = require('./buffer');
+const { isSystemActive } = require('../utils/timeHandler');
+const { getUserRef } = require('../../utils/userUtils');
+const visionSystem = require('../../handlers/media/vision');
+const { whatsapp } = require('../../config/settings');
 
 // מערכות
-const shimonBrain = require('../../handlers/ai/brain'); 
-const learningEngine = require('../../handlers/ai/learning'); 
-const userManager = require('../../handlers/users/manager'); 
+const shimonBrain = require('../../handlers/ai/brain');
+const learningEngine = require('../../handlers/ai/learning');
+const userManager = require('../../handlers/users/manager');
 const xpManager = require('../../handlers/economy/xpManager'); // ✅ 1. ייבוא מערכת ה-XP
 
-const activeConversations = new Map(); 
-const CONVERSATION_TIMEOUT = 120 * 1000; 
+const activeConversations = new Map();
 
 function isTriggered(text, msg, sock) {
     const chatJid = msg.key.remoteJid;
-    const isPrivate = !chatJid.endsWith('@g.us'); 
+    const isPrivate = !chatJid.endsWith('@g.us');
 
     if (isPrivate) return true;
 
     const botId = sock.user?.id?.split(':')[0] || sock.user?.id?.split('@')[0];
-    
+
     // 1. קריאה מפורשת
     if (text.includes('שמעון') || text.includes('שימי') || text.includes('בוט')) return true;
-    
+
     // 2. תיוג ישיר
     const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
     if (botId && mentionedJids.some(jid => jid.includes(botId))) return true;
@@ -34,8 +34,7 @@ function isTriggered(text, msg, sock) {
     if (botId && quotedParticipant && quotedParticipant.includes(botId)) return true;
 
     // 4. מילות מפתח
-    const wakeWords = ['רולטה', 'הימור', 'בט', 'סקור', 'דמג', 'תנגן', 'שיר', 'מתי', 'יום הולדת', 'יומולדת'];
-    if (wakeWords.some(word => text.includes(word))) return true;
+    if (whatsapp.wakeWords.some(word => text.includes(word))) return true;
 
     return false;
 }
@@ -48,11 +47,11 @@ async function handleMessageLogic(sock, msg, text) {
 
     // --- בדיקת שעות פעילות ---
     const systemStatus = isSystemActive();
-    const isAdmin = senderPhone === '972526800647'; 
-    
+    const isAdmin = senderPhone === '972526800647';
+
     if (!systemStatus.active && !isAdmin) {
         const isInteraction = isPrivate || text.includes('שמעון') || text.includes('שימי') || text.includes('בוט');
-        if (!isInteraction) return; 
+        if (!isInteraction) return;
 
         const modeDescription = {
             "Shabbat": "SHABBAT_MODE (Religious/Rest day)",
@@ -76,8 +75,8 @@ async function handleMessageLogic(sock, msg, text) {
     let realUserId = senderPhone;
     try {
         const userRef = await getUserRef(senderFullJid, 'whatsapp');
-        realUserId = userRef.id; 
-    } catch (e) {}
+        realUserId = userRef.id;
+    } catch (e) { }
 
     bufferSystem.addToBuffer(realUserId, msg, text, (finalMsg, combinedText, mediaMsg) => {
         executeCoreLogic(sock, finalMsg, combinedText, mediaMsg, realUserId, chatJid, isAdmin);
@@ -85,9 +84,9 @@ async function handleMessageLogic(sock, msg, text) {
 }
 
 async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, isAdmin) {
-    try { await userManager.updateLastActive(senderId); } catch (e) {}
+    try { await userManager.updateLastActive(senderId); } catch (e) { }
 
-    if (text === "BLOCKED_SPAM") return; 
+    if (text === "BLOCKED_SPAM") return;
 
     // ✅ 2. דיווח XP על ההודעה
     // אנחנו שולחים את ההודעה למנהל ה-XP כדי שיספור אותה ויבדוק עליית רמה
@@ -95,18 +94,18 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, is
         // פונקציית תגובה (במקרה של עליית רמה, הטקסט יישלח פה אם אין תמונה)
         // אבל ה-XP Manager החדש שלך כבר יודע לשלוח תמונה לבד דרך ה-socket שהעברנו ב-contextObj
         if (typeof response === 'string') {
-             await sock.sendMessage(chatJid, { text: response }, { quoted: msg });
+            await sock.sendMessage(chatJid, { text: response }, { quoted: msg });
         }
     });
 
     try {
         const isExplicitCall = isTriggered(text, msg, sock);
         const lastInteraction = activeConversations.get(senderId);
-        const isInConversation = lastInteraction && (Date.now() - lastInteraction < CONVERSATION_TIMEOUT);
+        const isInConversation = lastInteraction && (Date.now() - lastInteraction < whatsapp.conversationTimeout);
 
         if (!isExplicitCall && !isInConversation) {
             await learningEngine.learnFromContext(senderId, "Gamer", 'whatsapp', text);
-            return; 
+            return;
         }
 
         activeConversations.set(senderId, Date.now());
@@ -118,14 +117,14 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, is
         }
 
         const aiResponse = await shimonBrain.ask(
-            senderId, 
-            'whatsapp', 
-            text, 
-            isAdmin, 
-            imageBuffer, 
-            chatJid 
+            senderId,
+            'whatsapp',
+            text,
+            isAdmin,
+            imageBuffer,
+            chatJid
         );
-        
+
         if (aiResponse) {
             await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });
         }

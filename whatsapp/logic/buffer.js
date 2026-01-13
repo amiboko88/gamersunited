@@ -1,13 +1,9 @@
 // 📁 whatsapp/logic/buffer.js
 const { log } = require('../../utils/logger');
+const { buffer } = require('../../config/settings');
 
 const messageBuffer = new Map();
-const spamMap = new Map(); 
-
-const SPAM_LIMIT = 7; 
-const SPAM_WINDOW_MS = 10000; 
-const COOLDOWN_MS = 60000; 
-const BUFFER_DELAY_MS = 1500; 
+const spamMap = new Map();
 
 function isSpammer(senderId) {
     const now = Date.now();
@@ -20,15 +16,15 @@ function isSpammer(senderId) {
 
     if (now < userData.blockedUntil) return { blocked: true, silent: true };
 
-    if (now - userData.firstMsgTime > SPAM_WINDOW_MS) {
+    if (now - userData.firstMsgTime > buffer.spamWindowMs) {
         userData.count = 0;
         userData.firstMsgTime = now;
     }
 
     userData.count++;
 
-    if (userData.count > SPAM_LIMIT) {
-        userData.blockedUntil = now + COOLDOWN_MS;
+    if (userData.count > buffer.spamLimit) {
+        userData.blockedUntil = now + buffer.cooldownMs;
         log(`[Buffer] 🚫 User ${senderId} blocked for spamming.`);
         return { blocked: true, silent: false };
     }
@@ -42,7 +38,7 @@ function addToBuffer(senderId, msg, text, processCallback) {
         if (!spamCheck.silent) {
             processCallback(msg, "BLOCKED_SPAM", null);
         }
-        return; 
+        return;
     }
 
     let session = messageBuffer.get(senderId);
@@ -68,7 +64,7 @@ function addToBuffer(senderId, msg, text, processCallback) {
 
     session.timer = setTimeout(() => {
         executeSession(senderId, session, processCallback);
-    }, BUFFER_DELAY_MS);
+    }, buffer.windowMs);
 
     messageBuffer.set(senderId, session);
 }
@@ -77,10 +73,10 @@ function executeSession(senderId, session, processCallback) {
     messageBuffer.delete(senderId);
     const fullText = session.textParts.join(" ");
     const primaryMsg = session.mediaMsg || session.lastMsg;
-    
+
     // ✅ לוג משוחזר: מראה שהבאפר סיים ומשחרר ל-Core
     log(`[Buffer] ⏩ Processed batch for ${senderId}: "${fullText}" (Images: ${session.mediaMsg ? 'Yes' : 'No'})`);
-    
+
     processCallback(primaryMsg, fullText, session.mediaMsg);
 }
 

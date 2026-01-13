@@ -21,9 +21,9 @@ module.exports = {
     },
 
     async execute(args, userId, chatId) {
-        const { getWhatsAppSock } = require('../../../whatsapp/index');
-        const sock = getWhatsAppSock();
-        
+        const { getSocket } = require('../../../whatsapp/socket');
+        const sock = getSocket();
+
         const targetJid = chatId || process.env.WHATSAPP_MAIN_GROUP_ID;
 
         if (!sock) return "שמעון לא מחובר לוואטסאפ.";
@@ -35,10 +35,10 @@ module.exports = {
 
             // ✅ קריאה נכונה לרינדור החדש
             const imageBuffer = await graphics.playlist.generateImage(tracks);
-            
+
             if (imageBuffer) {
-                await sock.sendMessage(targetJid, { 
-                    image: imageBuffer, 
+                await sock.sendMessage(targetJid, {
+                    image: imageBuffer,
                     caption: `🎧 **הפלייליסט** (${tracks.length} שירים)`
                 });
                 return "שלחתי את הרשימה.";
@@ -51,19 +51,19 @@ module.exports = {
             const tracks = audioScanner.getTracks();
             const searchTerm = (args.song_name || "").toLowerCase().trim();
 
-            const found = tracks.find(t => 
-                t.name.toLowerCase().includes(searchTerm) || 
+            const found = tracks.find(t =>
+                t.name.toLowerCase().includes(searchTerm) ||
                 t.filename.toLowerCase().includes(searchTerm)
             );
-            
+
             if (!found) return `לא מצאתי את "${args.song_name}".`;
 
             try {
                 const audioBuffer = fs.readFileSync(found.fullPath);
-                await sock.sendMessage(targetJid, { 
-                    audio: audioBuffer, 
-                    mimetype: 'audio/mpeg', 
-                    ptt: true 
+                await sock.sendMessage(targetJid, {
+                    audio: audioBuffer,
+                    mimetype: 'audio/mpeg',
+                    ptt: true
                 });
                 return `✅ שלחתי את **${found.name}**.`;
             } catch (err) {

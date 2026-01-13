@@ -19,14 +19,14 @@ module.exports = {
 
     async execute(args, userId, chatId) {
         // ייבוא דינמי כדי למנוע מעגליות אם קיימת, ותיקון נתיב לוואטסאפ
-        const { getWhatsAppSock } = require('../../../whatsapp/index'); 
-        const sock = getWhatsAppSock();
+        const { getSocket } = require('../../../whatsapp/socket');
+        const sock = getSocket();
 
         try {
             // שימוש ב-userId כפי שהוא (הפונקציה getUserRef כבר יודעת לטפל בו)
             const userRef = await getUserRef(userId, 'whatsapp');
             const doc = await userRef.get();
-            
+
             if (!doc.exists) return "לא מצאתי נתונים עליך. תתחיל לדבר!";
 
             const data = doc.data();
@@ -39,8 +39,8 @@ module.exports = {
             const cardBuffer = await graphics.profile.generateLevelUpCard(name, level, xp, avatar);
 
             if (sock && chatId && cardBuffer) {
-                await sock.sendMessage(chatId, { 
-                    image: cardBuffer, 
+                await sock.sendMessage(chatId, {
+                    image: cardBuffer,
                     caption: `📊 **הפרופיל של ${name}**\n💰 יתרה: ₪${data.economy?.balance || 0}`
                 });
                 return "שלחתי את כרטיס הפרופיל.";

@@ -11,6 +11,7 @@ const {
 } = require('discord.js');
 const matchmaker = require('../../handlers/matchmaker');
 const store = require('../../whatsapp/store');
+const dashboardHandler = require('../../handlers/users/dashboard'); // ✅ שחזור הדשבורד הישן
 
 // טיפול ב-Circular Dependency: דורשים את הסוקט רק כשצריך
 const getWhatsAppSock = () => {
@@ -26,8 +27,15 @@ const getWhatsAppSock = () => {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('management')
-        .setDescription('🛠️ מערכת ניהול משתמשים ו-WhatsApp')
+        .setDescription('🛠️ מערכת ניהול מקיפה (דשבורד, וואטסאפ ומשתמשים)')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        // שחזור הפקודה הישנה כתת-פקודה ראשית
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('dashboard')
+                .setDescription('📊 פאנל ניהול המערכת המקורי (סטטיסטיקות, ניקוי וסנכרון)')
+        )
+        // הפקודות החדשות
         .addSubcommand(subcommand =>
             subcommand
                 .setName('link_wa')
@@ -42,16 +50,31 @@ module.exports = {
     async execute(interaction) {
         const subcommand = interaction.options.getSubcommand();
 
-        if (subcommand === 'link_wa') {
-            await handleLinkWa(interaction);
-        } else if (subcommand === 'debug_wa') {
-            await handleDebugWa(interaction);
+        try {
+            if (subcommand === 'dashboard') {
+                // ✅ קריאה ללוגיקה הישנה והטובה
+                await dashboardHandler.showMainDashboard(interaction);
+            }
+            else if (subcommand === 'link_wa') {
+                await handleLinkWa(interaction);
+            }
+            else if (subcommand === 'debug_wa') {
+                await handleDebugWa(interaction);
+            }
+        } catch (error) {
+            console.error(`Error executing management command (${subcommand}):`, error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({ content: '❌ שגיאה בביצוע הפקודה.', ephemeral: true });
+            } else {
+                await interaction.followUp({ content: '❌ שגיאה בביצוע הפקודה.', ephemeral: true });
+            }
         }
     }
 };
 
+// --- פונקציות העזר החדשות (Link WA & Debug WA) ---
+
 async function handleLinkWa(interaction) {
-    // ✅ תיקון: שימוש ב-await כי הפונקציה אסינכרונית (DB)
     const orphans = await matchmaker.getOrphans();
 
     if (orphans.length === 0) {
@@ -137,14 +160,10 @@ async function handleLinkWa(interaction) {
                 modal.addComponents(new ActionRowBuilder().addComponents(phoneInput));
 
                 await i.showModal(modal);
-
-                // הטיפול ב-Modal Submit צריך להיות ב-Event Handler נפרד בדרך כלל,
-                // אבל כאן אנחנו בתוך collector של הודעה, והמודאל הוא אינטראקציה חדשה.
-                // נשתמש ב-awaitModalSubmit על האינטראקציה הנוכחית.
+                // המשך הטיפול במודאל מתבצע ע"י המתנה לאירוע כאן או ב-handler גלובלי
                 try {
                     const submitted = await i.awaitModalSubmit({ time: 60000, filter: m => m.customId === `mng_phone_modal_${targetUserId}` });
                     const phone = submitted.fields.getTextInputValue('phone_number');
-
                     const updateRes = await matchmaker.updateUserPhone(targetUserId, phone);
 
                     if (updateRes.success) {
@@ -152,9 +171,8 @@ async function handleLinkWa(interaction) {
                     } else {
                         await submitted.reply({ content: `⚠️ שגיאה בעדכון טלפון: ${updateRes.error}`, ephemeral: true });
                     }
-                } catch (err) {
-                    console.log("Modal timed out", err);
-                }
+                } catch (e) { console.log('Modal timeout'); }
+
                 collector.stop();
             }
         }

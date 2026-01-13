@@ -42,8 +42,11 @@ function isTriggered(text, msg, sock) {
         if (isReplyToBot) return true;
     }
 
-    // 4. מילות מפתח (רק אם ההודעה מכילה טקסט משמעותי)
-    if (whatsapp.wakeWords.some(word => text.includes(word))) return true;
+    // ⛔ התעלמות אם ההודעה מתייגת מישהו אחר (ולא את הבוט)
+    const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+    if (mentionedJids.length > 0 && (!botId || !mentionedJids.some(jid => jid.includes(botId)))) {
+        return false; // זה דיבור ישיר למישהו אחר, אל תתערב
+    }
 
     return false;
 }
@@ -124,6 +127,11 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, is
 
         // ✅ המוח החכם: אם לא קראו לנו, נבדוק אם כדאי להתערב
         if (!isExplicitCall && !isInConversation) {
+
+            // ⛔ אם ההודעה מתייגת מישהו אחר - אל תחשוב אפילו להתערב
+            const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+            if (mentionedJids.length > 0) return;
+
             // סינון ראשוני: הודעות קצרות מדי או סטיקרים לא נשלחים לשיפוט (חוסך API)
             if (!mediaMsg && text.length > 10) {
                 const shouldIntervene = await shimonBrain.shouldReply(senderId, text);

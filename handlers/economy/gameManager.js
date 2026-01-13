@@ -76,7 +76,20 @@ class GameManager {
         const check = await this.checkAvailability(p1Name, p2Name);
 
         if (!check.available) {
-            return `STATUS: PROMOTER_MODE. Reason: ${check.reason}`;
+            // אם הם קיימים בדיסקורד אך לא מחוברים, ננסה למצוא את הטלפון שלהם לתיוג
+            let p1Info = p1Name;
+            let p2Info = p2Name;
+
+            if (check.p1) {
+                const phone1 = await this.getPhoneByDiscordId(check.p1.id);
+                p1Info = phone1 ? `@${phone1}` : check.p1.displayName;
+            }
+            if (check.p2) {
+                const phone2 = await this.getPhoneByDiscordId(check.p2.id);
+                p2Info = phone2 ? `@${phone2}` : check.p2.displayName;
+            }
+
+            return `STATUS: PROMOTER_MODE. Reason: ${check.reason}. Targets: ${p1Info} vs ${p2Info}. Instruct the AI to tag them using these numbers.`;
         }
 
         this.currentMatch = {
@@ -164,6 +177,16 @@ class GameManager {
         this.currentMatch.active = false;
         await this.saveState(); // שמירה (כדי לסמן שנגמר)
         return `Game Over. Winner: ${winnerSide}. Pot Distributed.`;
+    }
+
+    async getPhoneByDiscordId(discordId) {
+        try {
+            const snapshot = await db.collection('users').where('discord.id', '==', discordId).limit(1).get();
+            if (snapshot.empty) return null;
+            return snapshot.docs[0].id; // ה-ID של המסמך הוא מספר הטלפון
+        } catch (e) {
+            return null;
+        }
     }
 
     async broadcastUpdate(caption) {

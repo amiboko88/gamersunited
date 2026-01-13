@@ -44,6 +44,10 @@ class AudioManager {
                 this.musicPlayer.unpause();
             }
         });
+
+        this.effectPlayer.on('error', error => {
+            log(`❌ [EffectPlayer Error] ${error.message}`);
+        });
     }
 
     async joinChannel(channel) {

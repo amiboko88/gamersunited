@@ -21,16 +21,22 @@ class VoiceRenderer {
         <head>
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;900&display=swap');
-                body {
+                * { box-sizing: border-box; }
+                body, html {
                     margin: 0; padding: 0;
+                    width: 100%; height: 100%;
+                    overflow: hidden;
+                }
+                .card {
                     width: 600px; height: 300px;
                     background: linear-gradient(135deg, #1e1e1e, #111);
-                    font-family: 'Heebo', sans-serif;
+                    font-family: 'Heebo', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif;
                     color: white;
                     display: flex; flex-direction: column;
                     justify-content: center; align-items: center;
                     border: 4px solid #5865F2; /* Discord Color */
                     border-radius: 20px;
+                    position: relative;
                 }
                 .status-badge {
                     background: #FF4444;
@@ -49,6 +55,7 @@ class VoiceRenderer {
                     margin-bottom: 20px;
                     text-transform: uppercase;
                     text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+                    font-family: 'Heebo', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif; /* Force Emoji Font */
                 }
                 .users-container {
                     display: flex;
@@ -80,10 +87,12 @@ class VoiceRenderer {
             </style>
         </head>
         <body>
-            <div class="status-badge">● LIVE NOW</div>
-            <div class="channel-name">🔊 ${channelName}</div>
-            <div class="users-container">
-                ${avatarsHtml}
+            <div class="card">
+                <div class="status-badge">● LIVE NOW</div>
+                <div class="channel-name">🔊 ${channelName}</div>
+                <div class="users-container">
+                    ${avatarsHtml}
+                </div>
             </div>
         </body>
         </html>`;

@@ -34,7 +34,7 @@ class GraphicsCore {
                 await page.setViewport({ width: width, height: bodyHeight, deviceScaleFactor: 2 });
             }
 
-            return await page.screenshot({ type: 'png', fullPage: fullPage, omitBackground: true });
+            return await page.screenshot({ type: 'png', fullPage: fullPage, omitBackground: false });
 
         } catch (err) {
             console.error(`❌ [GraphicsCore] Error: ${err.message}`);

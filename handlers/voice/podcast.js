@@ -41,14 +41,29 @@ class PodcastManager {
         const requiredUsers = isTestMode ? 1 : MIN_USERS;
 
         if (humans.length >= requiredUsers) {
-            log(`[Podcast] ${isTestMode ? '🔴 מצב טסט הופעל!' : 'זיהיתי התקהלות...'} מתחילים!`);
-            lastPodcastTime = now;
-            activeChannelId = channel.id;
+            log(`[Podcast] זיהיתי התקהלות... ממתין לכרוז (Stabilizing)...`);
 
-            // בטסט אני בוחר את מי שנכנס הרגע, ברגיל זה רנדומלי
-            const victim = isTestMode ? humans.find(h => h.id === newState.member.id) : humans[Math.floor(Math.random() * humans.length)];
+            // השהיה קצרה כדי לתת לכרוז לסיים או להתייצב
+            setTimeout(async () => {
+                // בדיקה חוזרת: האם כולם עדיין שם?
+                const currentChannel = newState.guild.channels.cache.get(channel.id);
+                if (!currentChannel) return;
 
-            await this.playPersonalPodcast(channel, victim);
+                const currentHumans = currentChannel.members.filter(m => !m.user.bot).size;
+                if (currentHumans < requiredUsers) {
+                    log('[Podcast] ההתקהלות התפזרה בזמן ההמתנה. מבטל.');
+                    return;
+                }
+
+                log(`[Podcast] מתחילים!`);
+                lastPodcastTime = Date.now();
+                activeChannelId = channel.id;
+
+                // בטסט אני בוחר את מי שנכנס הרגע, ברגיל זה רנדומלי
+                const victim = isTestMode ? humans.find(h => h.id === newState.member.id) : humans[Math.floor(Math.random() * humans.length)];
+
+                await this.playPersonalPodcast(channel, victim);
+            }, 6000); // 6 שניות המתנה
         }
     }
 

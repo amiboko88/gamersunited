@@ -88,6 +88,18 @@ async function handleMessageLogic(sock, msg, text) {
     try {
         const userRef = await getUserRef(senderFullJid, 'whatsapp');
         realUserId = userRef.id;
+
+        // 🔍 DEBUG: בדיקת LID בזמן אמת עבור אמי
+        const isLid = senderPhone.length > 14;
+        if (isLid) {
+            const status = (realUserId.length <= 14) ? "✅ VERIFIED" : "⚠️ UNKNOWN";
+            // דיווח לאדמין בלבד (972526800647)
+            if (status.includes("VERIFIED")) {
+                await sock.sendMessage('972526800647@s.whatsapp.net', {
+                    text: `🔐 LID Debug: השולח ${senderPhone} זוהה כמשתמש ${realUserId}`
+                });
+            }
+        }
     } catch (e) { }
 
     bufferSystem.addToBuffer(realUserId, msg, text, (finalMsg, combinedText, mediaMsg) => {
@@ -131,6 +143,11 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, is
             // ⛔ אם ההודעה מתייגת מישהו אחר - אל תחשוב אפילו להתערב
             const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
             if (mentionedJids.length > 0) return;
+
+            // ⛔ אם ההודעה היא תגובה (Reply) להודעה של אדם אחר (לא הבוט) - תתעלם
+            const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant;
+            const botId = sock.user?.id?.split(':')[0] || sock.user?.id?.split('@')[0];
+            if (quotedParticipant && !quotedParticipant.includes(botId)) return;
 
             // סינון ראשוני: הודעות קצרות מדי או סטיקרים לא נשלחים לשיפוט (חוסך API)
             if (!mediaMsg && text.length > 10) {

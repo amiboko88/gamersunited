@@ -109,7 +109,7 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
                     }
                 }
 
-                t.set(ref, updates, { merge: true });
+                t.update(ref, updates);
             }
         });
 

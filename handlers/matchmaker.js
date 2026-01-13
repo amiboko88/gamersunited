@@ -83,7 +83,7 @@ class Matchmaker {
             // אם אין טלפון תקין, אנחנו לא מעדכנים אותו כרגע, אלא נבקש מהמשתמש
             // אם יש טלפון תקין, אנחנו לא דורסים אותו!
 
-            await userRef.set(updates, { merge: true });
+            await userRef.update(updates);
 
             // הסרה מהרשימה (ב-DB)
             await this.removeOrphan(lid);

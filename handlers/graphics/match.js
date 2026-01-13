@@ -2,7 +2,11 @@
 const core = require('./core');
 
 class MatchRenderer {
-    async generateCard(p1Name, p1Score, p2Name, p2Score, potSize, status) {
+    async generateCard(p1Name, p1Score, p2Name, p2Score, potSize, status, p1Avatar, p2Avatar) {
+        // Fallbacks
+        const p1Img = p1Avatar || "https://cdn.discordapp.com/embed/avatars/1.png";
+        const p2Img = p2Avatar || "https://cdn.discordapp.com/embed/avatars/2.png";
+
         const html = `
         <!DOCTYPE html>
         <html lang="en">
@@ -46,13 +50,13 @@ class MatchRenderer {
             <div class="top-bar">🔴 ${status} 🔴</div>
             <div class="arena">
                 <div class="player" style="color: #ff5555;">
-                    <img src="https://cdn.discordapp.com/embed/avatars/1.png" class="avatar" style="border-color: #ff5555;">
+                    <img src="${p1Img}" class="avatar" style="border-color: #ff5555;" onerror="this.src='https://cdn.discordapp.com/embed/avatars/1.png'">
                     <div class="p-name">${p1Name}</div>
                     <div class="score">${p1Score}</div>
                 </div>
                 <div class="vs">VS</div>
                 <div class="player" style="color: #5555ff;">
-                    <img src="https://cdn.discordapp.com/embed/avatars/2.png" class="avatar" style="border-color: #5555ff;">
+                    <img src="${p2Img}" class="avatar" style="border-color: #5555ff;" onerror="this.src='https://cdn.discordapp.com/embed/avatars/2.png'">
                     <div class="p-name">${p2Name}</div>
                     <div class="score">${p2Score}</div>
                 </div>

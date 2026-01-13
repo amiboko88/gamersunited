@@ -1,27 +1,62 @@
 // 📁 handlers/matchmaker.js
 const db = require('../utils/firebase');
-const { log } = require('../utils/logger'); 
+const { log } = require('../utils/logger');
 
-const orphanLids = new Map(); 
+const orphanLids = new Map();
 
 class Matchmaker {
-    
+
     async registerOrphan(lid, pushName, messageContent) {
-        const existing = orphanLids.get(lid);
-        const orphanData = {
-            lid: lid,
-            name: pushName || (existing ? existing.name : "Unknown"),
-            lastMsg: messageContent ? messageContent.substring(0, 30) : (existing ? existing.lastMsg : "..."),
-            timestamp: Date.now()
-        };
-        orphanLids.set(lid, orphanData);
-        if (!existing || Date.now() - existing.timestamp > 60000) {
-            log(`🕵️ [Matchmaker] LID זר (${lid}) נשמר במאגר להמתנה.`);
+        // במקום לשמור בזיכרון, שומרים ב-DB תחת מסמך מטא-דאטה
+        const orphanRef = db.collection('system_metadata').doc('matchmaker_orphans');
+
+        try {
+            await db.runTransaction(async (t) => {
+                const doc = await t.get(orphanRef);
+                const data = doc.exists ? doc.data() : { list: {} };
+
+                // עדכון הנתונים
+                data.list[lid] = {
+                    lid: lid,
+                    name: pushName || "Unknown",
+                    lastMsg: messageContent ? messageContent.substring(0, 50) : "...",
+                    timestamp: Date.now()
+                };
+
+                t.set(orphanRef, data);
+            });
+            log(`🕵️ [Matchmaker] LID זר (${lid}) נשמר ב-DB.`);
+        } catch (error) {
+            console.error(`❌ [Matchmaker] Error saving orphan: ${error.message}`);
         }
     }
 
-    getOrphans() {
-        return Array.from(orphanLids.values());
+    async getOrphans() {
+        try {
+            const doc = await db.collection('system_metadata').doc('matchmaker_orphans').get();
+            if (!doc.exists) return [];
+            const list = doc.data().list || {};
+            return Object.values(list);
+        } catch (error) {
+            console.error("Error fetching orphans:", error);
+            return [];
+        }
+    }
+
+    async removeOrphan(lid) {
+        const orphanRef = db.collection('system_metadata').doc('matchmaker_orphans');
+        try {
+            await db.runTransaction(async (t) => {
+                const doc = await t.get(orphanRef);
+                if (!doc.exists) return;
+                const data = doc.data();
+
+                if (data.list && data.list[lid]) {
+                    delete data.list[lid];
+                    t.set(orphanRef, data);
+                }
+            });
+        } catch (e) { }
     }
 
     /**
@@ -35,7 +70,7 @@ class Matchmaker {
             if (!doc.exists) return { success: false, error: "משתמש לא נמצא ב-DB" };
 
             const userData = doc.data();
-            
+
             // בדיקה: האם כבר יש מספר טלפון תקין?
             const existingPhone = userData.platforms?.whatsapp;
             const hasValidPhone = existingPhone && existingPhone.length >= 9 && existingPhone !== lid;
@@ -49,11 +84,11 @@ class Matchmaker {
             // אם יש טלפון תקין, אנחנו לא דורסים אותו!
 
             await userRef.set(updates, { merge: true });
-            
-            // הסרה מהרשימה
-            orphanLids.delete(lid);
+
+            // הסרה מהרשימה (ב-DB)
+            await this.removeOrphan(lid);
             log(`🔗 [Matchmaker] LID חובר: ${discordId} <-> ${lid}`);
-            
+
             // החזרת סטטוס לדיסקורד
             if (hasValidPhone) {
                 return { success: true, status: 'complete', phone: existingPhone };

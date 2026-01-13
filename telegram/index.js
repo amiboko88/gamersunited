@@ -4,9 +4,9 @@ const { log } = require('../utils/logger');
 
 // ייבוא המערכות
 const xpManager = require('../handlers/economy/xpManager');
-const brain = require('../handlers/ai/brain'); 
-const memory = require('../handlers/ai/learning'); 
-const contentModerator = require('../handlers/security/contentModerator'); 
+const brain = require('../handlers/ai/brain');
+const memory = require('../handlers/ai/learning');
+const contentModerator = require('../handlers/security/contentModerator');
 const rankingCore = require('../handlers/ranking/core');
 const graphics = require('../handlers/graphics/index'); // ✅ תיקון: ייבוא המערכת הגרפית החדשה
 const { getUserData } = require('../utils/userUtils');
@@ -40,7 +40,7 @@ async function launchTelegram() {
     bot.command(["top", "leaderboard"], async (ctx) => {
         try {
             await ctx.replyWithChatAction("upload_photo");
-            
+
             // 1. שליפת נתונים
             const leaders = await rankingCore.getWeeklyLeaderboard(10);
             if (!leaders || leaders.length === 0) {
@@ -51,7 +51,7 @@ async function launchTelegram() {
 
             // 2. יצירת תמונה (דרך המנוע החדש)
             const imageBuffer = await graphics.leaderboard.generateImage(leaders, weekNum);
-            
+
             if (!imageBuffer) {
                 return ctx.reply("❌ שגיאה ביצירת התמונה.");
             }
@@ -73,20 +73,31 @@ async function launchTelegram() {
         try {
             await ctx.replyWithChatAction("upload_photo");
             const userId = ctx.from.id.toString();
-            
+
             // שימוש בכלי ה-Identity שיש לו כבר לוגיקה לכרטיס
             // אבל כאן נקרא ישירות לגרפיקה לחסוך סיבוך
             const userData = await getUserData(userId, 'telegram');
-            
+
             if (!userData) return ctx.reply("אין לי נתונים עליך עדיין.");
 
             const name = userData.identity?.displayName || ctx.from.first_name;
             const level = userData.economy?.level || 1;
             const xp = userData.economy?.xp || 0;
-            const avatar = "https://cdn.discordapp.com/embed/avatars/0.png"; // בטלגרם קשה להשיג URL יציב לאווטאר בקלות
+            let avatar = "https://cdn.discordapp.com/embed/avatars/0.png";
+            try {
+                const photos = await ctx.api.getUserProfilePhotos(ctx.from.id, { limit: 1 });
+                if (photos.total_count > 0) {
+                    const fileId = photos.photos[0][0].file_id;
+                    const file = await ctx.api.getFile(fileId);
+                    // Telegram Bot API URL format: https://api.telegram.org/file/bot<token>/<file_path>
+                    avatar = `https://api.telegram.org/file/bot${process.env.TELEGRAM_TOKEN}/${file.file_path}`;
+                }
+            } catch (e) {
+                console.error("Failed to fetch Telegram avatar:", e.message);
+            }
 
             const cardBuffer = await graphics.profile.generateLevelUpCard(name, level, xp, avatar);
-            
+
             if (cardBuffer) {
                 await ctx.replyWithPhoto(new InputFile(cardBuffer), {
                     caption: `📊 <b>הפרופיל של ${name}</b>`,
@@ -114,11 +125,11 @@ async function launchTelegram() {
             // 2. בדיקת טריגרים למענה
             const isReplyToBot = ctx.message.reply_to_message?.from?.id === ctx.me.id;
             const hasTrigger = text.includes("שמעון") || text.includes("שימי");
-            
+
             if (isReplyToBot || hasTrigger) {
                 await ctx.replyWithChatAction("typing");
                 const response = await brain.ask(userId, 'telegram', text);
-                
+
                 if (response) {
                     await ctx.reply(response, { reply_to_message_id: ctx.message.message_id });
                 }

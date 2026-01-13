@@ -11,7 +11,7 @@ async function getUserRef(id, platform = 'discord') {
     if (platform === 'discord') return db.collection('users').doc(id);
 
     const cleanId = cleanWhatsAppId(id);
-    const isLid = cleanId.length > 14; 
+    const isLid = cleanId.length > 14;
 
     // 1. חיפוש ראשי בתיקי האב (users)
     // בודקים אם המספר/LID קיים בשדה הפלטפורמה
@@ -50,8 +50,8 @@ async function getUserData(id, platform = 'discord') {
 async function ensureUserExists(id, displayName, platform = 'discord') {
     // אם זה וואטסאפ, אנחנו מנקים את ה-ID
     const cleanId = platform === 'whatsapp' ? cleanWhatsAppId(id) : id;
-    const isLid = platform === 'whatsapp' && cleanId.length > 14; 
-    
+    const isLid = platform === 'whatsapp' && cleanId.length > 14;
+
     const ref = await getUserRef(id, platform);
 
     try {
@@ -60,18 +60,25 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
 
             // --- תרחיש 1: המשתמש לא קיים ב-DB ---
             if (!doc.exists) {
-                // 🛑 חסימה מוחלטת לוואטסאפ!
+                // 🛑 חסימה מוחלטת ל-LID (משתמשים זמניים של וואטסאפ)
+                // אנחנו לא רוצים ליצור מסמך למשתמש שאין לו עדיין "אבא" (דיסקורד).
+                if (platform === 'whatsapp' && isLid) {
+                    console.log(`🛡️ [UserUtils] LID Guard Blocked: ${cleanId}. Waiting for Link.`);
+                    return null; // מחזירים null כדי שה-Caller ידע שזה לא יצר משתמש
+                }
+
+                // 🛑 חסימה מוחלטת לוואטסאפ רגיל (אם המדיניות היא Link Only)
                 // אם המשתמש לא קיים, ואנחנו בוואטסאפ - לא יוצרים כלום.
                 // זה משאיר את הניהול אך ורק לקישור הידני בדיסקורד.
                 if (platform === 'whatsapp') {
                     // לוג שקט כדי לא להציף, או אזהרה אם זה חשוב
                     // console.warn(`🛡️ [UserUtils] משתמש וואטסאפ לא מקושר (${cleanId}). מדלג.`);
-                    return; 
+                    return;
                 }
 
                 // אם זה דיסקורד - יוצרים כרגיל (כי דיסקורד הוא הבסיס)
                 console.log(`🆕 [UserUtils] Creating Discord profile: ${displayName}`);
-                
+
                 const newUser = {
                     identity: {
                         displayName: displayName || "Unknown",
@@ -86,8 +93,8 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
                     tracking: { status: 'active' }
                 };
                 t.set(ref, newUser);
-            } 
-            
+            }
+
             // --- תרחיש 2: משתמש קיים (עדכון בלבד) ---
             else {
                 const data = doc.data();
@@ -101,11 +108,11 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
                         console.log(`🔗 [UserUtils] עדכון LID (${cleanId}) למשתמש קיים.`);
                     }
                 }
-                
+
                 t.set(ref, updates, { merge: true });
             }
         });
-        
+
         return ref;
 
     } catch (error) {

@@ -43,7 +43,7 @@ function isTriggered(text, msg, sock) {
     }
 
     // ⛔ התעלמות אם ההודעה מתייגת מישהו אחר (ולא את הבוט)
-    const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+    // mentionedJids כבר הוגדר למעלה (שורה 33)
     if (mentionedJids.length > 0 && (!botId || !mentionedJids.some(jid => jid.includes(botId)))) {
         return false; // זה דיבור ישיר למישהו אחר, אל תתערב
     }

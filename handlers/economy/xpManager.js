@@ -63,8 +63,8 @@ class XPManager {
 
                     if (cardBuffer && platform === 'whatsapp') {
                         await contextObj.sock.sendMessage(contextObj.chatId, {
-                            image: cardBuffer,
-                            caption: `⭐ **LEVEL UP!**\nמזל טוב ${name}, הגעת לרמה ${level}!`
+                            image: cardBuffer
+                            // caption removed as requested
                         });
                     } else {
                         // בדיסקורד שולחים טקסט (או תמונה אם רוצים להשקיע גם שם)

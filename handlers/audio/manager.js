@@ -1,9 +1,9 @@
 // 📁 handlers/audio/manager.js
-const { 
-    joinVoiceChannel, 
-    createAudioPlayer, 
-    createAudioResource, 
-    AudioPlayerStatus, 
+const {
+    joinVoiceChannel,
+    createAudioPlayer,
+    createAudioResource,
+    AudioPlayerStatus,
     VoiceConnectionStatus,
     entersState,
     StreamType
@@ -16,7 +16,7 @@ class AudioManager {
         this.connection = null;
         this.musicPlayer = createAudioPlayer();
         this.effectPlayer = createAudioPlayer(); // שחקן נפרד לאפקטים
-        
+
         this.currentTrack = null;
         this.isLooping = false;
 
@@ -48,14 +48,14 @@ class AudioManager {
 
     async joinChannel(channel) {
         if (!channel) return false;
-        
+
         try {
             this.connection = joinVoiceChannel({
                 channelId: channel.id,
                 guildId: channel.guild.id,
                 adapterCreator: channel.guild.voiceAdapterCreator,
             });
-            
+
             await entersState(this.connection, VoiceConnectionStatus.Ready, 5000);
             this.connection.subscribe(this.musicPlayer);
             return true;
@@ -71,8 +71,10 @@ class AudioManager {
     async playLocalFile(guildId, channelId, filePath) {
         try {
             // אם לא מחובר או מחובר לערוץ אחר - מתחבר מחדש
+            // אם לא מחובר או מחובר לערוץ אחר - מתחבר מחדש
             if (!this.connection || this.connection.joinConfig.channelId !== channelId) {
-                const guild = await db.client?.guilds.fetch(guildId).catch(() => null);
+                const { client } = require('../../discord/index');
+                const guild = await client?.guilds.fetch(guildId).catch(() => null);
                 const channel = guild?.channels.cache.get(channelId);
                 if (channel) await this.joinChannel(channel);
             }
@@ -90,12 +92,12 @@ class AudioManager {
      */
     async playTrack(filePath, trackName) {
         if (!this.connection) return "NotConnected";
-        
+
         try {
             const stream = fs.createReadStream(filePath);
-            const resource = createAudioResource(stream, { 
+            const resource = createAudioResource(stream, {
                 inputType: StreamType.Arbitrary,
-                inlineVolume: true 
+                inlineVolume: true
             });
             resource.volume.setVolume(1.0);
 
@@ -121,15 +123,15 @@ class AudioManager {
             }
 
             const stream = fs.createReadStream(filePath);
-            const resource = createAudioResource(stream, { 
+            const resource = createAudioResource(stream, {
                 inputType: StreamType.Arbitrary,
-                inlineVolume: true 
+                inlineVolume: true
             });
             resource.volume.setVolume(1.0);
 
             this.effectPlayer.play(resource);
             this.connection.subscribe(this.effectPlayer);
-            
+
             return true;
         } catch (error) {
             log(`❌ Play Effect Error: ${error.message}`);

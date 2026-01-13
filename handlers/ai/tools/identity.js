@@ -40,8 +40,8 @@ module.exports = {
 
             if (sock && chatId && cardBuffer) {
                 await sock.sendMessage(chatId, {
-                    image: cardBuffer,
-                    caption: `📊 **הפרופיל של ${name}**\n💰 יתרה: ₪${data.economy?.balance || 0}`
+                    image: cardBuffer
+                    // caption removed as requested
                 });
                 return "שלחתי את כרטיס הפרופיל.";
             }

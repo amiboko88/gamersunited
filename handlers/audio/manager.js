@@ -71,7 +71,6 @@ class AudioManager {
     async playLocalFile(guildId, channelId, filePath) {
         try {
             // אם לא מחובר או מחובר לערוץ אחר - מתחבר מחדש
-            // אם לא מחובר או מחובר לערוץ אחר - מתחבר מחדש
             if (!this.connection || this.connection.joinConfig.channelId !== channelId) {
                 const { client } = require('../../discord/index');
                 const guild = await client?.guilds.fetch(guildId).catch(() => null);
@@ -85,6 +84,22 @@ class AudioManager {
             log(`❌ [AudioManager] playLocalFile Error: ${e.message}`);
             return false;
         }
+    }
+
+    /**
+     * ✅ מנגן קובץ ומחזיר Promise שנפתר רק כשהקובץ סיים להתנגן (למניעת חפיפות)
+     */
+    async playLocalFileAndWait(guildId, channelId, filePath) {
+        const played = await this.playLocalFile(guildId, channelId, filePath);
+        if (!played) return false;
+
+        return new Promise((resolve) => {
+            const listener = () => {
+                resolve(true);
+            };
+            // מאזין חד פעמי לסיום הניגון
+            this.effectPlayer.once(AudioPlayerStatus.Idle, listener);
+        });
     }
 
     /**

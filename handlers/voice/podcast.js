@@ -61,23 +61,28 @@ class PodcastManager {
             const facts = userData?.brain?.facts?.map(f => f.content) || [];
 
             // --- 🧠 OpenAI Script Generation ---
+            // --- 🧠 OpenAI Script Generation ---
             const prompt = `
-            You are writing a short, funny, and mean podcast script for a Discord bot named "Shimon" and his co-host "Shirly".
-            The target (victim) is ${member.displayName}.
-            Here is what we know about him:
-            Facts: ${facts.join(', ')}
-            Common Roasts: ${roasts.join(', ')}
+            You are writing an EXTREMELY TOXIC, RUDE, and VULGAR podcast intro for "Shimon" and his sidekick "Shirly".
+            The victim is: ${member.displayName}.
             
-            The script should be in Hebrew. 
-            Shimon is cynical, "Arsi", and aggressive. 
-            Shirly is sharp, sarcastic, and backs Shimon up.
+            DIRTY SECRETS (USE THESE TO HURT HIM):
+            ${facts.length > 0 ? facts.join('\n') : "He has no life and no friends."}
             
-            Format:
-            shimon: [text]
-            shirly: [text]
-            shimon: [text]
+            PAST HUMILIATIONS:
+            ${roasts.length > 0 ? roasts.join('\n') : "He is boring as hell."}
             
-            Keep it under 4 lines total.
+            INSTRUCTIONS:
+            1. Language: HEBREW ONLY. Street slang, Arsi, heavy cursing.
+            2. Shimon Persona: Aggressive, disgusting, bullying, uses words like "Zain", "Manayak", "Efes", "Ben zona".
+            3. Shirly Persona: Mean girl, condescending, laughs AT the victim, backs up Shimon's nastiness.
+            4. GOAL: Destroy the victim's ego. Use the facts above specifically. If a fact says "he loves pizza", call him a "fat pig who eats pizza all day".
+            5. Format:
+            shimon: [Toxic opening]
+            shirly: [Mean comment + Fact usage]
+            shimon: [Final devastating insult]
+            
+            Keep it strictly 3-4 lines. Maximum damage.
             `;
 
             const completion = await openai.chat.completions.create({
@@ -99,7 +104,7 @@ class PodcastManager {
             // הגדרת קולות (IDs)
             const VOICES = {
                 shimon: undefined, // ייקח את הדיפולט מ-voice.js
-                shirly: 'EXAVITQu4vr4xnSDxMaL' // קול נשי (Bella/Rachel) - ניתן לשנות
+                shirly: '21m00Tcm4TlvDq8ikWAM' // Rachel (ידועה כאיכותית יותר)
             };
 
             const audioFiles = [];
@@ -123,11 +128,13 @@ class PodcastManager {
                 }
             }
 
-            // ניגון הקבצים
+            // ניגון הקבצים - סדרתי ומסונכרן
             for (const file of audioFiles) {
-                await audioManager.playLocalFile(voiceChannel.guild.id, voiceChannel.id, file);
-                // המתנה גסה של אורך הקובץ + באפר קטן (ניתן לשפר עם בדיקת אורך אמיתית)
-                await new Promise(r => setTimeout(r, 4000));
+                // מנגן ומחכה שהקובץ יסתיים לפני שממשיך
+                await audioManager.playLocalFileAndWait(voiceChannel.guild.id, voiceChannel.id, file);
+
+                // המתנה קטנה לנשימה בין משפטים
+                await new Promise(r => setTimeout(r, 500));
             }
 
             // ניקוי

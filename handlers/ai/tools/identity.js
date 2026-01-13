@@ -43,7 +43,7 @@ module.exports = {
                     image: cardBuffer
                     // caption removed as requested
                 });
-                return "שלחתי את כרטיס הפרופיל.";
+                return "Image sent. STOP. Do not output text.";
             }
 
             return `רמה: ${level} | XP: ${xp}`;

@@ -18,6 +18,10 @@ function isTriggered(text, msg, sock) {
     const chatJid = msg.key.remoteJid;
     const isPrivate = !chatJid.endsWith('@g.us');
 
+    // ⛔ התעלמות מוחלטת מסטיקרים ללא טקסט נלווה (בפרטי או בקבוצה)
+    // אם זו הודעת סטיקר (ללא כיתוב), זה לא טריגר אלא אם כן זה תגובה ישירה בפרטי (וגם אז עדיף להיזהר)
+    if (msg.message?.stickerMessage) return false;
+
     if (isPrivate) return true;
 
     const botId = sock.user?.id?.split(':')[0] || sock.user?.id?.split('@')[0];
@@ -25,15 +29,20 @@ function isTriggered(text, msg, sock) {
     // 1. קריאה מפורשת
     if (text.includes('שמעון') || text.includes('שימי') || text.includes('בוט')) return true;
 
-    // 2. תיוג ישיר
+    // 2. תיוג ישיר (@Shimon)
     const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
     if (botId && mentionedJids.some(jid => jid.includes(botId))) return true;
 
-    // 3. תגובה להודעה של הבוט
+    // 3. תגובה (Reply) להודעה של הבוט
+    // חשוב: אנחנו בודקים אם ה-participant המצוטט הוא הבוט.
     const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant;
-    if (botId && quotedParticipant && quotedParticipant.includes(botId)) return true;
+    if (quotedParticipant) {
+        const isReplyToBot = quotedParticipant.includes(botId);
+        // אם הגיבו לבוט - זה טריגר. אחרת - זה שיחה בין משתמשים שאנחנו לא מתערבים בה.
+        if (isReplyToBot) return true;
+    }
 
-    // 4. מילות מפתח
+    // 4. מילות מפתח (רק אם ההודעה מכילה טקסט משמעותי)
     if (whatsapp.wakeWords.some(word => text.includes(word))) return true;
 
     return false;
@@ -99,13 +108,26 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, is
     });
 
     try {
-        const isExplicitCall = isTriggered(text, msg, sock);
+        let isExplicitCall = isTriggered(text, msg, sock);
         const lastInteraction = activeConversations.get(senderId);
         const isInConversation = lastInteraction && (Date.now() - lastInteraction < whatsapp.conversationTimeout);
 
+        // ✅ המוח החכם: אם לא קראו לנו, נבדוק אם כדאי להתערב
         if (!isExplicitCall && !isInConversation) {
-            await learningEngine.learnFromContext(senderId, "Gamer", 'whatsapp', text);
-            return;
+            // סינון ראשוני: הודעות קצרות מדי או סטיקרים לא נשלחים לשיפוט (חוסך API)
+            if (!mediaMsg && text.length > 10) {
+                const shouldIntervene = await shimonBrain.shouldReply(senderId, text);
+                if (shouldIntervene) {
+                    log(`💡 [Smart AI] Shimon decided to intervene on: "${text}"`);
+                    isExplicitCall = true; // הופכים לקריאה יזומה
+                } else {
+                    // אם החליט לא להתערב - לומד בשקט
+                    await learningEngine.learnFromContext(senderId, "Gamer", 'whatsapp', text);
+                    return;
+                }
+            } else {
+                return;
+            }
         }
 
         activeConversations.set(senderId, Date.now());
@@ -125,8 +147,27 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, is
             chatJid
         );
 
-        if (aiResponse) {
-            await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });
+        let responseText = aiResponse;
+        let audioBuffer = null;
+
+        // ✅ זיהוי מוד קול (Toxic Voice)
+        if (aiResponse && aiResponse.includes('[VOICE]')) {
+            responseText = aiResponse.replace('[VOICE]', '').trim();
+            try {
+                const voiceEngine = require('../../handlers/media/voice');
+                audioBuffer = await voiceEngine.textToSpeech(responseText);
+                if (audioBuffer) {
+                    await sock.sendMessage(chatJid, { audio: audioBuffer, ptt: true }, { quoted: msg });
+                    return; // שלחנו קול, לא שולחים טקסט
+                }
+            } catch (e) {
+                log(`❌ [Voice] Generation failed: ${e.message}`);
+                // אם נכשל הקול, נשלח את הטקסט כגיבוי
+            }
+        }
+
+        if (responseText) {
+            await sock.sendMessage(chatJid, { text: responseText }, { quoted: msg });
         }
 
     } catch (error) {

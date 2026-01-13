@@ -114,11 +114,13 @@ class LeaderboardRenderer {
                 .row:nth-child(2) { border-left: 4px solid #cd7f32; background: linear-gradient(90deg, rgba(205,127,50,0.1), transparent); }
                 
                 .rank {
-                    font-size: 24px; font-weight: 900; color: #444; width: 60px;
+                    font-size: 24px; font-weight: 900; color: #444; width: 40px; /* Reduced width to pull avatar left */
+                    text-align: right;
                 }
                 
                 .avatar-wrapper-small { 
-                    margin-right: 25px; 
+                    margin-right: 15px; /* Reduced from 25px */
+                    margin-left: 15px; /* Added spacing from rank */
                     display: flex; align-items: center; justify-content: center;
                 }
                 .avatar-small {

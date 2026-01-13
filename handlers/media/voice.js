@@ -3,11 +3,12 @@ const axios = require('axios');
 const API_KEY = process.env.ELEVEN_API_KEY;
 const VOICE_ID = 'txHtK15K5KtX959ZtpRa';
 
-async function textToSpeech(text) {
+async function textToSpeech(text, specificVoiceId = null) {
     if (!API_KEY) return null;
     try {
+        const targetVoice = specificVoiceId || VOICE_ID; // השימוש בקול ספציפי או ברירת המחדל (שמעון)
         const response = await axios.post(
-            `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
+            `https://api.elevenlabs.io/v1/text-to-speech/${targetVoice}`,
             {
                 text: text.replace(/[*_~`]/g, ''),
                 // מודל: V3 (לפי בקשתך - עובד הכי טוב עם עברית אצלך)

@@ -24,11 +24,24 @@ module.exports = {
                 return interaction.editReply('❌ אין מספיק נתונים פעילים השבוע ליצירת טבלה.');
             }
 
+            // ✅ העשרת נתונים: שליפת תמונות עדכניות מהשרת
+            for (const p of leaders) {
+                try {
+                    const member = await interaction.guild.members.fetch(p.id).catch(() => null);
+                    if (member) {
+                        p.avatar = member.user.displayAvatarURL({ extension: 'png', size: 128 });
+                        p.name = member.displayName; // עדכון שם לשם הנוכחי בשרת
+                    }
+                } catch (e) {
+                    console.error(`Failed to fetch avatar for ${p.id}`);
+                }
+            }
+
             const weekNum = getWeekNumber();
-            
+
             // ✅ קריאה לפונקציה החדשה
             const imageBuffer = await graphics.leaderboard.generateImage(leaders, weekNum);
-            
+
             if (!imageBuffer) {
                 return interaction.editReply('❌ שגיאה בייצור תמונת הדירוג.');
             }

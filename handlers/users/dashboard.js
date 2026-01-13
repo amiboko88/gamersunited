@@ -86,16 +86,20 @@ class DashboardHandler {
                 return `<circle cx="100" cy="100" r="${r}" style="stroke: ${color}; stroke-dasharray: ${pct} ${c - pct}; stroke-dashoffset: -${offset}px;"></circle>`;
             }
 
-            const { render } = require('../../handlers/graphics/core'); // ייבוא ישיר כי אנחנו בתוך handler
-            const attachment = await render(chartHtml, 1000, 500);
+            const graphics = require('../../handlers/graphics/core');
+            const attachment = await graphics.render(chartHtml, 1000, 500);
 
             const embed = new EmbedBuilder()
                 .setColor('#00e676')
-                .setImage('attachment://chart.png')
                 .setFooter({ text: `SYSTEM STATUS: ${stats.voiceNow} IN VOICE | ${new Date().toLocaleTimeString("he-IL", { timeZone: "Asia/Jerusalem" })}` });
 
-            // המרת ה-Buffer ל-Attachment של דיסקורד
-            const file = { attachment: attachment, name: 'chart.png' };
+            const filesPayload = [];
+            if (attachment) {
+                embed.setImage('attachment://chart.png');
+                filesPayload.push({ attachment: attachment, name: 'chart.png' });
+            } else {
+                embed.setDescription('⚠️ Failed to load chart.');
+            }
 
             // שורה 1: רענון, סנכרון שמות וניקוי מתים
             const row1 = new ActionRowBuilder().addComponents(
@@ -110,8 +114,8 @@ class DashboardHandler {
                 new ButtonBuilder().setCustomId('btn_manage_cancel').setLabel('CLOSE PANEL').setStyle(ButtonStyle.Secondary)
             );
 
-            if (interaction.deferred || interaction.replied) await interaction.editReply({ embeds: [embed], components: [row1, row2], files: [file] });
-            else await interaction.reply({ embeds: [embed], components: [row1, row2], files: [file], flags: 64 });
+            if (interaction.deferred || interaction.replied) await interaction.editReply({ embeds: [embed], components: [row1, row2], files: filesPayload });
+            else await interaction.reply({ embeds: [embed], components: [row1, row2], files: filesPayload, flags: 64 });
 
         } catch (error) {
             log(`Dashboard Error: ${error.message}`);

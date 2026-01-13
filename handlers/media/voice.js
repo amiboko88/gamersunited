@@ -14,9 +14,8 @@ async function textToSpeech(text, specificVoiceId = null) {
                 // מודל: V3 (לפי בקשתך - עובד הכי טוב עם עברית אצלך)
                 model_id: 'eleven_v3', // Updated to explicit V3 ID
                 voice_settings: {
-                    // Stability: המחוון באתר בין Robust ל-Creative.
-                    // 0.3 = די Creative (הרבה רגש, פחות יציב). מתאים ל"פה מלוכלך".
-                    stability: 0.3,
+                    // Stability: 0.0 = Creative (מודל V3 דורש ערכים קבועים: 0.0, 0.5, 1.0)
+                    stability: 0.0,
 
                     // Similarity: כמה הוא נצמד לקול המקורי.
                     similarity_boost: 0.8,

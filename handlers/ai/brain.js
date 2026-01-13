@@ -129,6 +129,15 @@ class ShimonBrain {
             3. Short/Meaningless text (e.g., "lol", "k").
             
             Reply ONLY with "YES" or "NO".
+            
+            STRICT CRITERIA FOR INTERVENTION:
+            1. ONLY reply if the user is asking a clear Technical/Gaming question.
+            2. ONLY reply if the user made a factual error you must correct.
+            3. DO NOT reply to casual chat, rants (e.g. food, delivery apps), politics, or jokes.
+            4. DO NOT reply if the message is a reply to another human.
+            5. DO NOT reply unless you are 100% sure your input is needed.
+            
+            Double Check: Is this message specifically waiting for an AI expert? If not, say NO.
             `;
 
             const runner = await openai.chat.completions.create({

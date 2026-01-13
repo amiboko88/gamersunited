@@ -110,6 +110,16 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, is
     try {
         let isExplicitCall = isTriggered(text, msg, sock);
         const lastInteraction = activeConversations.get(senderId);
+
+        // 🛑 Anti-Spam: אם לא קראו לי במפורש, אני לא מגיב אם הגבתי למישהו ב-20 שניות האחרונות באותה קבוצה
+        // זה מונע השתלטות על שיחה
+        if (!isExplicitCall) {
+            const groupCooldown = activeConversations.get(chatJid + '_last_auto_reply');
+            if (groupCooldown && Date.now() - groupCooldown < 20000) {
+                return; // הבוט הגיב לאחרונה בקבוצה הזו באופן עצמאי, תן להם לנשום
+            }
+        }
+
         const isInConversation = lastInteraction && (Date.now() - lastInteraction < whatsapp.conversationTimeout);
 
         // ✅ המוח החכם: אם לא קראו לנו, נבדוק אם כדאי להתערב

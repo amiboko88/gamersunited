@@ -33,6 +33,7 @@ class Matchmaker {
 
     async getOrphans() {
         try {
+            await this.cleanupOrphans(); // ✅ ניקוי כפילויות לפני החזרה
             const doc = await db.collection('system_metadata').doc('matchmaker_orphans').get();
             if (!doc.exists) return [];
             const list = doc.data().list || {};
@@ -40,6 +41,43 @@ class Matchmaker {
         } catch (error) {
             console.error("Error fetching orphans:", error);
             return [];
+        }
+    }
+
+    /**
+     * פונקציית ניקוי: בודקת שאף יתום מהרשימה לא מקושר כבר ב-DB
+     * זה קורה לעיתים במקרי קצה של סנכרון
+     */
+    async cleanupOrphans() {
+        const orphanRef = db.collection('system_metadata').doc('matchmaker_orphans');
+
+        try {
+            await db.runTransaction(async (t) => {
+                const doc = await t.get(orphanRef);
+                if (!doc.exists) return;
+
+                const data = doc.data();
+                if (!data.list) return;
+
+                const lids = Object.keys(data.list);
+                let changed = false;
+
+                // בדיקה לכל LID ברשימה
+                for (const lid of lids) {
+                    const check = await db.collection('users').where('platforms.whatsapp_lid', '==', lid).limit(1).get();
+                    if (!check.empty) {
+                        delete data.list[lid]; // מחיקה אם נמצא משתמש
+                        changed = true;
+                    }
+                }
+
+                if (changed) {
+                    t.set(orphanRef, data);
+                    log(`🧹 [Matchmaker] בוצע ניקוי יתומים: הוסרו כפילויות.`);
+                }
+            });
+        } catch (e) {
+            console.error('Orphan Cleanup Error:', e);
         }
     }
 

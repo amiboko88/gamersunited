@@ -9,48 +9,93 @@ class DashboardHandler {
         try {
             const guild = interaction.guild;
             const stats = await userManager.getInactivityStats(guild);
-            
+
             if (!stats) return interaction.editReply('❌ נתונים בטעינה... נסה שוב.');
 
             const activePercentage = Math.round(((stats.active + stats.newMembers) / stats.humans) * 100) || 0;
 
-            const hudConfig = {
-                type: 'doughnut',
-                data: {
-                    labels: ['פעילים', 'מתים', 'רדומים', 'חשודים', 'חסינים'],
-                    datasets: [{
-                        data: [stats.active, stats.dead.length, stats.sleeping.length, stats.review.length, stats.immune],
-                        backgroundColor: ['#00E676', '#D50000', '#9E9E9E', '#FFAB00', '#2979FF'],
-                        borderWidth: 0
-                    }]
-                },
-                options: {
-                    legend: { display: true, position: 'right', labels: { fontColor: 'white', fontSize: 18, padding: 20 } },
-                    cutoutPercentage: 70,
-                    plugins: {
-                        datalabels: { display: true, color: 'white', font: { weight: 'bold', size: 24 } },
-                        doughnutlabel: {
-                            labels: [
-                                { text: `${stats.humans}`, font: { size: 40, color: 'white', weight: 'bold' } },
-                                { text: 'HUMANS', font: { size: 14, color: '#888888' } }
-                            ]
-                        }
-                    }
-                }
-            };
+            // בניית גרף HTML/CSS יוקרתי במקום QuickChart הפשוט
+            const chartHtml = `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <style>
+                    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap');
+                    body { margin: 0; background: #0a0a0a; font-family: 'Outfit', sans-serif; display: flex; align-items: center; justify-content: center; height: 500px; width: 1000px; color: white; }
+                    .container { display: flex; width: 100%; height: 100%; padding: 40px; box-sizing: border-box; align-items: center; justify-content: space-between; gap: 50px; }
+                    
+                    /* המעגל */
+                    .chart-wrapper { width: 350px; height: 350px; position: relative; flex-shrink: 0; }
+                    svg { width: 100%; height: 100%; transform: rotate(-90deg); filter: drop-shadow(0 0 20px rgba(0,255,136,0.1)); }
+                    circle { fill: none; stroke-width: 30; transition: stroke-dasharray 1s; stroke-linecap: round; }
+                    
+                    .center-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
+                    .center-text h1 { font-size: 80px; margin: 0; line-height: 0.9; font-weight: 900; background: linear-gradient(to bottom, #fff, #888); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+                    .center-text span { font-size: 18px; letter-spacing: 4px; color: #666; font-weight: 700; }
 
-            const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(hudConfig))}&backgroundColor=%23121212&width=800&height=400`;
+                    /* המקרא */
+                    .legend { flex: 1; display: flex; flex-direction: column; gap: 15px; }
+                    .legend-item { display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); padding: 15px 25px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
+                    .legend-left { display: flex; align-items: center; gap: 15px; }
+                    .dot { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 10px currentColor; }
+                    .label { font-size: 20px; font-weight: 700; color: #ddd; }
+                    .value { font-size: 24px; font-weight: 900; }
+
+                    /* צבעים */
+                    .c-active { color: #00e676; stroke: #00e676; }
+                    .c-dead { color: #d50000; stroke: #d50000; }
+                    .c-sleeping { color: #9e9e9e; stroke: #9e9e9e; }
+                    .c-suspect { color: #ffab00; stroke: #ffab00; }
+                    .c-immune { color: #2979ff; stroke: #2979ff; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="chart-wrapper">
+                        <svg viewBox="0 0 200 200">
+                            <!-- חישובים פשוטים למעגל SVG -->
+                            ${getSvgCircle(stats.active, stats.humans, '#00e676', 0)}
+                            ${getSvgCircle(stats.dead.length, stats.humans, '#d50000', stats.active)}
+                            ${getSvgCircle(stats.sleeping.length, stats.humans, '#9e9e9e', stats.active + stats.dead.length)}
+                            ${getSvgCircle(stats.review.length, stats.humans, '#ffab00', stats.active + stats.dead.length + stats.sleeping.length)}
+                            ${getSvgCircle(stats.immune, stats.humans, '#2979ff', stats.active + stats.dead.length + stats.sleeping.length + stats.review.length)}
+                        </svg>
+                        <div class="center-text">
+                            <h1>${stats.humans}</h1>
+                            <span>HUMANS</span>
+                        </div>
+                    </div>
+                    <div class="legend">
+                        <div class="legend-item"><div class="legend-left"><div class="dot c-active"></div><span class="label">Total Active</span></div><span class="value c-active">${stats.active}</span></div>
+                        <div class="legend-item"><div class="legend-left"><div class="dot c-dead"></div><span class="label">Dead Users</span></div><span class="value c-dead">${stats.dead.length}</span></div>
+                        <div class="legend-item"><div class="legend-left"><div class="dot c-sleeping"></div><span class="label">Sleeping</span></div><span class="value c-sleeping">${stats.sleeping.length}</span></div>
+                        <div class="legend-item"><div class="legend-left"><div class="dot c-suspect"></div><span class="label">Review Needed</span></div><span class="value c-suspect">${stats.review.length}</span></div>
+                        <div class="legend-item"><div class="legend-left"><div class="dot c-immune"></div><span class="label">Immune / VIP</span></div><span class="value c-immune">${stats.immune}</span></div>
+                    </div>
+                </div>
+            </body>
+            </html>`;
+
+            function getSvgCircle(val, total, color, offsetVal) {
+                if (val <= 0) return '';
+                const r = 80;
+                const c = 2 * Math.PI * r;
+                const pct = (val / total) * c;
+                const offset = (offsetVal / total) * c; // SVG מתחיל מ-0, אז צריך לקזז
+                /* הערה: ב-SVG מעגל מתחיל ב-3 שעות, אז צריך לשחק עם dasharray. פתרון פשוט: stroke-dasharray="pct c" stroke-dashoffset="-offset" */
+                return `<circle cx="100" cy="100" r="${r}" style="stroke: ${color}; stroke-dasharray: ${pct} ${c - pct}; stroke-dashoffset: -${offset}px;"></circle>`;
+            }
+
+            const { render } = require('../../handlers/graphics/core'); // ייבוא ישיר כי אנחנו בתוך handler
+            const attachment = await render(chartHtml, 1000, 500);
 
             const embed = new EmbedBuilder()
-                .setColor('#121212')
-                .setTitle(`📡 MONITOR: ${guild.name.toUpperCase()}`)
-                .setImage(chartUrl)
-                .addFields(
-                    { name: '🟢 פעילות', value: `Active: **${stats.active}**\nNew: **${stats.newMembers}**`, inline: true },
-                    { name: '🔴 סכנה', value: `Dead (6mo+): **${stats.dead.length}**\nSleeping: **${stats.sleeping.length}**`, inline: true },
-                    { name: '🛡️ סטטוס', value: `Voice: **${stats.voiceNow}**\nImmune: **${stats.immune}**`, inline: true }
-                )
-                .setFooter({ text: `SYSTEM STATUS: ONLINE | ${new Date().toLocaleTimeString("he-IL", { timeZone: "Asia/Jerusalem" })}` });
+                .setColor('#00e676')
+                .setImage('attachment://chart.png')
+                .setFooter({ text: `SYSTEM STATUS: ${stats.voiceNow} IN VOICE | ${new Date().toLocaleTimeString("he-IL", { timeZone: "Asia/Jerusalem" })}` });
+
+            // המרת ה-Buffer ל-Attachment של דיסקורד
+            const file = { attachment: attachment, name: 'chart.png' };
 
             // שורה 1: רענון, סנכרון שמות וניקוי מתים
             const row1 = new ActionRowBuilder().addComponents(
@@ -65,12 +110,12 @@ class DashboardHandler {
                 new ButtonBuilder().setCustomId('btn_manage_cancel').setLabel('CLOSE PANEL').setStyle(ButtonStyle.Secondary)
             );
 
-            if (interaction.deferred || interaction.replied) await interaction.editReply({ embeds: [embed], components: [row1, row2] });
-            else await interaction.reply({ embeds: [embed], components: [row1, row2], flags: 64 });
+            if (interaction.deferred || interaction.replied) await interaction.editReply({ embeds: [embed], components: [row1, row2], files: [file] });
+            else await interaction.reply({ embeds: [embed], components: [row1, row2], files: [file], flags: 64 });
 
         } catch (error) {
             log(`Dashboard Error: ${error.message}`);
-            try { if (!interaction.replied) await interaction.editReply('❌ System Error.'); } catch (e) {}
+            try { if (!interaction.replied) await interaction.editReply('❌ System Error.'); } catch (e) { }
         }
     }
 
@@ -82,7 +127,7 @@ class DashboardHandler {
         if (candidates.length === 0) return interaction.editReply('✅ SYSTEM CLEAN. NO DEAD USERS FOUND.');
 
         const listText = candidates.map(c => `• **${c.name}** (<@${c.userId}>) - ${c.days} days`).join('\n');
-        
+
         const embed = new EmbedBuilder()
             .setTitle(`💀 PURGE LIST (${candidates.length})`)
             .setDescription(`**CRITERIA: INACTIVE > 180 DAYS**\n\n${listText.slice(0, 3000)}`)
@@ -99,9 +144,9 @@ class DashboardHandler {
     async executeKick(interaction) {
         await interaction.update({ content: '🚀 PURGING...', components: [], embeds: [] });
         const stats = await userManager.getInactivityStats(interaction.guild);
-        
+
         if (!stats.kickCandidates || stats.kickCandidates.length === 0) {
-             return interaction.followUp({ content: '❌ הרשימה ריקה, לא בוצע ניקוי.', ephemeral: true });
+            return interaction.followUp({ content: '❌ הרשימה ריקה, לא בוצע ניקוי.', ephemeral: true });
         }
 
         const result = await userManager.executeKickBatch(interaction.guild, stats.kickCandidates.map(c => c.userId));

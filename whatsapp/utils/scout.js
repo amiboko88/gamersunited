@@ -4,7 +4,7 @@ const userUtils = require('../../utils/userUtils'); // לשימוש ב-getUserRe
 const db = require('../../utils/firebase');
 
 class WhatsAppScout {
-    
+
     async syncGroupMembers(sock, mainGroupId) {
         if (!sock || !mainGroupId) return;
 
@@ -12,7 +12,7 @@ class WhatsAppScout {
 
         try {
             // ייבוא ה-Resolver (כדי להמיר LID לטלפון)
-            const { getResolver } = require('../index'); 
+            const { getResolver } = require('../index');
             const resolveJid = getResolver();
 
             const metadata = await sock.groupMetadata(mainGroupId);
@@ -20,6 +20,10 @@ class WhatsAppScout {
 
             // לוג התחלתי
             // log(`🕵️ [WhatsApp Scout] סורק ${participants.length} חברים...`);
+
+            // ✅ סנכרון לזיכרון (Store) כדי שהדיבוג לא יהיה ריק
+            const store = require('../store');
+            store.addContacts(participants);
 
             let recognizedUsers = 0;
 
@@ -46,7 +50,7 @@ class WhatsAppScout {
                         recognizedUsers++;
                     }
                 }
-                
+
                 // אם לא מצאנו לא LID ולא טלפון - אנחנו לא עושים כלום!
                 // המשתמש יישאר "זר" עד שתקשר אותו ידנית.
             }

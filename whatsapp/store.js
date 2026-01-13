@@ -14,7 +14,7 @@ class SimpleStore {
         // 1. הצינור הראשי: היסטוריית ההודעות ואנשי הקשר (קורה בשניות הראשונות לחיבור)
         ev.on('messaging-history.set', ({ contacts }) => {
             if (!contacts) return;
-            
+
             let lidCount = 0;
             for (const contact of contacts) {
                 this._updateContact(contact);
@@ -40,15 +40,25 @@ class SimpleStore {
     }
 
     /**
+     * הוספה ידנית של אנשי קשר (למשל מה-Scout)
+     */
+    addContacts(contacts) {
+        if (!contacts || !Array.isArray(contacts)) return;
+        for (const contact of contacts) {
+            this._updateContact(contact);
+        }
+    }
+
+    /**
      * פונקציה פנימית לעדכון ומיפוי
      */
     _updateContact(contact) {
         const id = contact.id; // זה בדרך כלל ה-JID (טלפון)
-        
+
         // שמירה בזיכרון הראשי
-        this.contacts[id] = { 
-            ...(this.contacts[id] || {}), 
-            ...contact 
+        this.contacts[id] = {
+            ...(this.contacts[id] || {}),
+            ...contact
         };
 
         // מיפוי LID -> JID (החלק הקריטי)

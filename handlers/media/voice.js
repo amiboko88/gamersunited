@@ -32,7 +32,8 @@ async function textToSpeech(text, specificVoiceId = null) {
         );
         return Buffer.from(response.data);
     } catch (error) {
-        console.error('TTS Error:', error.message);
+        console.error('❌ TTS Error Details:', JSON.stringify(error.response?.data || {}, null, 2));
+        console.error('TTS Error Stack:', error.message);
         return null;
     }
 }

@@ -25,6 +25,7 @@
     "@snazzah/davey": "^0.1.7",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "axios": "^1.9.0",
+    "call-of-duty-api": "^4.1.0",
     "canvas": "^3.1.0",
     "dayjs": "^1.11.13",
     "discord.js": "^14.14.1",

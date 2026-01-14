@@ -8,16 +8,6 @@ try {
     log('⚠️ [COD] Module not found or failed to load.');
 }
 
-// בדיקה מהירה אם זה מחלקה או אובייקט עם פונקציות
-if (codApi && typeof codApi === 'function') {
-    log(`🐛 [COD Debug] Module is a function/class.`);
-} else if (codApi) {
-    log(`🐛 [COD Debug] Available methods: ${Object.keys(codApi).join(', ')}`);
-    if (codApi.Warzone) {
-        log(`🐛 [COD Debug] Warzone methods: ${Object.keys(codApi.Warzone).join(', ')}`);
-    }
-}
-
 const { COD_SSO_COOKIE } = require('../../config/secrets');
 
 class CODHandler {
@@ -54,7 +44,6 @@ class CODHandler {
                 } catch (e) { log(`⚠️ [COD] loginWithSSO failed.`); }
             }
 
-            // 3. Fallback: Assume we might be logged in if the library state is retained
             log('❌ [COD] All login methods failed. Trying to proceed anyway (State persistence?)...');
             return true;
 
@@ -72,76 +61,84 @@ class CODHandler {
         try {
             const encodedTag = encodeURIComponent(gamertag);
 
-            // Priority List:
-            // 1. BO6 Warzone (wz) - המנוע החדש / Area 99 / Rebirth
-            // 2. BO6 Multiplayer (mp) - לפעמים נתונים דולפים לשם
-            // 3. Modern Warfare (mw) - התשתית הישנה
+            // Expanded Target List based on community reverse-engineering
             const targets = [
                 { title: 'bo6', type: 'wz', name: 'BO6 Warzone' },
                 { title: 'bo6', type: 'mp', name: 'BO6 Multiplayer' },
-                { title: 'mw', type: 'wz', name: 'Legacy Warzone' }
+                { title: 'mw', type: 'wz', name: 'Legacy Warzone' },
+                { title: 't10', type: 'wz', name: 'T10 Dev BO6' } // Alternative internal name
             ];
 
-            for (const t of targets) {
-                const url = `https://my.callofduty.com/api/papi-client/stats/cod/v1/title/${t.title}/platform/${platform}/gamer/${encodedTag}/profile/type/${t.type}`;
+            // 1. Force 'uno' platform for Activision IDs with hash (User#123)
+            // 'acti' is sometimes valid, but 'uno' is the internal Universal ID platform.
+            let platformsToTest = [platform];
+            if (gamertag.includes('#') && platform !== 'uno') {
+                platformsToTest.push('uno');
+            }
 
-                log(`📡 [COD Direct] Fetching ${t.name}: ${url}`);
+            for (const p of platformsToTest) {
+                for (const t of targets) {
+                    const url = `https://my.callofduty.com/api/papi-client/stats/cod/v1/title/${t.title}/platform/${p}/gamer/${encodedTag}/profile/type/${t.type}`;
 
-                try {
-                    const response = await axios.get(url, {
-                        headers: {
-                            'Cookie': `ACT_SSO_COOKIE=${COD_SSO_COOKIE};`,
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                            'Referer': 'https://my.callofduty.com/'
+                    log(`📡 [COD Direct] Fetching ${t.name} (${p}): ${url}`);
+
+                    try {
+                        const response = await axios.get(url, {
+                            headers: {
+                                'Cookie': `ACT_SSO_COOKIE=${COD_SSO_COOKIE};`,
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                                'Referer': 'https://my.callofduty.com/',
+                                'Origin': 'https://my.callofduty.com'
+                            },
+                            timeout: 5000 // Anti-hang
+                        });
+
+                        // Check content type
+                        const isJson = response.headers['content-type']?.includes('application/json');
+
+                        // Strict success check
+                        if (response.data && response.data.status === 'success' && response.data.data) {
+                            log(`✅ [COD Direct] Found stats in ${t.name} on ${p}!`);
+                            response.data.data._sourceTitle = t.title;
+                            response.data.data._sourceType = t.type;
+                            return response.data.data;
+                        } else {
+                            if (isJson) {
+                                // If it's valid JSON but success is false
+                                const msg = response.data.data?.message || 'Unknown API Error';
+                                log(`⚠️ [COD Direct] API Error (${t.name}): ${msg}`);
+                            } else {
+                                // HTML? Cloudflare?
+                                const preview = response.data.toString().substring(0, 50);
+                                log(`⚠️ [COD Direct] Non-JSON Response (${t.name}): "${preview}..."`);
+                            }
                         }
-                    });
-
-                    // בדיקה קפדנית של התשובה
-                    if (response.data && response.data.status === 'success') {
-                        log(`✅ [COD Direct] Found stats in ${t.name}!`);
-                        response.data.data._sourceTitle = t.title;
-                        response.data.data._sourceType = t.type;
-                        return response.data.data;
-                    } else if (response.data && response.data.status === 'error') {
-                        log(`⚠️ [COD Direct] API Error for ${t.name}: ${response.data.data?.message}`);
-                    }
-                } catch (innerError) {
-                    log(`⚠️ [COD Direct] Failed ${t.name}: ${innerError.message} (Status: ${innerError.response?.status})`);
-                    if (innerError.response?.status === 401) {
-                        return null; // אם יש שגיאת אימות, אין טעם להמשיך
+                    } catch (innerError) {
+                        const status = innerError.response?.status;
+                        log(`⚠️ [COD Direct] Failed ${t.name} (${p}): Status ${status}`);
                     }
                 }
             }
 
-            log(`❌ [COD Direct] Could not find legitimate stats in any endpoint.`);
+            log(`❌ [COD Direct] Exhausted all endpoints.`);
             return null;
 
         } catch (error) {
-            log(`❌ [COD Direct] Fatal HTTP Error: ${error.message}`);
+            log(`❌ [COD Direct] Fatal Error: ${error.message}`);
             return null;
         }
     }
 
     async getWarzoneStats(gamertag, platform = 'battle') {
-        // מנסים להתחבר, מקסימום נכשל
+        // מנסים להתחבר
         await this.login();
 
         const cleanTag = gamertag.trim();
-        const platformsToTry = [platform];
 
-        // לוגיקה חכמה: רוטציית פלטפורמות
-        if (platform === 'battle') {
-            platformsToTry.push('acti'); // For Activision IDs
-            platformsToTry.push('uno');
-        }
-        if (platform === 'acti' || platform === 'uno') platformsToTry.push('battle');
-
-        for (const p of platformsToTry) {
-            // קודם כל ננסה את הדרך הישירה (יותר אמינה כרגע)
-            const directData = await this.getStatsDirect(cleanTag, p);
-            if (directData) {
-                return this.formatStats(directData, cleanTag);
-            }
+        // קריאה ישירה (המנגנון החדש)
+        const directData = await this.getStatsDirect(cleanTag, platform);
+        if (directData) {
+            return this.formatStats(directData, cleanTag);
         }
 
         return null;
@@ -161,10 +158,9 @@ class CODHandler {
                 return null;
             }
 
-            // המשחק האחרון
             const lastMatch = data.data.matches[0];
             return {
-                map: lastMatch.map, // e.g., "wz_s1_resurgence"
+                map: lastMatch.map,
                 mode: lastMatch.mode,
                 kdRatio: lastMatch.playerStats.kdRatio.toFixed(2),
                 kills: lastMatch.playerStats.kills,
@@ -182,8 +178,7 @@ class CODHandler {
 
     formatStats(data, gamertag) {
         // חילוץ נתונים מותאם ל-BO6 או WZ
-        const isBO6 = data._sourceTitle === 'bo6';
-        // אם הגיע מ-BO6, ברירת המחדל היא Black Ops 6 Warzone אם הטייפ הוא wz
+        const isBO6 = data._sourceTitle === 'bo6' || data._sourceTitle === 't10';
         const gameType = (isBO6 && data._sourceType === 'wz') ? 'BO6 Warzone' :
             isBO6 ? 'Black Ops 6' : 'Warzone (Legacy)';
 

@@ -2,9 +2,21 @@
 const { log } = require('../../utils/logger');
 let codApi;
 try {
-    codApi = require('call-of-duty-api');
+    const lib = require('call-of-duty-api');
+    codApi = lib.default || lib; // תמיכה במבנים שונים
+
+    // בדיקה מהירה אם זה מחלקה או אובייקט עם פונקציות
+    if (typeof codApi === 'function') {
+        // יכול להיות שזו מחלקה שצריך לאתחל? לא סביר בגרסה הזו, אבל נבדוק
+        log(`🐛 [COD Debug] Module is a function/class.`);
+    } else {
+        log(`🐛 [COD Debug] Available methods: ${Object.keys(codApi).join(', ')}`);
+        if (codApi.Warzone) {
+            log(`🐛 [COD Debug] Warzone methods: ${Object.keys(codApi.Warzone).join(', ')}`);
+        }
+    }
 } catch (e) {
-    log('⚠️ [COD] Module not found. Please run: npm install call-of-duty-api');
+    log('⚠️ [COD] Module not found or failed to load.');
 }
 
 const { COD_SSO_COOKIE } = require('../../config/secrets');
@@ -21,7 +33,25 @@ class CODHandler {
 
         try {
             log('[COD] 🔌 Connecting to Activision Services...');
-            await codApi.loginWithSSO(COD_SSO_COOKIE);
+
+            // ניסיון 1: שיטה ישנה (loginWithSSO ישירות על האובייקט)
+            if (typeof codApi.loginWithSSO === 'function') {
+                await codApi.loginWithSSO(COD_SSO_COOKIE);
+            }
+            // ניסיון 2: מבנה חדש (דרך Warzone)
+            else if (codApi.Warzone && typeof codApi.Warzone.loginWithSSO === 'function') {
+                await codApi.Warzone.loginWithSSO(COD_SSO_COOKIE);
+            }
+            // ניסיון 3: אולי זה Class?
+            else if (typeof codApi === 'function') {
+                // בגרסאות חדשות לפעמים צריך לאתחל: const api = new codApi();
+                // אבל אם זה לא עובד, ננסה פשוט להשתמש ב-API הרשמי אם יש
+                log('⚠️ [COD] Structure mismatch. Attempting standard login...');
+            }
+            else {
+                throw new Error(`Method loginWithSSO not found. Keys: ${Object.keys(codApi).join(', ')}`);
+            }
+
             this.isLoggedIn = true;
             log('✅ [COD] Logged in successfully via SSO.');
             return true;

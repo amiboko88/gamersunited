@@ -25,8 +25,14 @@ module.exports = {
 
         // 1. מיפוי משתמשים (User Mapping)
         if (targetTag.toLowerCase() === 'me' || targetTag.includes('אני')) {
-            // עבור אמי (Admin)
-            if (userId.includes('972526800647') || userId.includes('iBoko')) {
+            // בדיקה גמישה: אם זה המנהל (וואטסאפ או דיסקורד)
+            // נניח שכל ID שאינו מספרי קצר הוא אולי דיסקורד.
+            // ליתר ביטחון, נאשר גם אם ה-ID מכיל את השם Ami או iBoko (תלוי איך מערכת ה-AI מעבירה את ה-ID)
+            const isAdmin = userId.includes('972526800647') ||
+                userId.includes('iBoko') ||
+                userId.length > 15; // Discord IDs are long snowflakes
+
+            if (isAdmin) {
                 targetTag = 'iBoko#21414';
                 platform = 'battle';
             } else {

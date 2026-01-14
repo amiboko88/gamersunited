@@ -31,7 +31,7 @@ module.exports = {
             }
 
             // --- 2. Buttons & Menus ---
-            else if (interaction.isButton() || interaction.isStringSelectMenu()) {
+            else if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isUserSelectMenu()) {
                 const id = interaction.customId;
 
                 // --- אימות ---
@@ -56,35 +56,54 @@ module.exports = {
                     }
                 }
 
-                // --- כפתור סנכרון שמות Unknown ---
+                // --- UNIFIED DASHBOARD ROUTING ---
+
+                // 1. Navigation & Views
+                else if (id === 'btn_manage_refresh' || id === 'mng_btn_dashboard') {
+                    await interaction.deferUpdate();
+                    await dashboardHandler.showMainDashboard(interaction, true);
+                }
+                else if (id === 'btn_manage_view_link') await dashboardHandler.showLinkPanel(interaction);
+                else if (id === 'btn_manage_view_debug') await dashboardHandler.showDebugPanel(interaction);
+
+                // 2. Actions (Sync, Purge)
                 else if (id === 'btn_manage_sync_names') {
                     await interaction.deferUpdate();
                     const result = await userManager.syncUnknownUsers(interaction.guild);
-                    await interaction.followUp({
-                        content: `✅ סנכרון הושלם! עודכנו **${result.count}** שמות שהיו Unknown.`,
-                        ephemeral: true
-                    });
+                    await interaction.followUp({ content: `✅ סנכרון הושלם! עודכנו **${result.count}** שמות שהיו Unknown.`, ephemeral: true });
+                    await dashboardHandler.showMainDashboard(interaction, true); // Refresh UI
+                }
+                else if (id === 'btn_manage_purge_ghosts') await dashboardHandler.showGhostPurgeList(interaction);
+                else if (id === 'btn_manage_ghost_confirm') await dashboardHandler.executeGhostPurge(interaction);
+
+                else if (id === 'btn_manage_kick_prep') await dashboardHandler.showKickCandidateList(interaction);
+                else if (id === 'btn_manage_kick_confirm' || id === 'users_kick_action') await dashboardHandler.executeKick(interaction);
+
+                // 3. Link Logic (Menus)
+                else if (id === 'menu_manage_link_lid') await dashboardHandler.handleLinkSelection(interaction);
+                else if (id.startsWith('menu_manage_link_confirm_')) await dashboardHandler.finalizeLink(interaction);
+
+                // --- Other Handlers ---
+                else if (id === 'start_verification_process') await verificationHandler.showVerificationModal(interaction);
+                else if (id === 'activity_iam_alive') await activityMonitor.handleAliveResponse(interaction);
+
+                // Audio & FIFO
+                else if (id === 'repartition_now') await fifoHandler.handleRepartition(interaction);
+                else if (id.startsWith('fifo_')) await fifoHandler.handleVoteOrLobby(interaction);
+                else if (id.startsWith('audio_')) {
+                    if (id === 'audio_main_menu') await audioHandler.handleMenuSelection(interaction);
+                    else if (id.startsWith('audio_play_')) await audioHandler.handleFilePlay(interaction);
+                    else if (id.startsWith('audio_ctrl_')) await audioHandler.handleControls(interaction);
+                }
+                // Birthday
+                else if (['btn_bd_set', 'btn_bd_edit', 'btn_bd_admin_panel', 'btn_bd_remind_all'].includes(id)) {
+                    if (id === 'btn_bd_set' || id === 'btn_bd_edit') await birthdayHandler.showModal(interaction);
+                    else if (id === 'btn_bd_admin_panel') await birthdayHandler.showAdminPanel(interaction);
+                    else if (id === 'btn_bd_remind_all') await birthdayHandler.sendReminders(interaction);
                 }
 
-                // --- ניהול דאשבורד ופעולות ---
-                else if (id.startsWith('btn_manage_') || id === 'users_kick_action') {
-                    // ניווט בסיסי
-                    if (id === 'btn_manage_refresh') {
-                        await interaction.deferUpdate();
-                        await dashboardHandler.showMainDashboard(interaction, true);
-                    }
-                    else if (id === 'btn_manage_cancel') {
-                        await interaction.update({ content: '✅ הפעולה בוטלה.', embeds: [], components: [], files: [] });
-                    }
-
-                    // פעולות Ghosts
-                    else if (id === 'btn_manage_purge_ghosts') await dashboardHandler.showGhostPurgeList(interaction);
-                    else if (id === 'btn_manage_ghost_confirm') await dashboardHandler.executeGhostPurge(interaction);
-
-                    // פעולות Kick (Inactive)
-                    else if (id === 'btn_manage_kick_prep') await dashboardHandler.showKickCandidateList(interaction);
-                    else if (id === 'btn_manage_kick_confirm' || id === 'users_kick_action') await dashboardHandler.executeKick(interaction);
-                }
+                // Clean close
+                else if (id === 'btn_manage_cancel') await interaction.update({ content: '✅ הפעולה בוטלה.', embeds: [], components: [], files: [] });
             }
 
             // --- 3. Modals ---

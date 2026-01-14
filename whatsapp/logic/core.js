@@ -13,6 +13,7 @@ const userManager = require('../../handlers/users/manager');
 const xpManager = require('../../handlers/economy/xpManager'); // ✅ 1. ייבוא מערכת ה-XP
 
 const activeConversations = new Map();
+const processingGroups = new Set(); // 🔒 מנעול לטיפול בהודעות מקבילות
 
 function isTriggered(text, msg, sock) {
     const chatJid = msg.key.remoteJid;
@@ -26,8 +27,17 @@ function isTriggered(text, msg, sock) {
 
     const botId = sock.user?.id?.split(':')[0] || sock.user?.id?.split('@')[0];
 
-    // 1. קריאה מפורשת
-    if (text.includes('שמעון') || text.includes('שימי') || text.includes('בוט')) return true;
+    // 1. קריאה מפורשת (רק אם השם מופיע בהתחלה או בסוף, או כחלק ברור)
+    // אם המילה "שמעון" מופיעה סתם באמצע משפט ("הכנף של שמעון"), זה לא טריגר אוטומטי.
+    // נשאיר את זה לשיקול דעת של המוח החכם (Smart AI).
+    const cleanText = text.trim();
+    if (cleanText.startsWith('שמעון') || cleanText.startsWith('שימי') || cleanText.startsWith('בוט') ||
+        cleanText.endsWith('שמעון') || cleanText.endsWith('שימי') || cleanText.endsWith('בוט')) {
+        return true;
+    }
+
+    // אבל, אם השם מוזכר באמצע, אנחנו לא מחזירים True מיד, אלא נותנים ל-shouldReply להחליט.
+    // (אלא אם כן יש תיוג - שזה מטופל למטה)
 
     // 2. תיוג ישיר (@Shimon)
     const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
@@ -89,15 +99,18 @@ async function handleMessageLogic(sock, msg, text) {
         const userRef = await getUserRef(senderFullJid, 'whatsapp');
         realUserId = userRef.id;
 
-        // 🔍 DEBUG: בדיקת LID בזמן אמת עבור אמי
+        // 🔍 DEBUG: בדיקת LID בזמן אמת עבור אמי (מעוצב)
         const isLid = senderPhone.length > 14;
         if (isLid) {
             const status = (realUserId.length <= 14) ? "✅ VERIFIED" : "⚠️ UNKNOWN";
             // דיווח לאדמין בלבד (972526800647)
             if (status.includes("VERIFIED")) {
-                await sock.sendMessage('972526800647@s.whatsapp.net', {
-                    text: `🔐 LID Debug: השולח ${senderPhone} זוהה כמשתמש ${realUserId}`
-                });
+                const debugMsg = `📊 *LID Debug Report*\n` +
+                    `🆔 **מקור:** \`${senderPhone}\` (LID)\n` +
+                    `👤 **זוהה כ:** \`${realUserId}\`\n` +
+                    `✅ **סטטוס:** סנכרון תקין.`;
+
+                await sock.sendMessage('972526800647@s.whatsapp.net', { text: debugMsg });
             }
         }
     } catch (e) { }
@@ -112,8 +125,7 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, is
 
     if (text === "BLOCKED_SPAM") return;
 
-    // ✅ 2. דיווח XP על ההודעה
-    // אנחנו שולחים את ההודעה למנהל ה-XP כדי שיספור אותה ויבדוק עליית רמה
+    // ✅ 2. דיווח XP
     xpManager.handleXP(senderId, 'whatsapp', text, { sock, chatId: chatJid }, async (response) => {
         // פונקציית תגובה (במקרה של עליית רמה, הטקסט יישלח פה אם אין תמונה)
         // אבל ה-XP Manager החדש שלך כבר יודע לשלוח תמונה לבד דרך ה-socket שהעברנו ב-contextObj
@@ -122,11 +134,25 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, is
         }
     });
 
+    // 🔒 Global Group Lock: בדיקה אם אנחנו כבר מטפלים בתשובה לקבוצה הזו
+    // אם מישהו אחר קרא לי באותה שנייה, נתעלם כדי לא לחפור ("חופר")
+    if (processingGroups.has(chatJid)) {
+        log(`🔒 [Core] התעלמתי מפנייה מ-${senderId} כי אני כבר מגיב לקבוצה ${chatJid}`);
+        return;
+    }
+
+    // נועלים את הקבוצה
+    processingGroups.add(chatJid);
+
+    // טיימר שחרור חירום (אם משהו נתקע, שחרר אחרי 10 שניות)
+    const lockTimeout = setTimeout(() => processingGroups.delete(chatJid), 10000);
+
     try {
         let isExplicitCall = isTriggered(text, msg, sock);
         const lastInteraction = activeConversations.get(senderId);
 
-        // 🛑 Anti-Spam: אם לא קראו לי במפורש, אני לא מגיב אם הגבתי למישהו ב-20 שניות האחרונות באותה קבוצה
+        // 🛑 Anti-Spam (Auto-Reply Cooldown)
+        // אם לא קראו לי במפורש, אני לא מגיב אם הגבתי למישהו ב-20 שניות האחרונות באותה קבוצה
         // זה מונע השתלטות על שיחה
         if (!isExplicitCall) {
             const groupCooldown = activeConversations.get(chatJid + '_last_auto_reply');
@@ -166,6 +192,11 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, is
         }
 
         activeConversations.set(senderId, Date.now());
+        // אם זו קריאה אוטומטית, נעדכן גם את ה-Cooldown הקבוצתי
+        if (!isExplicitCall) {
+            activeConversations.set(chatJid + '_last_auto_reply', Date.now());
+        }
+
         await sock.sendPresenceUpdate('composing', chatJid);
 
         let imageBuffer = null;
@@ -193,7 +224,7 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, is
                 audioBuffer = await voiceEngine.textToSpeech(responseText);
                 if (audioBuffer) {
                     await sock.sendMessage(chatJid, { audio: audioBuffer, ptt: true }, { quoted: msg });
-                    return; // שלחנו קול, לא שולחים טקסט
+                    // אין return כאן כדי לאפשר ניקוי נעילה ב-finally
                 }
             } catch (e) {
                 log(`❌ [Voice] Generation failed: ${e.message}`);
@@ -201,12 +232,19 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderId, chatJid, is
             }
         }
 
-        if (responseText) {
+        // שליחת טקסט (אם לא נשלח אודיו או אם האודיו נכשל)
+        if (responseText && !audioBuffer) {
             await sock.sendMessage(chatJid, { text: responseText }, { quoted: msg });
         }
 
     } catch (error) {
         log(`❌ [Core] Error: ${error.message}`);
+        processingGroups.delete(chatJid); // שחרור במקרה של שגיאה קריטית
+    } finally {
+        // משחררים את הנעילה בכל מקרה (הצלחה או כישלון)
+        clearTimeout(lockTimeout);
+        // השהיה קטנה נוספת של 2 שניות לשחרור כדי למנוע Spam מיידי
+        setTimeout(() => processingGroups.delete(chatJid), 2000);
     }
 }
 

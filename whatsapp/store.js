@@ -37,6 +37,31 @@ class SimpleStore {
                 this._updateContact(update);
             }
         });
+
+        // 4. טעינת LIDs מהמסד נתונים (Hydration)
+        this.loadLidsFromDB().catch(e => log(`❌ [Store] LID Hydration Failed: ${e.message}`));
+    }
+
+    /**
+     * טוען את כל ה-LIDs הידועים מה-DB לזיכרון (כדי לא לשכוח משתמשים)
+     */
+    async loadLidsFromDB() {
+        const db = require('../utils/firebase');
+        const snapshot = await db.collection('users').get();
+        let loaded = 0;
+
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const waPhone = data.platforms?.whatsapp; // המספר האמיתי (ID)
+            const waLid = data.platforms?.whatsapp_lid; // המספר הארוך (LID)
+
+            if (waPhone && waLid) {
+                // שמירה במפה בזיכרון
+                this.lidMap[waLid] = waPhone + '@s.whatsapp.net';
+                loaded++;
+            }
+        });
+        log(`📂 [Store] נטענו ${loaded} LIDs מה-DB לזיכרון.`);
     }
 
     /**

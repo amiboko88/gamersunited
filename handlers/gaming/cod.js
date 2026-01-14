@@ -71,28 +71,53 @@ class CODHandler {
     async getStatsDirect(gamertag, platform) {
         try {
             const encodedTag = encodeURIComponent(gamertag);
-            // מנסים את ה-Endpoint של Modern Warfare (מכסה את Warzone)
-            const url = `https://my.callofduty.com/api/papi-client/stats/cod/v1/title/mw/platform/${platform}/gamer/${encodedTag}/profile/type/wz`;
 
-            log(`📡 [COD Direct] Fetching: ${url}`);
+            // Priority List:
+            // 1. BO6 Warzone (wz) - המנוע החדש / Area 99 / Rebirth
+            // 2. BO6 Multiplayer (mp) - לפעמים נתונים דולפים לשם
+            // 3. Modern Warfare (mw) - התשתית הישנה
+            const targets = [
+                { title: 'bo6', type: 'wz', name: 'BO6 Warzone' },
+                { title: 'bo6', type: 'mp', name: 'BO6 Multiplayer' },
+                { title: 'mw', type: 'wz', name: 'Legacy Warzone' }
+            ];
 
-            const response = await axios.get(url, {
-                headers: {
-                    'Cookie': `ACT_SSO_COOKIE=${COD_SSO_COOKIE};`,
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Referer': 'https://my.callofduty.com/'
+            for (const t of targets) {
+                const url = `https://my.callofduty.com/api/papi-client/stats/cod/v1/title/${t.title}/platform/${platform}/gamer/${encodedTag}/profile/type/${t.type}`;
+
+                log(`📡 [COD Direct] Fetching ${t.name}: ${url}`);
+
+                try {
+                    const response = await axios.get(url, {
+                        headers: {
+                            'Cookie': `ACT_SSO_COOKIE=${COD_SSO_COOKIE};`,
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                            'Referer': 'https://my.callofduty.com/'
+                        }
+                    });
+
+                    // בדיקה קפדנית של התשובה
+                    if (response.data && response.data.status === 'success') {
+                        log(`✅ [COD Direct] Found stats in ${t.name}!`);
+                        response.data.data._sourceTitle = t.title;
+                        response.data.data._sourceType = t.type;
+                        return response.data.data;
+                    } else if (response.data && response.data.status === 'error') {
+                        log(`⚠️ [COD Direct] API Error for ${t.name}: ${response.data.data?.message}`);
+                    }
+                } catch (innerError) {
+                    log(`⚠️ [COD Direct] Failed ${t.name}: ${innerError.message} (Status: ${innerError.response?.status})`);
+                    if (innerError.response?.status === 401) {
+                        return null; // אם יש שגיאת אימות, אין טעם להמשיך
+                    }
                 }
-            });
-
-            if (response.data && response.data.status === 'success') {
-                log('✅ [COD Direct] Success!');
-                return response.data.data;
-            } else {
-                log(`⚠️ [COD Direct] API status: ${response.data?.status} | Msg: ${JSON.stringify(response.data?.data)}`);
-                return null;
             }
+
+            log(`❌ [COD Direct] Could not find legitimate stats in any endpoint.`);
+            return null;
+
         } catch (error) {
-            log(`❌ [COD Direct] HTTP Error: ${error.message} (Status: ${error.response?.status})`);
+            log(`❌ [COD Direct] Fatal HTTP Error: ${error.message}`);
             return null;
         }
     }
@@ -112,26 +137,13 @@ class CODHandler {
         if (platform === 'acti' || platform === 'uno') platformsToTry.push('battle');
 
         for (const p of platformsToTry) {
-            try {
-                // קודם כל ננסה את הדרך הישירה (יותר אמינה כרגע)
-                const directData = await this.getStatsDirect(cleanTag, p);
-                if (directData) {
-                    return this.formatStats(directData, cleanTag);
-                }
-
-                // אם נכשל, ננסה את הספרייה (אולי)
-                log(`🔍 [COD] Searching stats via Wrapper for: ${cleanTag} on ${p}...`);
-                const data = await codApi.Warzone.fullData(cleanTag, p);
-
-                if (data && data.data) {
-                    return this.formatStats(data.data, cleanTag);
-                }
-            } catch (error) {
-                // התעלמות משגיאות ביניים
+            // קודם כל ננסה את הדרך הישירה (יותר אמינה כרגע)
+            const directData = await this.getStatsDirect(cleanTag, p);
+            if (directData) {
+                return this.formatStats(directData, cleanTag);
             }
         }
 
-        log(`❌ [COD] No data found for ${cleanTag} on any platform.`);
         return null;
     }
 
@@ -169,19 +181,26 @@ class CODHandler {
     }
 
     formatStats(data, gamertag) {
-        // חילוץ נתונים רלוונטיים (Resurgence / BR)
-        const weekly = data.weekly?.mode?.resurgence?.properties || {};
-        const lifetime = data.lifetime?.mode?.resurgence?.properties || {};
-        const allModes = data.lifetime?.all?.properties || {};
+        // חילוץ נתונים מותאם ל-BO6 או WZ
+        const isBO6 = data._sourceTitle === 'bo6';
+        // אם הגיע מ-BO6, ברירת המחדל היא Black Ops 6 Warzone אם הטייפ הוא wz
+        const gameType = (isBO6 && data._sourceType === 'wz') ? 'BO6 Warzone' :
+            isBO6 ? 'Black Ops 6' : 'Warzone (Legacy)';
+
+        // נתונים כלליים - עשוי להשתנות בין API ל-API
+        const lifetime = data.lifetime?.mode?.br?.properties ||
+            data.lifetime?.mode?.resurgence?.properties ||
+            data.lifetime?.all?.properties || {};
 
         return {
             username: gamertag.split('#')[0],
-            kdRatio: (lifetime.kdRatio || allModes.kdRatio || 0).toFixed(2),
-            kills: (lifetime.kills || allModes.kills || 0),
-            deaths: (lifetime.deaths || allModes.deaths || 0),
-            wins: (lifetime.wins || allModes.wins || 0),
-            gamesPlayed: (lifetime.gamesPlayed || allModes.gamesPlayed || 0),
-            timePlayed: ((lifetime.timePlayed || allModes.timePlayed || 0) / 3600).toFixed(1) + 'h'
+            game: gameType,
+            kdRatio: (lifetime.kdRatio || 0).toFixed(2),
+            kills: (lifetime.kills || 0),
+            deaths: (lifetime.deaths || 0),
+            wins: (lifetime.wins || 0),
+            gamesPlayed: (lifetime.gamesPlayed || 0),
+            timePlayed: ((lifetime.timePlayed || 0) / 3600).toFixed(1) + 'h'
         };
     }
 }

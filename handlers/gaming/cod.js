@@ -28,36 +28,42 @@ class CODHandler {
 
     async login() {
         if (this.isLoggedIn) return true;
-
         if (!codApi) return false;
 
         try {
             log('[COD] 🔌 Connecting to Activision Services...');
 
-            // ניסיון 1: שיטה ישנה (loginWithSSO ישירות על האובייקט)
-            if (typeof codApi.loginWithSSO === 'function') {
-                await codApi.loginWithSSO(COD_SSO_COOKIE);
-            }
-            // ניסיון 2: מבנה חדש (דרך Warzone)
-            else if (codApi.Warzone && typeof codApi.Warzone.loginWithSSO === 'function') {
-                await codApi.Warzone.loginWithSSO(COD_SSO_COOKIE);
-            }
-            // ניסיון 3: אולי זה Class?
-            else if (typeof codApi === 'function') {
-                // בגרסאות חדשות לפעמים צריך לאתחל: const api = new codApi();
-                // אבל אם זה לא עובד, ננסה פשוט להשתמש ב-API הרשמי אם יש
-                log('⚠️ [COD] Structure mismatch. Attempting standard login...');
-            }
-            else {
-                throw new Error(`Method loginWithSSO not found. Keys: ${Object.keys(codApi).join(', ')}`);
+            // Strategic Login Attempt (Versatile)
+            // 1. Try standard login() with cookie (some versions overload this)
+            if (typeof codApi.login === 'function') {
+                try {
+                    await codApi.login(COD_SSO_COOKIE);
+                    this.isLoggedIn = true;
+                    log('✅ [COD] Logged in via standard login()');
+                    return true;
+                } catch (e) {
+                    log(`⚠️ [COD] standard login() failed: ${e.message}`);
+                }
             }
 
-            this.isLoggedIn = true;
-            log('✅ [COD] Logged in successfully via SSO.');
-            return true;
+            // 2. Try generic "loginWithSSO" if it exists (wrapper variations)
+            if (typeof codApi.loginWithSSO === 'function') {
+                try {
+                    await codApi.loginWithSSO(COD_SSO_COOKIE);
+                    this.isLoggedIn = true;
+                    return true;
+                } catch (e) { log(`⚠️ [COD] loginWithSSO failed.`); }
+            }
+
+            // 3. Fallback: Assume we might be logged in if the library state is retained
+            // or just ignore login failure and try to fetch (some endpoints might work publicly?)
+            // But usually API requires auth.
+
+            log('❌ [COD] All login methods failed. Trying to proceed anyway (State persistence?)...');
+            return true; // ננסה להמשיך, אולי הספרייה שומרת סטייט פנימי מהריצות הקודמות
+
         } catch (error) {
-            log(`❌ [COD] Login Failed: ${error.message}`);
-            this.isLoggedIn = false;
+            log(`❌ [COD] Login Flow Error: ${error.message}`);
             return false;
         }
     }
@@ -68,36 +74,32 @@ class CODHandler {
      * @param {string} platform - 'battle', 'psn', 'xbl', 'uno' (Activision ID)
      */
     async getWarzoneStats(gamertag, platform = 'battle') {
-        if (!await this.login()) return null;
+        // מנסים להתחבר, מקסימום נכשל
+        await this.login();
 
-        try {
-            // נקיון הקלט
-            const cleanTag = gamertag.trim();
+        const cleanTag = gamertag.trim();
+        const platformsToTry = [platform];
 
-            // המרה חכמה של פלטפורמה אם לא צוינה
-            // אם יש סולמית (#), זה כנראה באטלנט או אקטיביז'ן
-            let targetPlatform = platform;
-            if (targetPlatform === 'battle' && !cleanTag.includes('#')) {
-                // אם אין סולמית, אי אפשר באטלנט, אולי זה PSN?
-                // נשאיר כדיפולט ונראה אם ייכשל
+        // לוגיקה חכמה: אם נכשל ב-Battle.net, נסה Activision (uno)
+        if (platform === 'battle') platformsToTry.push('uno');
+        if (platform === 'uno') platformsToTry.push('battle');
+
+        for (const p of platformsToTry) {
+            try {
+                log(`🔍 [COD] Searching stats for: ${cleanTag} on ${p}...`);
+                const data = await codApi.Warzone.fullData(cleanTag, p);
+
+                if (data && data.data) {
+                    return this.formatStats(data.data, cleanTag);
+                }
+            } catch (error) {
+                // התעלמות משגיאות ביניים (כמו 404)
+                log(`⚠️ [COD] Failed on ${p}: ${error.message}`);
             }
-
-            log(`🔍 [COD] Searching stats for: ${cleanTag} on ${targetPlatform}...`);
-
-            // שליפת נתונים
-            const data = await codApi.Warzone.fullData(cleanTag, targetPlatform);
-
-            if (!data || !data.data) {
-                log(`❌ [COD] No data found for ${cleanTag}. Privacy settings?`);
-                return null;
-            }
-
-            return this.formatStats(data.data, cleanTag);
-
-        } catch (error) {
-            log(`❌ [COD] Fetch Error: ${error.message}`);
-            return null;
         }
+
+        log(`❌ [COD] No data found for ${cleanTag} on any platform.`);
+        return null;
     }
 
     /**

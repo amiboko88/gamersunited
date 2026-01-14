@@ -23,18 +23,28 @@ module.exports = {
         let targetTag = args.gamertag;
         let platform = args.platform || 'battle';
 
-        // 1. מיפוי משתמשים (User Mapping)
+        // Debug: See who is asking
+        console.log(`[Stats Tool] Request from: ${userId} | Tag: ${targetTag}`);
+
+        // 1. תיקון טעות נפוצה של ה-AI: אם שלח את שם הבוט במקום "me"
+        const botNames = ['shimon', 'שמעון', 'bot', 'בוט', 'shimons'];
+        if (botNames.some(name => targetTag.toLowerCase().includes(name))) {
+            targetTag = 'me';
+        }
+
+        // 2. מיפוי משתמשים (User Mapping)
         if (targetTag.toLowerCase() === 'me' || targetTag.includes('אני')) {
             // בדיקה גמישה: אם זה המנהל (וואטסאפ או דיסקורד)
-            // נניח שכל ID שאינו מספרי קצר הוא אולי דיסקורד.
-            // ליתר ביטחון, נאשר גם אם ה-ID מכיל את השם Ami או iBoko (תלוי איך מערכת ה-AI מעבירה את ה-ID)
             const isAdmin = userId.includes('972526800647') ||
                 userId.includes('iBoko') ||
-                userId.length > 15; // Discord IDs are long snowflakes
+                userId.includes('Ami') ||
+                userId.length > 15; // Discord IDs are long
 
             if (isAdmin) {
-                targetTag = 'iBoko#21414';
-                platform = 'battle';
+                // עדכון ל-Activision ID שהמשתמש סיפק (זה הכי אמין)
+                targetTag = 'AMI#1787344';
+                platform = 'acti';
+                // הערה: הבוט ינסה אוטומטית גם battle אם acti ייכשל, אבל נתחיל מהנכון.
             } else {
                 return "❌ Sorry, I don't know your gamertag yet. Tell me 'My gamertag is X'.";
             }

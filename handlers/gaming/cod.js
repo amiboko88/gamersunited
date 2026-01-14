@@ -1,22 +1,21 @@
-// 📁 handlers/gaming/cod.js
+const axios = require('axios');
 const { log } = require('../../utils/logger');
 let codApi;
 try {
     const lib = require('call-of-duty-api');
-    codApi = lib.default || lib; // תמיכה במבנים שונים
-
-    // בדיקה מהירה אם זה מחלקה או אובייקט עם פונקציות
-    if (typeof codApi === 'function') {
-        // יכול להיות שזו מחלקה שצריך לאתחל? לא סביר בגרסה הזו, אבל נבדוק
-        log(`🐛 [COD Debug] Module is a function/class.`);
-    } else {
-        log(`🐛 [COD Debug] Available methods: ${Object.keys(codApi).join(', ')}`);
-        if (codApi.Warzone) {
-            log(`🐛 [COD Debug] Warzone methods: ${Object.keys(codApi.Warzone).join(', ')}`);
-        }
-    }
+    codApi = lib.default || lib;
 } catch (e) {
     log('⚠️ [COD] Module not found or failed to load.');
+}
+
+// בדיקה מהירה אם זה מחלקה או אובייקט עם פונקציות
+if (codApi && typeof codApi === 'function') {
+    log(`🐛 [COD Debug] Module is a function/class.`);
+} else if (codApi) {
+    log(`🐛 [COD Debug] Available methods: ${Object.keys(codApi).join(', ')}`);
+    if (codApi.Warzone) {
+        log(`🐛 [COD Debug] Warzone methods: ${Object.keys(codApi.Warzone).join(', ')}`);
+    }
 }
 
 const { COD_SSO_COOKIE } = require('../../config/secrets');
@@ -56,11 +55,8 @@ class CODHandler {
             }
 
             // 3. Fallback: Assume we might be logged in if the library state is retained
-            // or just ignore login failure and try to fetch (some endpoints might work publicly?)
-            // But usually API requires auth.
-
             log('❌ [COD] All login methods failed. Trying to proceed anyway (State persistence?)...');
-            return true; // ננסה להמשיך, אולי הספרייה שומרת סטייט פנימי מהריצות הקודמות
+            return true;
 
         } catch (error) {
             log(`❌ [COD] Login Flow Error: ${error.message}`);
@@ -69,10 +65,38 @@ class CODHandler {
     }
 
     /**
-     * Get Warzone Stats for a player
-     * @param {string} gamertag - format: "User#1234" (Battle.net) or "User" (PSN/XBOX if unique)
-     * @param {string} platform - 'battle', 'psn', 'xbl', 'uno' (Activision ID)
+     * Fallback: Fetch stats directly via Axios using the API endpoints
+     * Bypasses the wrapper library if it is broken.
      */
+    async getStatsDirect(gamertag, platform) {
+        try {
+            const encodedTag = encodeURIComponent(gamertag);
+            // מנסים את ה-Endpoint של Modern Warfare (מכסה את Warzone)
+            const url = `https://my.callofduty.com/api/papi-client/stats/cod/v1/title/mw/platform/${platform}/gamer/${encodedTag}/profile/type/wz`;
+
+            log(`📡 [COD Direct] Fetching: ${url}`);
+
+            const response = await axios.get(url, {
+                headers: {
+                    'Cookie': `ACT_SSO_COOKIE=${COD_SSO_COOKIE};`,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Referer': 'https://my.callofduty.com/'
+                }
+            });
+
+            if (response.data && response.data.status === 'success') {
+                log('✅ [COD Direct] Success!');
+                return response.data.data;
+            } else {
+                log(`⚠️ [COD Direct] API status: ${response.data?.status} | Msg: ${JSON.stringify(response.data?.data)}`);
+                return null;
+            }
+        } catch (error) {
+            log(`❌ [COD Direct] HTTP Error: ${error.message} (Status: ${error.response?.status})`);
+            return null;
+        }
+    }
+
     async getWarzoneStats(gamertag, platform = 'battle') {
         // מנסים להתחבר, מקסימום נכשל
         await this.login();
@@ -82,22 +106,28 @@ class CODHandler {
 
         // לוגיקה חכמה: רוטציית פלטפורמות
         if (platform === 'battle') {
-            platformsToTry.push('acti'); // For Activision IDs (User#1234567)
-            platformsToTry.push('uno');  // Legacy numerical ID
+            platformsToTry.push('acti'); // For Activision IDs
+            platformsToTry.push('uno');
         }
         if (platform === 'acti' || platform === 'uno') platformsToTry.push('battle');
 
         for (const p of platformsToTry) {
             try {
-                log(`🔍 [COD] Searching stats for: ${cleanTag} on ${p}...`);
+                // קודם כל ננסה את הדרך הישירה (יותר אמינה כרגע)
+                const directData = await this.getStatsDirect(cleanTag, p);
+                if (directData) {
+                    return this.formatStats(directData, cleanTag);
+                }
+
+                // אם נכשל, ננסה את הספרייה (אולי)
+                log(`🔍 [COD] Searching stats via Wrapper for: ${cleanTag} on ${p}...`);
                 const data = await codApi.Warzone.fullData(cleanTag, p);
 
                 if (data && data.data) {
                     return this.formatStats(data.data, cleanTag);
                 }
             } catch (error) {
-                // התעלמות משגיאות ביניים (כמו 404)
-                log(`⚠️ [COD] Failed on ${p}: ${error.message}`);
+                // התעלמות משגיאות ביניים
             }
         }
 

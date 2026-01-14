@@ -80,9 +80,12 @@ class CODHandler {
         const cleanTag = gamertag.trim();
         const platformsToTry = [platform];
 
-        // לוגיקה חכמה: אם נכשל ב-Battle.net, נסה Activision (uno)
-        if (platform === 'battle') platformsToTry.push('uno');
-        if (platform === 'uno') platformsToTry.push('battle');
+        // לוגיקה חכמה: רוטציית פלטפורמות
+        if (platform === 'battle') {
+            platformsToTry.push('acti'); // For Activision IDs (User#1234567)
+            platformsToTry.push('uno');  // Legacy numerical ID
+        }
+        if (platform === 'acti' || platform === 'uno') platformsToTry.push('battle');
 
         for (const p of platformsToTry) {
             try {

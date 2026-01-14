@@ -11,7 +11,7 @@ const DAYS = {
 const IMMUNE_ROLES_NAMES = ['MVP', 'Server Booster', 'VIP'];
 
 class UserManager {
-    
+
     // כתיבה למבנה הנקי בלבד
     async updateLastActive(userId) {
         try {
@@ -28,7 +28,7 @@ class UserManager {
      */
     async syncUnknownUsers(guild) {
         if (!guild) return { success: false, message: 'Guild not found' };
-        
+
         log('🔍 [UserManager] מתחיל סנכרון שמות Unknown...');
         const snapshot = await db.collection('users').get();
         let updateCount = 0;
@@ -60,38 +60,60 @@ class UserManager {
     }
 
     /**
-     * ✅ פונקציה 2: ניקוי משתמשי רפאים (Unknown, לא בשרת, ללא היסטוריה)
+     * ✅ מחזיר רשימה של משתמשי רפאים (קיימים ב-DB, לא בשרת) לבדיקה לפני מחיקה
      */
-    async purgeGhostUsers(guild) {
-        if (!guild) return { success: false, message: 'Guild not found' };
-        
-        log('🧹 [UserManager] מתחיל ניקוי משתמשי רפאים...');
+    async getGhostUsers(guild) {
+        if (!guild) return [];
+
         const snapshot = await db.collection('users').get();
-        let deleteCount = 0;
+        const ghosts = [];
 
         for (const doc of snapshot.docs) {
             const userId = doc.id;
             const data = doc.data();
 
-            const isUnknown = !data.identity?.displayName || data.identity.displayName === "Unknown";
+            // סינון 1: האם זה ID של דיסקורד?
             const isDiscordId = /^\d+$/.test(userId) && userId.length > 15;
-            
-            let isInGuild = true;
-            if (isDiscordId) {
-                const member = await guild.members.fetch(userId).catch(() => null);
-                if (!member) isInGuild = false;
-            }
+            if (!isDiscordId) continue;
 
-            const hasNoHistory = (data.economy?.xp || 0) < 5 && 
-                                (data.stats?.messagesSent || 0) === 0 && 
-                                (!data.brain?.facts || data.brain.facts.length === 0);
+            // סינון 2: האם הוא בשרת?
+            const member = await guild.members.fetch(userId).catch(() => null);
+            if (!member) {
+                // המשתמש לא בשרת. האם יש לו ערך?
+                const hasValue = (data.economy?.balance > 0) || (data.economy?.xp > 50);
 
-            if (isUnknown && !isInGuild && hasNoHistory) {
-                await db.collection('users').doc(userId).delete();
-                deleteCount++;
+                ghosts.push({
+                    id: userId,
+                    name: data.identity?.displayName || 'Unknown',
+                    xp: data.economy?.xp || 0,
+                    joined: data.identity?.joinedAt ? new Date(data.identity.joinedAt).toLocaleDateString() : '?',
+                    hasValue // דגל לסימון משתמשים שאולי שווה לשמור
+                });
             }
         }
-        return { success: true, count: deleteCount };
+        return ghosts;
+    }
+
+    /**
+     * ✅ מחיקת משתמשים לפי רשימת IDs
+     */
+    async purgeUsers(userIds) {
+        let count = 0;
+        const batchSize = 500;
+
+        for (let i = 0; i < userIds.length; i += batchSize) {
+            const batch = db.batch();
+            const chunk = userIds.slice(i, i + batchSize);
+
+            chunk.forEach(id => {
+                const ref = db.collection('users').doc(id);
+                batch.delete(ref);
+            });
+
+            await batch.commit();
+            count += chunk.length;
+        }
+        return count;
     }
 
     async getInactivityStats(guild) {
@@ -106,10 +128,10 @@ class UserManager {
 
         try {
             if (guild.memberCount !== guild.members.cache.size) {
-                try { await guild.members.fetch({ time: 8000 }); } catch (e) {}
+                try { await guild.members.fetch({ time: 8000 }); } catch (e) { }
             }
             const allMembers = guild.members.cache;
-            stats.total = guild.memberCount; 
+            stats.total = guild.memberCount;
 
             const [usersSnapshot, gameStatsSnapshot] = await Promise.all([
                 db.collection('users').get(),
@@ -142,7 +164,7 @@ class UserManager {
 
                 const daysSinceJoin = Math.floor((now - member.joinedTimestamp) / msPerDay);
                 const hasLegacy = (userData.economy?.xp > 100) || (userData.stats?.messagesSent > 10);
-                const isImmune = member.roles.cache.some(r => 
+                const isImmune = member.roles.cache.some(r =>
                     IMMUNE_ROLES_NAMES.some(immuneName => r.name.includes(immuneName)) ||
                     r.id === process.env.ROLE_MVP_ID
                 );

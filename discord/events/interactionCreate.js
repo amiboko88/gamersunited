@@ -12,7 +12,7 @@ const audioHandler = require('../../handlers/audio/interaction');
 const fifoHandler = require('../../handlers/fifo/interaction');
 const activityMonitor = require('../../handlers/users/activity');
 
-const VERIFIED_ROLE_ID = '1120791404583587971'; 
+const VERIFIED_ROLE_ID = '1120791404583587971';
 
 module.exports = {
     name: Events.InteractionCreate,
@@ -39,8 +39,8 @@ module.exports = {
                     await interaction.deferReply({ ephemeral: true });
                     try {
                         await ensureUserExists(
-                            interaction.user.id, 
-                            interaction.member.displayName || interaction.user.username, 
+                            interaction.user.id,
+                            interaction.member.displayName || interaction.user.username,
                             'discord'
                         );
                         if (!interaction.member.roles.cache.has(VERIFIED_ROLE_ID)) {
@@ -55,46 +55,35 @@ module.exports = {
                         await interaction.editReply({ content: '❌ שגיאה בשמירת הנתונים.' });
                     }
                 }
-                
+
                 // --- כפתור סנכרון שמות Unknown ---
                 else if (id === 'btn_manage_sync_names') {
                     await interaction.deferUpdate();
                     const result = await userManager.syncUnknownUsers(interaction.guild);
-                    await interaction.followUp({ 
-                        content: `✅ סנכרון הושלם! עודכנו **${result.count}** שמות שהיו Unknown.`, 
-                        ephemeral: true 
+                    await interaction.followUp({
+                        content: `✅ סנכרון הושלם! עודכנו **${result.count}** שמות שהיו Unknown.`,
+                        ephemeral: true
                     });
                 }
 
-                // --- כפתור ניקוי רפאים (Ghosts) ---
-                else if (id === 'btn_manage_purge_ghosts') {
-                    await interaction.deferUpdate();
-                    const result = await userManager.purgeGhostUsers(interaction.guild);
-                    await interaction.followUp({ 
-                        content: `🧹 ניקוי הושלם! נמחקו **${result.count}** משתמשי רפאים ללא היסטוריה מה-DB.`, 
-                        ephemeral: true 
-                    });
-                }
-
-                else if (id === 'start_verification_process') await verificationHandler.showVerificationModal(interaction);
-                else if (id === 'activity_iam_alive') await activityMonitor.handleAliveResponse(interaction);
-                else if (id === 'repartition_now') await fifoHandler.handleRepartition(interaction);
-                else if (id.startsWith('fifo_')) await fifoHandler.handleVoteOrLobby(interaction);
-                else if (id.startsWith('audio_')) {
-                    if (id === 'audio_main_menu') await audioHandler.handleMenuSelection(interaction);
-                    else if (id.startsWith('audio_play_')) await audioHandler.handleFilePlay(interaction);
-                    else if (id.startsWith('audio_ctrl_')) await audioHandler.handleControls(interaction);
-                }
-                else if (['btn_bd_set', 'btn_bd_edit', 'btn_bd_admin_panel', 'btn_bd_remind_all'].includes(id)) {
-                    if (id === 'btn_bd_set' || id === 'btn_bd_edit') await birthdayHandler.showModal(interaction);
-                    else if (id === 'btn_bd_admin_panel') await birthdayHandler.showAdminPanel(interaction);
-                    else if (id === 'btn_bd_remind_all') await birthdayHandler.sendReminders(interaction);
-                }
+                // --- ניהול דאשבורד ופעולות ---
                 else if (id.startsWith('btn_manage_') || id === 'users_kick_action') {
-                    if (id === 'btn_manage_refresh') { await interaction.deferUpdate(); await dashboardHandler.showMainDashboard(interaction); }
+                    // ניווט בסיסי
+                    if (id === 'btn_manage_refresh') {
+                        await interaction.deferUpdate();
+                        await dashboardHandler.showMainDashboard(interaction, true);
+                    }
+                    else if (id === 'btn_manage_cancel') {
+                        await interaction.update({ content: '✅ הפעולה בוטלה.', embeds: [], components: [], files: [] });
+                    }
+
+                    // פעולות Ghosts
+                    else if (id === 'btn_manage_purge_ghosts') await dashboardHandler.showGhostPurgeList(interaction);
+                    else if (id === 'btn_manage_ghost_confirm') await dashboardHandler.executeGhostPurge(interaction);
+
+                    // פעולות Kick (Inactive)
                     else if (id === 'btn_manage_kick_prep') await dashboardHandler.showKickCandidateList(interaction);
                     else if (id === 'btn_manage_kick_confirm' || id === 'users_kick_action') await dashboardHandler.executeKick(interaction);
-                    else if (id === 'btn_manage_cancel') await interaction.update({ content: '✅ הפעולה בוטלה.', embeds: [], components: [], files: [] });
                 }
             }
 

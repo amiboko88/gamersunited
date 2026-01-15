@@ -29,12 +29,12 @@ async function launchTelegram() {
 
 
 
-        // הפעלה
-        await bot.start({
+        // הפעלה (Background Mode - ללא await כדי לא לחסום את ה-Main Thread)
+        bot.start({
             allowed_updates: ["message"],
             drop_pending_updates: true,
             onStart: (info) => log(`✅ [TELEGRAM] מחובר כ-@${info.username}`)
-        });
+        }).catch(e => log(`❌ [TELEGRAM] שגיאה בריצה: ${e.message}`));
     } catch (e) {
         log(`❌ [TELEGRAM] נכשל בהפעלה: ${e.message}`);
     }

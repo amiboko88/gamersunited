@@ -127,6 +127,26 @@ class Matchmaker {
             await this.removeOrphan(lid);
             log(`🔗 [Matchmaker] LID חובר: ${discordId} <-> ${lid}`);
 
+            // ✅ שלב חדש: שליחת הודעה פרטית למנהל (אם קיים סוקט)
+            try {
+                const { getSocket } = require('../whatsapp/socket');
+                const sock = getSocket();
+
+                // שליחה למנהל הראשי (עמוס)
+                // מספר הטלפון צריך להיות מוגדר בקונפיג או כאן כקבוע זמני
+                const ADMIN_PHONE = process.env.WHATSAPP_ADMIN_PHONE || '972526553250';
+                const adminJid = `${ADMIN_PHONE}@s.whatsapp.net`;
+
+                if (sock) {
+                    const name = userData.identity?.displayName || "User";
+                    await sock.sendMessage(adminJid, {
+                        text: `🔗 *עדכון מערכת: צימוד הצליח*\n\nהמשתמש *${name}* חובר בהצלחה ל-LID:\n${lid}\n\n*סטטוס טלפון:* ${hasValidPhone ? '✅ קיים' : '⚠️ חסר (נדרש ידני)'}`
+                    });
+                }
+            } catch (notifyErr) {
+                console.error('[Matchmaker] Failed to notify admin:', notifyErr.message);
+            }
+
             // החזרת סטטוס לדיסקורד
             if (hasValidPhone) {
                 return { success: true, status: 'complete', phone: existingPhone };

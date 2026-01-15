@@ -79,9 +79,33 @@ module.exports = {
                 else if (id === 'btn_manage_kick_prep') await dashboardHandler.showKickCandidateList(interaction);
                 else if (id === 'btn_manage_kick_confirm' || id === 'users_kick_action') await dashboardHandler.executeKick(interaction);
 
-                // 3. Link Logic (Menus)
+                // 3. Link Logic (Menus & Telegram)
                 else if (id === 'menu_manage_link_lid') await dashboardHandler.handleLinkSelection(interaction);
                 else if (id.startsWith('menu_manage_link_confirm_')) await dashboardHandler.finalizeLink(interaction);
+
+                // Telegram Logic
+                else if (id === 'btn_manage_tg_link') await dashboardHandler.showTelegramMatchList(interaction);
+                else if (id === 'btn_tg_force_scan') await dashboardHandler.executeTelegramForceScan(interaction);
+                else if (id.startsWith('btn_tg_confirm_')) {
+                    const [, , , tgId, discordId] = id.split('_');
+                    await dashboardHandler.executeTelegramLink(interaction, tgId, discordId);
+                }
+                else if (id.startsWith('btn_tg_reject_')) {
+                    // לוגיקה פשוטה להסרה מהרשימה
+                    const [, , , tgId] = id.split('_');
+                    const db = require('../../utils/firebase');
+                    const orphanRef = db.collection('system_metadata').doc('telegram_orphans');
+                    await db.runTransaction(async t => {
+                        const doc = await t.get(orphanRef);
+                        const data = doc.data();
+                        if (data.list && data.list[tgId]) {
+                            delete data.list[tgId];
+                            t.set(orphanRef, data);
+                        }
+                    });
+                    await interaction.reply({ content: '🗑️ ההתאמה נדחתה.', flags: 64 });
+                    await dashboardHandler.showMainDashboard(interaction, true);
+                }
 
                 // --- Other Handlers ---
                 else if (id === 'start_verification_process') await verificationHandler.showVerificationModal(interaction);

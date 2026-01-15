@@ -2,6 +2,10 @@ const { getUserRef } = require('../../utils/userUtils');
 const { log } = require('../../utils/logger');
 const graphics = require('../graphics/index');
 const { economy } = require('../../config/settings');
+// חיבורים לקליינטים (וואטסאפ ודיסקורד) לשליפת תמונות
+const { client } = require('../../discord/index');
+const { getSocket } = require('../../whatsapp/socket');
+
 
 const LEVEL_FORMULA = level => economy.levelMultiplier * (level ** 2) + economy.levelLinear * level + economy.levelBase;
 const lastMessageTimestamps = new Map();
@@ -56,7 +60,50 @@ class XPManager {
 
                 if (leveledUp && replyFunc) {
                     const name = data.identity?.displayName || "Gamer";
-                    const avatar = data.identity?.avatarURL || "https://cdn.discordapp.com/embed/avatars/0.png";
+
+                    // --- Smart Avatar Logic ---
+                    // סדר עדיפויות:
+                    // 1. תמונה קיימת ב-DB (אם היא תקינה ולא ברירת מחדל).
+                    // 2. ניסיון משיכה מוואטסאפ (אם יש LID).
+                    // 3. ניסיון משיכה מדיסקורד (אם יש ID).
+                    // 4. ברירת מחדל.
+
+                    let avatar = data.identity?.avatarURL;
+                    const waLid = data.platforms?.whatsapp_lid || data.identity?.whatsapp_lid; // תמיכה במבנה ישן/חדש
+                    const discordId = data.identity?.discordId;
+                    const sock = getSocket();
+
+                    const isDefault = !avatar || avatar.includes('embed/avatars');
+
+                    if (isDefault) {
+                        // A. ניסיון שליפה מוואטסאפ (עדיפות עליונה)
+                        if (waLid && sock) {
+                            try {
+                                const ppUrl = await sock.profilePictureUrl(waLid, 'image').catch(() => null);
+                                if (ppUrl) {
+                                    avatar = ppUrl;
+                                    // שמירה ב-DB לעתיד
+                                    t.update(userRef, { 'identity.avatarURL': ppUrl });
+                                }
+                            } catch (e) { /* התעלמות משגיאות WA */ }
+                        }
+
+                        // B. ניסיון שליפה מדיסקורד (אם וואטסאפ נכשל)
+                        if ((!avatar || avatar.includes('embed/avatars')) && discordId && client) {
+                            try {
+                                const discordUser = await client.users.fetch(discordId).catch(() => null);
+                                if (discordUser) {
+                                    avatar = discordUser.displayAvatarURL({ extension: 'png', size: 256 });
+                                    // שמירה ב-DB רק אם לא הצלחנו להשיג מוואטסאפ
+                                    if (!waLid) t.update(userRef, { 'identity.avatarURL': avatar });
+                                }
+                            } catch (e) { /* התעלמות משגיאות Discord */ }
+                        }
+                    }
+
+                    // C. רשת ביטחון סופית
+                    avatar = avatar || "https://cdn.discordapp.com/embed/avatars/0.png";
+                    // --- Avatar Logic End ---
 
                     // ✅ שליחת ה-XP העדכני לגרפיקה החדשה
                     const cardBuffer = await graphics.profile.generateLevelUpCard(name, level, xp, avatar);

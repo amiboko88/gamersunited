@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>גלגל המזל של שמעון</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        #wheel-container {
+            position: relative;
+            width: 300px;
+            height: 300px;
+            margin-bottom: 30px;
+        }
+        #wheel {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 5px solid #ffd700;
+            background: conic-gradient(
+                #ff4d4d 0deg 72deg,
+                #4dff4d 72deg 144deg,
+                #4d4dff 144deg 216deg,
+                #ffff4d 216deg 288deg,
+                #ff4dff 288deg 360deg
+            );
+            transition: transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99);
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+        }
+        #pointer {
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 15px solid transparent;
+            border-right: 15px solid transparent;
+            border-top: 25px solid white;
+            z-index: 10;
+        }
+        button {
+            background: linear-gradient(45deg, #ffd700, #ffaa00);
+            border: none;
+            padding: 15px 40px;
+            font-size: 20px;
+            font-weight: bold;
+            color: #1a1a1a;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(255, 170, 0, 0.4);
+            transform: scale(1);
+            transition: transform 0.2s;
+        }
+        button:active { transform: scale(0.95); }
+        h1 { margin-bottom: 10px; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+        #result { margin-top: 20px; font-size: 24px; font-weight: bold; min-height: 40px; }
+    </style>
+</head>
+<body>
+
+    <h1>גלגל המזל 🎰</h1>
+    <div id="wheel-container">
+        <div id="pointer"></div>
+        <div id="wheel"></div>
+    </div>
+    
+    <button id="spinBtn" onclick="spin()">סובב עכשיו!</button>
+    <div id="result"></div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // פריסה למסך מלא
+
+        // זיהוי המשתמש מה-URL (פרמטר uid)
+        const urlParams = new URLSearchParams(window.location.search);
+        const userId = urlParams.get('uid');
+
+        async function spin() {
+            if (!userId) return alert('שגיאת זיהוי משתמש');
+            
+            const btn = document.getElementById('spinBtn');
+            const wheel = document.getElementById('wheel');
+            const resultDiv = document.getElementById('result');
+
+            btn.disabled = true;
+            btn.innerText = "מסתובב...";
+
+            try {
+                // 1. בקשת תוצאה מהשרת
+                const response = await fetch('/api/wheel/spin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: userId, platform: 'telegram' })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'תקלה בסיבוב');
+                }
+
+                // 2. אנימציה (מזויפת, התוצאה כבר ידועה)
+                // חישוב זווית פשוט לפי ה-ID של הפרס (במציאות צריך משהו מדויק יותר מול ה-CSS)
+                // כאן נעשה רנדומלי ויזואלי + הצגת הטקסט הנכון בסוף
+                const randomRotate = 1080 + Math.random() * 360; 
+                wheel.style.transform = `rotate(${randomRotate}deg)`;
+
+                // 3. הצגת תוצאה אחרי 4 שניות
+                setTimeout(() => {
+                    resultDiv.innerText = `🎉 זכית ב: ${data.prize.name}!`;
+                    btn.innerText = "סגור";
+                    btn.disabled = false;
+                    btn.onclick = () => tg.close();
+                    
+                    // הפעלת Haptic Feedback של טלגרם
+                    if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                }, 4000);
+
+            } catch (error) {
+                btn.innerText = "שגיאה";
+                resultDiv.innerText = `❌ ${error.message}`;
+                if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+            }
+        }
+    </script>
+</body>
+</html>

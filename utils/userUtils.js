@@ -15,7 +15,11 @@ async function getUserRef(id, platform = 'discord') {
 
     // 1. חיפוש ראשי בתיקי האב (users)
     // בודקים אם המספר/LID קיים בשדה הפלטפורמה
-    let snapshot = await db.collection('users').where(`platforms.${platform}`, '==', cleanId).limit(1).get();
+    // תמיכה ב-Telegram ID:
+    let searchField = `platforms.${platform}`;
+    if (platform === 'telegram') searchField = 'platforms.telegram';
+
+    let snapshot = await db.collection('users').where(searchField, '==', cleanId).limit(1).get();
     if (!snapshot.empty) return snapshot.docs[0].ref;
 
     // 2. חיפוש LID ספציפי (למקרה שהוא נשמר רק ב-LID ולא בראשי)
@@ -64,16 +68,15 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
                 // אנחנו לא רוצים ליצור מסמך למשתמש שאין לו עדיין "אבא" (דיסקורד).
                 if (platform === 'whatsapp' && isLid) {
                     console.log(`🛡️ [UserUtils] LID Guard Blocked: ${cleanId}. Waiting for Link.`);
-                    return null; // מחזירים null כדי שה-Caller ידע שזה לא יצר משתמש
+                    return null;
                 }
 
-                // 🛑 חסימה מוחלטת לוואטסאפ רגיל (אם המדיניות היא Link Only)
-                // אם המשתמש לא קיים, ואנחנו בוואטסאפ - לא יוצרים כלום.
-                // זה משאיר את הניהול אך ורק לקישור הידני בדיסקורד.
-                if (platform === 'whatsapp') {
-                    // לוג שקט כדי לא להציף, או אזהרה אם זה חשוב
-                    // console.warn(`🛡️ [UserUtils] משתמש וואטסאפ לא מקושר (${cleanId}). מדלג.`);
-                    return;
+                // 🛑 חסימה מוחלטת לוואטסאפ/טלגרם (Link Only)
+                // אנחנו לא רוצים ליצור משתמשי טלגרם רמה 1 במקביל לדיסקורד רמה 3.
+                // אם המשתמש לא קיים ב-DB, ואנחנו בטלגרם - לא יוצרים כלום.
+                if (platform === 'whatsapp' || platform === 'telegram') {
+                    // console.warn(`🛡️ [UserUtils] משתמש ${platform} לא מקושר (${cleanId}). מדלג.`);
+                    return null; // מחזיר null כדי שהבוט ידע שאין משתמש
                 }
 
                 // אם זה דיסקורד - יוצרים כרגיל (כי דיסקורד הוא הבסיס)

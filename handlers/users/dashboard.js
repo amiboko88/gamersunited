@@ -22,6 +22,12 @@ class DashboardHandler {
             const ghostSnapshot = await db.collection('users').where('identity.displayName', '==', 'Unknown').get();
             const ghostCount = ghostSnapshot.size;
 
+            // Telegram Orphans
+            const tgOrphanRef = db.collection('system_metadata').doc('telegram_orphans');
+            const tgOrphanDoc = await tgOrphanRef.get();
+            const tgOrphans = tgOrphanDoc.exists ? Object.values(tgOrphanDoc.data().list || {}) : [];
+            const tgMatchCount = tgOrphans.length;
+
             if (!stats) return this.safeReply(interaction, '❌ נתונים בטעינה... נסה שוב.', true);
 
             const activePercentage = Math.round(((stats.active + stats.newMembers) / stats.humans) * 100) || 0;
@@ -106,19 +112,23 @@ class DashboardHandler {
                 .addFields(
                     { name: '🔌 SYSTEM STATUS', value: stats.voiceNow > 0 ? `🟢 Online (${stats.voiceNow} in Voice)` : '🔴 Idle', inline: true },
                     { name: '🦴 GHOST USERS', value: ghostCount > 0 ? `⚠️ **${ghostCount} Detected**` : '✅ Clean', inline: true },
-                    { name: '🔗 UNLINKED (LID)', value: orphans.length > 0 ? `⚠️ **${orphans.length} Users**` : '✅ Clean', inline: true }
+                    { name: '🔗 UNLINKED (LID)', value: orphans.length > 0 ? `⚠️ **${orphans.length} Users**` : '✅ Clean', inline: true },
+                    { name: '✈️ TELEGRAM', value: tgMatchCount > 0 ? `🚨 **${tgMatchCount} Pending**` : '✅ Clean', inline: true }
                 )
                 .setFooter({ text: `Last Sync: ${new Date().toLocaleTimeString("he-IL", { timeZone: "Asia/Jerusalem" })}` });
 
             // --- Controls ---
             const rowMain = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('btn_manage_refresh').setLabel('טען מחדש').setStyle(ButtonStyle.Secondary).setEmoji('🔄'),
+                new ButtonBuilder().setCustomId('btn_manage_view_link').setLabel(`חיבור LID (${orphans.length})`).setStyle(ButtonStyle.Success).setEmoji('🔗').setDisabled(orphans.length === 0),
+                new ButtonBuilder().setCustomId('btn_manage_tg_link').setLabel(`חיבור TG (${tgMatchCount})`).setStyle(ButtonStyle.Primary).setEmoji('✈️').setDisabled(tgMatchCount === 0),
                 new ButtonBuilder().setCustomId('btn_manage_sync_names').setLabel('סנכרון שמות').setStyle(ButtonStyle.Primary).setEmoji('🆔'),
                 new ButtonBuilder().setCustomId('btn_manage_purge_ghosts').setLabel(`ניקוי רפאים (${ghostCount})`).setStyle(ButtonStyle.Danger).setDisabled(ghostCount === 0).setEmoji('👻')
             );
 
             const rowDanger = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('btn_manage_kick_prep').setLabel(`ניקוי לא פעילים (${stats.dead.length})`).setStyle(ButtonStyle.Danger).setDisabled(stats.dead.length === 0).setEmoji('🗑️'),
+                new ButtonBuilder().setCustomId('btn_manage_view_debug').setLabel('דוח דיבוג').setStyle(ButtonStyle.Secondary).setEmoji('🛠️'),
                 new ButtonBuilder().setCustomId('btn_manage_cancel').setLabel('סגור פאנל').setStyle(ButtonStyle.Secondary).setEmoji('❌')
             );
 
@@ -186,8 +196,12 @@ class DashboardHandler {
 
     // --- Helper for safe replies ---
     safeReply(interaction, content, ephemeral = true) {
-        if (interaction.replied || interaction.deferred) interaction.editReply({ content, embeds: [], components: [], files: [] });
-        else interaction.reply({ content, ephemeral });
+        // המרה של הבוליאני הישן לדגל החדש אם צריך, אבל הפונקציה מצפה לקבל תוכן
+        const payload = { content, embeds: [], components: [], files: [] };
+        if (ephemeral) payload.flags = 64;
+
+        if (interaction.replied || interaction.deferred) interaction.editReply(payload);
+        else interaction.reply(payload);
     }
 
     // ... (Keep executeKick & showKickCandidateList from previous version, adapted to new style if needed) 
@@ -229,6 +243,107 @@ class DashboardHandler {
         );
 
         await interaction.editReply({ embeds: [embed], components: [row] });
+    }
+
+    // --- Telegram Linking ---
+    async showTelegramMatchList(interaction) {
+        await interaction.deferUpdate();
+        const db = require('../../utils/firebase');
+        const tgOrphans = (await db.collection('system_metadata').doc('telegram_orphans').get()).data().list || {};
+
+        const list = Object.values(tgOrphans);
+        if (list.length === 0) return this.showMainDashboard(interaction);
+
+        // מציג את הראשון לטיפול
+        const match = list[0];
+        const confidencePct = Math.round(match.confidence * 100);
+
+        const embed = new EmbedBuilder()
+            .setTitle('👮 TELEGRAM DETECTIVE')
+            .setDescription(`**חשוד:** ${match.displayName} (@${match.username})\n**התאמה:** ${match.potentialMatchName}\n**דיוק:** ${confidencePct}%`)
+            .setColor(confidencePct > 80 ? 'Green' : 'Yellow')
+            .setThumbnail('https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Telegram_logo.svg/2048px-Telegram_logo.svg.png');
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`btn_tg_confirm_${match.tgId}_${match.potentialMatchId}`).setLabel('אשר חיבור').setStyle(ButtonStyle.Success).setEmoji('✅'),
+            new ButtonBuilder().setCustomId(`btn_tg_reject_${match.tgId}`).setLabel('התעלם').setStyle(ButtonStyle.Danger).setEmoji('🗑️'),
+            new ButtonBuilder().setCustomId('btn_tg_force_scan').setLabel('סריקה יזומה').setStyle(ButtonStyle.Primary).setEmoji('🕵️'),
+            new ButtonBuilder().setCustomId('btn_manage_refresh').setLabel('ביטול').setStyle(ButtonStyle.Secondary)
+        );
+
+        await interaction.editReply({ embeds: [embed], components: [row] });
+    }
+
+    async executeTelegramForceScan(interaction) {
+        await interaction.deferUpdate();
+        const scanner = require('../../telegram/utils/scanner');
+        const db = require('../../utils/firebase');
+        const { log } = require('../../utils/logger');
+
+        // איתור כל הלא-מקושרים
+        const doc = await db.collection('system_metadata').doc('telegram_unlinked_users').get();
+        if (!doc.exists) {
+            return interaction.followUp({ content: '❌ אין נתונים לסריקה.', flags: 64 });
+        }
+
+        const users = Object.values(doc.data().list || {});
+        let foundCount = 0;
+
+        await interaction.followUp({ content: `🕵️ סורק ${users.length} משתמשים...`, flags: 64 });
+
+        for (const user of users) {
+            const mockTgUser = {
+                id: user.tgId,
+                username: user.username,
+                first_name: user.displayName.split(' ')[0],
+                last_name: user.displayName.split(' ').slice(1).join(' ')
+            };
+            // הסורק עצמו מעדכן את הרשימה אם הוא מוצא משהו
+            await scanner.scanUser(mockTgUser);
+        }
+
+        // בדיקה כמה נמצאו עכשיו
+        const orphansDoc = await db.collection('system_metadata').doc('telegram_orphans').get();
+        const orphans = orphansDoc.exists ? Object.values(orphansDoc.data().list || {}) : [];
+
+        await interaction.followUp({ content: `✅ הסריקה הסתיימה. כרגע יש **${orphans.length}** התאמות ממתינות.`, flags: 64 });
+        await this.showTelegramMatchList(interaction);
+    }
+
+    async executeTelegramLink(interaction, tgId, discordId) {
+        const db = require('../../utils/firebase');
+        const { log } = require('../../utils/logger');
+
+        await interaction.deferUpdate();
+
+        try {
+            // 1. עדכון היוזר ב-DB
+            await db.collection('users').doc(discordId).update({
+                'platforms.telegram': tgId,
+                'meta.lastLinked': new Date().toISOString()
+            });
+
+            // 2. הסרה מהרשימה
+            const orphanRef = db.collection('system_metadata').doc('telegram_orphans');
+            await db.runTransaction(async t => {
+                const doc = await t.get(orphanRef);
+                const data = doc.data();
+                if (data.list && data.list[tgId]) {
+                    delete data.list[tgId];
+                    t.set(orphanRef, data);
+                }
+            });
+
+            log(`🔗 [Telegram] חובר בהצלחה: ${discordId} <-> ${tgId}`);
+
+            // 3. עדכון UI
+            await interaction.followUp({ content: '✅ **חובר בהצלחה!**', flags: 64 });
+            await this.showMainDashboard(interaction);
+
+        } catch (e) {
+            console.error(e);
+            await interaction.followUp({ content: '❌ שגיאה בחיבור.', flags: 64 });
+        }
     }
 }
 

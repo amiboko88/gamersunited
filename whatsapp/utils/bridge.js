@@ -1,5 +1,5 @@
 // 📁 whatsapp/utils/bridge.js
-const { sendToMainGroup } = require('../../index');
+// const { sendToMainGroup } = require('../../index'); -- CIRCULAR FIX
 const db = require('../../utils/firebase');
 const { OpenAI } = require('openai');
 
@@ -18,7 +18,7 @@ async function handleVoiceAlerts(oldState, newState) {
         const channel = newState.channel;
         const lastAlert = voiceCooldowns.get(discordId) || 0;
         if (now - lastAlert < 120000) return; // 2 דקות קולדאון
-        
+
         voiceCooldowns.set(discordId, now);
 
         try {
@@ -29,8 +29,8 @@ async function handleVoiceAlerts(oldState, newState) {
             if (userDoc.exists) {
                 const data = userDoc.data();
                 if (data.platforms && data.platforms.whatsapp) {
-                    whatsappPhone = data.platforms.whatsapp.includes('@') 
-                        ? data.platforms.whatsapp 
+                    whatsappPhone = data.platforms.whatsapp.includes('@')
+                        ? data.platforms.whatsapp
                         : `${data.platforms.whatsapp}@s.whatsapp.net`;
                 }
             }
@@ -47,7 +47,8 @@ async function handleVoiceAlerts(oldState, newState) {
 
             const aiText = completion.choices[0]?.message?.content?.trim() || "יאללה בלאגן.";
             const textToSend = `🎤 **${member.displayName}** נכנס לדיסקורד!\n${aiText}`;
-            
+
+            const { sendToMainGroup } = require('../../index');
             await sendToMainGroup(textToSend, whatsappPhone ? [whatsappPhone] : []);
 
         } catch (error) { console.error('Bridge Error:', error.message); }
@@ -57,12 +58,13 @@ async function handleVoiceAlerts(oldState, newState) {
     else if (oldState.channelId && !newState.channelId) {
         const channel = oldState.channel;
         const humansLeft = channel.members.filter(m => !m.user.bot).size;
-        
+
         if (humansLeft === 0) {
-            const israelTime = new Date(now + (2 * 60 * 60 * 1000)); 
+            const israelTime = new Date(now + (2 * 60 * 60 * 1000));
             const ilHour = israelTime.getHours();
 
             if (ilHour >= 22 || ilHour < 5) {
+                const { sendToMainGroup } = require('../../index');
                 await sendToMainGroup(`😴 הדיסקורד התרוקן. לילה טוב נקבות.`);
             }
         }

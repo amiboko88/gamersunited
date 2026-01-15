@@ -1,5 +1,5 @@
 // 📁 discord/events/voiceBridge.js
-const { sendToMainGroup } = require('../../whatsapp/index');
+// const { sendToMainGroup } = require('../../whatsapp/index'); -- CIRCULAR FIX
 const db = require('../../utils/firebase');
 const graphics = require('../../handlers/graphics/index'); // ✅ ייבוא המערכת הגרפית
 const { log } = require('../../utils/logger');
@@ -21,7 +21,7 @@ const roomCooldowns = new Map();
  */
 async function handleVoiceStateUpdate(oldState, newState) {
     const channel = newState.channel;
-    
+
     // 1. אם זו לא כניסה לחדר (או שזה יציאה) - מתעלמים
     if (!channel || (oldState.channelId === newState.channelId)) return;
 
@@ -50,7 +50,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
         for (const [id, member] of members) {
             names.push(member.displayName);
-            
+
             // בדיקה אם יש מספר וואטסאפ לתיוג
             const userDoc = await db.collection('users').doc(id).get();
             if (userDoc.exists) {
@@ -66,6 +66,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
         const text = `🔥 **אש בחדרים!**\nהחבר'ה התחברו ל-${channel.name}.\n${names.join(', ')} כבר בפנים.\nאיפה אתם? כנסו עכשיו.`;
 
         // שליחה
+        const { sendToMainGroup } = require('../../whatsapp/index');
         await sendToMainGroup(text, mentions, imageBuffer);
         log(`📢 [VoiceBridge] דווח על אקשן בחדר ${channel.name} (${count} משתמשים)`);
 

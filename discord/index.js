@@ -24,7 +24,7 @@ const client = new Client({
 });
 
 client.commands = new Collection();
-const commandsData = []; 
+const commandsData = [];
 
 // --- טעינת פקודות ---
 function loadCommands(dir) {
@@ -61,6 +61,11 @@ if (fs.existsSync(eventsPath)) {
     }
 }
 
+// ✅ הוספת לוג להתחברות
+client.once('ready', () => {
+    console.log(`✅ [Discord] Logged in as ${client.user.tag}!`);
+});
+
 // --- פונקציות הפעלה וכיבוי (Exported) ---
 
 async function launchDiscord() {
@@ -68,16 +73,16 @@ async function launchDiscord() {
         console.error('❌ [Discord] Missing Token!');
         return;
     }
-    
+
     // Deploy Commands (רק בעלייה)
     client.once('ready', async () => {
         const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
         try {
-             // שים לב: זה יבצע רישום גלובלי או לשרת ספציפי תלוי ב-ENV
-            const route = process.env.GUILD_ID 
+            // שים לב: זה יבצע רישום גלובלי או לשרת ספציפי תלוי ב-ENV
+            const route = process.env.GUILD_ID
                 ? Routes.applicationGuildCommands(client.user.id, process.env.GUILD_ID)
                 : Routes.applicationCommands(client.user.id);
-            
+
             await rest.put(route, { body: commandsData });
             console.log('[System] ✅ Discord Commands Synced.');
         } catch (error) {

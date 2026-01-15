@@ -3,7 +3,7 @@ const { log } = require('../../utils/logger');
 const graphics = require('../graphics/index');
 const { economy } = require('../../config/settings');
 // חיבורים לקליינטים (וואטסאפ ודיסקורד) לשליפת תמונות
-const { client } = require('../../discord/index');
+const discordModule = require('../../discord/index'); // ✅ ייבוא המודול המלא (מונע Race Condition)
 const { getSocket } = require('../../whatsapp/socket');
 
 
@@ -89,9 +89,9 @@ class XPManager {
                         }
 
                         // B. ניסיון שליפה מדיסקורד (אם וואטסאפ נכשל)
-                        if ((!avatar || avatar.includes('embed/avatars')) && discordId && client) {
+                        if ((!avatar || avatar.includes('embed/avatars')) && discordId && discordModule.client) {
                             try {
-                                const discordUser = await client.users.fetch(discordId).catch(() => null);
+                                const discordUser = await discordModule.client.users.fetch(discordId).catch(() => null);
                                 if (discordUser) {
                                     avatar = discordUser.displayAvatarURL({ extension: 'png', size: 256 });
                                     // שמירה ב-DB רק אם לא הצלחנו להשיג מוואטסאפ

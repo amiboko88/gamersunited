@@ -9,6 +9,7 @@ const { getBot } = require('./telegram/client'); // ✅ יבוא ישיר של �
 const { launchTelegram, stopTelegram } = require('./telegram/index');
 const { launchDiscord, stopDiscord, client: discordClient } = require('./discord/index');
 const rankingManager = require('./handlers/ranking/manager');
+const scheduler = require('./handlers/scheduler'); // ✅ ייבוא הסקג'ולר
 
 process.on('unhandledRejection', (reason) => {
     if (reason?.toString().includes('Conflict') || reason?.toString().includes('409') || reason?.toString().includes('440')) return;
@@ -78,6 +79,11 @@ process.once('SIGINT', () => gracefulShutdown('SIGINT'));
         await new Promise(r => setTimeout(r, 2000));
 
         await launchDiscord().catch(e => console.error('❌ Discord Init Failed:', e.message));
+
+        // הפעלת משימות מתוזמנות (Cron)
+        if (discordClient && scheduler) {
+            scheduler.initScheduler(discordClient);
+        }
 
         if (rankingManager) {
             console.log('🏆 [System] Initializing Ranking Manager...');

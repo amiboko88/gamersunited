@@ -2,7 +2,6 @@
 const cron = require('node-cron');
 const { log } = require('../utils/logger');
 const db = require('../utils/firebase'); // ✅ חובה ל-Cooldown
-const { sendToMainGroup } = require('../whatsapp/index');
 
 // --- ייבוא המערכות ---
 const rankingCore = require('./ranking/core');      // איפוס שבועי
@@ -74,6 +73,7 @@ module.exports = {
                     const message = `🔥 **אש בחדרים!**\n${names} כבר בדיסקורד.\nרק אתם חסרים יא בוטים.`;
 
                     log(`[Scheduler] 🚀 שליחת התראת FOMO (פעילים: ${totalVoiceUsers})`);
+                    const { sendToMainGroup } = require('../whatsapp/index'); // ✅ Late Require (Fix Circular)
                     await sendToMainGroup(message);
 
                     // עדכון זמן שליחה ב-DB

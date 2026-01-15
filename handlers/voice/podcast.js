@@ -112,7 +112,7 @@ class PodcastManager {
             });
 
             // --- 🎤 ElevenLabs Generation Loop ---
-            const voiceEngine = require('../media/voice');
+            const voiceManager = require('../../ai/voice'); // ✅ שימוש במנהל הראשי והמתוקן
             const fs = require('fs');
             const path = require('path');
 
@@ -129,7 +129,7 @@ class PodcastManager {
                 const targetVoice = isShirly ? VOICES.shirly : VOICES.shimon;
 
                 log(`[Podcast] מייצר שמע (V3) עבור ${line.speaker}...`);
-                const buffer = await voiceEngine.textToSpeech(line.text, targetVoice);
+                const buffer = await voiceManager.speak(line.text, targetVoice);
 
                 if (buffer) {
                     const tempDir = path.join(__dirname, '../../temp_audio');

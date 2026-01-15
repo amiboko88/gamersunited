@@ -133,7 +133,12 @@ async function sendToMainGroup(text, mentions = [], imageBuffer = null) {
     if (!sock || !MAIN_GROUP_ID) return;
     try {
         if (imageBuffer) {
-            await sock.sendMessage(MAIN_GROUP_ID, { image: imageBuffer, caption: text, mentions });
+            await sock.sendMessage(MAIN_GROUP_ID, {
+                image: imageBuffer,
+                caption: text,
+                mimetype: 'image/png', // ✅ חובה עבור WhatsApp Desktop
+                mentions
+            });
         } else {
             await sock.sendMessage(MAIN_GROUP_ID, { text, mentions });
         }

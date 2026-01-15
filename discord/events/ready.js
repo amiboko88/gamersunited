@@ -8,13 +8,13 @@ const path = require('path');
 const scheduler = require('../../handlers/scheduler');
 const birthdayManager = require('../../handlers/birthday/manager');
 const fifoCleaner = require('../../handlers/fifo/cleaner');
-const statusRotator = require('../../handlers/system/statusRotator'); 
+const statusRotator = require('../../handlers/system/statusRotator');
 const voiceLogistics = require('../../handlers/voice/logistics'); // ✅ תוספת למערכת הקולית
 
 // הגדרות ערוץ האימות
 const VERIFY_CHANNEL_ID = '1120791404583587971';
 // נתיב לתמונה המקומית
-const VERIFY_IMAGE_PATH = './assets/verify.png'; 
+const VERIFY_IMAGE_PATH = './assets/verify.png';
 
 module.exports = {
     name: Events.ClientReady,
@@ -32,8 +32,8 @@ module.exports = {
         birthdayManager.init(client, null, null, null);
 
         // 2. אתחול המתזמן הראשי
-        scheduler.initScheduler(client);
-        
+        // scheduler.initScheduler(client); // ❌ הוסר למניעת כפילות (רץ מ-index.js)
+
         // 3. הפעלת מנקה הפיפו האוטומטי
         fifoCleaner.startAutoClean(client);
 
@@ -44,7 +44,7 @@ module.exports = {
 
         // 5. בדיקת ערוץ האימות
         await checkVerificationChannel(client);
-        
+
         log(`✅ [System] All systems operational.`);
     },
 };
@@ -77,7 +77,7 @@ async function checkVerificationChannel(client) {
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
-                    .setCustomId('start_verification_process') 
+                    .setCustomId('start_verification_process')
                     .setLabel('לחץ כאן לאימות ✅')
                     .setStyle(ButtonStyle.Success)
             );

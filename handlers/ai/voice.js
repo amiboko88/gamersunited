@@ -38,7 +38,7 @@ class VoiceManager {
      * @param {string} text הטקסט להקראה
      * @returns {Promise<Buffer>} ה-Buffer של קובץ השמע
      */
-    async speak(text) {
+    async speak(text, voiceIdOverride = null) {
         if (!this.elevenLabsKey) {
             log('❌ [Voice] Missing ELEVEN_API_KEY');
             return null;
@@ -48,12 +48,14 @@ class VoiceManager {
         const cleanText = text.replace('[VOICE]', '').trim();
         if (!cleanText) return null;
 
+        const targetVoiceId = voiceIdOverride || this.voiceId;
+
         try {
-            log(`🗣️ [Voice] Generating audio for: "${cleanText.substring(0, 20)}..."`);
+            log(`🗣️ [Voice] Generating audio for: "${cleanText.substring(0, 20)}..." (Voice: ${targetVoiceId})`);
 
             const response = await axios({
                 method: 'POST',
-                url: `https://api.elevenlabs.io/v1/text-to-speech/${this.voiceId}`,
+                url: `https://api.elevenlabs.io/v1/text-to-speech/${targetVoiceId}`,
                 headers: {
                     'Accept': 'audio/mpeg',
                     'xi-api-key': this.elevenLabsKey,

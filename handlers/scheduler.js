@@ -69,12 +69,33 @@ module.exports = {
                 });
 
                 if (totalVoiceUsers >= 4) {
-                    const names = activeMembers.join(', '); // ✅ מציג את כולם
-                    const message = `🔥 **אש בחדרים!**\n${names} כבר בדיסקורד.\nרק אתם חסרים יא בוטים.`;
+                    const names = activeMembers.map(m => m.displayName).join(', '); // ✅ מציג את כולם
+                    // const message = `🔥 **אש בחדרים!**\n${names} כבר בדיסקורד.\nרק אתם חסרים יא בוטים.`; // הוחלף בתמונה + כיתוב קצר
 
                     log(`[Scheduler] 🚀 שליחת התראת FOMO (פעילים: ${totalVoiceUsers})`);
-                    const { sendToMainGroup } = require('../whatsapp/index'); // ✅ Late Require (Fix Circular)
-                    await sendToMainGroup(message);
+
+                    // --- גנרציית תמונה ---
+                    const graphics = require('./graphics/index'); // מאוחר (Late Import)
+                    // אנו צריכים להעביר את האובייקטים של הממברס עבור התמונה
+                    // ב-loop למעלה אספנו רק שמות. בוא נאסוף את הממברס המקוריים
+                    const allMembers = [];
+                    guild.channels.cache.forEach(c => {
+                        if (c.type === 2) {
+                            const humans = c.members.filter(m => !m.user.bot);
+                            humans.forEach(m => allMembers.push(m));
+                        }
+                    });
+
+                    // ניקח את הערוץ הראשון שיש בו הכי הרבה אנשים בשביל השם
+                    const mainChannel = guild.channels.cache.filter(c => c.type === 2).sort((a, b) => b.members.size - a.members.size).first();
+                    const channelName = mainChannel ? mainChannel.name : 'Voice Channels';
+
+                    const imageBuffer = await graphics.voice.generateCard(channelName, allMembers);
+
+                    const { sendToMainGroup } = require('../whatsapp/index');
+                    const caption = `🔥 *${channelName}* בוער!\nהצטרפו ל-${totalVoiceUsers} מחוברים.`;
+
+                    await sendToMainGroup(caption, [], imageBuffer);
 
                     // עדכון זמן שליחה ב-DB
                     await TIMERS_REF.set({ lastFomoAlert: new Date().toISOString() }, { merge: true });

@@ -5,7 +5,7 @@ const { Readable } = require('stream');
 const { log } = require('../../utils/logger');
 
 // ✅ התיקון: חיבור למערכת ה-TTS החדשה (במקום הקובץ שנמחק)
-const openaiTTS = require('../voice/openaiTTS'); 
+const voiceManager = require('../ai/voice'); // ✅ שימוש במנהל הקול החדש 
 
 class FifoManager {
     constructor() {
@@ -83,7 +83,7 @@ class FifoManager {
                 selfDeaf: false
             });
 
-            const buffer = await openaiTTS.generateSpeech(text);
+            const buffer = await voiceManager.speak(text);
             if (!buffer) return;
 
             const stream = Readable.from(buffer);
@@ -102,14 +102,14 @@ class FifoManager {
      */
     async cleanupCategory(guild, categoryId) {
         if (!categoryId) return;
-        const channels = guild.channels.cache.filter(c => 
-            c.parentId === categoryId && 
-            c.name.startsWith('🎮') && 
+        const channels = guild.channels.cache.filter(c =>
+            c.parentId === categoryId &&
+            c.name.startsWith('🎮') &&
             c.type === ChannelType.GuildVoice
         );
-        
+
         for (const [id, channel] of channels) {
-            await channel.delete('FIFO Cleanup').catch(() => {});
+            await channel.delete('FIFO Cleanup').catch(() => { });
         }
     }
 
@@ -119,27 +119,27 @@ class FifoManager {
     async handleVote(interaction, teamName) {
         const guildId = interaction.guild.id;
         const session = this.activeSessions.get(guildId);
-        
+
         if (!session) return { status: 'expired' };
 
         if (!session.votes.has(teamName)) session.votes.set(teamName, new Set());
         const teamVotes = session.votes.get(teamName);
 
         if (teamVotes.has(interaction.user.id)) return { status: 'already_voted' };
-        
+
         teamVotes.add(interaction.user.id);
-        
+
         const channel = session.channels.find(c => c.name.includes(teamName));
         const currentMembers = channel ? channel.members.size : 99;
-        
+
         const passed = teamVotes.size >= (currentMembers / 2);
 
-        return { 
-            status: 'voted', 
-            count: teamVotes.size, 
+        return {
+            status: 'voted',
+            count: teamVotes.size,
             needed: currentMembers,
             passed: passed,
-            session: session 
+            session: session
         };
     }
 
@@ -148,18 +148,18 @@ class FifoManager {
      */
     async resetSession(guild, session) {
         if (!session) return;
-        
+
         const lobbyChannel = guild.channels.cache.get(session.lobbyId);
-        
+
         // 1. הודעה קולית והעברה
         for (const channel of session.channels) {
             try {
                 // שימוש במערכת החדשה
                 this.announceInChannel(channel, "הוחלט על ריפליי! כולם חוזרים ללובי.");
-                
+
                 if (lobbyChannel) {
                     for (const [id, member] of channel.members) {
-                        await member.voice.setChannel(lobbyChannel).catch(() => {});
+                        await member.voice.setChannel(lobbyChannel).catch(() => { });
                     }
                 }
             } catch (e) {
@@ -169,7 +169,7 @@ class FifoManager {
 
         // 2. מחיקת ערוצים
         setTimeout(() => {
-            session.channels.forEach(c => c.delete().catch(() => {}));
+            session.channels.forEach(c => c.delete().catch(() => { }));
             this.activeSessions.delete(guild.id);
         }, 3000);
     }
@@ -201,11 +201,11 @@ class FifoManager {
 
                 if (allEmpty && (now - session.createdAt > 5 * 60 * 1000)) {
                     log(`[FIFO] מנקה סשן לא פעיל בשרת ${guildId}`);
-                    session.channels.forEach(c => c.delete().catch(() => {}));
+                    session.channels.forEach(c => c.delete().catch(() => { }));
                     this.activeSessions.delete(guildId);
                 }
             });
-        }, 60000); 
+        }, 60000);
     }
 }
 

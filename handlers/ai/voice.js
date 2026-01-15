@@ -9,9 +9,15 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 class VoiceManager {
 
     constructor() {
-        // תמיכה בשמות שהמשתמש הגדיר (ELEVEN_*) ובסטנדרט (ELEVENLABS_*)
-        this.elevenLabsKey = process.env.ELEVEN_API_KEY || process.env.ELEVENLABS_API_KEY;
-        this.voiceId = process.env.ELEVEN_VOICE_ID || process.env.ELEVENLABS_VOICE_ID || 'txHtK15K5KtX959ZtpRa';
+        // תמיכה בשמות שהמשתמש הגדיר (ELEVEN_*) בלבד (לבקשת המשתמש)
+        this.elevenLabsKey = process.env.ELEVEN_API_KEY;
+        this.voiceId = process.env.ELEVEN_VOICE_ID || 'txHtK15K5KtX959ZtpRa';
+
+        // 🔴 Safeguard: אם הוגדר בטעות ה-ID השגוי (n4en...), נחליף אותו בכוח לנכון
+        if (this.voiceId === 'n4enD9rhtsV2P8yfZk9g') {
+            log('⚠️ [Voice] זוהה Voice ID שגוי (נלקח מה-Env). מבצע החלפה אוטומטית ל-ID הנכון.');
+            this.voiceId = 'txHtK15K5KtX959ZtpRa';
+        }
     }
 
     /**

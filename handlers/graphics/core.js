@@ -20,7 +20,7 @@ class GraphicsCore {
     /**
      * פונקציה גנרית להמרת HTML לתמונה
      */
-    async render(html, width, height, fullPage = false) {
+    async render(html, width, height, fullPage = false, format = 'png') {
         let page = null;
         try {
             const browser = await this.getBrowser();
@@ -34,7 +34,11 @@ class GraphicsCore {
                 await page.setViewport({ width: width, height: bodyHeight, deviceScaleFactor: 2 });
             }
 
-            return await page.screenshot({ type: 'png', fullPage: fullPage, omitBackground: false });
+            if (format === 'jpeg') {
+                return await page.screenshot({ type: 'jpeg', quality: 90, fullPage: fullPage });
+            } else {
+                return await page.screenshot({ type: 'png', fullPage: fullPage, omitBackground: false });
+            }
 
         } catch (err) {
             console.error(`❌ [GraphicsCore] Error: ${err.message}`);

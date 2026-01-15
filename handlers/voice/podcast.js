@@ -1,6 +1,6 @@
 // 📁 handlers/voice/podcast.js
 const { log } = require('../../utils/logger');
-const ttsEngine = require('./openaiTTS');
+// const ttsEngine = require('./openaiTTS'); // ❌ הוסר - משתמשים ב-ElevenLabs דרך ai/voice.js
 const { getUserData } = require('../../utils/userUtils');
 const audioManager = require('../audio/manager');
 const { OpenAI } = require('openai'); // ✅ הוספת OpenAI לגנרציית תסריט
@@ -119,7 +119,7 @@ class PodcastManager {
             // הגדרת קולות (IDs)
             const VOICES = {
                 shimon: undefined, // ייקח את הדיפולט מ-voice.js
-                shirly: '21m00Tcm4TlvDq8ikWAM' // Rachel (ידועה כאיכותית יותר)
+                shirly: 'pBZVCk298iJlHAcHQwLr' // האישה עם הקול היפה (User Request)
             };
 
             const audioFiles = [];

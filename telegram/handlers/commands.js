@@ -1,7 +1,7 @@
 const { InputFile } = require("grammy");
-const rankingCore = require('../handlers/ranking/core');
-const graphics = require('../handlers/graphics/index');
-const { getUserData } = require('../utils/userUtils');
+const rankingCore = require('../../handlers/ranking/core'); // ✅ תוקן נתיב
+const graphics = require('../../handlers/graphics/index'); // ✅ תוקן נתיב
+const { getUserData } = require('../../utils/userUtils'); // ✅ תוקן נתיב (זה ב-root/utils)
 
 // חישוב מספר שבוע
 function getWeekNumber() {

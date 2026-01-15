@@ -48,25 +48,16 @@ function loadCommands(dir) {
 }
 
 const commandsPath = path.join(__dirname, 'commands');
-if (fs.existsSync(commandsPath)) {
-    console.log('[Discord] Loading commands...');
-    loadCommands(commandsPath);
-}
+if (fs.existsSync(commandsPath)) loadCommands(commandsPath);
 
 // --- טעינת אירועים ---
 const eventsPath = path.join(__dirname, 'events');
 if (fs.existsSync(eventsPath)) {
-    console.log('[Discord] Loading events...');
     const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
     for (const file of eventFiles) {
-        try {
-            console.log(`[Discord] Loading event: ${file}`);
-            const event = require(path.join(eventsPath, file));
-            if (event.once) client.once(event.name, (...args) => event.execute(...args));
-            else client.on(event.name, (...args) => event.execute(...args));
-        } catch (e) {
-            console.error(`❌ [Discord] Failed to load event ${file}:`, e);
-        }
+        const event = require(path.join(eventsPath, file));
+        if (event.once) client.once(event.name, (...args) => event.execute(...args));
+        else client.on(event.name, (...args) => event.execute(...args));
     }
 }
 

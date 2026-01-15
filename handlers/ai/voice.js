@@ -9,8 +9,9 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 class VoiceManager {
 
     constructor() {
-        this.elevenLabsKey = process.env.ELEVENLABS_API_KEY;
-        this.voiceId = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM'; // Default to Rachel if missing description
+        // תמיכה בשמות שהמשתמש הגדיר (ELEVEN_*) ובסטנדרט (ELEVENLABS_*)
+        this.elevenLabsKey = process.env.ELEVEN_API_KEY || process.env.ELEVENLABS_API_KEY;
+        this.voiceId = process.env.ELEVEN_VOICE_ID || process.env.ELEVENLABS_VOICE_ID || 'txHtK15K5KtX959ZtpRa';
     }
 
     /**
@@ -39,7 +40,7 @@ class VoiceManager {
      */
     async speak(text) {
         if (!this.elevenLabsKey) {
-            log('❌ [Voice] Missing ELEVENLABS_API_KEY');
+            log('❌ [Voice] Missing ELEVEN_API_KEY');
             return null;
         }
 
@@ -60,7 +61,7 @@ class VoiceManager {
                 },
                 data: {
                     text: cleanText,
-                    model_id: "eleven_multilingual_v2",
+                    model_id: "eleven_multilingual_v3", // V3 (2026 Standard)
                     voice_settings: {
                         stability: 0.5,
                         similarity_boost: 0.75

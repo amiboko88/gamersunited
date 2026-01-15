@@ -10,6 +10,9 @@ const { launchTelegram, stopTelegram } = require('./telegram/index');
 const { launchDiscord, stopDiscord, client: discordClient } = require('./discord/index');
 const rankingManager = require('./handlers/ranking/manager');
 const scheduler = require('./handlers/scheduler'); // ✅ ייבוא הסקג'ולר
+const birthdayManager = require('./handlers/birthday/manager');
+const fifoCleaner = require('./handlers/fifo/cleaner');
+const statusSystem = require('./handlers/system/statusRotator');
 
 process.on('unhandledRejection', (reason) => {
     if (reason?.toString().includes('Conflict') || reason?.toString().includes('409') || reason?.toString().includes('440')) return;
@@ -94,6 +97,11 @@ process.once('SIGINT', () => gracefulShutdown('SIGINT'));
                 getBot() // ✅ שליפת האינסטנס החי
             );
         }
+
+        // --- מודולים נוספים ששוחזרו ---
+        if (birthdayManager) birthdayManager.init(discordClient, getWhatsAppSock(), process.env.WHATSAPP_MAIN_GROUP_ID, getBot());
+        if (fifoCleaner) fifoCleaner.startAutoClean(discordClient);
+        if (statusSystem) statusSystem.start(discordClient);
 
     } catch (error) {
         console.error('🔥 [System] Fatal Start Error:', error);

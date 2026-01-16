@@ -1,5 +1,7 @@
-const { OpenAI } = require('openai');
-const config = require('../../config');
+const db = require('../../../utils/firebase'); // ✅ תוקן: 3 רמות אחורה
+const admin = require('firebase-admin');
+const config = require('../config'); // ✅ תוקן: רמה אחת אחורה (בתוך handlers/ai)
+const { log } = require('../../../utils/logger'); // ✅ תוקן: 3 רמות אחורה
 
 /**
  * כלי לניתוח סטטיסטיקות מתמונה - ספציפית ל-Warzone/COD

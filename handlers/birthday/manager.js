@@ -13,7 +13,7 @@ const TIMERS_REF = db.collection('system_metadata').doc('timers');
 
 class BirthdayManager {
     constructor() {
-        this.clients = {}; 
+        this.clients = {};
     }
 
     /**
@@ -21,10 +21,10 @@ class BirthdayManager {
      */
     init(discordClient, waSock, waGroupId, telegramBot) {
         this.clients = { discord: discordClient, whatsapp: waSock, waGroupId, telegram: telegramBot };
-        
+
         // 1. חגיגה יומית ב-08:00
         cron.schedule('0 8 * * *', () => this.runDailyCheck(), { timezone: "Asia/Jerusalem" });
-        
+
         // 2. תזכורת חודשית ב-1 לחודש ב-12:00
         cron.schedule('0 12 1 * *', () => this.runMonthlyReminder(), { timezone: "Asia/Jerusalem" });
 
@@ -37,10 +37,10 @@ class BirthdayManager {
     async registerUser(userId, platform, day, month, year) {
         const userRef = await getUserRef(userId, platform);
         const currentYear = new Date().getFullYear();
-        
+
         // תיקון שנה מקוצרת (95 -> 1995)
-        if (year < 100) year += (year > 50 ? 1900 : 2000); 
-        
+        if (year < 100) year += (year > 50 ? 1900 : 2000);
+
         const age = currentYear - year;
         if (age < 5 || age > 100) throw new Error('גיל לא הגיוני');
 
@@ -52,7 +52,7 @@ class BirthdayManager {
                 birthdayUpdated: new Date().toISOString()
             }
         }, { merge: true });
-        
+
         return { age, day, month };
     }
 
@@ -65,7 +65,11 @@ class BirthdayManager {
         const todayDay = now.getDate();
         const todayMonth = now.getMonth() + 1;
 
-        log(`[BirthdayManager] 🎂 מתחיל בדיקת ימי הולדת ל-${todayDay}/${todayMonth}...`);
+        // 🛡️ Random Delay (1-10s) כדי למנוע התנגשות אם יש כמה אינסטנסים
+        const randomDelay = Math.floor(Math.random() * 10000);
+        await new Promise(r => setTimeout(r, randomDelay));
+
+        log(`[BirthdayManager] 🎂 מתחיל בדיקת ימי הולדת (אחרי ${randomDelay}ms)...`);
 
         try {
             // --- 🛡️ בדיקת בטיחות (הקוד החדש) ---
@@ -111,7 +115,7 @@ class BirthdayManager {
      */
     async runMonthlyReminder() {
         if (!this.clients.whatsapp || !this.clients.waGroupId) return;
-        
+
         log('[BirthdayManager] 📢 מכין דוח חוסרים חודשי...');
         const snapshot = await db.collection('users').get();
         const missingUsers = [];
@@ -128,9 +132,9 @@ class BirthdayManager {
         if (missingUsers.length === 0) return;
 
         const text = `📢 *תזכורת חודשית משמעון!* 📢\n\n` +
-                     `שמתי לב שחלק מכם עדיין לא עדכנו יום הולדת:\n` +
-                     `${missingUsers.join('\n')}\n\n` +
-                     `פשוט תכתבו את התאריך (למשל: 24.10.1990) ואני ארשום אתכם! 🎁`;
+            `שמתי לב שחלק מכם עדיין לא עדכנו יום הולדת:\n` +
+            `${missingUsers.join('\n')}\n\n` +
+            `פשוט תכתבו את התאריך (למשל: 24.10.1990) ואני ארשום אתכם! 🎁`;
 
         // שימוש בשדרן לשליחת ההודעה
         broadcaster.sendDirectWhatsApp(this.clients, text, missingUsers);
@@ -141,7 +145,7 @@ class BirthdayManager {
      */
     async celebrate(userId, userData) {
         const currentYear = new Date().getFullYear();
-        
+
         // מניעת כפילות ברמת המשתמש (הגנה כפולה)
         if (userData.tracking?.lastBirthdayCelebrated === currentYear) return;
 
@@ -164,10 +168,10 @@ class BirthdayManager {
         try {
             // 2. יצירת תמונה דרך המערכת החדשה ✅
             const cardBuffer = await graphics.birthday.generateCard(userData);
-            
+
             // 3. שידור לכל הפלטפורמות
             await broadcaster.broadcastCelebration(this.clients, userData, cardBuffer);
-            
+
         } catch (error) {
             log(`❌ [BirthdayManager] נכשל בחגיגה ל-${userId}: ${error.message}`);
         }

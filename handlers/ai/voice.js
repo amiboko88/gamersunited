@@ -50,8 +50,8 @@ class VoiceManager {
             return null;
         }
 
-        // ניקוי הטקסט מתגיות פנימיות
-        const cleanText = text.replace('[VOICE]', '').trim();
+        // ניקוי הטקסט מתגיות וסימנים (כמו במודול שעובד)
+        const cleanText = text.replace(/[*_~`]/g, '').replace('[VOICE]', '').trim();
         if (!cleanText) return null;
 
         const targetVoiceId = voiceIdOverride || this.voiceId;
@@ -69,10 +69,12 @@ class VoiceManager {
                 },
                 data: {
                     text: cleanText,
-                    model_id: "eleven_multilingual_v3", // V3 (2026 Standard)
+                    model_id: "eleven_multilingual_v3", // ✅ V3 (User Requirement)
                     voice_settings: {
                         stability: 0.5,
-                        similarity_boost: 0.75
+                        similarity_boost: 0.75, // V3 values
+                        // style: 0.0, // ❌ לא נתמך ב-V3
+                        // use_speaker_boost: true // ❌ לא נתמך ב-V3
                     }
                 },
                 responseType: 'arraybuffer'

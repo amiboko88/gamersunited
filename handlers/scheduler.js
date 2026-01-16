@@ -43,7 +43,7 @@ module.exports = {
 
         // --- 🔥 התראת FOMO (כל 5 דקות) ---
         let lastAlertTime = 0; // נשמר בזיכרון לגיבוי
-        const ALERT_COOLDOWN = 4 * 60 * 60 * 1000; // 4 שעות
+        const ALERT_COOLDOWN = 60 * 60 * 1000; // 1 שעה (לבקשת המשתמש)
 
         cron.schedule('*/5 * * * *', async () => {
             if (!client) return;
@@ -93,9 +93,7 @@ module.exports = {
                     const imageBuffer = await graphics.voice.generateCard(channelName, allMembers);
 
                     const { sendToMainGroup } = require('../whatsapp/index');
-                    const caption = `🔥 *${channelName}* בוער!\nהצטרפו ל-${totalVoiceUsers} מחוברים.`;
-
-                    await sendToMainGroup(caption, [], imageBuffer);
+                    await sendToMainGroup(`🔥 *${channelName}* בוער! בואו להצטרף.`, [], imageBuffer);
 
                     // עדכון זמן שליחה ב-DB
                     await TIMERS_REF.set({ lastFomoAlert: new Date().toISOString() }, { merge: true });

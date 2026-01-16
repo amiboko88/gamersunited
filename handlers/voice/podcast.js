@@ -101,7 +101,7 @@ class PodcastManager {
             `;
 
             const completion = await openai.chat.completions.create({
-                model: "gpt-4o",
+                model: "gpt-4o-mini", // ✅ חיסכון משמעותי בעלויות
                 messages: [{ role: "system", content: "You are a professional roast writer for a Discord podcast." }, { role: "user", content: prompt }]
             });
 

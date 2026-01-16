@@ -14,7 +14,8 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 class ShimonBrain {
 
     // ✅ הוספנו chatId כדי לדעת לאן להחזיר תשובה/מדיה
-    async ask(userId, platform, userQuery, isAdmin = false, imageBuffer = null, chatId = null) {
+    // ✅ הוספנו skipPersistence כדי למנוע שמירה של משתמשים לא רשומים (כמו בטלגרם)
+    async ask(userId, platform, userQuery, isAdmin = false, imageBuffer = null, chatId = null, skipPersistence = false) {
         try {
             // 1. הקשרים והיסטוריה
             const history = memoryManager.getHistory(platform, userId);
@@ -70,7 +71,8 @@ class ShimonBrain {
                         toolCall.function.name,
                         JSON.parse(toolCall.function.arguments),
                         userId,
-                        chatId
+                        chatId,
+                        imageBuffer // ✅ פיצ'ר קריטי: העברת התמונה לכלים (כמו זיהוי וורזון)
                     );
 
                     messages.push({
@@ -89,12 +91,17 @@ class ShimonBrain {
                 finalResponse = msg.content;
             }
 
-            // 6. שמירה
-            memoryManager.addMessage(platform, userId, "user", userQuery || "[Media]");
-            memoryManager.addMessage(platform, userId, "assistant", finalResponse);
+            // 6. שמירה (רק אם המשתמש רשום/מקושר)
+            if (!skipPersistence) {
+                memoryManager.addMessage(platform, userId, "user", userQuery || "[Media]");
+                memoryManager.addMessage(platform, userId, "assistant", finalResponse);
 
-            learningEngine.learnFromContext(userId, "User", platform, userQuery);
-            this.trackStats(userId, finalResponse?.length || 0);
+                learningEngine.learnFromContext(userId, "User", platform, userQuery);
+                this.trackStats(userId, finalResponse?.length || 0);
+            } else {
+                // לזיכרון זמני (RAM) בלבד - אם המערכת תומכת בזה, או פשוט דילוג
+                // כרגע נדלג כדי לא לזהם את ה-DB
+            }
 
             return finalResponse;
 
@@ -141,7 +148,7 @@ class ShimonBrain {
             `;
 
             const runner = await openai.chat.completions.create({
-                model: "gpt-3.5-turbo", // מודל מהיר וזול לשיפוט
+                model: "gpt-4o-mini", // ✅ הכי זול והכי מהיר לשיפוט (יותר טוב מ-3.5)
                 messages: [{ role: "user", content: prompt }],
                 temperature: 0,
                 max_tokens: 5

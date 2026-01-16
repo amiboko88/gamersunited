@@ -36,9 +36,9 @@ class TelegramScanner {
         await allUnlinkedRef.set({
             list: {
                 [tgId]: {
-                    tgId: tgId,
-                    username: username,
-                    displayName: fullName,
+                    tgId: tgId || "Unknown",
+                    username: username || "No Username",
+                    displayName: fullName || "Unknown",
                     lastSeen: Date.now()
                 }
             }
@@ -69,6 +69,36 @@ class TelegramScanner {
                     }
                 }
             }, { merge: true });
+
+            // ✅ דיווח לצוות (Discord Staff Logs)
+            this.notifyStaff(tgUser, bestMatch);
+        }
+    }
+
+    async notifyStaff(tgUser, match) {
+        try {
+            // טעינת הקליינט בצורה בטוחה (Lazy Load למניעת Circular Dependency)
+            const { client } = require('../../discord/index');
+            const { EmbedBuilder } = require('discord.js');
+
+            const LOG_CHANNEL_ID = '1302302783856377856'; // ערוץ לוגים ראשי (או ערוץ Staff ייעודי)
+            const channel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+
+            if (channel) {
+                const embed = new EmbedBuilder()
+                    .setTitle('🕵️ זיהוי משתמש טלגרם חדש')
+                    .setColor('#0088cc')
+                    .setDescription(`**משתמש:** ${tgUser.username || "ללא שם משתמש"} (${tgUser.first_name})\n**זיהוי:** \`${tgUser.id}\``)
+                    .addFields(
+                        { name: 'התאמה לדיסקורד', value: match.name || "??", inline: true },
+                        { name: 'ביטחון', value: `${Math.round(match.confidence * 100)}%`, inline: true }
+                    )
+                    .setFooter({ text: 'כנס לדשבורד (Manage -> Telegram) לאישור' });
+
+                await channel.send({ embeds: [embed] });
+            }
+        } catch (e) {
+            console.error('[Scanner Notify Error]', e);
         }
     }
 

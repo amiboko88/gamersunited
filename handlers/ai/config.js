@@ -1,6 +1,5 @@
-// 📁 handlers/ai/config.js
 module.exports = {
-   MODEL: "gpt-4o",
+   MODEL: "gpt-4o-mini", // ✅ חיסכון של 95% בעלויות (במקום gpt-4o)
    MAX_TOKENS: 800,
    TEMPERATURE: 0.9,
 

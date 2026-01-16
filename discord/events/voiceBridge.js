@@ -19,60 +19,24 @@ const roomCooldowns = new Map();
 /**
  * הלוגיקה הראשית
  */
+const podcastManager = require('../../handlers/voice/podcast'); // ✅ חיבור לפודקאסט
+
+// ...
+
 async function handleVoiceStateUpdate(oldState, newState) {
     const channel = newState.channel;
 
-    // 1. אם זו לא כניסה לחדר (או שזה יציאה) - מתעלמים
+    // 1. קריאה לפודקאסט (חשוב!)
+    await podcastManager.handleVoiceStateUpdate(oldState, newState);
+
+    // 2. אם זו לא כניסה לחדר (או שזה יציאה) - מתעלמים
     if (!channel || (oldState.channelId === newState.channelId)) return;
 
-    // 2. סינון ערוצים סודיים
+    // 3. סינון ערוצים סודיים
     if (IGNORED_CHANNELS.includes(channel.id)) return;
 
-    // 3. ספירת אנשים (ללא בוטים)
-    const members = channel.members.filter(m => !m.user.bot);
-    const count = members.size;
-
-    // 4. בדיקת FOMO: מדווחים רק שיש 2 אנשים ומעלה
-    if (count < MIN_USERS_TO_ALERT) return;
-
-    // 5. בדיקת Cooldown (כדי לא לחפור כל פעם שמישהו נכנס לחדר מלא)
-    const now = Date.now();
-    const lastAlert = roomCooldowns.get(channel.id) || 0;
-    if (now - lastAlert < ALERT_COOLDOWN) return;
-
-    // --- יש אקשן! מתחילים לדווח ---
-    roomCooldowns.set(channel.id, now);
-
-    try {
-        // איסוף שמות ותיוגים
-        const names = [];
-        const mentions = [];
-
-        for (const [id, member] of members) {
-            names.push(member.displayName);
-
-            // בדיקה אם יש מספר וואטסאפ לתיוג
-            const userDoc = await db.collection('users').doc(id).get();
-            if (userDoc.exists) {
-                const waPhone = userDoc.data().platforms?.whatsapp;
-                if (waPhone) mentions.push(waPhone);
-            }
-        }
-
-        // יצירת תמונה (דרך המערכת הגרפית החדשה) ✅
-        const imageBuffer = await graphics.voice.generateCard(channel.name, Array.from(members.values()));
-
-        // ניסוח הודעה
-        const text = `🔥 **אש בחדרים!**\nהחבר'ה התחברו ל-${channel.name}.\n${names.join(', ')} כבר בפנים.\nאיפה אתם? כנסו עכשיו.`;
-
-        // שליחה
-        const { sendToMainGroup } = require('../../whatsapp/index');
-        await sendToMainGroup(text, mentions, imageBuffer);
-        log(`📢 [VoiceBridge] דווח על אקשן בחדר ${channel.name} (${count} משתמשים)`);
-
-    } catch (error) {
-        log(`❌ [VoiceBridge] Error: ${error.message}`);
-    }
+    // לוגיקת FOMO הועברה ל-Scheduler למניעת ספאם. 
+    // כאן אנו רק מוודאים שהאירועים זורמים.
 }
 
 module.exports = { handleVoiceStateUpdate };

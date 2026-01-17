@@ -96,12 +96,16 @@ module.exports = {
                 // Telegram Logic
                 else if (id === 'btn_manage_tg_link') await dashboardHandler.showTelegramMatchList(interaction);
                 else if (id === 'btn_tg_force_scan') await dashboardHandler.executeTelegramForceScan(interaction);
+                else if (id === 'btn_tg_manual_link_menu') await dashboardHandler.showTelegramManualLink(interaction); // ✅
+                else if (id === 'menu_tg_manual_select') await dashboardHandler.handleTelegramManualSelect(interaction); // ✅
+                else if (id.startsWith('menu_tg_manual_confirm_')) await dashboardHandler.finalizeTelegramManualLink(interaction); // ✅
+
                 else if (id.startsWith('btn_tg_confirm_')) {
                     const [, , , tgId, discordId] = id.split('_');
                     await dashboardHandler.executeTelegramLink(interaction, tgId, discordId);
                 }
                 else if (id.startsWith('btn_tg_reject_')) {
-                    // לוגיקה פשוטה להסרה מהרשימה
+                    // לוגיקה פשוטה להסרה מהרשימה - להעביר להנדלר? כרגע נשאיר כאן או נעביר בהמשך
                     const [, , , tgId] = id.split('_');
                     const db = require('../../utils/firebase');
                     const orphanRef = db.collection('system_metadata').doc('telegram_orphans');
@@ -116,6 +120,11 @@ module.exports = {
                     await interaction.reply({ content: '🗑️ ההתאמה נדחתה.', flags: 64 });
                     await dashboardHandler.showMainDashboard(interaction, true);
                 }
+
+                // Debug Tools
+                // else if (id === 'btn_debug_restore') await dashboardHandler.executeRestore(interaction); // Removed per user request
+                // else if (id === 'btn_debug_clean_bots') await dashboardHandler.executeCleanBots(interaction); // Removed per user request
+
 
                 // --- Other Handlers ---
                 else if (id === 'start_verification_process') await verificationHandler.showVerificationModal(interaction);

@@ -13,6 +13,7 @@ class XPManager {
 
     async handleXP(userId, platform, content, contextObj, replyFunc) {
         if (!content || !userId) return;
+        if (userId.length < 16) return; // 🛡️ הגנה: מניעת מתן XP למזהים שגויים (מינימום 16 תוים)
 
         const now = Date.now();
         const cooldownKey = `${platform}-${userId}`;

@@ -1,4 +1,3 @@
-// 📁 handlers/graphics/voice.js
 const core = require('./core');
 
 class VoiceRenderer {
@@ -8,7 +7,7 @@ class VoiceRenderer {
      */
     async generateCard(channelName, members) {
         // ניקוי אימוג'ים משם הערוץ כדי למנוע קוביות
-        const safeChannelName = channelName.replace(/[^\p{L}\p{N}\p{P}\p{Z}^$\n]/gu, '').trim() || "Voice Channel";
+        const safeChannelName = channelName.replace(/[^\p{L}\p{N}\p{P}\p{Z}\p{S}\p{M}^$\n]/gu, '').trim() || "Voice Channel";
 
         // לוגיקה לאווטרים: אם יש מעל 5, נחלק לשורות (עד 10)
         // אם יש המון, נציג 8 ופלוס
@@ -47,7 +46,7 @@ class VoiceRenderer {
                 .card {
                     width: 800px; height: 450px; /* קצת יותר גבוה ל-2 שורות */
                     background: linear-gradient(135deg, #121212, #1a1a1a);
-                    font-family: 'Heebo', sans-serif;
+                    font-family: 'Heebo', 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif;
                     color: white;
                     display: flex; flex-direction: column;
                     align-items: center; /* Center horizontally */
@@ -118,7 +117,6 @@ class VoiceRenderer {
                     white-space: nowrap;
                     overflow: hidden;
                     text-overflow: ellipsis;
-                    width: 100%;
                 }
 
                 .extra-count {

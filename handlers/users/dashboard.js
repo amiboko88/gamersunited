@@ -205,13 +205,15 @@ class DashboardHandler {
         // Add options (max 25)
         const seenPhones = new Set();
         orphans.slice(0, 50).forEach(orphan => {
-            const phoneStr = String(orphan.phone);
-            if (!seenPhones.has(phoneStr)) {
+            const phoneStr = String(orphan.lid); // ✅ Fix: Use lid property
+            const timeStr = orphan.timestamp ? new Date(orphan.timestamp).toLocaleTimeString() : 'Unknown';
+
+            if (!seenPhones.has(phoneStr) && phoneStr !== 'undefined') {
                 seenPhones.add(phoneStr);
                 select.addOptions(
                     new StringSelectMenuOptionBuilder()
                         .setLabel(`${phoneStr} (LID)`)
-                        .setDescription(`Last seen: ${new Date(orphan.lastSeen).toLocaleTimeString()}`)
+                        .setDescription(`Last seen: ${timeStr}`)
                         .setValue(phoneStr)
                 );
             }
@@ -364,7 +366,8 @@ class DashboardHandler {
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId(`btn_tg_confirm_${match.tgId}_${match.potentialMatchId}`).setLabel('אשר חיבור').setStyle(ButtonStyle.Success).setEmoji('✅'),
             new ButtonBuilder().setCustomId(`btn_tg_reject_${match.tgId}`).setLabel('התעלם').setStyle(ButtonStyle.Danger).setEmoji('🗑️'),
-            new ButtonBuilder().setCustomId('btn_tg_force_scan').setLabel('סריקה יזומה').setStyle(ButtonStyle.Primary).setEmoji('🕵️'),
+            new ButtonBuilder().setCustomId('btn_tg_force_scan').setLabel('סריקה יזומה (אוטומטית)').setStyle(ButtonStyle.Primary).setEmoji('🕵️'),
+            new ButtonBuilder().setCustomId('btn_tg_manual_link_menu').setLabel('חיבור ידני').setStyle(ButtonStyle.Secondary).setEmoji('🔗'),
             new ButtonBuilder().setCustomId('btn_manage_refresh').setLabel('ביטול').setStyle(ButtonStyle.Secondary)
         );
 
@@ -491,6 +494,63 @@ class DashboardHandler {
             log(`Link Error: ${e.message}`);
             await interaction.editReply({ content: '❌ שגיאה בחיבור.', components: [] });
         }
+    }
+
+
+    /**
+     * ✅ חיבור ידני לטלגרם: מציג רשימת משתמשים לא מקושרים לבחירה
+     */
+    async showTelegramManualLink(interaction) {
+        await interaction.deferUpdate();
+        const db = require('../../utils/firebase');
+        const doc = await db.collection('system_metadata').doc('telegram_unlinked_users').get();
+        const users = doc.exists ? Object.values(doc.data().list || {}) : [];
+
+        if (users.length === 0) {
+            return interaction.followUp({ content: '❌ אין משתמשים לא מקושרים ברשימה.', ephemeral: true });
+        }
+
+        const { StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = require('discord.js');
+        const select = new StringSelectMenuBuilder()
+            .setCustomId('menu_tg_manual_select')
+            .setPlaceholder('בחר משתמש טלגרם לחיבור...');
+
+        users.slice(0, 25).forEach(u => {
+            select.addOptions(
+                new StringSelectMenuOptionBuilder()
+                    .setLabel(`${u.displayName} (@${u.username})`)
+                    .setDescription(`ID: ${u.tgId}`)
+                    .setValue(u.tgId)
+            );
+        });
+
+        const row = new ActionRowBuilder().addComponents(select);
+        await interaction.editReply({
+            content: '**חיבור ידני לטלגרם**\nבחר משתמש מהרשימה כדי לחבר אותו למשתמש דיסקורד:',
+            embeds: [],
+            components: [row]
+        });
+    }
+
+    async handleTelegramManualSelect(interaction) {
+        const tgId = interaction.values[0];
+        // השלב הבא: בחירת משתמש דיסקורד (כמו ב-LID)
+        const { UserSelectMenuBuilder } = require('discord.js');
+        const userSelect = new UserSelectMenuBuilder()
+            .setCustomId(`menu_tg_manual_confirm_${tgId}`)
+            .setPlaceholder('בחר משתמש דיסקורד לשידוך');
+
+        const row = new ActionRowBuilder().addComponents(userSelect);
+        await interaction.update({
+            content: `🔗 בחרת לחבר את ID: **${tgId}**\nבחר את משתמש הדיסקורד המתאים:`,
+            components: [row]
+        });
+    }
+
+    async finalizeTelegramManualLink(interaction) {
+        const tgId = interaction.customId.split('_').pop();
+        const discordId = interaction.values[0];
+        await this.executeTelegramLink(interaction, tgId, discordId);
     }
 }
 

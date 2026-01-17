@@ -112,7 +112,7 @@ class PodcastManager {
             });
 
             // --- 🎤 ElevenLabs Generation Loop ---
-            const voiceManager = require('../../ai/voice'); // ✅ שימוש במנהל הראשי והמתוקן
+            const voiceManager = require('../ai/voice'); // ✅ שימוש במנהל הראשי והמתוקן
             const fs = require('fs');
             const path = require('path');
 

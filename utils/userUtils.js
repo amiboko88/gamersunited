@@ -64,6 +64,12 @@ async function ensureUserExists(id, displayName, platform = 'discord') {
 
             // --- תרחיש 1: המשתמש לא קיים ב-DB ---
             if (!doc.exists) {
+                // 🛑 חסימה מוחלטת למזהים קצרים/שגויים (Hardening)
+                if (id.length < 16) {
+                    console.log(`🛡️ [UserUtils] Blocked creation of invalid ID: ${id}`);
+                    return null;
+                }
+
                 // 🛑 חסימה מוחלטת ל-LID (משתמשים זמניים של וואטסאפ)
                 // אנחנו לא רוצים ליצור מסמך למשתמש שאין לו עדיין "אבא" (דיסקורד).
                 if (platform === 'whatsapp' && isLid) {

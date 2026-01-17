@@ -24,9 +24,9 @@ module.exports = {
         // 2. הגדרת CRON JOBS (משימות מתוזמנות)
         // ---------------------------------------------------
 
-        // --- 🏆 איפוס טבלה שבועית (מוצ"ש ב-20:05) ---
+        // --- 🏆 איפוס טבלה שבועית (מוצ"ש ב-21:05) ---
         // מבצע Snapshot מיד לאחר פרסום הלידרבורד כדי להתחיל לספור שבוע חדש
-        cron.schedule('5 20 * * 6', async () => {
+        cron.schedule('5 21 * * 6', async () => {
             log('[Scheduler] 🔄 מבצע איפוס שבועי (Snapshot) לטבלה...');
             await rankingCore.resetWeeklyStats();
         }, { timezone: "Asia/Jerusalem" });

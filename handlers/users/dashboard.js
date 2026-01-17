@@ -129,7 +129,7 @@ class DashboardHandler {
             // Row 2: Linking Actions (The "Work" Layer)
             const rowLinks = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('btn_manage_view_link').setLabel(`חיבור LID (${orphans.length})`).setStyle(ButtonStyle.Success).setEmoji('🔗').setDisabled(orphans.length === 0),
-                new ButtonBuilder().setCustomId('btn_manage_tg_link').setLabel(`חיבור TG (${tgMatchCount})`).setStyle(ButtonStyle.Primary).setEmoji('✈️').setDisabled(tgMatchCount === 0)
+                new ButtonBuilder().setCustomId('btn_manage_tg_link').setLabel(`חיבור TG (${tgMatchCount})`).setStyle(ButtonStyle.Primary).setEmoji('✈️')
             );
 
             // Row 3: Admin Maintenance (Danger Zone)
@@ -208,7 +208,7 @@ class DashboardHandler {
                 new StringSelectMenuOptionBuilder()
                     .setLabel(`${orphan.phone} (LID)`)
                     .setDescription(`Last seen: ${new Date(orphan.lastSeen).toLocaleTimeString()}`)
-                    .setValue(orphan.phone)
+                    .setValue(String(orphan.phone))
             );
         });
 
@@ -255,6 +255,7 @@ class DashboardHandler {
     }
 
     async executeGhostPurge(interaction) {
+        await interaction.deferUpdate();
         await interaction.editReply({ content: '🔥 מוחק נתונים...', embeds: [], components: [] });
 
         const ghosts = await userManager.getGhostUsers(interaction.guild);

@@ -47,10 +47,10 @@ class RankingCore {
                 const weeklyMsgsSent = Math.max(0, (userData.stats?.messagesSent || 0) - (startStats.msgs || 0));
 
                 // --- נוסחת הניקוד (The Algorithm 2026) ---
-                
+
                 // א. הודעות (2 נקודות להודעה שבועות)
                 const msgPoints = weeklyMsgsSent * 2;
-                
+
                 // ב. קול (10 נקודות לכל דקת שיחה שבועית - נותן משקל כבד לקול כפי שביקשת)
                 const voicePoints = weeklyVoiceMinutes * 10;
 
@@ -81,9 +81,31 @@ class RankingCore {
 
             // 3. מיון לפי ניקוד גבוה וחיתוך לפי המגבלה
             participants.sort((a, b) => b.score - a.score);
-            
+            const topLeaders = participants.slice(0, limit);
+
+            // 4. העשרת נתונים (תמונות פרופיל עדכניות מדיסקורד)
+            // אנחנו עושים את זה רק לטופ 10 כדי לחסוך קריאות API מיותרות בלולאה הראשית
+            const { client } = require('../../discord/index');
+            if (client) {
+                for (const p of topLeaders) {
+                    try {
+                        // ניסיון ראשון: קאש
+                        let user = client.users.cache.get(p.id);
+                        if (!user) {
+                            // ניסיון שני: שליפה מהירה (כי זה רק 10 אנשים, זה בסדר)
+                            user = await client.users.fetch(p.id).catch(() => null);
+                        }
+                        if (user) {
+                            p.avatar = user.displayAvatarURL({ extension: 'png', size: 256 });
+                        }
+                    } catch (e) {
+                        // לא נורא, נשאר עם מה שיש ב-DB או בדיפולט
+                    }
+                }
+            }
+
             log(`📊 [Ranking] חושב דירוג עבור ${participants.length} משתתפים פעילים השבוע.`);
-            return participants.slice(0, limit);
+            return topLeaders;
 
         } catch (error) {
             log(`❌ [RankingCore] Error: ${error.message}`);

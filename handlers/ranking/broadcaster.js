@@ -1,6 +1,6 @@
 // 📁 handlers/ranking/broadcaster.js
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
-const { InputFile } = require('grammy'); 
+const { InputFile } = require('grammy');
 const { log } = require('../../utils/logger');
 const fs = require('fs');
 const path = require('path');
@@ -36,8 +36,8 @@ class RankingBroadcaster {
             const embed = new EmbedBuilder()
                 .setTitle(`🏆 טבלת האלופים - שבוע #${weekNum}`)
                 .setColor('#FFD700')
-                .setImage('attachment://leaderboard.png')
-                .setFooter({ text: 'הנתונים מתאפסים בכל מוצ"ש ב-20:00' })
+                //.setImage('attachment://leaderboard.png') // מבוטל כדי שלא יהיה בתוך האמבד הקטן
+                .setFooter({ text: 'הנתונים מתאפסים בכל מוצ"ש ב-21:00' })
                 .setTimestamp();
 
             const payload = {
@@ -61,7 +61,14 @@ class RankingBroadcaster {
             }
 
             // ניקוי חדר ושליחה חדשה
-            await channel.bulkDelete(5).catch(() => {});
+            await channel.bulkDelete(5).catch(() => { });
+
+            // שינוי אסטרטגי: שליחת התמונה בנפרד (לא בתוך Embed) כדי שתהיה גדולה
+            // קודם שולחים את האמבד (טקסט)
+            // await channel.send({ embeds: [embed] }); // אופציונלי - אם רוצים להפריד לגמרי
+
+            // אבל המשתמש רוצה הכל ביחד, פשוט שהתמונה תהיה גדולה.
+            // בדיסקורד, אם יש attachment ולא embed image, זה מוצג גדול למטה.
             const newMsg = await channel.send(payload);
             return newMsg.id;
 
@@ -79,11 +86,31 @@ class RankingBroadcaster {
 
         if (clients.whatsapp && clients.waGroupId) {
             try {
-                await clients.whatsapp.sendMessage(clients.waGroupId, { 
-                    image: imageBuffer, 
-                    caption: caption 
+                await clients.whatsapp.sendMessage(clients.waGroupId, {
+                    image: imageBuffer,
+                    caption: caption
                 });
-            } catch (e) { log(`❌ WhatsApp Board Fail: ${e.message}`); }
+            } catch (e) {
+                log(`❌ WhatsApp Board Fail: ${e.message}`);
+
+                // Retry specific for Connection Closed
+                if (e.message.includes('Connection Closed') || e.message.includes('Stream Ended')) {
+                    try {
+                        log('🔄 [Broadcaster] Retrying WhatsApp with fresh socket...');
+                        const { getWhatsAppSock } = require('../../whatsapp/index');
+                        const freshSock = getWhatsAppSock();
+                        if (freshSock) {
+                            await freshSock.sendMessage(clients.waGroupId, {
+                                image: imageBuffer,
+                                caption: caption
+                            });
+                            log('✅ WhatsApp Retry Success!');
+                        }
+                    } catch (retryErr) {
+                        log(`❌ WhatsApp Retry Fail: ${retryErr.message}`);
+                    }
+                }
+            }
         }
 
         if (clients.telegram && CHANNELS.TELEGRAM_MAIN) {

@@ -19,15 +19,15 @@ class RankingManager {
      * אתחול המנהל עם כל הקליינטים מה-index.js
      */
     init(discordClient, waSock, waGroupId, telegramBot) {
-        this.clients = { 
-            discord: discordClient, 
-            whatsapp: waSock, 
-            waGroupId, 
-            telegram: telegramBot 
+        this.clients = {
+            discord: discordClient,
+            whatsapp: waSock,
+            waGroupId,
+            telegram: telegramBot
         };
 
-        // תזמון: בכל מוצ"ש (יום 6) בשעה 20:00
-        cron.schedule('0 20 * * 6', async () => {
+        // תזמון: בכל מוצ"ש (יום 6) בשעה 21:00
+        cron.schedule('0 21 * * 6', async () => {
             log('⏰ [Ranking] Starting Weekly Leaderboard Automation...');
             await this.runWeeklyProcess();
         }, {
@@ -51,7 +51,7 @@ class RankingManager {
     async runWeeklyProcess() {
         try {
             log('📊 [Ranking] מחשב לידרבורד שבועי...');
-            
+
             // 1. שליפת נתוני הטופ 10 מה-DB
             const leaders = await rankingCore.getWeeklyLeaderboard(10);
             if (!leaders || leaders.length === 0) {
@@ -80,9 +80,9 @@ class RankingManager {
 
             // 5. הפצה לדיסקורד (עריכה חכמה)
             const newMessageId = await rankingBroadcaster.broadcastDiscord(
-                this.clients.discord, 
-                imageBuffer, 
-                weekNum, 
+                this.clients.discord,
+                imageBuffer,
+                weekNum,
                 lastMessageId
             );
 
@@ -91,7 +91,7 @@ class RankingManager {
 
             // 7. שמירת המזהה החדש ב-DB לעדכון בשבוע הבא
             if (newMessageId) {
-                await META_REF.set({ 
+                await META_REF.set({
                     messageId: newMessageId,
                     lastUpdate: new Date().toISOString(),
                     week: weekNum

@@ -69,8 +69,18 @@ module.exports = {
                 // 2. Actions (Sync, Purge)
                 else if (id === 'btn_manage_sync_names') {
                     await interaction.deferUpdate();
-                    const result = await userManager.syncUnknownUsers(interaction.guild);
-                    await interaction.followUp({ content: `✅ סנכרון הושלם! עודכנו **${result.count}** שמות שהיו Unknown.`, ephemeral: true });
+
+                    // 1. סנכרון שמות Unknown
+                    const resultNames = await userManager.syncUnknownUsers(interaction.guild);
+
+                    // 2. סנכרון משתמשים חסרים (חדש)
+                    const resultMissing = await userManager.syncMissingUsers(interaction.guild);
+
+                    await interaction.followUp({
+                        content: `✅ **סנכרון הושלם!**\n📝 שמות שעודכנו: **${resultNames.count}**\n➕ משתמשים חדשים שנוספו: **${resultMissing.count}**`,
+                        ephemeral: true
+                    });
+
                     await dashboardHandler.showMainDashboard(interaction, true); // Refresh UI
                 }
                 else if (id === 'btn_manage_purge_ghosts') await dashboardHandler.showGhostPurgeList(interaction);

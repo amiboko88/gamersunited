@@ -60,6 +60,58 @@ class UserManager {
     }
 
     /**
+     * ✅ פונקציה חדשה: סנכרון משתמשים חסרים (הוספת משתמשים שלא קיימים ב-DB)
+     */
+    async syncMissingUsers(guild) {
+        if (!guild) return { success: false, count: 0 };
+        log('🔍 [UserManager] מתחיל סנכרון משתמשים חסרים...');
+
+        // 1. קבלת כל המשתמשים בשרת
+        await guild.members.fetch();
+        const allMembers = guild.members.cache;
+
+        // 2. קבלת כל ה-IDs הקיימים ב-DB
+        const snapshot = await db.collection('users').select('identity').get();
+        const existingIds = new Set(snapshot.docs.map(doc => doc.id));
+
+        let addedCount = 0;
+        const batch = db.batch();
+        let batchOpCount = 0;
+
+        for (const [id, member] of allMembers) {
+            if (member.user.bot) continue;
+            if (existingIds.has(id)) continue;
+
+            // המשתמש חסר ב-DB - יצירה
+            const ref = db.collection('users').doc(id);
+            const userData = {
+                identity: {
+                    displayName: member.displayName,
+                    username: member.user.username,
+                    joinedAt: member.joinedAt.toISOString(),
+                    avatar: member.user.displayAvatarURL()
+                },
+                economy: { xp: 0, balance: 0, level: 1 },
+                meta: { firstSeen: new Date().toISOString() }
+            };
+
+            batch.set(ref, userData, { merge: true });
+            addedCount++;
+            batchOpCount++;
+
+            if (batchOpCount >= 400) {
+                await batch.commit();
+                batchOpCount = 0;
+            }
+        }
+
+        if (batchOpCount > 0) await batch.commit();
+
+        log(`✅ [UserManager] נוספו ${addedCount} משתמשים חסרים.`);
+        return { success: true, count: addedCount };
+    }
+
+    /**
      * ✅ מחזיר רשימה של משתמשי רפאים (קיימים ב-DB, לא בשרת) לבדיקה לפני מחיקה
      */
     async getGhostUsers(guild) {

@@ -8,7 +8,7 @@ class RankingCore {
      * מחשב ושולף את המובילים של השבוע (על בסיס הפרש מה-Snapshot)
      * @param {number} limit כמות המשתמשים להצגה (ברירת מחדל 10)
      */
-    async getWeeklyLeaderboard(limit = 10) {
+    async getWeeklyLeaderboard(limit = 10, forceLifetime = false) {
         try {
             // 1. שליפת כל הנתונים (Users + GameStats) וצילום תחילת השבוע במקביל
             const [usersSnapshot, gameStatsSnapshot, weeklyMeta] = await Promise.all([
@@ -24,6 +24,9 @@ class RankingCore {
             gameStatsSnapshot.forEach(doc => gamesMap.set(doc.id, doc.data()));
 
             let participants = [];
+            let calculationMode = 'WEEKLY';
+
+            if (forceLifetime) calculationMode = 'LIFETIME';
 
             // 2. מעבר על כל המשתמשים וחישוב ניקוד
             usersSnapshot.forEach(doc => {
@@ -42,9 +45,20 @@ class RankingCore {
                     if ((userData.economy?.xp || 0) < 50) return;
                 }
 
-                // --- חישוב הפרש שבועי (נתונים נוכחיים פחות תחילת שבוע) ---
-                const weeklyVoiceMinutes = Math.max(0, (userData.stats?.voiceMinutes || 0) - (startStats.voice || 0));
-                const weeklyMsgsSent = Math.max(0, (userData.stats?.messagesSent || 0) - (startStats.msgs || 0));
+                // --- חישוב סטטיסטיקה ---
+                let weeklyVoiceMinutes = 0;
+                let weeklyMsgsSent = 0;
+
+                if (calculationMode === 'LIFETIME') {
+                    // שימוש בנתונים המצטברים
+                    weeklyVoiceMinutes = userData.stats?.voiceMinutes || 0;
+                    weeklyMsgsSent = userData.stats?.messagesSent || 0;
+                } else {
+                    // חישוב הפרש (Weekly)
+                    const startStats = startOfWeekData[userId] || { voice: 0, msgs: 0 };
+                    weeklyVoiceMinutes = Math.max(0, (userData.stats?.voiceMinutes || 0) - (startStats.voice || 0));
+                    weeklyMsgsSent = Math.max(0, (userData.stats?.messagesSent || 0) - (startStats.msgs || 0));
+                }
 
                 // --- נוסחת הניקוד (The Algorithm 2026) ---
 
@@ -104,7 +118,7 @@ class RankingCore {
                 }
             }
 
-            log(`📊 [Ranking] חושב דירוג עבור ${participants.length} משתתפים פעילים השבוע.`);
+            log(`📊 [Ranking] חושב דירוג (${calculationMode}) עבור ${participants.length} משתתפים.`);
             return topLeaders;
 
         } catch (error) {

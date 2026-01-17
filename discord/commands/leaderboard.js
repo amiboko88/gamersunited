@@ -19,7 +19,16 @@ module.exports = {
     async execute(interaction) {
         await interaction.deferReply({ ephemeral: true });
         try {
-            const leaders = await rankingCore.getWeeklyLeaderboard(10);
+            let isFallback = false;
+            // נסיון 1: נתונים שבועיים
+            let leaders = await rankingCore.getWeeklyLeaderboard(10, false);
+
+            // נסיון 2: נתוני כל הזמנים (אם ריק)
+            if (!leaders || leaders.length === 0) {
+                leaders = await rankingCore.getWeeklyLeaderboard(10, true);
+                isFallback = true;
+            }
+
             if (!leaders || leaders.length === 0) {
                 return interaction.editReply('❌ אין מספיק נתונים פעילים השבוע ליצירת טבלה.');
             }
@@ -46,8 +55,11 @@ module.exports = {
                 return interaction.editReply('❌ שגיאה בייצור תמונת הדירוג.');
             }
 
+            const footerText = isFallback ?
+                "\n⚠️ **שים לב:** הטבלה מציגה נתונים מצטברים כי טרם נצברה פעילות השבוע." : "";
+
             await interaction.editReply({
-                content: `📊 **טבלת האלופים - שבוע ${weekNum} (מצב נוכחי)**`,
+                content: `📊 **טבלת האלופים - שבוע ${weekNum} (מצב נוכחי)**${footerText}`,
                 files: [{ attachment: imageBuffer, name: `leaderboard_preview_w${weekNum}.png` }]
             });
 

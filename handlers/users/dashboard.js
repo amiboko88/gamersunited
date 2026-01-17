@@ -203,13 +203,18 @@ class DashboardHandler {
             .setPlaceholder('בחר משתמש לחיבור...');
 
         // Add options (max 25)
-        orphans.slice(0, 25).forEach(orphan => {
-            select.addOptions(
-                new StringSelectMenuOptionBuilder()
-                    .setLabel(`${orphan.phone} (LID)`)
-                    .setDescription(`Last seen: ${new Date(orphan.lastSeen).toLocaleTimeString()}`)
-                    .setValue(String(orphan.phone))
-            );
+        const seenPhones = new Set();
+        orphans.slice(0, 50).forEach(orphan => {
+            const phoneStr = String(orphan.phone);
+            if (!seenPhones.has(phoneStr)) {
+                seenPhones.add(phoneStr);
+                select.addOptions(
+                    new StringSelectMenuOptionBuilder()
+                        .setLabel(`${phoneStr} (LID)`)
+                        .setDescription(`Last seen: ${new Date(orphan.lastSeen).toLocaleTimeString()}`)
+                        .setValue(phoneStr)
+                );
+            }
         });
 
         const embed = new EmbedBuilder()
@@ -330,7 +335,21 @@ class DashboardHandler {
         const tgOrphans = doc.exists ? doc.data().list || {} : {};
 
         const list = Object.values(tgOrphans);
-        if (list.length === 0) return this.showMainDashboard(interaction);
+
+        // מצב ריק: אין התאמות - עדיין מציגים מסך כדי לאפשר סריקה יזומה
+        if (list.length === 0) {
+            const embed = new EmbedBuilder()
+                .setTitle('👮 TELEGRAM DETECTIVE')
+                .setDescription('✅ **אין התאמות חשודות כרגע.**\nכל המשתמשים שזוהו כבר מקושרים או שאין מידע חדש.\n\nלחץ על **סריקה יזומה** כדי להכריח בדיקה מחדש על כל המשתמשים הלא-מקושרים.')
+                .setColor('Green');
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('btn_tg_force_scan').setLabel('סריקה יזומה').setStyle(ButtonStyle.Primary).setEmoji('🕵️'),
+                new ButtonBuilder().setCustomId('btn_manage_refresh').setLabel('חזרה לדאשבורד').setStyle(ButtonStyle.Secondary)
+            );
+
+            return interaction.editReply({ embeds: [embed], components: [row] });
+        }
 
         // מציג את הראשון לטיפול
         const match = list[0];

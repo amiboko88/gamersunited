@@ -74,9 +74,10 @@ async function syncUpdates() {
             const content = await scraper.getUpdateContent(latest.url);
 
             // 2. Summarize & Translate via AI
+            // We ALWAYS summarize so the AI Brain has the context in the DB
             const summary = await summarizeUpdate(latest.title, content);
 
-            // 2.5 Check Nvidia Drivers
+            // 2.5 Check Nvidia Drivers (Only if broadcasting usually, but let's keep it simple)
             let gpuNote = "";
             try {
                 const gpuInfo = await scraper.checkNvidiaDrivers();
@@ -93,31 +94,39 @@ async function syncUpdates() {
 
             const fullSummary = summary + gpuNote;
 
-            // 2.6 Generate Audio Briefing (The "Lazy" Feature)
+            // 🛡️ AGE CHECK (The "Silent Update" Logic)
+            // If the update is older than 48 hours, we DO NOT annoy users.
+            // But we DO save it to DB so Shimon knows about it.
+            const updateDate = new Date(latest.date);
+            const now = new Date();
+            const hoursDiff = (now - updateDate) / (1000 * 60 * 60);
+            const isFresh = hoursDiff < 48;
+
             let audioPath = null;
-            try {
-                const ttsText = `עדכון חדש בוורזון! ${latest.title}. ${summary.substring(0, 250)}... יאללה ללובי.`;
-                const audioBuffer = await voiceManager.speak(ttsText);
+            if (isFresh) {
+                // 2.6 Generate Audio Briefing Only for Fresh News
+                try {
+                    const ttsText = `עדכון חדש בוורזון! ${latest.title}. ${summary.substring(0, 250)}... יאללה ללובי.`;
+                    const audioBuffer = await voiceManager.speak(ttsText);
+                    if (audioBuffer) audioPath = audioBuffer;
+                } catch (e) { console.error('[Intel] TTS Gen Failed:', e); }
+            } else {
+                console.log(`[Intel] Update is valid but old (${hoursDiff.toFixed(1)} hours). Saving to DB without Broadcast.`);
+            }
 
-                if (audioBuffer) {
-                    // Save to temp file needed for WA socket usually (or pass buffer directly if supported)
-                    // Baileys supports Buffer directly for audio/video but safer to verify or use wrapper.
-                    // Let's assume Baileys accepts Buffer in .audio field.
-                    audioPath = audioBuffer;
-                }
-            } catch (e) { console.error('[Intel] TTS Gen Failed:', e); }
-
-            // 3. Save
+            // 3. Save to Firestore (Context is now updated!)
             await db.collection(COLLECTION_NAME).doc(DOC_ID).set({
                 latest_patch_url: latest.url,
                 latest_patch_title: latest.title,
-                latest_patch_date: latest.date, // ✅ Saving Date
-                latest_patch_summary: fullSummary,
+                latest_patch_date: latest.date,
+                latest_patch_summary: fullSummary, // Saved!
                 update_last_checked: admin.firestore.FieldValue.serverTimestamp()
             }, { merge: true });
 
-            // 4. Notify All Platforms
-            await broadcastUpdate(fullSummary, latest.url, audioPath);
+            // 4. Notify All Platforms (Only if fresh)
+            if (isFresh) {
+                await broadcastUpdate(fullSummary, latest.url, audioPath);
+            }
 
         } else {
             console.log('[Intel] No new updates.');

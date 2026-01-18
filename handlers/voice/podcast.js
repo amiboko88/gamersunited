@@ -125,52 +125,89 @@ class PodcastManager {
                 return;
             }
 
-            // --- 🎤 TTS Generation Loop (OpenAI TTS) ---
-            // User Request: Use OpenAI for Discord if ElevenLabs V3 fails/struggles.
-            const ttsEngine = require('./openaiTTS');
+            // --- 🎤 ElevenLabs V3 Generation Loop (Sequential) ---
+            // Reverting to V3 per user request, but with SEQUENTIAL processing to avoid 400 errors.
+            const voiceManager = require('../ai/voice');
             const fs = require('fs');
             const path = require('path');
 
-            // Define OpenAI Voices
+            // Define Voices (V3 IDs)
             const VOICES = {
-                shimon: 'onyx', // Deep male
-                shirly: 'nova'  // Energetic female
+                shimon: undefined, // Defaults to Env/Config V3 ID
+                shirly: 'Z3R5wn05IrDiVCyEkUrK' // Verified Female V3 ID
             };
 
-            const audioFiles = [];
+            const playbackQueue = []; // Supports { type: 'tts', path: string } or { type: 'sfx', path: string }
 
+            // 1. Add Intro Jingle (Optional)
+            const introPath = path.join(__dirname, '../../assets/audio/effects/intro.mp3'); // ✅ User Path
+            if (fs.existsSync(introPath)) {
+                playbackQueue.push({ type: 'sfx', path: introPath });
+            }
+
+            // 2. Process Script
             for (const [index, line] of script.entries()) {
                 const isShirly = line.speaker.includes('shirly') || line.speaker.includes('שירלי');
                 const targetVoice = isShirly ? VOICES.shirly : VOICES.shimon;
 
-                log(`[Podcast] מייצר שמע (OpenAI) עבור ${line.speaker}...`);
-                const buffer = await ttsEngine.speak(line.text, targetVoice);
+                log(`[Podcast] מעבד שורה ${index + 1}/${script.length} (${line.speaker})...`);
 
-                if (buffer) {
-                    const tempDir = path.join(__dirname, '../../temp_audio');
-                    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-
-                    const fileName = `podcast_${member.id}_${index}_${Date.now()}.mp3`;
-                    const filePath = path.join(tempDir, fileName);
-
-                    await fs.promises.writeFile(filePath, buffer);
-                    audioFiles.push(filePath);
+                // A. Check for Sound FX triggers in text (e.g., *laugh*)
+                if (line.text.includes('*') || line.text.includes('[')) {
+                    if (line.text.toLowerCase().includes('laugh') || line.text.includes('צחוק')) {
+                        const laughPath = path.join(__dirname, '../../assets/audio/effects/laugh.mp3'); // ✅ User Path
+                        if (fs.existsSync(laughPath)) {
+                            playbackQueue.push({ type: 'sfx', path: laughPath });
+                        }
+                    }
                 }
-            }
 
-            // ניגון הקבצים - סדרתי ומסונכרן
-            for (const file of audioFiles) {
-                // מנגן ומחכה שהקובץ יסתיים לפני שממשיך
-                await audioManager.playLocalFileAndWait(voiceChannel.guild.id, voiceChannel.id, file);
+                // B. Generate TTS (SEQUENTIAL AWAIT)
+                try {
+                    // Remove SFX markers from text before speaking
+                    const spokenText = line.text.replace(/\[.*?\]|\*.*?\*/g, '').trim();
 
-                // המתנה קטנה לנשימה בין משפטים
+                    if (spokenText) {
+                        // 🛑 CRITICAL: Wait for V3 generation before moving to next line
+                        // This prevents hitting the concurrency limit (Error 400)
+                        const buffer = await voiceManager.speak(spokenText, targetVoice);
+
+                        if (buffer) {
+                            const tempDir = path.join(__dirname, '../../temp_audio');
+                            if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+                            const fileName = `podcast_${member.id}_${index}_${Date.now()}.mp3`;
+                            const filePath = path.join(tempDir, fileName);
+
+                            await fs.promises.writeFile(filePath, buffer);
+                            playbackQueue.push({ type: 'tts', path: filePath });
+                        } else {
+                            log(`❌ [Podcast] Failed to generate line ${index}: Buffer empty.`);
+                        }
+                    }
+                } catch (genError) {
+                    log(`❌ [Podcast] Error generating line ${index}: ${genError.message}`);
+                }
+
+                // Small delay between requests to be nice to API
                 await new Promise(r => setTimeout(r, 500));
             }
 
-            // ניקוי
+            // 3. Playback Loop
+            for (const item of playbackQueue) {
+                if (item.type === 'tts' || item.type === 'sfx') {
+                    await audioManager.playLocalFileAndWait(voiceChannel.guild.id, voiceChannel.id, item.path);
+                    // Pause for pacing
+                    await new Promise(r => setTimeout(r, 600));
+                }
+            }
+
+            // 4. Cleanup
             setTimeout(() => {
-                audioFiles.forEach(f => {
-                    try { fs.unlinkSync(f); } catch (e) { }
+                playbackQueue.forEach(item => {
+                    if (item.type === 'tts') {
+                        try { fs.unlinkSync(item.path); } catch (e) { }
+                    }
                 });
                 activeChannelId = null;
             }, 60000);

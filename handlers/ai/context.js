@@ -11,38 +11,61 @@ class ContextManager {
         // 1. Fetch Warzone Intel (Cached/Live)
         try {
             const intelDoc = await db.collection('system_data').doc('warzone_intel').get();
+
+            // 🕒 Time Context (CRITICAL for AI Awareness)
+            const now = dayjs().locale('he');
+            const timeContext = `
+            📅 **REAL WORLD TIME:** ${now.format('DD/MM/YYYY')} (Day: ${now.format('dddd')})
+            ⏰ **CLOCK:** ${now.format('HH:mm')}
+            `;
+            context += timeContext;
+
             if (intelDoc.exists) {
                 const data = intelDoc.data();
-                const lastPatch = data.latest_patch_title || "Unknown";
+                const lastPatch = data.latest_patch_title || "Unknown Update";
+                const lastDate = data.latest_patch_date ? data.latest_patch_date : "Unknown Date";
+
                 // Group by Mode
                 const grouped = {};
                 if (data.meta_weapons && Array.isArray(data.meta_weapons)) {
                     data.meta_weapons.forEach(w => {
-                        if (typeof w === 'string') {
-                            if (!grouped['General']) grouped['General'] = [];
-                            grouped['General'].push(w);
-                        } else {
-                            const mode = w.mode || 'General';
-                            if (!grouped[mode]) grouped[mode] = [];
-                            // Format: Name [Code] (Attachments/Info...)
-                            grouped[mode].push(`- ${w.name} [${w.build_code || 'No Code'}]\n  Stats/Mods: ${w.details || 'N/A'}`);
-                        }
+                        // Support both string and object formats, preferring object
+                        const name = w.name || w; // simple string fallback
+                        const code = w.build_code || 'Ask User to Check Link';
+                        const mode = w.mode || 'Warzone (General)';
+
+                        if (!grouped[mode]) grouped[mode] = [];
+                        grouped[mode].push(`   - 🔫 **${name}**\n     Code: \`${code}\`\n     Info: ${w.details || ''}`);
                     });
                 }
 
                 let metaList = "";
                 for (const [mode, weapons] of Object.entries(grouped)) {
-                    metaList += `\n🎯 **${mode} META:**\n${weapons.join('\n')}\n`;
+                    metaList += `\n📌 **${mode} META:**\n${weapons.join('\n')}\n`;
                 }
-                if (!metaList) metaList = "No data available.";
+
+                if (!metaList) metaList = "❌ SYSTEM WARNING: No Meta Weapons found in Database.";
 
                 context += `
-                ### 🔫 Warzone Live Intel (USE THIS!):
-                - **Latest Update:** ${lastPatch} (Check URL: ${data.latest_patch_url})
-                - **Current Meta Weapons & Codes:**
+                =============================================================
+                🚨 **WARZONE LIVE INTELLIGENCE (HIGHEST PRIORITY)** 🚨
+                =============================================================
+                YOUR INTERNAL TRAINING DATA IS OUTDATED (2023/4). DO NOT USE IT.
+                USE ONLY THE REAL-TIME DATA BELOW:
+
+                📅 **LATEST UPDATE:** "${lastPatch}" (Date: ${data.latest_patch_date || 'N/A'})
+                🔗 **Patch Notes:** ${data.latest_patch_url}
+                📝 **Summary:** ${data.latest_patch_summary || 'N/A'}
+
+                🔥 **CURRENT META BUILDS (REAL-TIME):**
                 ${metaList}
-                
-                (If user asks for a loadout, GIVE THEM THE CODE).
+
+                👉 **INSTRUCTIONS:**
+                1. If asked about "Meta" or "Best guns", READ FROM THE LIST ABOVE.
+                2. If the weapon is NOT in this list, say "לא מופיע אצלי במטא כרגע, אבל תבדוק את..." and suggest a listed one.
+                3. DO NOT invent build codes like "S07-...". Only use the exact codes listed above.
+                4. If the generic "Kastov" comes to mind, IGNORE IT unless it's in the list below.
+                =============================================================
                 `;
             }
         } catch (e) {

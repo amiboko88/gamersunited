@@ -102,6 +102,13 @@ process.once('SIGINT', () => gracefulShutdown('SIGINT'));
         if (statusSystem) statusSystem.start(discordClient);
         if (intelManager) intelManager.initIntel(discordClient, getWhatsAppSock(), getBot());
 
+        // ✅ Ghost Protocol Init (CRITICAL Fix)
+        const ghostProtocol = require('./handlers/users/ghostProtocol');
+        if (ghostProtocol) {
+            console.log('👻 [System] Initializing Ghost Protocol...');
+            ghostProtocol.init(discordClient, getWhatsAppSock());
+        }
+
         // 🛠️ Admin Command: Ghost Protocol Test
         discordClient.on('messageCreate', async (message) => {
             if (message.content.startsWith('!testbounty') && message.author.id === '524302700695912506') {

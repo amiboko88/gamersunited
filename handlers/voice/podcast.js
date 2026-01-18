@@ -131,10 +131,10 @@ class PodcastManager {
             const fs = require('fs');
             const path = require('path');
 
-            // Define Voices (V3 IDs)
+            // Define Voices (V3 IDs - Using Standard Reliable Voices)
             const VOICES = {
-                shimon: undefined, // Defaults to Env/Config V3 ID
-                shirly: 'Z3R5wn05IrDiVCyEkUrK' // Verified Female V3 ID
+                shimon: 'JBFqnCBsd6RMkjVDRZzb', // Adam (Reliable Male)
+                shirly: '21m00Tcm4TlvDq8ikWAM' // Rachel (Reliable Female)
             };
 
             const playbackQueue = []; // Supports { type: 'tts', path: string } or { type: 'sfx', path: string }

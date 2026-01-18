@@ -44,8 +44,7 @@ class ContextManager {
                     metaList += `\n📌 **${mode} META:**\n${weapons.join('\n')}\n`;
                 }
 
-                if (!metaList) metaList = "❌ SYSTEM WARNING: No Meta Weapons found in Database.";
-
+                // Data Found:
                 context += `
                 =============================================================
                 🚨 **WARZONE LIVE INTELLIGENCE (HIGHEST PRIORITY)** 🚨
@@ -65,6 +64,21 @@ class ContextManager {
                 2. If the weapon is NOT in this list, say "לא מופיע אצלי במטא כרגע, אבל תבדוק את..." and suggest a listed one.
                 3. DO NOT invent build codes like "S07-...". Only use the exact codes listed above.
                 4. If the generic "Kastov" comes to mind, IGNORE IT unless it's in the list below.
+                =============================================================
+                `;
+            } else {
+                // 🛑 EMPTY DATA - KILL SWITCH
+                context += `
+                =============================================================
+                ⚠️ **WARZONE INTELLIGENCE OFFLINE** ⚠️
+                =============================================================
+                ERROR: The Intel Database is currently empty or failed to sync.
+                
+                👉 **INSTRUCTIONS FOR YOU:**
+                1. IF the user asks about "Meta", "Builds", or "Updates":
+                   - DO NOT ANSWER from your internal training data. It is old.
+                   - ANSWER EXACTLY: "מצטער, המודיעין שלי לא מעודכן כרגע. אני עושה סנכרון מחדש, נסה עוד דקה."
+                   - DO NOT invent weapons like "Lachmann Sub" or "Kastov".
                 =============================================================
                 `;
             }

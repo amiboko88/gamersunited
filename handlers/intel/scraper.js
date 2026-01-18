@@ -1,9 +1,9 @@
 const puppeteer = require('puppeteer');
 
 /**
- * Scraper module for Warzone Intel (WZStats.gg EXCLUSIVE)
- * Strategy: Navigate to Root, Find Meta Link, Scrape Data.
- * Purpose: Provide Shimon with 100% accurate, user-verified data from wzstats.gg.
+ * Scraper module for Warzone Intel
+ * Source: Codmunity.gg (Meta) & Call of Duty Official (Updates)
+ * Purpose: Provide Shimon with 100% accurate, user-verified data.
  */
 
 async function fetchMeta() {
@@ -16,87 +16,94 @@ async function fetchMeta() {
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-        console.log('[Scraper] Navigating to https://wzstats.gg/ ...');
-        await page.goto('https://wzstats.gg/', { waitUntil: 'networkidle2', timeout: 60000 });
+        console.log('[Scraper] Navigating to https://codmunity.gg/warzone ...');
+        await page.goto('https://codmunity.gg/warzone', { waitUntil: 'networkidle2', timeout: 60000 });
 
-        // Dynamic Navigation: Find the "Meta" Button
-        const metaUrl = await page.evaluate(() => {
-            const links = Array.from(document.querySelectorAll('a'));
-            // Look for "Meta" or "Loadouts" link
-            const metaLink = links.find(a =>
-                (a.innerText && a.innerText.toLowerCase().includes('meta')) ||
-                (a.href && a.href.includes('meta'))
-            );
-            return metaLink ? metaLink.href : null;
-        });
+        // Wait for list
+        try {
+            await page.waitForSelector('.w-full', { timeout: 15000 });
+        } catch (e) { console.log('Timeout waiting for list selector'); }
 
-        if (metaUrl) {
-            console.log(`[Scraper] Found Meta Page: ${metaUrl}. Navigating...`);
-            await page.goto(metaUrl, { waitUntil: 'networkidle2', timeout: 45000 });
-        } else {
-            console.log('[Scraper] Could not find explicit Meta link. Scanning current page...');
-        }
+        const metaWeapons = await page.evaluate(() => {
+            const links = Array.from(document.querySelectorAll('a[href*="/weapon/"]'));
 
-        await new Promise(r => setTimeout(r, 4000)); // Allow hydration
+            const results = [];
+            const unique = new Set();
 
-        const weapons = await page.evaluate(() => {
-            const extracted = [];
-            // Generic "Card" Strategy for WZStats
-            // We look for CONTAINERS that have:
-            // 1. A Name (Caps, short)
-            // 2. A "Meta" tag or Rank
-            // 3. A Code pattern (S10-...)
+            links.forEach(link => {
+                const container = link.closest('li') || link.closest('div.flex');
+                const text = container ? container.innerText : link.innerText;
 
-            const allDivs = Array.from(document.querySelectorAll('div, li, tr'));
+                const nameHelper = link.innerText.trim();
+                const cleanName = nameHelper.split('\n')[0].trim();
 
-            // Filter for candidates (heuristic)
-            const candidates = allDivs.filter(d => {
-                const t = d.innerText;
-                if (!t || t.length > 500 || t.length < 20) return false;
-                // Strict: Must have "Meta" or "Tier" AND a Code-like pattern
-                // OR be very explicitly a loadout card
-                return (t.includes('Meta') || t.includes('Tier') || t.includes('Pick')) &&
-                    (t.match(/(S\d+-[A-Z0-9]+)/) || t.includes('Muzzle')); // Code or Attachment word
-            });
+                if (cleanName && cleanName.length > 2 && !unique.has(cleanName) && !cleanName.includes('Loadout')) {
 
-            candidates.forEach(card => {
-                const fullText = card.innerText;
-                const lines = fullText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                    const codeMatch = text.match(/([A-Z0-9]{3}-\w{5}-\w{5}(-\w{1,5})?)/) || text.match(/([A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+)/);
+                    const code = codeMatch ? codeMatch[0] : null;
 
-                // Name Finding:
-                // Usually the first line or a line with caps
-                let name = null;
-                const nameLine = lines.find(l => /^[A-Z0-9\s-]{3,20}$/.test(l) && !l.includes('META') && !l.includes('TIER'));
-                if (nameLine) name = nameLine;
-
-                // Code Finding:
-                const codeMatch = fullText.match(/(S\d+-[A-Z0-9]+-[A-Z0-9]+(-[A-Z0-9]+)?)/i);
-                let code = codeMatch ? codeMatch[0] : null;
-
-                if (name && (code || fullText.toLowerCase().includes('muzzle'))) {
-                    // Deduplication check
-                    if (!extracted.find(e => e.name === name)) {
-                        extracted.push({
-                            name: name,
-                            type: 'Meta',
-                            mode: 'General',
-                            build_code: code || 'Check Link',
-                            details: fullText.replace(name, '').substring(0, 150)
-                        });
-                    }
+                    unique.add(cleanName);
+                    results.push({
+                        name: cleanName,
+                        url: link.href,
+                        prefetched_code: code
+                    });
                 }
             });
 
-            return extracted.slice(0, 5); // Return top 5
+            return results.slice(0, 10);
         });
 
-        if (weapons.length > 0) {
-            console.log(`[Scraper] Successfully extracted ${weapons.length} weapons.`);
-            return weapons;
-        } else {
-            console.log('[Scraper] Failed to find weapons on WZStats. Layout might be complex.');
-            return [];
+        console.log(`[Scraper] Found ${metaWeapons.length} weapons. Fetching details...`);
+        const fullCloud = [];
+
+        for (const weapon of metaWeapons) {
+            try {
+                console.log(`[Scraper] Fetching details for ${weapon.name}...`);
+                await page.goto(weapon.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await new Promise(r => setTimeout(r, 1500));
+
+                const buildDetails = await page.evaluate((wName, wCode) => {
+                    const text = document.body.innerText;
+                    const attachments = [];
+                    const types = ['Muzzle', 'Barrel', 'Optic', 'Stock', 'Rear Grip', 'Magazine', 'Underbarrel', 'Ammunition', 'Laser', 'Fire Mods', 'Comb'];
+
+                    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+
+                    types.forEach(type => {
+                        const idx = lines.findIndex(l => l.toLowerCase() === type.toLowerCase() || l.toLowerCase() === (type + ':').toLowerCase());
+                        if (idx !== -1 && lines[idx + 1]) {
+                            if (!types.some(t => lines[idx + 1].includes(t))) {
+                                attachments.push(`${type}: ${lines[idx + 1]}`);
+                            }
+                        }
+                    });
+
+                    let code = wCode;
+                    if (!code) {
+                        const codeMatch = text.match(/([A-Z0-9]{3}-\w{5}-\w{5}(-\w{1,5})?)/) || text.match(/S\d+-[A-Z0-9]+/);
+                        if (codeMatch) code = codeMatch[0];
+                    }
+
+                    if (attachments.length > 0 || code) {
+                        return {
+                            name: wName,
+                            mode: 'Warzone Meta',
+                            build_code: code || 'Check Link',
+                            details: attachments.join(' | ') + `\n🔗 https://codmunity.gg/`
+                        };
+                    }
+                    return null;
+                }, weapon.name, weapon.prefetched_code);
+
+                if (buildDetails) fullCloud.push(buildDetails);
+
+            } catch (err) {
+                console.error(`[Scraper] Failed to detail ${weapon.name}:`, err.message);
+            }
         }
+
+        return fullCloud;
 
     } catch (error) {
         console.error('Error fetching Meta:', error);
@@ -146,7 +153,6 @@ async function checkUpdates() {
             const updateDate = new Date(latestUpdate.date);
             const now = new Date();
             const daysDiff = (now - updateDate) / (1000 * 60 * 60 * 24);
-            // Relaxed date check for seasons
             if (daysDiff > 14 && !latestUpdate.title.toLowerCase().includes('season')) {
                 console.log(`[Scraper] Update found but too old (${daysDiff.toFixed(1)} days). Ignoring.`);
                 return null;
@@ -170,8 +176,20 @@ async function getUpdateContent(url) {
         });
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
-        const content = await page.evaluate(() => document.body.innerText.slice(0, 5000));
+
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 90000 });
+
+        const content = await page.evaluate(() => {
+            const article = document.querySelector('article') || document.querySelector('main') || document.body;
+            const elements = Array.from(article.querySelectorAll('h1, h2, h3, p, li'));
+            let text = "";
+            elements.forEach(el => {
+                if (el.innerText.length > 10) {
+                    text += el.innerText + "\n";
+                }
+            });
+            return text.slice(0, 6000);
+        });
         return content;
     } catch (error) {
         console.error('Error fetching content:', error);
@@ -182,33 +200,7 @@ async function getUpdateContent(url) {
 }
 
 async function checkNvidiaDrivers() {
-    let browser;
-    try {
-        browser = await puppeteer.launch({
-            headless: "new",
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-        });
-        const page = await browser.newPage();
-        await page.goto('https://www.nvidia.com/en-us/geforce/drivers/', { waitUntil: 'networkidle2', timeout: 30000 });
-        const driverInfo = await page.evaluate(() => {
-            const allText = document.body.innerText;
-            const versionMatch = allText.match(/Version:\s*([0-9\.]+)/);
-            const dateMatch = allText.match(/Release Date:\s*([0-9]{4}\.[0-9]{2}\.[0-9]{2}|[A-Za-z]+ [0-9]{1,2}, [0-9]{4})/); // loose date match
-            if (versionMatch) {
-                return {
-                    version: versionMatch[1],
-                    date: dateMatch ? dateMatch[1] : new Date().toISOString()
-                };
-            }
-            return null;
-        });
-        return driverInfo;
-    } catch (error) {
-        console.error('Error checking Nvidia drivers:', error);
-        return null;
-    } finally {
-        if (browser) await browser.close();
-    }
+    return null;
 }
 
 module.exports = {

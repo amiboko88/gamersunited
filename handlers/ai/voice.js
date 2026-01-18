@@ -38,24 +38,38 @@ class VoiceManager {
      * @param {string} text הטקסט להקראה
      * @returns {Promise<Buffer>} ה-Buffer של קובץ השמע
      */
-    async speak(text, voiceIdOverride = null) {
+    async speak(text, options = {}) {
         if (!this.elevenLabsKey) {
             log('❌ [Voice] Missing ELEVEN_API_KEY');
             return null;
         }
 
-        // ניקוי הטקסט מתגיות וסימנים (כמו במודול שעובד)
         const cleanText = text.replace(/[*_~`]/g, '').replace('[VOICE]', '').trim();
         if (!cleanText) return null;
 
-        const targetVoiceId = voiceIdOverride || this.voiceId;
+        // Determine Configuration
+        // Priority: Options -> Default Class Property -> Hardcoded Fallback
+        const voiceId = options.voiceId || this.voiceId;
+        const modelId = options.modelId || "eleven_multilingual_v3";
+
+        // Settings: Allow per-call overrides, otherwise use defaults
+        const settings = {
+            stability: options.stability || 0.5,
+            similarity_boost: options.similarityBoost || 0.75, // Default High (WhatsApp quality)
+            style: options.style || 0.0,
+            use_speaker_boost: options.useSpeakerBoost !== undefined ? options.useSpeakerBoost : true
+        };
 
         try {
-            log(`🗣️ [Voice] Generating audio for: "${cleanText.substring(0, 20)}..." (Voice: ${targetVoiceId})`);
+            log(`🗣️ [Voice] Generating audio...
+            - Text: "${cleanText.substring(0, 20)}..."
+            - Voice: ${voiceId}
+            - Model: ${modelId}
+            - Settings: Stable=${settings.stability}, Sim=${settings.similarity_boost}`);
 
             const response = await axios({
                 method: 'POST',
-                url: `https://api.elevenlabs.io/v1/text-to-speech/${targetVoiceId}`,
+                url: `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
                 headers: {
                     'Accept': 'audio/mpeg',
                     'xi-api-key': this.elevenLabsKey,
@@ -63,13 +77,8 @@ class VoiceManager {
                 },
                 data: {
                     text: cleanText,
-                    model_id: "eleven_multilingual_v3", // ✅ V3 (Explicit User Requirement - WORKS FOR WHATSAPP)
-                    voice_settings: {
-                        stability: 0.5,
-                        similarity_boost: 0.75, // V3 Optimized
-                        style: 0.0,
-                        use_speaker_boost: true
-                    }
+                    model_id: modelId,
+                    voice_settings: settings
                 },
                 responseType: 'arraybuffer'
             });
@@ -77,8 +86,19 @@ class VoiceManager {
             return Buffer.from(response.data);
 
         } catch (error) {
-            log(`❌ [Voice] TTS Failed: ${error.message}`);
-            return null;
+            // 🔥 Deep Debug: Log the actual API error message
+            if (error.response && error.response.data) {
+                const errMsg = Buffer.isBuffer(error.response.data)
+                    ? error.response.data.toString()
+                    : JSON.stringify(error.response.data);
+                log(`❌ [Voice] TTS Critical Failure (${voiceId}): ${errMsg}`);
+
+                // Propagate specific error for handling in caller (e.g. Fallback)
+                throw new Error(errMsg);
+            } else {
+                log(`❌ [Voice] TTS Failed: ${error.message}`);
+                throw error;
+            }
         }
     }
 }

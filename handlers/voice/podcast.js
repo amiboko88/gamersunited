@@ -131,9 +131,9 @@ class PodcastManager {
             const fs = require('fs');
             const path = require('path');
 
-            // Define Voices (V3 IDs - Using Standard Reliable Voices)
+            // Define Voices (Primary Choice)
             const VOICES = {
-                shimon: 'JBFqnCBsd6RMkjVDRZzb', // Adam (Reliable Male)
+                shimon: 'txHtK15K5KtX959ZtpRa', // ✅ User's Cloned Voice (Primary)
                 shirly: '21m00Tcm4TlvDq8ikWAM' // Rachel (Reliable Female)
             };
 
@@ -162,15 +162,36 @@ class PodcastManager {
                     }
                 }
 
-                // B. Generate TTS (SEQUENTIAL AWAIT)
+                // B. Generate TTS (With Fallback Strategy)
                 try {
-                    // Remove SFX markers from text before speaking
+                    // Remove SFX markers
                     const spokenText = line.text.replace(/\[.*?\]|\*.*?\*/g, '').trim();
 
                     if (spokenText) {
-                        // 🛑 CRITICAL: Wait for V3 generation before moving to next line
-                        // This prevents hitting the concurrency limit (Error 400)
-                        const buffer = await voiceManager.speak(spokenText, targetVoice);
+                        let buffer = null;
+
+                        // 1. Try Primary Voice (User's Clone for Shimon)
+                        try {
+                            buffer = await voiceManager.speak(spokenText, {
+                                voiceId: targetVoice,
+                                similarityBoost: 0.60 // Safer for V3 Podcast Flow to avoid 400s
+                            });
+                        } catch (primaryError) {
+                            log(`⚠️ [Podcast] Primary Voice Failed (${targetVoice}): ${primaryError.message}`);
+
+                            // 2. Fallback to Safe Voice (Adam/Rachel) if Primary is Shimon
+                            if (!isShirly) {
+                                log(`🔄 [Podcast] Falling back to Reliable Voice (Adam)...`);
+                                try {
+                                    buffer = await voiceManager.speak(spokenText, {
+                                        voiceId: 'JBFqnCBsd6RMkjVDRZzb', // Adam
+                                        similarityBoost: 0.50 // Even safer
+                                    });
+                                } catch (backupError) {
+                                    log(`❌ [Podcast] Backup Voice also failed.`);
+                                }
+                            }
+                        }
 
                         if (buffer) {
                             const tempDir = path.join(__dirname, '../../temp_audio');
@@ -182,11 +203,11 @@ class PodcastManager {
                             await fs.promises.writeFile(filePath, buffer);
                             playbackQueue.push({ type: 'tts', path: filePath });
                         } else {
-                            log(`❌ [Podcast] Failed to generate line ${index}: Buffer empty.`);
+                            log(`❌ [Podcast] Failed to generate line ${index}: Buffer empty after all attempts.`);
                         }
                     }
                 } catch (genError) {
-                    log(`❌ [Podcast] Error generating line ${index}: ${genError.message}`);
+                    log(`❌ [Podcast] Error processing line ${index}: ${genError.message}`);
                 }
 
                 // Small delay between requests to be nice to API

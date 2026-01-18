@@ -146,6 +146,13 @@ async function connectToWhatsApp() {
                     await coreLogic.handleMessageLogic(sock, msg, text);
                 }
 
+                // 👻 Ghost Protocol (Monitoring Hunt)
+                try {
+                    const ghostProtocol = require('../handlers/users/ghostProtocol');
+                    // Pass the whole socket if needed, but the method mainly needs 'msg'
+                    await ghostProtocol.onGroupMessage(msg);
+                } catch (e) { /* Ignore non-critical errors */ }
+
             } catch (err) {
                 console.error('❌ [WhatsApp Logic Error]:', err);
             }

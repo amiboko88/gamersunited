@@ -202,6 +202,14 @@ module.exports = {
             await campaign.runWeeklySpark();
         }, { timezone: "Asia/Jerusalem" });
 
+        // --- 👻 Operation Ghost Protocol (ראשון, שלישי, חמישי ב-20:30) ---
+        // נמנעים משישי-שבת. זז ל-20:30 כדי לא להתנגש עם MVP (א') ו-Wheel (ה').
+        cron.schedule('30 20 * * 0,2,4', async () => {
+            log('[Scheduler] 👻 מפעיל את פרוטוקול הרוחות (Automated Hunt)...');
+            const ghostProtocol = require('./users/ghostProtocol');
+            await ghostProtocol.startHunt();
+        }, { timezone: "Asia/Jerusalem" });
+
         log('[Scheduler] ✅ כל המשימות תוזמנו בהצלחה.');
     }
 };

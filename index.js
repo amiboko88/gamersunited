@@ -5,11 +5,11 @@ const path = require('path');
 const fortuneWheel = require('./handlers/economy/fortuneWheel');
 
 const { connectToWhatsApp, disconnectWhatsApp, getWhatsAppSock } = require('./whatsapp/index');
-const { getBot } = require('./telegram/client'); // ✅ יבוא ישיר של הגטר
+const { getBot } = require('./telegram/client');
 const { launchTelegram, stopTelegram } = require('./telegram/index');
 const { launchDiscord, stopDiscord, client: discordClient } = require('./discord/index');
 const rankingManager = require('./handlers/ranking/manager');
-const scheduler = require('./handlers/scheduler'); // ✅ ייבוא הסקג'ולר
+const scheduler = require('./handlers/scheduler');
 const birthdayManager = require('./handlers/birthday/manager');
 const fifoCleaner = require('./handlers/fifo/cleaner');
 const statusSystem = require('./handlers/system/statusRotator');
@@ -27,7 +27,6 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 app.use(express.json());
-// ✅ הגשה מאובטחת של הקובץ הספציפי
 app.get('/telegram/wheel.html', (req, res) => {
     res.sendFile(path.join(__dirname, 'telegram/wheel.html'));
 });
@@ -75,7 +74,6 @@ process.once('SIGINT', () => gracefulShutdown('SIGINT'));
 
         console.log('🚀 [System] Starting Shimon AI 2026...');
 
-        // הפעלה מדורגת
         await connectToWhatsApp().catch(e => console.error('❌ WhatsApp Init Failed:', e.message));
         await new Promise(r => setTimeout(r, 2000));
 
@@ -95,15 +93,63 @@ process.once('SIGINT', () => gracefulShutdown('SIGINT'));
                 discordClient,
                 getWhatsAppSock(),
                 process.env.WHATSAPP_MAIN_GROUP_ID,
-                getBot() // ✅ שליפת האינסטנס החי
+                getBot()
             );
         }
 
-        // --- מודולים נוספים ששוחזרו ---
         if (birthdayManager) birthdayManager.init(discordClient, getWhatsAppSock(), process.env.WHATSAPP_MAIN_GROUP_ID, getBot());
         if (fifoCleaner) fifoCleaner.startAutoClean(discordClient);
         if (statusSystem) statusSystem.start(discordClient);
         if (intelManager) intelManager.initIntel(discordClient, getWhatsAppSock(), getBot());
+
+        // 🛠️ Admin Command: Ghost Protocol Test
+        discordClient.on('messageCreate', async (message) => {
+            if (message.content.startsWith('!testbounty') && message.author.id === '524302700695912506') {
+                const args = message.content.split(' ');
+                let targetId = args[1]; // יכול להיות ריק
+
+                try {
+                    const ghostProtocol = require('./handlers/users/ghostProtocol');
+                    let targetUser = null;
+
+                    // מצב 1: חיפוש אוטומטי של רוח רפאים (ללא ארגומנטים)
+                    if (!targetId) {
+                        message.reply("🔍 Searching DB for a Ghost (Phone ✅, WA ❌)...");
+                        const ghostData = await ghostProtocol.findNextGhost();
+
+                        if (!ghostData) {
+                            return message.reply("✅ כולם כשרים! לא נמצאו משתמשים עם מספר וללא LID.");
+                        }
+
+                        targetId = ghostData.id; // ה-ID של דיסקורד מהמסד
+                        await message.channel.send(`🎯 **מטרה נמצאה:** ${ghostData.username || 'Unknown'} (ID: ${targetId})`);
+                    }
+
+                    // מצב 2: יש לנו ID (בין אם ידני ובין אם מהחיפוש)
+                    targetUser = await discordClient.users.fetch(targetId).catch(() => null);
+
+                    if (!targetUser) {
+                        return message.reply(`❌ User ID ${targetId} not found in Discord Cache.`);
+                    }
+
+                    const result = await ghostProtocol.declareGhost(targetUser.id, targetUser.username, targetUser.displayAvatarURL({ extension: 'png' }));
+
+                    if (result) {
+                        // שליחה לערוץ שבו בוצעה הפקודה (בתור סימולציה לקבוצה)
+                        await message.channel.send({ content: result.text, files: [result.posterBuffer] });
+
+                        // כאן בעקרון זה נשלח לקבוצת הוואטסאפ במערכת האמיתית
+                        // אנחנו לא שולחים DM כי המטרה היא שייראו אותו בקבוצה
+                    } else {
+                        message.reply("⚠️ המשתמש הזה כבר מבוקש (Bounty Active).");
+                    }
+
+                } catch (e) {
+                    message.reply(`❌ Error: ${e.message}`);
+                    console.error(e);
+                }
+            }
+        });
 
     } catch (error) {
         console.error('🔥 [System] Fatal Start Error:', error);

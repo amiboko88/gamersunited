@@ -13,74 +13,86 @@ async function fetchMeta() {
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
         const page = await browser.newPage();
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-        // 1. Go to WZStats Meta Page
-        await page.goto('https://wzstats.gg/warzone-meta', { waitUntil: 'networkidle2', timeout: 60000 });
+        // Define sources to scrape
+        const sources = [
+            { mode: 'Battle Royale', url: 'https://wzstats.gg/warzone-meta' },
+            { mode: 'Resurgence', url: 'https://wzstats.gg/warzone-resurgence-meta' } // Likely URL based on SEO patterns
+        ];
 
-        // 2. Extract Data
-        const weapons = await page.evaluate(() => {
-            const results = [];
-            // Select all weapon cards (Adjust selectors based on inspection if needed)
-            // Based on inspection: "Meta" weapons are usually in a distinct container. 
-            // We will grab all 'cards' that seem to be weapons.
+        const allMeta = [];
 
-            // Looking for main weapon containers. Structure might vary, so we look for generic "card" like elements 
-            // or specific text indicators if classes are obfuscated.
-            // Using a resilient strategy: Look for elements containing 'Meta' or specific tier names inside specific containers.
-            // However, the user saw "Build Code" which is key.
+        for (const source of sources) {
+            try {
+                console.log(`[Scraper] Fetching ${source.mode} from ${source.url}...`);
+                await page.goto(source.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-            const weaponCards = document.querySelectorAll('.loadout-card, [class*="LoadoutCard"]'); // Generic fallback
-            // If class names are obfuscated (e.g. styled-components), we might need to rely on structure.
-            // Let's try to map what we see in the DOM snapshot logic.
+                // Wait a bit for dynamic content
+                await new Promise(r => setTimeout(r, 2000));
 
-            // Refined extraction logic based on the user's "Build Code" screenshot
-            // and general site structure.
-            const cards = Array.from(document.querySelectorAll('div')).filter(div => div.innerText && div.innerText.includes('Build Code'));
+                const weapons = await page.evaluate((mode) => {
+                    const extracted = [];
+                    // Aggressive Text Dump of all "Cards"
+                    // We look for any container that has "Meta" or Rank # numbers.
+                    const allDivs = Array.from(document.querySelectorAll('div'));
 
-            // If the specific "Build Code" hidden strategy is used, we might need to click or it might be in text.
-            // The browser agent said "Build Codes... are visible and scannable directly from DOM".
-
-            // Let's assume a standard structure for now based on common scraping patterns for this site logic:
-            // Iterate over major sections (Long Range, Close Range, etc.)
-
-            const categories = ['Long Range', 'Close Range', 'Sniper'];
-            const grabbedWeapons = [];
-
-            // Try to find sections
-            document.querySelectorAll('section, .section-container').forEach(section => {
-                const text = section.innerText;
-                let category = 'General';
-                if (text.includes('Long Range')) category = 'Long Range';
-                else if (text.includes('Close Range')) category = 'Close Range';
-                else if (text.includes('Sniper')) category = 'Sniper';
-
-                // Find weapon names and codes in this section
-                // This is a heuristic approach. 
-                // We look for the "Copy" buttons or "Build Code" labels.
-                const buildCodeElements = section.querySelectorAll('input[value^="S0"], div[class*="code"]'); // Look for code inputs or divs
-
-                // Since DOM access is complex to guess without live feedback, 
-                // we will grabbing text content that looks like a code: S07-...
-                const html = section.innerHTML;
-                const codeRegex = /[A-Z0-9]{3,}-[A-Z0-9]{5,}-[A-Z0-9]{4,}/g;
-                const codes = html.match(codeRegex) || [];
-
-                // Try to resolve names near codes? 
-                // For V1, we will return raw codes found associated with the category.
-                if (codes.length > 0) {
-                    grabbedWeapons.push({
-                        category,
-                        codes: [...new Set(codes)] // dedupe
+                    // Filter for candidates (heuristic)
+                    const candidates = allDivs.filter(d => {
+                        const t = d.innerText;
+                        return t && t.length < 500 && (t.includes('#1') || t.includes('#2') || t.includes('#3') || t.includes('Meta'));
                     });
-                }
-            });
 
-            return grabbedWeapons;
-        });
+                    // Parse candidates
+                    candidates.forEach(card => {
+                        const fullText = card.innerText;
+                        const lines = fullText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                        let name = null;
+                        let code = null;
 
-        // Return structured data (mocked slightly if extraction is too raw, but aiming for real data)
-        // If "weapons" array is empty, we might need to adjust selector in verification phase.
-        return weapons;
+                        // Find Name (Usually uppercase, short, not a keyword)
+                        const nameLine = lines.find(l => l.length > 3 && l.length < 20 && !l.includes('Meta') && /^[A-Z0-9 -]+$/.test(l));
+                        if (nameLine) name = nameLine;
+
+                        // Find Code (Format: S07-...)
+                        // Sometimes it's explicit "Build Code: ..." or just the code
+                        const codeLine = lines.find(l => /([A-Z0-9]{3,}-){2,}/.test(l));
+                        if (codeLine) {
+                            const match = codeLine.match(/([A-Z0-9]{3,}-[A-Z0-9]{5,}-[A-Z0-9]{4,})/);
+                            if (match) code = match[0];
+                        }
+
+                        if (name && code) {
+                            // Cleaning the text to serve as "Intel" for the AI
+                            // We remove the exact code and name to reduce noise, but keep attachments/tags
+                            const rawDetails = fullText.replace(name, '').replace(code, '').replace(/\n+/g, ' ').slice(0, 150);
+
+                            // Check if already exists to avoid dupes from nested divs
+                            if (!extracted.find(e => e.name === name)) {
+                                extracted.push({
+                                    name: name,
+                                    type: 'Meta',
+                                    mode: mode,
+                                    build_code: code,
+                                    // Capture 'Close Range', 'Sniper Support', Attachment names... everything visible
+                                    details: rawDetails.trim()
+                                });
+                            }
+                        }
+                    });
+
+                    // Slice to top 5 per mode to keep it relevance
+                    return extracted.slice(0, 5);
+                }, source.mode);
+
+                allMeta.push(...weapons);
+
+            } catch (err) {
+                console.error(`[Scraper] Failed to scrape ${source.mode}: ${err.message}`);
+            }
+        }
+
+        return allMeta; // Returns flat array mixed modes
 
     } catch (error) {
         console.error('Error fetching Meta:', error);
@@ -98,25 +110,26 @@ async function checkUpdates() {
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
         const page = await browser.newPage();
-        await page.goto('https://www.callofduty.com/patchnotes', { waitUntil: 'domcontentloaded' });
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+        await page.goto('https://www.callofduty.com/patchnotes', { waitUntil: 'domcontentloaded', timeout: 90000 });
 
         const latestUpdate = await page.evaluate(() => {
-            // Find the first WZ card
+            // Find ALL links and search for "Warzone" related updates
             const links = Array.from(document.querySelectorAll('a'));
-            const wzLink = links.find(a => a.href.includes('/blog/warzone') || (a.innerText && a.innerText.includes('WZ')));
 
-            if (wzLink) {
-                // Navigate up to find the card container
-                const card = wzLink.closest('div.card') || wzLink.parentElement.parentElement;
-                // Extract title
-                const title = card.querySelector('h3, .card-title')?.innerText || "New Warzone Update";
-                // Extract URL (usually the link itself or a child)
-                const url = wzLink.href;
+            // Filter for recent patch notes
+            const updateLink = links.find(a => {
+                const text = (a.innerText || "").toLowerCase();
+                const href = (a.href || "").toLowerCase();
+                return (text.includes('season') || text.includes('update')) && href.includes('warzone');
+            });
 
+            if (updateLink) {
                 return {
-                    title,
-                    url,
-                    date: new Date().toISOString() // We use discovery time as proxy if date not parsable
+                    title: updateLink.innerText || "New Warzone Update",
+                    url: updateLink.href,
+                    date: new Date().toISOString()
                 };
             }
             return null;
@@ -140,12 +153,12 @@ async function getUpdateContent(url) {
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
         const page = await browser.newPage();
-        await page.goto(url, { waitUntil: 'networkidle2' });
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
 
         const content = await page.evaluate(() => {
-            // Extract main text content
-            const main = document.querySelector('main') || document.body;
-            return main.innerText.slice(0, 5000); // Limit size for AI
+            return document.body.innerText.slice(0, 5000);
         });
         return content;
     } catch (error) {

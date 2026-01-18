@@ -13,8 +13,6 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 class ShimonBrain {
 
-    // ✅ הוספנו chatId כדי לדעת לאן להחזיר תשובה/מדיה
-    // ✅ הוספנו skipPersistence כדי למנוע שמירה של משתמשים לא רשומים (כמו בטלגרם)
     async ask(userId, platform, userQuery, isAdmin = false, imageBuffer = null, chatId = null, skipPersistence = false) {
         try {
             // 1. הקשרים והיסטוריה
@@ -37,6 +35,14 @@ class ShimonBrain {
             // 3. הרכבת הפרומפט
             let dynamicSystemPrompt = config.SYSTEM_PROMPT;
 
+            // 🕵️ SPY MODE (Live Monitoring for Admin)
+            if (platform === 'discord' && !chatId) {
+                log(`🕵️ [SpyMode] User ${userId} says: "${userQuery}"`);
+            }
+            if (platform === 'whatsapp' && chatId && !chatId.endsWith('@g.us')) {
+                log(`🕵️ [SpyMode] WA User ${userId} says: "${userQuery}"`);
+            }
+
             // הזרקת הקשר זמן
             dynamicSystemPrompt += `\n# 📅 Context\nCurrent Time: ${new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' })}\n`;
 
@@ -45,7 +51,6 @@ class ShimonBrain {
                 const mvpDoc = await db.collection('system_metadata').doc('current_mvp').get();
                 if (mvpDoc.exists) {
                     const mvp = mvpDoc.data();
-                    // בדיקת תוקף (רק לשבוע הנוכחי)
                     const wonDate = new Date(mvp.wonAt || 0);
                     const now = new Date();
                     const daysDiff = (now - wonDate) / (1000 * 60 * 60 * 24);
@@ -96,13 +101,12 @@ class ShimonBrain {
                 for (const toolCall of msg.tool_calls) {
                     log(`🛠️ [Brain] Executing tool: ${toolCall.function.name}`);
 
-                    // ✅ מעבירים את ה-chatId לכלי כדי שידע לאן לשלוח מדיה
                     const result = await toolsManager.execute(
                         toolCall.function.name,
                         JSON.parse(toolCall.function.arguments),
                         userId,
                         chatId,
-                        imageBuffer // ✅ פיצ'ר קריטי: העברת התמונה לכלים (כמו זיהוי וורזון)
+                        imageBuffer
                     );
 
                     messages.push({
@@ -121,16 +125,18 @@ class ShimonBrain {
                 finalResponse = msg.content;
             }
 
-            // 6. שמירה (רק אם המשתמש רשום/מקושר)
+            // 6. שמירה
             if (!skipPersistence) {
                 memoryManager.addMessage(platform, userId, "user", userQuery || "[Media]");
                 memoryManager.addMessage(platform, userId, "assistant", finalResponse);
 
                 learningEngine.learnFromContext(userId, "User", platform, userQuery);
                 this.trackStats(userId, finalResponse?.length || 0);
-            } else {
-                // לזיכרון זמני (RAM) בלבד - אם המערכת תומכת בזה, או פשוט דילוג
-                // כרגע נדלג כדי לא לזהם את ה-DB
+            }
+
+            // 🕵️ SPY MODE - תשובות
+            if ((platform === 'discord' && !chatId) || (platform === 'whatsapp' && chatId && !chatId.endsWith('@g.us'))) {
+                log(`🕵️ [SpyMode] Shimon replied to ${userId}: "${finalResponse}"`);
             }
 
             return finalResponse;
@@ -141,9 +147,6 @@ class ShimonBrain {
         }
     }
 
-    /**
-     * ✅ מוח "שיפוט" - מחליט אם להתערב בשיחה שלא כוונה אליו ישירות
-     */
     async shouldReply(userId, text) {
         try {
             const prompt = `
@@ -166,19 +169,10 @@ class ShimonBrain {
             3. Short/Meaningless text (e.g., "lol", "k").
             
             Reply ONLY with "YES" or "NO".
-            
-            STRICT CRITERIA FOR INTERVENTION:
-            1. ONLY reply if the user is asking a clear Technical/Gaming question.
-            2. ONLY reply if the user made a factual error you must correct.
-            3. DO NOT reply to casual chat, rants (e.g. food, delivery apps), politics, or jokes.
-            4. DO NOT reply if the message is a reply to another human.
-            5. DO NOT reply unless you are 100% sure your input is needed.
-            
-            Double Check: Is this message specifically waiting for an AI expert? If not, say NO.
             `;
 
             const runner = await openai.chat.completions.create({
-                model: "gpt-4o-mini", // ✅ הכי זול והכי מהיר לשיפוט (יותר טוב מ-3.5)
+                model: "gpt-4o-mini",
                 messages: [{ role: "user", content: prompt }],
                 temperature: 0,
                 max_tokens: 5
@@ -188,7 +182,7 @@ class ShimonBrain {
             return decision.includes("YES");
 
         } catch (error) {
-            return false; // במקרה של שגיאה, עדיף לשתוק
+            return false;
         }
     }
 
@@ -202,10 +196,6 @@ class ShimonBrain {
         } catch (e) { }
     }
 
-    /**
-     * 🧠 מוח פנימי למשימות מערכת (כמו סיכום עדכונים)
-     * ללא היסטוריה, ללא קונטקסט משתמש.
-     */
     async generateInternal(prompt) {
         try {
             const runner = await openai.chat.completions.create({
@@ -220,21 +210,12 @@ class ShimonBrain {
         }
     }
 
-    /**
-     * ☠️ The Kill Switch ☠️ 
-     * חיסול ממוקד ע"י ה-MVP.
-     * @param {string} targetUserId - מי מחסלים?
-     * @param {string} platform - איפה (discord/whatsapp)
-     * @returns {Promise<string>} - נתיב לקובץ אודיו (TTS) עם ה-Roast
-     */
     async executeKillSwitch(targetUserId, platform) {
         try {
             log(`☠️ [Brain] KILL SWITCH ACTIVATED against ${targetUserId}`);
 
-            // 1. איסוף מודיעין על המטרה (Facts)
             const factsContext = await learningEngine.getUserProfile(targetUserId, platform);
 
-            // 2. בניית הפרומפט לחיסול
             const killPrompt = `
             You are Shimon, the ruthless enforcer.
             The MVP (The King) has ordered you to DESTROY this user: ${targetUserId}.
@@ -245,31 +226,24 @@ class ShimonBrain {
             MISSION:
             Generate a short, brutal, funny ROAST based on the facts above.
             If they play bad games? Mock them.
-            If they are poor (in game economy)? Laugh at them.
-            If you know nothing? Just call them a generic NPC.
             
             FORMAT:
             - Language: Hebrew (Slang, Aggressive).
-            - Length: Short paragraph (for TTS).
-            - Tone: Toxic, Funny, Assertive.
-            
-            OUTPUT ONLY THE RAW TEXT FOR TTS. NO MARKDOWN.
+            - Output: RAW TEXT only.
             `;
 
             const runner = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
                 messages: [{ role: "system", content: killPrompt }],
-                temperature: 1.0 // Maximum creativity/chaos
+                temperature: 1.0
             });
 
             const roastText = runner.choices[0].message.content;
-            log(`🔥 [KillSwitch] Roast generated: "${roastText}"`);
 
-            // 3. המרה לקול (TTS)
-            const { getTTS } = require('../../utils/tts');
-            const audioPath = await getTTS(roastText);
+            const voiceHandler = require('./voice');
+            const audioBuffer = await voiceHandler.speak(roastText);
 
-            return audioPath;
+            return audioBuffer;
 
         } catch (error) {
             log(`❌ [KillSwitch] Failed: ${error.message}`);

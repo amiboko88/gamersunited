@@ -14,11 +14,27 @@ class ContextManager {
             if (intelDoc.exists) {
                 const data = intelDoc.data();
                 const lastPatch = data.latest_patch_title || "Unknown";
-                const metaList = data.meta_weapons ? data.meta_weapons.map(w => {
-                    // Handle scraped structure variations
-                    if (w.category && w.codes) return `${w.category}: [${w.codes.join(', ')}]`;
-                    return `${w.name} (${w.type}): ${w.build_code || 'N/A'}`;
-                }).slice(0, 10).join('\n') : "No data available.";
+                // Group by Mode
+                const grouped = {};
+                if (data.meta_weapons && Array.isArray(data.meta_weapons)) {
+                    data.meta_weapons.forEach(w => {
+                        if (typeof w === 'string') {
+                            if (!grouped['General']) grouped['General'] = [];
+                            grouped['General'].push(w);
+                        } else {
+                            const mode = w.mode || 'General';
+                            if (!grouped[mode]) grouped[mode] = [];
+                            // Format: Name [Code] (Attachments/Info...)
+                            grouped[mode].push(`- ${w.name} [${w.build_code || 'No Code'}]\n  Stats/Mods: ${w.details || 'N/A'}`);
+                        }
+                    });
+                }
+
+                let metaList = "";
+                for (const [mode, weapons] of Object.entries(grouped)) {
+                    metaList += `\n🎯 **${mode} META:**\n${weapons.join('\n')}\n`;
+                }
+                if (!metaList) metaList = "No data available.";
 
                 context += `
                 ### 🔫 Warzone Live Intel (USE THIS!):

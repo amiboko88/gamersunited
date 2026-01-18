@@ -2,7 +2,10 @@ const scraper = require('./scraper');
 const admin = require('firebase-admin');
 const db = admin.firestore();
 const brain = require('../ai/brain');
-const { getTTS } = require('../../utils/tts');
+const voiceManager = require('../ai/voice');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 const COLLECTION_NAME = 'system_data';
 const DOC_ID = 'warzone_intel';
@@ -10,7 +13,7 @@ const DOC_ID = 'warzone_intel';
 let discordClientRef = null;
 let whatsappSockRef = null;
 let telegramBotRef = null;
-let mainGroupId = process.env.WHATSAPP_MAIN_GROUP_ID; // Assuming env var
+let mainGroupId = process.env.WHATSAPP_MAIN_GROUP_ID;
 
 async function initIntel(discordClient, whatsappSock, telegramBot) {
     console.log('[Intel] Initializing Warzone Intel System...');
@@ -23,7 +26,7 @@ async function initIntel(discordClient, whatsappSock, telegramBot) {
     await syncMeta();
     await syncUpdates();
 
-    // Schedule (Simple interval for MVP, could use node-cron)
+    // Schedule
     setInterval(async () => {
         await syncUpdates();
     }, 1000 * 60 * 60 * 4); // Every 4 hours
@@ -63,12 +66,11 @@ async function syncUpdates() {
             // 2. Summarize & Translate via AI
             const summary = await summarizeUpdate(latest.title, content);
 
-            // 2.5 Check Nvidia Drivers (Smart Context)
+            // 2.5 Check Nvidia Drivers
             let gpuNote = "";
             try {
                 const gpuInfo = await scraper.checkNvidiaDrivers();
                 if (gpuInfo) {
-                    // Check if driver is fresh (last 3 days)
                     const driverDate = new Date(gpuInfo.date);
                     const daysOld = (new Date() - driverDate) / (1000 * 60 * 60 * 24);
                     if (daysOld < 5) {
@@ -84,9 +86,15 @@ async function syncUpdates() {
             // 2.6 Generate Audio Briefing (The "Lazy" Feature)
             let audioPath = null;
             try {
-                // Shorten text for TTS to avoid errors/cost
-                const ttsText = `עדכון חדש בוורזון! ${latest.title}. ${fullSummary.substring(0, 200)}... יאללה ללובי.`;
-                audioPath = await getTTS(ttsText);
+                const ttsText = `עדכון חדש בוורזון! ${latest.title}. ${summary.substring(0, 250)}... יאללה ללובי.`;
+                const audioBuffer = await voiceManager.speak(ttsText);
+
+                if (audioBuffer) {
+                    // Save to temp file needed for WA socket usually (or pass buffer directly if supported)
+                    // Baileys supports Buffer directly for audio/video but safer to verify or use wrapper.
+                    // Let's assume Baileys accepts Buffer in .audio field.
+                    audioPath = audioBuffer;
+                }
             } catch (e) { console.error('[Intel] TTS Gen Failed:', e); }
 
             // 3. Save
@@ -106,7 +114,7 @@ async function syncUpdates() {
     }
 }
 
-async function broadcastUpdate(summary, url, audioPath = null) {
+async function broadcastUpdate(summary, url, audioBuffer = null) {
     const finalMsg = `📢 **עדכון וורזון חדש - דיווח שמעון!** 📢\n\n${summary}\n\n🔗 לינק מלא: ${url}`;
 
     // WhatsApp
@@ -114,12 +122,13 @@ async function broadcastUpdate(summary, url, audioPath = null) {
         try {
             await whatsappSockRef.sendMessage(mainGroupId, { text: finalMsg });
 
-            if (audioPath) {
+            if (audioBuffer) {
                 await whatsappSockRef.sendMessage(mainGroupId, {
-                    audio: { url: audioPath },
+                    audio: audioBuffer, // Passing Buffer directly
                     mimetype: 'audio/mp4',
                     ptt: true // Send as Voice Note
                 });
+                // No text pointer needed, Voice Note appears naturally below
             }
         } catch (e) { console.error('[Intel] WA Broadcast Error:', e); }
     }

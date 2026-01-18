@@ -331,7 +331,7 @@ class DashboardHandler {
 
     // --- Telegram Linking ---
     async showTelegramMatchList(interaction) {
-        await interaction.deferUpdate();
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
         const db = require('../../utils/firebase');
         const doc = await db.collection('system_metadata').doc('telegram_orphans').get();
         const tgOrphans = doc.exists ? doc.data().list || {} : {};

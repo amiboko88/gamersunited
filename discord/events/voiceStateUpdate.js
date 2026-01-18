@@ -43,29 +43,34 @@ module.exports = {
             // --- כניסה לערוץ (Join) ---
             if (newChannel && !oldChannel) {
                 joinTimestamps.set(userId, now);
-                
+
                 // עדכון "נראה לאחרונה" כבר בכניסה
                 await userManager.updateLastActive(userId);
-                
+
                 // כרוז BF6 (רק בכניסה/מעבר לחדר הספציפי)
                 await logistics.handleBF6Announcer(member, newChannel.id);
+
+                // 👑 כרוז MVP (לכל חדר)
+                await logistics.handleMVPEntrance(member, newChannel.id);
             }
             // טיפול במעבר ערוץ (לצורך BF6)
             else if (newChannel && oldChannel && newChannel.id !== oldChannel.id) {
                 await logistics.handleBF6Announcer(member, newChannel.id);
+                // 👑 כרוז MVP (גם במעבר חדר)
+                await logistics.handleMVPEntrance(member, newChannel.id);
             }
 
             // --- יציאה מערוץ (Leave) ---
             if (oldChannel && !newChannel) {
                 const joinedAt = joinTimestamps.get(userId);
-                
+
                 if (joinedAt) {
                     const durationMs = now - joinedAt;
-                    
+
                     // חישובים רק אם היה מחובר מעל דקה
                     if (durationMs > 60000) {
                         const minutes = Math.round(durationMs / 60000);
-                        
+
                         log(`⏱️ [Voice] ${member.displayName} היה מחובר ${minutes} דקות.`);
 
                         // א. מתן XP על זמן שיחה
@@ -86,7 +91,7 @@ module.exports = {
                             await gameStats.updateGameStats(userId, activity.name, minutes);
                         }
                     }
-                    
+
                     // ניקוי הטיימר
                     joinTimestamps.delete(userId);
                 }

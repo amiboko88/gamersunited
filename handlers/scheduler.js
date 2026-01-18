@@ -27,8 +27,17 @@ module.exports = {
         // --- 🏆 איפוס טבלה שבועית (מוצ"ש ב-21:05) ---
         // מבצע Snapshot מיד לאחר פרסום הלידרבורד כדי להתחיל לספור שבוע חדש
         cron.schedule('5 21 * * 6', async () => {
-            log('[Scheduler] 🔄 מבצע איפוס שבועי (Snapshot) לטבלה...');
             await rankingCore.resetWeeklyStats();
+        }, { timezone: "Asia/Jerusalem" });
+
+        // --- 👑 הכרזת MVP שבועית (ראשון ב-20:00) ---
+        cron.schedule('0 20 * * 0', async () => {
+            log('[Scheduler] 👑 מכין את הכרזת ה-MVP השבועית...');
+            const rankingBroacaster = require('./ranking/broadcaster');
+            const rankingManager = require('./ranking/manager');
+            // נשתמש בפונקציה ייעודית במנהל (שנבנה תכף) או נקרא ישירות
+            // העדיפות היא לפונקציה מסודרת ב-Manager שמטפלת בהכל
+            await rankingManager.announceMVP();
         }, { timezone: "Asia/Jerusalem" });
 
         // --- 💀 דוח הרחקה חודשי (1 לחודש ב-12:00) ---
@@ -185,6 +194,12 @@ module.exports = {
             } catch (e) {
                 log(`❌ [Wheel] Error: ${e.message}`);
             }
+        }, { timezone: "Asia/Jerusalem" });
+
+        // --- ✨ Telegram Weekly Spark (חמישי ב-19:00) ---
+        cron.schedule('0 19 * * 4', async () => {
+            const campaign = require('../telegram/campaign');
+            await campaign.runWeeklySpark();
         }, { timezone: "Asia/Jerusalem" });
 
         log('[Scheduler] ✅ כל המשימות תוזמנו בהצלחה.');

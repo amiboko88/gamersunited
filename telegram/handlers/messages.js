@@ -133,6 +133,11 @@ module.exports = (bot) => {
         const text = ctx.message.text;
         const telegramId = ctx.from.id.toString();
 
+        // 1. בדיקת תהליך זרימה (Flow) - סנכרון וכו'
+        const flowHandler = require('./flow');
+        const handled = await flowHandler.handleMessage(ctx);
+        if (handled) return; // אם טופל ע"י הפלואו, נעצור כאן
+
         // 🕵️ בדיקה: האם זו הודעה מועברת בפרטי? (Manual Scan)
         if (ctx.chat.type === 'private' && (ctx.message.forward_date || ctx.message.forward_from)) {
             if (ctx.message.forward_from) {

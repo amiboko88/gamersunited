@@ -87,4 +87,16 @@ module.exports = (bot) => {
             ctx.reply("שגיאה בשליפת פרופיל.");
         }
     });
+    // --- 🔄 Sync Command ---
+    const flowHandler = require('./flow');
+    bot.command("start", async (ctx) => {
+        // תמיכה ב-Deep Linking: t.me/bot?start=sync
+        if (ctx.match === "sync") {
+            await flowHandler.handleSyncCommand(ctx);
+        } else {
+            ctx.reply("ברוכים הבאים ל-Gamers United! 🎮");
+        }
+    });
+
+    bot.command("sync", flowHandler.handleSyncCommand);
 };

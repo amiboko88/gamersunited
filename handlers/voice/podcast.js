@@ -10,6 +10,7 @@ const MIN_USERS = 3;
 const COOLDOWN = 30 * 60 * 1000;
 let lastPodcastTime = 0;
 let activeChannelId = null;
+let isStabilizing = false; // 🔒 מנעול לטיפול ב-Race Condition
 
 class PodcastManager {
 
@@ -41,6 +42,10 @@ class PodcastManager {
         const requiredUsers = isTestMode ? 1 : MIN_USERS;
 
         if (humans.length >= requiredUsers) {
+            // 🔒 בדיקת מנעול - אם כבר מייצבים, לא להתחיל שוב
+            if (isStabilizing) return;
+
+            isStabilizing = true;
             log(`[Podcast] זיהיתי התקהלות... ממתין לכרוז (Stabilizing)...`);
 
             // השהיה קצרה כדי לתת לכרוז לסיים או להתייצב
@@ -52,10 +57,12 @@ class PodcastManager {
                 const currentHumans = currentChannel.members.filter(m => !m.user.bot).size;
                 if (currentHumans < requiredUsers) {
                     log('[Podcast] ההתקהלות התפזרה בזמן ההמתנה. מבטל.');
+                    isStabilizing = false; // 🔓 שחרור מנעול
                     return;
                 }
 
                 log(`[Podcast] מתחילים!`);
+                isStabilizing = false; // 🔓 שחרור מנעול - מתחילים בניגון
                 lastPodcastTime = Date.now();
                 activeChannelId = channel.id;
 
@@ -106,10 +113,18 @@ class PodcastManager {
             });
 
             const rawScript = completion.choices[0].message.content;
+            log(`📝 [Podcast Debug] Raw Script from GPT:\n${rawScript}`); // 🐛 Debug Log
+
             const script = rawScript.split('\n').filter(l => l.includes(':')).map(line => {
                 const [speaker, ...textParts] = line.split(':');
                 return { speaker: speaker.trim().toLowerCase(), text: textParts.join(':').trim() };
             });
+
+            log(`📝 [Podcast Debug] Parsed Script Length: ${script.length}`); // 🐛 Debug Log
+            if (script.length === 0) {
+                log('❌ [Podcast] Error: Script is empty after parsing!');
+                return;
+            }
 
             // --- 🎤 ElevenLabs Generation Loop ---
             const voiceManager = require('../ai/voice'); // ✅ שימוש במנהל הראשי והמתוקן
@@ -119,7 +134,7 @@ class PodcastManager {
             // הגדרת קולות (IDs)
             const VOICES = {
                 shimon: undefined, // ייקח את הדיפולט מ-voice.js
-                shirly: 'pBZVCk298iJlHAcHQwLr' // האישה עם הקול היפה (User Request)
+                shirly: 'BZgkqPqms7Kj9ulSkVzn' // האישה עם הקול היפה (User Request)
             };
 
             const audioFiles = [];

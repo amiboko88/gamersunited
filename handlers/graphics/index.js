@@ -5,5 +5,6 @@ module.exports = {
     playlist: require('./playlist'),
     leaderboard: require('./leaderboard'),
     birthday: require('./birthday'),
-    voice: require('./voice') // ✅ החדש
+    voice: require('./voice'),
+    mvp: require('./mvp') // ✅ החדש
 };

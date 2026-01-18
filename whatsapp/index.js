@@ -107,12 +107,41 @@ async function connectToWhatsApp() {
                 }
 
                 const userDoc = await userRef.get();
-                if (!userDoc.exists) {
-                    await matchmaker.registerOrphan(realSenderPhone, pushName, text);
-                    return;
+                // 3. משתמש מאומת - ממשיכים
+
+                // --- ☠️ Kill Switch Trigger (WhatsApp) ---
+                const isQuote = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+                if (isQuote && (text.includes('@שמעון') || text.includes('שמעון'))) {
+                    const db = require('../utils/firebase');
+                    const mvpDoc = await db.collection('system_metadata').doc('current_mvp').get();
+
+                    if (mvpDoc.exists) {
+                        const mvpId = mvpDoc.data().id; // מכיל את מספר הטלפון
+                        const cleanSender = realSenderPhone.replace(/\D/g, '');
+                        const cleanMvp = mvpId.replace(/\D/g, '');
+
+                        if (cleanSender === cleanMvp) {
+                            const targetId = msg.message.extendedTextMessage.contextInfo.participant;
+                            if (targetId) {
+                                const cleanTarget = getRealPhoneNumber(targetId) || targetId.replace(/\D/g, '');
+                                console.log(`☠️ [WhatsApp] Kill Switch Triggered by MVP against ${cleanTarget}`);
+
+                                const brain = require('../handlers/ai/brain');
+                                const audioPath = await brain.executeKillSwitch(cleanTarget, 'whatsapp');
+
+                                if (audioPath) {
+                                    await sock.sendMessage(msg.key.remoteJid, {
+                                        audio: { url: audioPath },
+                                        mimetype: 'audio/mp4',
+                                        ptt: true
+                                    }, { quoted: msg });
+                                    return;
+                                }
+                            }
+                        }
+                    }
                 }
 
-                // 3. משתמש מאומת - ממשיכים
                 if (coreLogic && coreLogic.handleMessageLogic) {
                     await coreLogic.handleMessageLogic(sock, msg, text);
                 }
@@ -145,6 +174,21 @@ async function sendToMainGroup(text, mentions = [], imageBuffer = null) {
     } catch (err) { console.error('❌ [WhatsApp Send Error]:', err.message); }
 }
 
+async function sendDirectMessage(phone, text) {
+    const sock = getSocket();
+    if (!sock) {
+        console.error('❌ [WhatsApp] Cannot send DM - Socket not connected');
+        return;
+    }
+    try {
+        const jid = `${phone.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
+        await sock.sendMessage(jid, { text });
+        console.log(`📩 [WhatsApp] DM sent to ${phone}`);
+    } catch (err) {
+        console.error(`❌ [WhatsApp DM Error] Failed to send to ${phone}:`, err.message);
+    }
+}
+
 async function disconnectWhatsApp() {
     const sock = getSocket();
     if (sock) {
@@ -161,4 +205,4 @@ async function disconnectWhatsApp() {
 function getWhatsAppSock() { return getSocket(); }
 function getResolver() { return getRealPhoneNumber; }
 
-module.exports = { connectToWhatsApp, sendToMainGroup, disconnectWhatsApp, getWhatsAppSock, getResolver };
+module.exports = { connectToWhatsApp, sendToMainGroup, sendDirectMessage, disconnectWhatsApp, getWhatsAppSock, getResolver };

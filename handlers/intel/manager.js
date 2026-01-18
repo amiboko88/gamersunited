@@ -57,7 +57,17 @@ async function syncUpdates() {
         const doc = await db.collection(COLLECTION_NAME).doc(DOC_ID).get();
         const currentData = doc.exists ? doc.data() : {};
 
+        // 🛡️ Double Check: URL mismatch AND Date mismatch
+        // Prevents re-firing if URL changes slightly but date is identical (unlikely but safe)
         if (currentData.latest_patch_url !== latest.url) {
+
+            // Extra Safety: If we already have this DATE stored, skip it.
+            // (Unless it's a "Hotfix" on the same day? Usually they update the article)
+            if (currentData.latest_patch_date === latest.date) {
+                console.log(`[Intel] Update has new URL but same date (${latest.date}). Skipping to avoid spam.`);
+                return;
+            }
+
             console.log('[Intel] New update found!', latest.title);
 
             // 1. Fetch content
@@ -101,6 +111,7 @@ async function syncUpdates() {
             await db.collection(COLLECTION_NAME).doc(DOC_ID).set({
                 latest_patch_url: latest.url,
                 latest_patch_title: latest.title,
+                latest_patch_date: latest.date, // ✅ Saving Date
                 latest_patch_summary: fullSummary,
                 update_last_checked: admin.firestore.FieldValue.serverTimestamp()
             }, { merge: true });

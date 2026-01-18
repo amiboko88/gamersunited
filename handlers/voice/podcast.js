@@ -125,15 +125,16 @@ class PodcastManager {
                 return;
             }
 
-            // --- 🎤 ElevenLabs Generation Loop ---
-            const voiceManager = require('../ai/voice'); // ✅ שימוש במנהל הראשי והמתוקן
+            // --- 🎤 TTS Generation Loop (OpenAI TTS) ---
+            // User Request: Use OpenAI for Discord if ElevenLabs V3 fails/struggles.
+            const ttsEngine = require('./openaiTTS');
             const fs = require('fs');
             const path = require('path');
 
-            // הגדרת קולות (IDs)
+            // Define OpenAI Voices
             const VOICES = {
-                shimon: undefined, // ייקח את הדיפולט מ-voice.js
-                shirly: 'BZgkqPqms7Kj9ulSkVzn' // האישה עם הקול היפה (User Request)
+                shimon: 'onyx', // Deep male
+                shirly: 'nova'  // Energetic female
             };
 
             const audioFiles = [];
@@ -142,8 +143,8 @@ class PodcastManager {
                 const isShirly = line.speaker.includes('shirly') || line.speaker.includes('שירלי');
                 const targetVoice = isShirly ? VOICES.shirly : VOICES.shimon;
 
-                log(`[Podcast] מייצר שמע (V3) עבור ${line.speaker}...`);
-                const buffer = await voiceManager.speak(line.text, targetVoice);
+                log(`[Podcast] מייצר שמע (OpenAI) עבור ${line.speaker}...`);
+                const buffer = await ttsEngine.speak(line.text, targetVoice);
 
                 if (buffer) {
                     const tempDir = path.join(__dirname, '../../temp_audio');

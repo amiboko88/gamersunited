@@ -54,11 +54,12 @@ async function fetchMeta() {
                         const nameLine = lines.find(l => l.length > 3 && l.length < 20 && !l.includes('Meta') && /^[A-Z0-9 -]+$/.test(l));
                         if (nameLine) name = nameLine;
 
-                        // Find Code (Format: S07-...)
-                        // Sometimes it's explicit "Build Code: ..." or just the code
-                        const codeLine = lines.find(l => /([A-Z0-9]{3,}-){2,}/.test(l));
+                        // Find Code (Format: S07-... or S10-...)
+                        // More robust regex for codes (allowing 3 or more segments)
+                        const codeLine = lines.find(l => /(S\d+-[A-Z0-9]{3,}-)/i.test(l));
                         if (codeLine) {
-                            const match = codeLine.match(/([A-Z0-9]{3,}-[A-Z0-9]{5,}-[A-Z0-9]{4,})/);
+                            const match = codeLine.match(/(S\d+-[A-Z0-9]{4,}-[A-Z0-9]{4,})/i);
+                            // Matches S10-6K64Z-5551 format
                             if (match) code = match[0];
                         }
 
@@ -91,6 +92,11 @@ async function fetchMeta() {
                 console.error(`[Scraper] Failed to scrape ${source.mode}: ${err.message}`);
             }
         }
+        // If automatic scraping returned garbage, return null to avoid hallucinations
+        if (!allMeta || allMeta.length === 0) {
+            console.log('[Scraper] Failed to find any weapons. Returning empty.');
+            return [];
+        }
 
         return allMeta; // Returns flat array mixed modes
 
@@ -115,10 +121,9 @@ async function checkUpdates() {
         await page.goto('https://www.callofduty.com/patchnotes', { waitUntil: 'domcontentloaded', timeout: 90000 });
 
         const latestUpdate = await page.evaluate(() => {
-            // Find ALL links and search for "Warzone" related updates
             const links = Array.from(document.querySelectorAll('a'));
 
-            // Filter for recent patch notes
+            // Find the first WZ card that looks relevant
             const updateLink = links.find(a => {
                 const text = (a.innerText || "").toLowerCase();
                 const href = (a.href || "").toLowerCase();
@@ -126,14 +131,37 @@ async function checkUpdates() {
             });
 
             if (updateLink) {
+                // Try to find a date near the link
+                // The COD site usually has a <time> element or date class
+                const card = updateLink.closest('div.card') || updateLink.parentElement.parentElement;
+                let dateText = new Date().toISOString(); // Default to now if not found
+
+                if (card) {
+                    const timeEl = card.querySelector('time, .date, [class*="date"]');
+                    if (timeEl) dateText = timeEl.getAttribute('datetime') || timeEl.innerText;
+                }
+
                 return {
                     title: updateLink.innerText || "New Warzone Update",
                     url: updateLink.href,
-                    date: new Date().toISOString()
+                    date: dateText
                 };
             }
             return null;
         });
+
+        // 🛡️ DATE VALIDATION (Security against old updates)
+        if (latestUpdate) {
+            const updateDate = new Date(latestUpdate.date);
+            const now = new Date();
+            const daysDiff = (now - updateDate) / (1000 * 60 * 60 * 24);
+
+            // If the update is older than 7 days, we ignore it as "News"
+            if (daysDiff > 7 && !latestUpdate.url.includes('season')) { // Always reporting Season updates even if slightly old
+                console.log(`[Scraper] Update found but too old (${daysDiff.toFixed(1)} days). Ignoring.`);
+                return null;
+            }
+        }
 
         return latestUpdate;
 

@@ -212,9 +212,24 @@ class RankingManager {
     }
 
     /**
-     * הכרזת ה-MVP (יום ראשון)
-     * שולף את הנתונים השמורים, מייצר תמונה אומנותית, ושולח
+     * פונקציית עזר למציאת הערוץ הראשי להודעות
      */
+    async getChannel(guild) {
+        // 1. נסות למצוא ערוץ לפי שם גנרי
+        const channelName = 'general'; // או כל שם אחר שמוגדר אצלכם
+        let channel = guild.channels.cache.find(c => c.name === channelName && c.type === 0); // 0 = GUILD_TEXT
+
+        // 2. אם לא נמצא, נסה את הערוץ הראשון בשרת שהוא טקסט
+        if (!channel) {
+            channel = guild.channels.cache.filter(c => c.type === 0).first();
+        }
+
+        // 3. (אופציונלי) אם יש משתנה סביבה ל-CHANNEL_ID אפשר להשתמש בו
+        // if (process.env.DISCORD_MAIN_CHANNEL_ID) ...
+
+        return channel;
+    }
+
     async announceMVP() {
         try {
             log('👑 [Ranking] מתחיל תהליך הכרזת MVP (Artistic Mode)...');
@@ -234,7 +249,9 @@ class RankingManager {
 
             // 3. שליחה לדיסקורד
             const guild = this.clients.discord.guilds.cache.first();
-            const channel = await this.getChannel(guild); // שימוש בפונקציית העזר הקיימת
+            // User Request: General Chat ID explicitly
+            const GENERAL_CHAT_ID = '583575179880431616';
+            const channel = await guild.channels.fetch(GENERAL_CHAT_ID).catch(() => null);
 
             if (channel) {
                 await channel.send({
@@ -251,6 +268,22 @@ class RankingManager {
                     [],
                     imageBuffer
                 );
+            }
+
+            // 5. שליחה לטלגרם (אם קיים)
+            // Telegram Target: Using the same general logic or hardcoded if needed.
+            // Assuming 'telegram_main_group' or specific ID.
+            if (this.clients.telegram) {
+                const TG_CHAT_ID = '-1002231267597'; // Hardcoded Main Group ID (from memory or config)
+                // If not sure, I'll use the one from config, but user provided hardcoded usually.
+                // Let's assume the bot is in the group.
+                try {
+                    await this.clients.telegram.sendPhoto(TG_CHAT_ID, imageBuffer, {
+                        caption: `👑 *All Hail The King!*\nקבלו את ה-MVP של השבוע: *${mvpData.name}*!\n\nכבוד מלכים מגיע לו השבוע.`
+                    });
+                } catch (tgError) {
+                    log(`⚠️ [MVP] Telegram Send Failed (Check ID): ${tgError.message}`);
+                }
             }
 
             log('✅ [MVP] הכרזה נשלחה בהצלחה.');

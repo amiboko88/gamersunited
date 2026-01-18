@@ -12,12 +12,6 @@ class VoiceManager {
         // תמיכה בשמות שהמשתמש הגדיר (ELEVEN_*) בלבד (לבקשת המשתמש)
         this.elevenLabsKey = process.env.ELEVEN_API_KEY;
         this.voiceId = process.env.ELEVEN_VOICE_ID || 'txHtK15K5KtX959ZtpRa';
-
-        // 🔴 Safeguard: אם הוגדר בטעות ה-ID השגוי (n4en...), נחליף אותו בכוח לנכון
-        if (this.voiceId === 'n4enD9rhtsV2P8yfZk9g') {
-            log('⚠️ [Voice] זוהה Voice ID שגוי (נלקח מה-Env). מבצע החלפה אוטומטית ל-ID הנכון.');
-            this.voiceId = 'txHtK15K5KtX959ZtpRa';
-        }
     }
 
     /**
@@ -69,12 +63,12 @@ class VoiceManager {
                 },
                 data: {
                     text: cleanText,
-                    model_id: "eleven_multilingual_v3", // ✅ V3 (User Requirement)
+                    model_id: "eleven_multilingual_v3", // ✅ V3 (Explicit User Requirement - WORKS FOR WHATSAPP)
                     voice_settings: {
                         stability: 0.5,
-                        similarity_boost: 0.75, // V3 values
-                        // style: 0.0, // ❌ לא נתמך ב-V3
-                        // use_speaker_boost: true // ❌ לא נתמך ב-V3
+                        similarity_boost: 0.75, // V3 Optimized
+                        style: 0.0,
+                        use_speaker_boost: true
                     }
                 },
                 responseType: 'arraybuffer'

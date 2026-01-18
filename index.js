@@ -13,6 +13,7 @@ const scheduler = require('./handlers/scheduler'); // ✅ ייבוא הסקג'ו
 const birthdayManager = require('./handlers/birthday/manager');
 const fifoCleaner = require('./handlers/fifo/cleaner');
 const statusSystem = require('./handlers/system/statusRotator');
+const intelManager = require('./handlers/intel/manager');
 
 process.on('unhandledRejection', (reason) => {
     if (reason?.toString().includes('Conflict') || reason?.toString().includes('409') || reason?.toString().includes('440')) return;
@@ -102,6 +103,7 @@ process.once('SIGINT', () => gracefulShutdown('SIGINT'));
         if (birthdayManager) birthdayManager.init(discordClient, getWhatsAppSock(), process.env.WHATSAPP_MAIN_GROUP_ID, getBot());
         if (fifoCleaner) fifoCleaner.startAutoClean(discordClient);
         if (statusSystem) statusSystem.start(discordClient);
+        if (intelManager) intelManager.initIntel(discordClient, getWhatsAppSock(), getBot());
 
     } catch (error) {
         console.error('🔥 [System] Fatal Start Error:', error);

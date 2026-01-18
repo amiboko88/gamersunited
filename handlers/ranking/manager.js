@@ -34,7 +34,22 @@ class RankingManager {
             timezone: "Asia/Jerusalem"
         });
 
+
         log('[RankingManager] ✅ מודול דירוג אוטומטי נטען (מוצ"ש 20:00).');
+
+        // בדיקה חד פעמית: אם אין MVP שמור, ננסה לשחזר אותו (למקרה של שדרוג קוד)
+        this.checks(discordClient);
+    }
+
+    async checks(client) {
+        // המתנה שהבוט יעלה
+        setTimeout(async () => {
+            const doc = await db.collection('system_metadata').doc('current_mvp').get();
+            if (!doc.exists) {
+                log('⚠️ [Manager] לא זוהה MVP שמור (עקב שדרוג). מבצע שחזור...');
+                await this.seedCurrentMVP();
+            }
+        }, 10000);
     }
 
     /**
@@ -242,6 +257,41 @@ class RankingManager {
 
         } catch (e) {
             console.error('[Ranking] MVP Announce Error:', e);
+        }
+    }
+
+    /**
+     * 🛠️ כלי חירום למעבר גרסה
+     * מאכלס ידנית את ה-MVP הנוכחי על בסיס נתונים מצטברים (כי השבוע אופס)
+     * יש להריץ את זה פעם אחת ידנית מדיסקורד/קונסול
+     */
+    async seedCurrentMVP() {
+        try {
+            log('🛠️ [Ranking] מפעיל אכלוס ידני של MVP (Seed)...');
+
+            // שימוש ב-core כדי לשלוף לידרבורד מצטבר (Lifetime)
+            const leaders = await rankingCore.getWeeklyLeaderboard(1, true); // true = forceLifetime
+
+            if (!leaders || leaders.length === 0) {
+                log('❌ [Seed] לא נמצאו משתמשים.');
+                return;
+            }
+
+            const winner = leaders[0];
+
+            await db.collection('system_metadata').doc('current_mvp').set({
+                id: winner.id,
+                name: winner.name,
+                avatar: winner.avatar,
+                stats: winner.stats,
+                score: winner.score,
+                wonAt: new Date().toISOString() // כאילו זכה עכשיו
+            });
+
+            log(`✅ [Seed] הוזרק MVP ידני: ${winner.name} (ID: ${winner.id})`);
+
+        } catch (e) {
+            console.error('[Seed] Error:', e);
         }
     }
 }

@@ -1,16 +1,50 @@
 // 📁 handlers/ai/context.js
 const { getUserRef } = require('../../utils/userUtils');
+const db = require('../../utils/firebase');
 const dayjs = require('dayjs');
 
 class ContextManager {
 
     async buildContext(userId, platform) {
+        let context = `\n# 🌍 Real-World Context\n`;
+
+        // 1. Fetch Warzone Intel (Cached/Live)
+        try {
+            const intelDoc = await db.collection('system_data').doc('warzone_intel').get();
+            if (intelDoc.exists) {
+                const data = intelDoc.data();
+                const lastPatch = data.latest_patch_title || "Unknown";
+                const metaList = data.meta_weapons ? data.meta_weapons.map(w => {
+                    // Handle scraped structure variations
+                    if (w.category && w.codes) return `${w.category}: [${w.codes.join(', ')}]`;
+                    return `${w.name} (${w.type}): ${w.build_code || 'N/A'}`;
+                }).slice(0, 10).join('\n') : "No data available.";
+
+                context += `
+                ### 🔫 Warzone Live Intel (USE THIS!):
+                - **Latest Update:** ${lastPatch} (Check URL: ${data.latest_patch_url})
+                - **Current Meta Weapons & Codes:**
+                ${metaList}
+                
+                (If user asks for a loadout, GIVE THEM THE CODE).
+                `;
+            }
+        } catch (e) {
+            console.error('Error fetching intel context:', e);
+        }
+
+        // 2. User Specific Context
+        context += `\n### 👤 User Info (${platform}):\n`;
+
         try {
             const userRef = await getUserRef(userId, platform);
             const doc = await userRef.get();
 
             // טיפול במשתמש חדש לגמרי
-            if (!doc.exists) return `[SYSTEM INFO] User Status: NEW (Stranger). Treat with suspicion.`;
+            if (!doc.exists) {
+                context += `[SYSTEM INFO] User Status: NEW (Stranger). Treat with suspicion.`;
+                return context;
+            }
 
             const data = doc.data();
             const identity = data.identity || {};

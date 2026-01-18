@@ -83,33 +83,32 @@ class PodcastManager {
             const facts = userData?.brain?.facts?.map(f => f.content) || [];
 
             // --- 🧠 OpenAI Script Generation ---
-            // --- 🧠 OpenAI Script Generation ---
             const prompt = `
-            You are writing an EXTREMELY TOXIC, RUDE, and VULGAR podcast intro for "Shimon" and his sidekick "Shirly".
-            The victim is: ${member.displayName}.
-            
-            DIRTY SECRETS (USE THESE TO HURT HIM):
-            ${facts.length > 0 ? facts.join('\n') : "He has no life and no friends."}
-            
-            PAST HUMILIATIONS:
-            ${roasts.length > 0 ? roasts.join('\n') : "He is boring as hell."}
-            
-            INSTRUCTIONS:
-            1. Language: HEBREW ONLY. Street slang, Arsi, heavy cursing.
-            2. Shimon Persona: Aggressive, disgusting, bullying, uses words like "Zain", "Manayak", "Efes", "Ben zona".
-            3. Shirly Persona: Mean girl, condescending, laughs AT the victim, backs up Shimon's nastiness.
-            4. GOAL: Destroy the victim's ego. Use the facts above specifically. If a fact says "he loves pizza", call him a "fat pig who eats pizza all day".
-            5. Format:
-            shimon: [Toxic opening]
-            shirly: [Mean comment + Fact usage]
-            shimon: [Final devastating insult]
-            
-            Keep it strictly 3-4 lines. Maximum damage.
+            Generate a short, funny, and stinging "Roast" script in HEBREW for two fictional characters:
+            1. Shimon: An aggressive Israeli "Ars" (street tough guy), uses heavy slang.
+            2. Shirly: His cynical, mean female sidekick.
+
+            Target: ${member.displayName}
+
+            Material to use (incorporate these into the roast):
+            ${facts.length > 0 ? facts.join('\n') : "He is boring and generic."}
+            ${roasts.length > 0 ? roasts.join('\n') : ""}
+
+            Format:
+            shimon: [Opening roast line]
+            shirly: [Mean comment using the material above]
+            shimon: [Final punchline]
+
+            Rules:
+            - HEBREW ONLY.
+            - Style: Israeli Stand-up Roast / "Eretz Nehederet" sketch.
+            - Be harsh but funny. Use slang like "Ahi", "Walla", "Eize efes".
+            - Keep it under 4 lines total.
             `;
 
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o-mini", // ✅ חיסכון משמעותי בעלויות
-                messages: [{ role: "system", content: "You are a professional roast writer for a Discord podcast." }, { role: "user", content: prompt }]
+                messages: [{ role: "system", content: "You are a scriptwriter for an edgy Israeli comedy show. Write dialogue in Hebrew slang." }, { role: "user", content: prompt }]
             });
 
             const rawScript = completion.choices[0].message.content;

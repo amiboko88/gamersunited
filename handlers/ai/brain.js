@@ -203,6 +203,24 @@ class ShimonBrain {
     }
 
     /**
+     * 🧠 מוח פנימי למשימות מערכת (כמו סיכום עדכונים)
+     * ללא היסטוריה, ללא קונטקסט משתמש.
+     */
+    async generateInternal(prompt) {
+        try {
+            const runner = await openai.chat.completions.create({
+                model: config.MODEL,
+                messages: [{ role: "system", content: prompt }],
+                temperature: 0.7
+            });
+            return runner.choices[0].message.content;
+        } catch (error) {
+            log(`❌ [Brain] Internal Gen Error: ${error.message}`);
+            return null;
+        }
+    }
+
+    /**
      * ☠️ The Kill Switch ☠️ 
      * חיסול ממוקד ע"י ה-MVP.
      * @param {string} targetUserId - מי מחסלים?

@@ -58,7 +58,38 @@ module.exports = {
 
                 // --- UNIFIED DASHBOARD ROUTING ---
 
-                // 1. Navigation & Views
+                const platformManager = require('../../handlers/users/platformManager');
+
+                // 🌟 PLATFORM MANAGER V2 (The New System)
+                if (id.startsWith('btn_plat_')) {
+                    if (id === 'btn_plat_main') await platformManager.showMainSelector(interaction);
+                    else if (id === 'btn_plat_close') await interaction.message.delete().catch(() => { });
+
+                    // WhatsApp
+                    else if (id === 'btn_plat_wa_main') await platformManager.showWhatsAppDashboard(interaction, false);
+                    else if (id === 'btn_plat_wa_sync_pfp') await platformManager.syncWhatsAppAvatars(interaction);
+                    else if (id === 'btn_plat_wa_link') await dashboardHandler.showLinkPanel(interaction); // Reuse existing linker
+
+                    // Telegram
+                    else if (id === 'btn_plat_tg_main') await platformManager.showTelegramDashboard(interaction);
+                    else if (id === 'btn_plat_tg_scan') await dashboardHandler.executeTelegramForceScan(interaction); // Reuse
+                    else if (id === 'btn_plat_tg_manage') await dashboardHandler.showTelegramManualLink(interaction); // Reuse
+
+                    // Discord
+                    else if (id === 'btn_plat_dc_main') await platformManager.showDiscordDashboard(interaction);
+                    else if (id === 'btn_plat_dc_purge') await dashboardHandler.showGhostPurgeList(interaction); // Reuse
+                    else if (id === 'btn_plat_dc_kick') await dashboardHandler.showKickCandidateList(interaction); // Reuse
+                    else if (id === 'btn_plat_dc_sync_names') {
+                        // Reuse existing sync logic
+                        await interaction.deferUpdate();
+                        const resultNames = await userManager.syncUnknownUsers(interaction.guild);
+                        const resultMissing = await userManager.syncMissingUsers(interaction.guild);
+                        await interaction.followUp({ content: `✅ **סנכרון הושלם!**\nשמות: ${resultNames.count}\nחדשים: ${resultMissing.count}`, ephemeral: true });
+                        await platformManager.showDiscordDashboard(interaction);
+                    }
+                }
+
+                // 1. Navigation & Views (Legacy Support)
                 else if (id === 'btn_manage_refresh' || id === 'mng_btn_dashboard') {
                     await interaction.deferUpdate();
                     await dashboardHandler.showMainDashboard(interaction, true);

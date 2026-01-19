@@ -25,7 +25,7 @@ class GoogleTTS {
                     parts: [{ text: text }]
                 }],
                 generationConfig: {
-                    responseModality: "AUDIO",
+                    // responseModality removed - causing 400 error
                     speechConfig: {
                         voiceConfig: {
                             prebuiltVoiceConfig: {

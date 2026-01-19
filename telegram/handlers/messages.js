@@ -52,8 +52,16 @@ module.exports = (bot) => {
                 return ctx.reply("🙉 לא הצלחתי לשמוע אותך טוב. נסה שוב.");
             }
 
-            // 3. שליחה למוח וקבלת תשובה
-            const responseText = await brain.ask(telegramId, 'telegram', text);
+            // 2.5 בדיקת קישור משתמש (כמו בהודעות טקסט)
+            const { getUserRef } = require('../../utils/userUtils');
+            const userRef = await getUserRef(telegramId, 'telegram');
+            const resolvedId = userRef.id;
+            const isLinked = resolvedId !== telegramId;
+            const targetId = isLinked ? resolvedId : telegramId;
+
+            // 3. שליחה למוח וקבלת תשובה (עם דילוג על שמירה אם לא מקושר)
+            // signature: ask(userId, platform, query, isAdmin, image, chatId, skipPersistence)
+            const responseText = await brain.ask(targetId, 'telegram', text, false, null, null, !isLinked);
 
             if (responseText) {
                 // 4. המרה חזרה לקול (ElevenLabs) - תמיד עונים בקול להודעה קולית

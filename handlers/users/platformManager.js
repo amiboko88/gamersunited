@@ -219,50 +219,80 @@ class PlatformManager {
     // --- 🛠️ TOOLS & ACTIONS ---
 
     async syncWhatsAppAvatars(interaction) {
-        await interaction.deferUpdate();
-        await interaction.editReply({ content: '⏳ Running PFP Sync... This might take a moment.', files: [], components: [] });
+        // Prevent double deferral safely
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+        await interaction.editReply({ content: '⏳ Suncing PFP... Starting...', files: [], components: [] });
 
         const db = require('../../utils/firebase');
         const { getSocket } = require('../../whatsapp/socket');
         const sock = getSocket();
 
-        if (!sock) return this.safeReply(interaction, '❌ WhatsApp Socket Disconnected.', true);
-
-        const snapshot = await db.collection('users').where('identity.whatsappPhone', '!=', null).get();
-        let updatedCount = 0;
-        let failedCount = 0;
-
-        for (const doc of snapshot.docs) {
-            const data = doc.data();
-            const lid = data.platforms?.whatsapp_lid || data.identity?.whatsapp_lid;
-
-            if (lid) {
-                try {
-                    const ppUrl = await sock.profilePictureUrl(lid, 'image').catch(() => null);
-                    if (ppUrl) {
-                        await doc.ref.update({
-                            'identity.avatar_whatsapp': ppUrl,
-                            'identity.avatarURL': ppUrl // Sync main avatar too if desired, or keep separate? 
-                            // Strategy: Update both to ensure fresh look everywhere.
-                        });
-                        updatedCount++;
-                    } else {
-                        failedCount++;
-                    }
-                } catch (e) { failedCount++; }
-
-                // Rate limit protection
-                await new Promise(r => setTimeout(r, 500));
-            }
+        if (!sock) {
+            log('❌ [PFP Sync] Socket is null');
+            return this.safeReply(interaction, '❌ WhatsApp Socket Disconnected.', true);
         }
 
-        await interaction.editReply({
-            content: `✅ **PFP Sync Complete!**\nUpdated: ${updatedCount}\nNo Image/Failed: ${failedCount}`,
-            embeds: [], components: []
-        });
+        try {
+            const snapshot = await db.collection('users').where('identity.whatsappPhone', '!=', null).get();
+            const total = snapshot.size;
+            log(`🔄 [PFP Sync] Found ${total} users to sync.`);
 
-        // Loop back to dashboard after 3s
-        setTimeout(() => this.showWhatsAppDashboard(interaction), 3000);
+            await interaction.editReply({ content: `⏳ Syncing ${total} users...`, files: [], components: [] });
+
+            let updatedCount = 0;
+            let failedCount = 0;
+
+            // Process in chunks to avoid rate limits but speed up
+            const chunks = [];
+            const chunkSize = 10;
+            for (let i = 0; i < total; i += chunkSize) {
+                chunks.push(snapshot.docs.slice(i, i + chunkSize));
+            }
+
+            for (const [index, chunk] of chunks.entries()) {
+                await Promise.all(chunk.map(async (doc) => {
+                    const data = doc.data();
+                    const lid = data.platforms?.whatsapp_lid || data.identity?.whatsapp_lid;
+
+                    if (lid) {
+                        try {
+                            const ppUrl = await sock.profilePictureUrl(lid, 'image').catch(() => null);
+                            if (ppUrl) {
+                                await doc.ref.update({
+                                    'identity.avatar_whatsapp': ppUrl,
+                                    'identity.avatarURL': ppUrl
+                                });
+                                updatedCount++;
+                            } else {
+                                failedCount++;
+                            }
+                        } catch (e) { failedCount++; }
+                    }
+                }));
+
+                // Feedback update every chunk
+                if (index % 2 === 0) {
+                    await interaction.editReply({ content: `⏳ Syncing... (${updatedCount + failedCount}/${total})` });
+                }
+
+                // Brief pause between chunks only
+                await new Promise(r => setTimeout(r, 200));
+            }
+
+            log(`✅ [PFP Sync] Finished. Updated: ${updatedCount}, Failed: ${failedCount}`);
+
+            await interaction.editReply({
+                content: `✅ **PFP Sync Complete!**\nSynced: ${updatedCount}/${total}\nFailed/No Pic: ${failedCount}`,
+                embeds: [], components: []
+            });
+
+        } catch (error) {
+            log(`❌ [PFP Sync] Fatal Error: ${error.message}`);
+            await interaction.editReply({ content: `❌ Error: ${error.message}` });
+        }
+
+        // Loop back to dashboard safe check
+        setTimeout(() => this.showWhatsAppDashboard(interaction, true), 3000);
     }
 
     // --- UTILS ---

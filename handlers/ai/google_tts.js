@@ -24,6 +24,7 @@ class GoogleTTS {
                     parts: [{ text: `Please generate speech for the following text: "${text}"` }]
                 }],
                 generationConfig: {
+                    responseModalities: ["AUDIO"], // ✅ Plural! This forces audio output.
                     // Optimized for Hebrew
                     speechConfig: {
                         voiceConfig: {

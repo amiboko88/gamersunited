@@ -3,7 +3,7 @@ const { log } = require('../../utils/logger');
 
 // User provided key was leaked. Switching to strictly ENV (GEMINI_STUDIO_AI) as requested.
 const GOOGLE_API_KEY = process.env.GEMINI_STUDIO_AI; // ⚠️ API KEY REQUIRED IN ENV
-const MODEL_NAME = 'gemini-2.0-flash'; // Using Flash as it's often the multimodal default, but we can try 2.5-pro if needed.
+const MODEL_NAME = 'gemini-2.0-flash-exp'; // Audio output requires the experimental model currently.
 // Note: REST Endpoint for generateContent with audio modality.
 
 class GoogleTTS {

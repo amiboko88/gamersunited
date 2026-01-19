@@ -252,11 +252,22 @@ class PlatformManager {
             for (const [index, chunk] of chunks.entries()) {
                 await Promise.all(chunk.map(async (doc) => {
                     const data = doc.data();
-                    const lid = data.platforms?.whatsapp_lid || data.identity?.whatsapp_lid;
+                    let lid = data.platforms?.whatsapp_lid || data.identity?.whatsapp_lid;
+                    const phone = data.identity?.whatsappPhone;
+
+                    // STRICT: Only use existing LIDs. Do NOT generate them.
+                    // User requirement: LID is a unique security ID, not a phone number.
 
                     if (lid) {
                         try {
-                            const ppUrl = await sock.profilePictureUrl(lid, 'image').catch(() => null);
+                            // 'image' gets high res. If fails, try undefined (thumb)
+                            const ppUrl = await sock.profilePictureUrl(lid, 'image').catch(async () => {
+                                return await sock.profilePictureUrl(lid).catch(e => {
+                                    log(`❌ [PFP Sync] Failed for ${lid}: ${e?.message || 'Unknown'}`);
+                                    return null;
+                                });
+                            });
+
                             if (ppUrl) {
                                 await doc.ref.update({
                                     'identity.avatar_whatsapp': ppUrl,
@@ -266,7 +277,13 @@ class PlatformManager {
                             } else {
                                 failedCount++;
                             }
-                        } catch (e) { failedCount++; }
+                        } catch (e) {
+                            log(`❌ [PFP Sync] Exception for ${lid}: ${e.message}`);
+                            failedCount++;
+                        }
+                    } else {
+                        log(`⚠️ [PFP Sync] No LID or Phone for ${doc.id}`);
+                        failedCount++;
                     }
                 }));
 

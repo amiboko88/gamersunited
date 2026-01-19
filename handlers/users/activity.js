@@ -14,8 +14,8 @@ const KICK_DAYS = 30;
 class ActivityMonitor {
     init(client) {
         this.client = client;
-        // בדיקה יומית ב-19:00
-        cron.schedule('0 19 * * *', () => this.runDailyScan());
+        // בדיקה יומית ב-19:00 - מבוטל זמנית לבקשת המשתמש (למניעת ספאם בפרטי)
+        // cron.schedule('0 19 * * *', () => this.runDailyScan());
     }
 
     async runDailyScan() {

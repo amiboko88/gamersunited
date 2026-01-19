@@ -61,7 +61,20 @@ class GhostProtocol {
                 avatarUrl = freshUser.displayAvatarURL({ extension: 'png', size: 512 });
             } catch (err) {
                 log(`⚠️ [GhostProtocol] Failed to fetch Discord user ${ghost.id}. Using DB/Default avatar.`);
-                if (ghost.avatarUrl) avatarUrl = ghost.avatarUrl;
+                // Fallback 1: WhatsApp Avatar (from PFP Sync)
+                if (ghost.identity?.avatar_whatsapp) {
+                    avatarUrl = ghost.identity.avatar_whatsapp;
+                    log(`✅ [GhostProtocol] Using WhatsApp PFP for ${ghost.username}`);
+                }
+                // Fallback 2: General Avatar URL
+                else if (ghost.avatarUrl) avatarUrl = ghost.avatarUrl;
+            }
+
+            // Enhanced Check: If Discord returns default avatar, but we have a WhatsApp one, PREFER WhatsApp.
+            // (Ghost users often have default Discord avatars)
+            if (avatarUrl.includes('embed/avatars') && ghost.identity?.avatar_whatsapp) {
+                avatarUrl = ghost.identity.avatar_whatsapp;
+                log(`✅ [GhostProtocol] Overriding default Discord avatar with WhatsApp PFP for ${ghost.username}`);
             }
 
             // יצירת הפוסטר עם התמונה המאומתת

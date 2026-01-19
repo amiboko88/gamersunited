@@ -36,7 +36,10 @@ class DashboardHandler {
         await interaction.deferUpdate();
         const { orphans } = await logic.getMainStats(interaction.guild);
 
-        if (orphans.length === 0) return platformManager.showWhatsAppDashboard(interaction);
+        if (orphans.length === 0) {
+            await interaction.followUp({ content: '✅ **אין משתמשי WhatsApp הממתינים לחיבור.**\nכולם כבר מקושרים או שאין הודעות חדשות.', ephemeral: true });
+            return platformManager.showWhatsAppDashboard(interaction);
+        }
 
         const payload = ui.renderLinkPanel(orphans);
         await interaction.editReply(payload);

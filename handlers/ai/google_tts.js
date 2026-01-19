@@ -1,9 +1,8 @@
 const axios = require('axios');
 const { log } = require('../../utils/logger');
 
-// User provided: AIzaSyABShP0YL8UBsvIntospD6Ce8BppRZtR6Y
-// We use a hardcoded key if ENV is missing, as per user direct instruction in chat.
-const GOOGLE_API_KEY = process.env.GOOGLE_AI_KEY || 'AIzaSyABShP0YL8UBsvIntospD6Ce8BppRZtR6Y';
+// User provided key was leaked. Switching to strictly ENV (GEMINI_STUDIO_AI) as requested.
+const GOOGLE_API_KEY = process.env.GEMINI_STUDIO_AI; // ⚠️ API KEY REQUIRED IN ENV
 const MODEL_NAME = 'gemini-2.0-flash'; // Using Flash as it's often the multimodal default, but we can try 2.5-pro if needed.
 // Note: REST Endpoint for generateContent with audio modality.
 
@@ -25,7 +24,7 @@ class GoogleTTS {
                     parts: [{ text: text }]
                 }],
                 generationConfig: {
-                    // responseModality removed - causing 400 error
+                    // Optimized for Hebrew
                     speechConfig: {
                         voiceConfig: {
                             prebuiltVoiceConfig: {
@@ -36,30 +35,33 @@ class GoogleTTS {
                 }
             };
 
+            // Note: explicit languageCode is not always available in this beta endpoint struct, 
+            // but the model detects language from text. 
+            // To improve Hebrew, ensure input text is clean Hebrew.
+
             const response = await axios.post(url, payload, {
                 headers: { 'Content-Type': 'application/json' },
-                responseType: 'json' // We expect JSON containing base64 audio
+                responseType: 'json'
             });
 
-            // Parse response structure: candidates[0].content.parts[0].inlineData.data (Base64)
-            if (response.data &&
-                response.data.candidates &&
-                response.data.candidates[0] &&
-                response.data.candidates[0].content &&
-                response.data.candidates[0].content.parts &&
-                response.data.candidates[0].content.parts[0].inlineData) {
-
+            if (response.data?.candidates?.[0]?.content?.parts?.[0]?.inlineData) {
                 const base64Audio = response.data.candidates[0].content.parts[0].inlineData.data;
                 return Buffer.from(base64Audio, 'base64');
             } else {
-                log(`❌ [Google TTS] Unexpected Response Structure: ${JSON.stringify(response.data).substring(0, 200)}`);
+                log(`❌ [Google TTS] Unexpected Response: ${JSON.stringify(response.data).substring(0, 200)}`);
                 return null;
             }
 
         } catch (error) {
-            // Log full error details for debugging
             if (error.response) {
-                log(`❌ [Google TTS] API Error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+                // Handle Specific Errors
+                if (error.response.status === 429) {
+                    log(`⚠️ [Google TTS] Quota Exceeded (Free Tier). Upgrade to Paid or wait.`);
+                } else if (error.response.status === 403) {
+                    log(`❌ [Google TTS] Auth Error. Check GEMINI_STUDIO_AI variable.`);
+                } else {
+                    log(`❌ [Google TTS] API Error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+                }
             } else {
                 log(`❌ [Google TTS] Network/Code Error: ${error.message}`);
             }

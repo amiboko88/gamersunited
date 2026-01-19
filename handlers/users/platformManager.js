@@ -51,8 +51,11 @@ class PlatformManager {
 
     // --- � WHATSAPP DASHBOARD ---
     async showWhatsAppDashboard(interaction, isUpdate = true) {
-        if (!isUpdate) await interaction.deferReply({ flags: 64 });
-        else await interaction.deferUpdate();
+        // Safety check: Don't defer if already handled (e.g. chaining from sync)
+        if (!interaction.deferred && !interaction.replied) {
+            if (!isUpdate) await interaction.deferReply({ flags: 64 });
+            else await interaction.deferUpdate();
+        }
 
         try {
             // Fetch Stats
@@ -94,7 +97,7 @@ class PlatformManager {
 
     // --- ✈️ TELEGRAM DASHBOARD ---
     async showTelegramDashboard(interaction) {
-        await interaction.deferUpdate();
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
         const db = require('../../utils/firebase');
 
         // Fetch Orphans
@@ -115,7 +118,7 @@ class PlatformManager {
 
     // --- 🎮 DISCORD DASHBOARD ---
     async showDiscordDashboard(interaction) {
-        await interaction.deferUpdate();
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
         const db = require('../../utils/firebase');
         const userManager = require('./manager');
 
@@ -146,20 +149,20 @@ class PlatformManager {
         <head>
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap');
-                body { margin:0; background:#0a0a0a; font-family:'Outfit',sans-serif; color:white; display:flex; align-items:center; justify-content:center; height:400px; width:800px; overflow:hidden; }
-                .card { width:100%; height:100%; display:flex; padding:40px; box-sizing:border-box; background:radial-gradient(circle at top right, ${color}22 0%, #0a0a0a 70%); border: 2px solid ${color}44; }
-                .left { flex:1; display:flex; flex-direction:column; justify-content:center; }
-                .right { width:300px; display:flex; flex-direction:column; gap:20px; justify-content:center; }
+                body { margin:0; background:#050505; font-family:'Outfit', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; color:white; display:flex; align-items:center; justify-content:center; height:400px; width:800px; overflow:hidden; }
+                .card { width:100%; height:100%; display:flex; padding:40px; box-sizing:border-box; background:radial-gradient(circle at top right, ${color}15 0%, #050505 60%); border: 1px solid ${color}33; position: relative; z-index: 1; }
+                .left { flex:1; display:flex; flex-direction:column; justify-content:center; z-index: 2; }
+                .right { width:320px; display:flex; flex-direction:column; gap:16px; justify-content:center; z-index: 2; }
                 
-                h1 { font-size:48px; margin:0; line-height:1; text-transform:uppercase; letter-spacing:2px; }
-                .subtitle { font-size:24px; color:#666; font-weight:700; margin-bottom:20px; text-transform:uppercase; letter-spacing:4px; display:flex; align-items:center; gap:10px; }
+                h1 { font-size:42px; margin:0; line-height:1; text-transform:uppercase; letter-spacing:1px; font-weight: 900; text-shadow: 0 0 20px ${color}44; }
+                .subtitle { font-size:18px; color:#888; font-weight:700; margin-bottom:24px; text-transform:uppercase; letter-spacing:3px; display:flex; align-items:center; gap:10px; }
                 
-                .stat-box { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); padding:15px 25px; border-radius:12px; display:flex; justify-content:space-between; align-items:center; }
-                .stat-label { color:#aaa; font-size:18px; font-weight:600; }
-                .stat-value { font-size:24px; font-weight:800; color:${color}; }
+                .stat-box { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); padding:16px 24px; border-radius:12px; display:flex; justify-content:space-between; align-items:center; backdrop-filter: blur(10px); }
+                .stat-label { color:#bbb; font-size:16px; font-weight:600; letter-spacing: 0.5px; }
+                .stat-value { font-size:22px; font-weight:800; color:#fff; text-shadow: 0 0 10px ${color}66; }
                 
-                .status-badge { display:inline-flex; align-items:center; gap:8px; padding:8px 16px; border-radius:30px; background:${color}22; border:1px solid ${color}; color:${color}; font-weight:bold; font-size:16px; margin-bottom:10px; width:fit-content;}
-                .icon-bg { position:absolute; right:-50px; bottom:-50px; font-size:300px; opacity:0.05; pointer-events:none; }
+                .status-badge { display:inline-flex; align-items:center; gap:8px; padding:6px 14px; border-radius:30px; background:${color}11; border:1px solid ${color}44; color:${color}; font-weight:bold; font-size:13px; margin-bottom:12px; width:fit-content; box-shadow: 0 0 15px ${color}11; }
+                .icon-bg { position:absolute; right:-40px; bottom:-40px; font-size:350px; opacity:0.04; pointer-events:none; z-index: 0; filter: grayscale(100%); }
             </style>
         </head>
         <body>

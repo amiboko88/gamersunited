@@ -21,7 +21,7 @@ class GoogleTTS {
 
             const payload = {
                 contents: [{
-                    parts: [{ text: text }]
+                    parts: [{ text: `Please generate speech for the following text: "${text}"` }]
                 }],
                 generationConfig: {
                     // Optimized for Hebrew
@@ -67,7 +67,9 @@ class GoogleTTS {
             }
             return null;
         }
+
     }
+
 }
 
 module.exports = new GoogleTTS();

@@ -272,10 +272,11 @@ class DashboardHandler {
 
         await interaction.editReply({
             content: `✅ **התהליך הושלם!**\nנמחקו ${result} משתמשי רפאים.`,
-            components: [new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('btn_manage_refresh').setLabel('חזרה לדאשבורד').setStyle(ButtonStyle.Primary)
-            )]
+            components: []
         });
+
+        const platformManager = require('./platformManager');
+        await platformManager.showDiscordDashboard(interaction);
     }
 
     // --- Helper for safe replies ---
@@ -413,37 +414,52 @@ class DashboardHandler {
     async executeTelegramLink(interaction, tgId, discordId) {
         const db = require('../../utils/firebase');
         const { log } = require('../../utils/logger');
+        const platformManager = require('./platformManager'); // Lazy load
 
-        await interaction.deferUpdate();
+        // Avoid double defer/reply if already deferred
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
         try {
-            // 1. עדכון היוזר ב-DB (כולל identity.telegramId לכפילות יזומה לצורכי תאימות)
+            // 1. עדכון היוזר ב-DB
             await db.collection('users').doc(discordId).update({
                 'platforms.telegram': tgId,
-                'identity.telegramId': tgId, // ✅ תיקון: עדכון גם בשדה הזה
+                'identity.telegramId': tgId,
                 'meta.lastLinked': new Date().toISOString()
             });
 
-            // 2. הסרה מהרשימה
+            // 2. הסרה מרשימת היתומים (Orphans - Matches)
             const orphanRef = db.collection('system_metadata').doc('telegram_orphans');
+
+            // 3. הסרה מרשימת הלא-מקושרים (Unlinked - Raw List)
+            const unlinkedRef = db.collection('system_metadata').doc('telegram_unlinked_users');
+
             await db.runTransaction(async t => {
-                const doc = await t.get(orphanRef);
-                const data = doc.data();
-                if (data.list && data.list[tgId]) {
-                    delete data.list[tgId];
-                    t.set(orphanRef, data);
+                // Orphans
+                const orphanDoc = await t.get(orphanRef);
+                const orphanData = orphanDoc.data();
+                if (orphanData?.list && orphanData.list[tgId]) {
+                    delete orphanData.list[tgId];
+                    t.set(orphanRef, orphanData);
+                }
+
+                // Unlinked
+                const unlinkedDoc = await t.get(unlinkedRef);
+                const unlinkedData = unlinkedDoc.data();
+                if (unlinkedData?.list && unlinkedData.list[tgId]) {
+                    delete unlinkedData.list[tgId];
+                    t.set(unlinkedRef, unlinkedData);
                 }
             });
 
             log(`🔗 [Telegram] חובר בהצלחה: ${discordId} <-> ${tgId}`);
 
-            // 3. עדכון UI
-            await interaction.followUp({ content: '✅ **חובר בהצלחה!**', flags: 64 });
-            await this.showMainDashboard(interaction);
+            // 3. עדכון UI - חזרה לדשבורד טלגרם החדש
+            await interaction.followUp({ content: '✅ **חובר בהצלחה!** (הוסר מהרשימות)', ephemeral: true });
+            await platformManager.showTelegramDashboard(interaction);
 
         } catch (e) {
             console.error(e);
-            await interaction.followUp({ content: '❌ שגיאה בחיבור.', flags: 64 });
+            await interaction.followUp({ content: '❌ שגיאה בחיבור.', ephemeral: true });
         }
     }
 
@@ -488,7 +504,9 @@ class DashboardHandler {
             // Note: matchmaker logic might verify this next time it scans, but let's trust it works.
 
             await interaction.editReply({ content: `✅ **חובר!**\nLID: ${phone}\nDiscord: <@${discordId}>`, components: [] });
-            await this.showMainDashboard(interaction, true);
+
+            const platformManager = require('./platformManager');
+            await platformManager.showWhatsAppDashboard(interaction, false);
 
         } catch (e) {
             log(`Link Error: ${e.message}`);

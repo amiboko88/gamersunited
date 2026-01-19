@@ -14,6 +14,24 @@ class UserManager {
 
     // כתיבה למבנה הנקי בלבד (קצרה מדי מכדי לפצל)
     async updateLastActive(userId) {
+        if (!userId || userId.length < 16) {
+            // 🚨 Alert Admin about this attempt
+            try {
+                const { getSocket } = require('../../whatsapp/socket');
+                const sock = getSocket();
+                if (sock) {
+                    const blockMsg = `🛡️ **Security Alert: Illegal DB Write Blocked**\n` +
+                        `⚠️ **Target ID:** \`${userId}\`\n` +
+                        `🕒 **Time:** ${new Date().toLocaleString('he-IL')}\n` +
+                        `🛑 **Action:** Write prevented. Check logs for origin.`;
+                    await sock.sendMessage('972526800647@s.whatsapp.net', { text: blockMsg });
+                }
+            } catch (e) { console.error('Failed to send admin alert:', e); }
+
+            log(`🛑 [UserManager] Blocked write for invalid ID: ${userId}`);
+            return;
+        }
+
         try {
             const now = new Date().toISOString();
             await db.collection('users').doc(userId).set({

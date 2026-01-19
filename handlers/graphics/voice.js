@@ -6,8 +6,8 @@ class VoiceRenderer {
      * מייצר תמונה מעוצבת של "שידור חי" עם האווטרים של המשתמשים
      */
     async generateCard(channelName, members) {
-        // ניקוי אימוג'ים משם הערוץ כדי למנוע קוביות
-        const safeChannelName = channelName.replace(/[^\p{L}\p{N}\p{P}\p{Z}\p{S}\p{M}^$\n]/gu, '').trim() || "Voice Channel";
+        // We want to DISPLAY emojis, not strip them. PFP sync logic ensures names are safe.
+        const SafeChannelName = channelName.trim() || "Voice Channel";
 
         // לוגיקה לאווטרים: אם יש מעל 5, נחלק לשורות (עד 10)
         // אם יש המון, נציג 8 ופלוס
@@ -34,7 +34,7 @@ class VoiceRenderer {
         <head>
             <link rel="preconnect" href="https://fonts.googleapis.com">
             <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-            <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
+            <link href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
             <style>
                 * { box-sizing: border-box; }
                 body, html {
@@ -46,7 +46,7 @@ class VoiceRenderer {
                 .card {
                     width: 800px; height: 450px;
                     background: radial-gradient(circle at top right, #2b2d42 0%, #0d0d11 75%);
-                    font-family: 'Outfit', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+                    font-family: 'Outfit', 'Noto Color Emoji', 'Segoe UI Emoji', sans-serif;
                     color: white;
                     display: flex; flex-direction: column;
                     align-items: center;
@@ -169,7 +169,7 @@ class VoiceRenderer {
         <body>
             <div class="card">
                 <div class="live-badge"><div class="live-dot"></div>LIVE NOW</div>
-                <div class="channel-name">${safeChannelName}</div>
+                <div class="channel-name">${SafeChannelName}</div>
                 
                 <div class="users-grid">
                     ${avatarsHtml}

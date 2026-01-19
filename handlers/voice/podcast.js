@@ -83,32 +83,39 @@ class PodcastManager {
             const facts = userData?.brain?.facts?.map(f => f.content) || [];
 
             // --- 🧠 OpenAI Script Generation ---
+            // --- 🧠 OpenAI Script Generation (Short & Punchy) ---
+            // Filter and Shuffle Data to prevent overload
+            const safeFacts = facts.sort(() => 0.5 - Math.random()).slice(0, 2);
+            const safeRoasts = roasts.sort(() => 0.5 - Math.random()).slice(0, 2);
+
             const prompt = `
-            Generate a short, funny, and stinging "Roast" script in HEBREW for two fictional characters:
-            1. Shimon: An aggressive Israeli "Ars" (street tough guy), uses heavy slang.
-            2. Shirly: His cynical, mean female sidekick.
-
+            Write a SUPER SHORT, SAVAGE Hebrew dialogue between Shimon (Ars) and Shirly (Cynical).
             Target: ${member.displayName}
+            
+            Context Data (Pick ONE item to use):
+            ${safeFacts.length > 0 ? safeFacts.join('\n') : "No data - just roast him for being basic."}
+            ${safeRoasts.length > 0 ? safeRoasts.join('\n') : ""}
 
-            Material to use (incorporate these into the roast):
-            ${facts.length > 0 ? facts.join('\n') : "He is boring and generic."}
-            ${roasts.length > 0 ? roasts.join('\n') : ""}
+            Strict Rules:
+            1. HEBREW SLANG ONLY.
+            2. TOTAL LENGTH: Max 3 lines.
+            3. KEEP IT SHORT. Max 10 words per line.
+            4. If data exists, use it for a direct burn.
+            5. If no data, be rude and dismissive.
 
             Format:
-            shimon: [Opening roast line]
-            shirly: [Mean comment using the material above]
-            shimon: [Final punchline]
-
-            Rules:
-            - HEBREW ONLY.
-            - Style: Israeli Stand-up Roast / "Eretz Nehederet" sketch.
-            - Be harsh but funny. Use slang like "Ahi", "Walla", "Eize efes".
-            - Keep it under 4 lines total.
+            shimon: [Short punchy line]
+            shirly: [Short mean response]
+            shimon: [Final kill]
             `;
 
             const completion = await openai.chat.completions.create({
-                model: "gpt-4o-mini", // ✅ חיסכון משמעותי בעלויות
-                messages: [{ role: "system", content: "You are a scriptwriter for an edgy Israeli comedy show. Write dialogue in Hebrew slang." }, { role: "user", content: prompt }]
+                model: "gpt-4o-mini",
+                messages: [
+                    { role: "system", content: "You are a rude Israeli scriptwriter. Write short, aggressive, and funny dialogue." },
+                    { role: "user", content: prompt }
+                ],
+                max_tokens: 150 // Hard limit on output length
             });
 
             const rawScript = completion.choices[0].message.content;
@@ -125,22 +132,24 @@ class PodcastManager {
                 return;
             }
 
-            // --- 🎤 ElevenLabs V3 Generation Loop (Sequential) ---
-            // Reverting to V3 per user request, but with SEQUENTIAL processing to avoid 400 errors.
-            const voiceManager = require('../ai/voice');
+            // --- 🎤 Google Gemini TTS Generation (User Request) ---
+            // Using Google's Generative AI Model (Flash/Pro) with provided Key
+            const googleTTS = require('../ai/google_tts');
             const fs = require('fs');
             const path = require('path');
 
-            // Define Voices (Primary Choice)
+            // Google Gemini Voices
+            // 'Fenrir' = Deep/Strong (Good for Shimon)
+            // 'Aoede' = Clear/Professional (Good for Shirly)
             const VOICES = {
-                shimon: 'txHtK15K5KtX959ZtpRa', // ✅ User's Cloned Voice (Primary)
-                shirly: '21m00Tcm4TlvDq8ikWAM' // Rachel (Reliable Female)
+                shimon: 'Fenrir',
+                shirly: 'Aoede'
             };
 
-            const playbackQueue = []; // Supports { type: 'tts', path: string } or { type: 'sfx', path: string }
+            const playbackQueue = [];
 
-            // 1. Add Intro Jingle (Optional)
-            const introPath = path.join(__dirname, '../../assets/audio/effects/intro.mp3'); // ✅ User Path
+            // 1. Add Intro Jingle
+            const introPath = path.join(__dirname, '../../assets/audio/effects/intro.mp3');
             if (fs.existsSync(introPath)) {
                 playbackQueue.push({ type: 'sfx', path: introPath });
             }
@@ -152,46 +161,22 @@ class PodcastManager {
 
                 log(`[Podcast] מעבד שורה ${index + 1}/${script.length} (${line.speaker})...`);
 
-                // A. Check for Sound FX triggers in text (e.g., *laugh*)
+                // A. Check for Sound FX
                 if (line.text.includes('*') || line.text.includes('[')) {
                     if (line.text.toLowerCase().includes('laugh') || line.text.includes('צחוק')) {
-                        const laughPath = path.join(__dirname, '../../assets/audio/effects/laugh.mp3'); // ✅ User Path
+                        const laughPath = path.join(__dirname, '../../assets/audio/effects/laugh.mp3');
                         if (fs.existsSync(laughPath)) {
                             playbackQueue.push({ type: 'sfx', path: laughPath });
                         }
                     }
                 }
 
-                // B. Generate TTS (With Fallback Strategy)
+                // B. Generate TTS (Google Gemini)
                 try {
-                    // Remove SFX markers
                     const spokenText = line.text.replace(/\[.*?\]|\*.*?\*/g, '').trim();
 
                     if (spokenText) {
-                        let buffer = null;
-
-                        // 1. Try Primary Voice (User's Clone for Shimon)
-                        try {
-                            buffer = await voiceManager.speak(spokenText, {
-                                voiceId: targetVoice,
-                                similarityBoost: 0.60 // Safer for V3 Podcast Flow to avoid 400s
-                            });
-                        } catch (primaryError) {
-                            log(`⚠️ [Podcast] Primary Voice Failed (${targetVoice}): ${primaryError.message}`);
-
-                            // 2. Fallback to Safe Voice (Adam/Rachel) if Primary is Shimon
-                            if (!isShirly) {
-                                log(`🔄 [Podcast] Falling back to Reliable Voice (Adam)...`);
-                                try {
-                                    buffer = await voiceManager.speak(spokenText, {
-                                        voiceId: 'JBFqnCBsd6RMkjVDRZzb', // Adam
-                                        similarityBoost: 0.50 // Even safer
-                                    });
-                                } catch (backupError) {
-                                    log(`❌ [Podcast] Backup Voice also failed.`);
-                                }
-                            }
-                        }
+                        const buffer = await googleTTS.speak(spokenText, targetVoice);
 
                         if (buffer) {
                             const tempDir = path.join(__dirname, '../../temp_audio');
@@ -203,15 +188,15 @@ class PodcastManager {
                             await fs.promises.writeFile(filePath, buffer);
                             playbackQueue.push({ type: 'tts', path: filePath });
                         } else {
-                            log(`❌ [Podcast] Failed to generate line ${index}: Buffer empty after all attempts.`);
+                            log(`❌ [Podcast] Buffer empty for line ${index}`);
                         }
                     }
                 } catch (genError) {
                     log(`❌ [Podcast] Error processing line ${index}: ${genError.message}`);
                 }
 
-                // Small delay between requests to be nice to API
-                await new Promise(r => setTimeout(r, 500));
+                // Gemini is fast, minimal delay needed
+                await new Promise(r => setTimeout(r, 200));
             }
 
             // 3. Playback Loop

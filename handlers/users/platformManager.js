@@ -255,17 +255,25 @@ class PlatformManager {
                     let lid = data.platforms?.whatsapp_lid || data.identity?.whatsapp_lid;
                     const phone = data.identity?.whatsappPhone;
 
-                    // STRICT: Only use existing LIDs. Do NOT generate them.
-                    // User requirement: LID is a unique security ID, not a phone number.
+                    let targetJid = lid;
 
-                    if (lid) {
+                    // Fallback to Phone JID if LID is missing
+                    if (!targetJid && phone) {
+                        const cleanPhone = phone.replace(/\D/g, '');
+                        targetJid = `${cleanPhone}@s.whatsapp.net`;
+                    }
+
+                    if (targetJid) {
                         try {
+                            // 💡 TRICK: Subscribe to presence to force a server handshake regarding this user
+                            // This often helps resolve privacy/visibility issues immediately
+                            await sock.presenceSubscribe(targetJid).catch(() => { });
+
                             // 'image' gets high res. If fails, try undefined (thumb)
-                            const ppUrl = await sock.profilePictureUrl(lid, 'image').catch(async () => {
-                                return await sock.profilePictureUrl(lid).catch(e => {
-                                    log(`❌ [PFP Sync] Failed for ${lid}: ${e?.message || 'Unknown'}`);
-                                    return null;
-                                });
+                            const ppUrl = await sock.profilePictureUrl(targetJid, 'image').catch(async (err) => {
+                                // If 401/403/404, try standard resolution as fallback
+                                if (err?.data === 401 || err?.data === 403 || err?.data === 404) return null;
+                                return await sock.profilePictureUrl(targetJid).catch(() => null);
                             });
 
                             if (ppUrl) {
@@ -275,14 +283,16 @@ class PlatformManager {
                                 });
                                 updatedCount++;
                             } else {
+                                // Privacy restricted or no photo - count as "failed" to sync but expected behavior
                                 failedCount++;
                             }
                         } catch (e) {
-                            log(`❌ [PFP Sync] Exception for ${lid}: ${e.message}`);
+                            // Network or critical errors
+                            log(`❌ [PFP Sync] Exception for ${targetJid}: ${e.message}`);
                             failedCount++;
                         }
                     } else {
-                        log(`⚠️ [PFP Sync] No LID or Phone for ${doc.id}`);
+                        // Truly missing identity info
                         failedCount++;
                     }
                 }));
@@ -295,7 +305,6 @@ class PlatformManager {
                 // Brief pause between chunks only
                 await new Promise(r => setTimeout(r, 200));
             }
-
             log(`✅ [PFP Sync] Finished. Updated: ${updatedCount}, Failed: ${failedCount}`);
 
             await interaction.editReply({

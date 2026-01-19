@@ -17,7 +17,7 @@ class GoogleTTS {
         try {
             log(`🗣️ [Google TTS] Generating audio for: "${text.substring(0, 20)}..." (Voice: ${voiceName})`);
 
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${GOOGLE_API_KEY}`;
+            const url = `https://generativelanguage.googleapis.com/v1alpha/models/${MODEL_NAME}:generateContent?key=${GOOGLE_API_KEY}`;
 
             const payload = {
                 contents: [{

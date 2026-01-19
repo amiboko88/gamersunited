@@ -11,6 +11,7 @@ const shimonBrain = require('../../handlers/ai/brain');
 const learningEngine = require('../../handlers/ai/learning');
 const userManager = require('../../handlers/users/manager');
 const xpManager = require('../../handlers/economy/xpManager'); // ✅ 1. ייבוא מערכת ה-XP
+const gameManager = require('../../handlers/economy/gameManager'); // ✅ 2. ייבוא מערכת ההימורים
 
 const activeConversations = new Map();
 const processingGroups = new Set(); // 🔒 מנעול לטיפול בהודעות מקבילות

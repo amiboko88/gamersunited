@@ -118,8 +118,11 @@ class SimpleStore {
             return found.id.split('@')[0];
         }
 
-        // 4. אם לא מצאנו כלום, מחזירים את המקור (כברירת מחדל)
         return cleanId;
+    }
+
+    getContact(jid) {
+        return this.contacts[jid];
     }
 }
 

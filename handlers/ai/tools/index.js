@@ -11,7 +11,7 @@ const allTools = [dj, ranking, identity, birthday, match, codStats];
 
 exports.definitions = allTools.map(t => t.definition);
 
-exports.execute = async (name, args, userId, chatId) => {
+exports.execute = async (name, args, userId, chatId, imageBuffer) => {
     const tool = allTools.find(t => t.definition.function.name === name);
     if (tool) {
         try {

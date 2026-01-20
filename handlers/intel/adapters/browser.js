@@ -151,13 +151,21 @@ class BrowserAdapter {
     async getBF6Meta() {
         return this._fetchPage(BF_URL, () => {
             const weapons = [];
-            document.querySelectorAll('.meta-weapon').forEach(w => {
-                const name = w.querySelector('.meta-weapon__name')?.innerText.trim();
-                const image = w.querySelector('img')?.src;
+            document.querySelectorAll('.loadout-card').forEach(w => {
+                const name = w.querySelector('.gun-badge__text')?.innerText.trim();
+                const image = w.querySelector('.loadout-content__gun-image img')?.src || w.querySelector('.loadout-card__thumbnail img')?.src;
 
                 const attachments = [];
-                w.querySelectorAll('.meta-attachment').forEach(a => {
-                    attachments.push(a.innerText.trim()); // Simpler scraping for BF
+                w.querySelectorAll('.attachment-card').forEach(a => {
+                    const type = a.querySelector('.attachment-card-content__name span')?.innerText.trim() || "Part";
+                    // Name is inside a div, possibly with a level badge we want to ignore
+                    let partName = "Unknown";
+                    const nameContainer = a.querySelector('.attachment-card-content__name > div');
+                    if (nameContainer) {
+                        // Clone to be safe, though innerText usually skips hidden elements
+                        partName = nameContainer.innerText.split('LVL')[0].trim(); // Hacky but effective for "20" SDM-R LVL 14"
+                    }
+                    attachments.push({ part: type, name: partName });
                 });
 
                 if (name) weapons.push({ name, image, attachments });
@@ -169,9 +177,9 @@ class BrowserAdapter {
     // --- 3.5. BF6 News (Meta Update Date) ---
     async getBF6News() {
         return this._fetchPage(BF_URL, () => {
-            const dateEl = document.querySelector('.loadouts__updated');
+            const dateEl = document.querySelector('.app-title__update');
             if (dateEl) {
-                const dateStr = dateEl.innerText.replace('Updated:', '').trim();
+                const dateStr = dateEl.innerText.replace('updated', '').trim();
                 return {
                     title: "BF6 META UPDATE: " + dateStr,
                     link: 'https://bfhub.gg/meta/br',
@@ -308,6 +316,18 @@ class BrowserAdapter {
             log(`[Browser] Error scraping WZHub Updates: ${error.message}`);
             return [];
         }
+    }
+
+    // --- 6. Generic Article/Page Content Fetcher for AI ---
+    async getArticleContent(url) {
+        return this._fetchPage(url, () => {
+            // Remove navigation, footer, ads to reduce noise
+            document.querySelectorAll('nav, footer, .ad, .social-share, .cookie-consent').forEach(e => e.remove());
+
+            // Get text from main content if possible
+            const main = document.querySelector('main, article, .content, #content') || document.body;
+            return main.innerText.slice(0, 5000); // Limit context for AI
+        });
     }
 }
 

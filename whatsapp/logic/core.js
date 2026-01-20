@@ -71,7 +71,8 @@ async function handleMessageLogic(sock, msg, text) {
 
     // --- בדיקת שעות פעילות ---
     const systemStatus = isSystemActive();
-    const isAdmin = senderPhone === '972526800647';
+    // Admin Override: Phone (972526800647) OR specific LID (100772834480319) seen in logs
+    const isAdmin = senderPhone === '972526800647' || senderPhone === '100772834480319';
 
     if (!systemStatus.active && !isAdmin) {
         const isInteraction = isPrivate || text.includes('שמעון') || text.includes('שימי') || text.includes('בוט');

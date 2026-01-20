@@ -223,7 +223,147 @@ class IntelManager {
 
     async getLatestNews(userQuery = "") {
         // Legacy method tailored to "Updates" route now
-        return await this.getCODUpdates();
+        const baseUpdate = await this.getCODUpdates();
+        if (baseUpdate && baseUpdate.link) {
+            return await this._enrichWithAI(baseUpdate);
+        }
+        return baseUpdate;
+    }
+
+    // --- Automated News Cycle (Called by Scheduler) ---
+    async checkNews() {
+        try {
+            log('🕵️ [Intel] Checking for fresh intel...');
+            const update = await this.getCODUpdates();
+
+            // Logic: Verify if this is actually NEW
+            if (typeof update === 'string') return; // Error message
+
+            const docRef = db.collection('system_metadata').doc('intel_status');
+            const doc = await docRef.get();
+            const lastDate = doc.exists ? doc.data().last_patch_date : 0;
+
+            const updateDate = new Date(update.date).getTime();
+            const savedDate = new Date(lastDate).getTime();
+
+            // Threshold: 24 Hours (Don't spam old news even if DB is empty)
+            const isFresh = (Date.now() - updateDate) < 24 * 60 * 60 * 1000;
+
+            if (updateDate > savedDate && isFresh) {
+                log(`🚨 [Intel] NEW INTEL DETECTED: ${update.title}`);
+
+                // Broadcast
+                await this._broadcastIntel(update);
+
+                // Save checkpoint
+                await docRef.set({
+                    last_patch_date: update.date,
+                    last_title: update.title
+                }, { merge: true });
+            } else {
+                log('🕵️ [Intel] No new updates found.');
+            }
+
+        } catch (e) {
+            log(`❌ [Intel] News Cycle Failed: ${e.message}`);
+        }
+    }
+
+    async _broadcastIntel(item) {
+        log(`📢 [Intel] Broadcasting: ${item.title}`);
+
+        let finalSummary = item.summary;
+
+        // 🧠 AI Enhancement for Patch Notes
+        if (item.link && (item.title.includes('COD') || item.title.includes('Notes') || item.title.includes('Update'))) {
+            try {
+                // log(`🧠 [Intel] Enhancing with AI...`);
+                // Use the new getArticleContent method
+                const articleText = await browserAdapter.getArticleContent(item.link);
+                if (articleText && articleText.length > 100) {
+                    const aiSummary = await brain.generateInternal(`
+                    Task: Translate and summarize these Game Patch Notes into cool, slang-heavy Hebrew for gamers.
+                    
+                    Tone: Excited, "Bro", Informative (Shimon Persona).
+                    Rules:
+                    1. Start with "🚨 עדכון חדש! 🚨".
+                    2. Bullet points for key changes (Nerfs/Buffs/New Modes).
+                    3. Keep it under 150 words.
+                    4. Use emojis.
+                    
+                    Content:
+                    "${articleText.slice(0, 4000)}"
+                    `);
+
+                    if (aiSummary) {
+                        finalSummary = aiSummary;
+                        // log(`🧠 [Intel] AI Summary Generated.`);
+                    }
+                }
+            } catch (e) {
+                log(`⚠️ [Intel] AI Summarization failed: ${e.message}`);
+            }
+        }
+
+        // 1. WhatsApp
+        try {
+            const { sendToMainGroup } = require('../../whatsapp/index');
+            await sendToMainGroup(`${finalSummary}\n\n🔗 ${item.link}`);
+        } catch (e) { log(`Error Broadcast WA: ${e.message}`); }
+
+        // 2. Telegram
+        try {
+            const { getBot } = require('../../telegram/client');
+            const bot = getBot();
+            if (bot) {
+                const chatId = process.env.TG_MAIN_GROUP_ID || '-1001836262829';
+                await bot.telegram.sendMessage(chatId, `${finalSummary}\n\n[קרא עוד](${item.link})`, { parse_mode: 'Markdown' });
+            }
+        } catch (e) { log(`Error Broadcast TG: ${e.message}`); }
+
+        // 3. Discord
+        try {
+            if (this.discord) {
+                const channel = this.discord.channels.cache.find(c => c.name.includes('news') || c.name.includes('עדכונים'));
+                if (channel) channel.send(`**${item.title}**\n${finalSummary}\n${item.link}`);
+            }
+        } catch (e) { log(`Error Broadcast DS: ${e.message}`); }
+    }
+
+    // --- Helper: AI Enrichment ---
+    async _enrichWithAI(item) {
+        // Only enrich relevant patch notes
+        if (!item.link || !(item.title.includes('COD') || item.title.includes('Notes') || item.title.includes('Update'))) {
+            return item;
+        }
+
+        try {
+            // log(`🧠 [Intel] Enhancing with AI...`); // Debug removed
+            const articleText = await browserAdapter.getArticleContent(item.link);
+            if (articleText && articleText.length > 100) {
+                const aiSummary = await brain.generateInternal(`
+                Task: Translate and summarize these Game Patch Notes into cool, slang-heavy Hebrew for gamers.
+                
+                Tone: Excited, "Bro", Informative (Shimon Persona).
+                Rules:
+                1. Start with "🚨 עדכון חדש! 🚨".
+                2. Bullet points for key changes (Nerfs/Buffs/New Modes).
+                3. Keep it under 150 words.
+                4. Use emojis.
+                
+                Content:
+                "${articleText.slice(0, 4000)}"
+                `);
+
+                if (aiSummary) {
+                    // Return enhanced object
+                    return { ...item, summary: aiSummary, aiSummary: aiSummary };
+                }
+            }
+        } catch (e) {
+            // log(`⚠️ [Intel] AI Summarization failed: ${e.message}`);
+        }
+        return item;
     }
 
     // --- Formatters ---

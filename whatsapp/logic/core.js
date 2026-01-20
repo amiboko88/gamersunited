@@ -12,6 +12,7 @@ const learningEngine = require('../../handlers/ai/learning');
 const userManager = require('../../handlers/users/manager');
 const xpManager = require('../../handlers/economy/xpManager'); // ✅ 1. ייבוא מערכת ה-XP
 const gameManager = require('../../handlers/economy/gameManager'); // ✅ 2. ייבוא מערכת ההימורים
+const intelManager = require('../../handlers/intel/manager'); // 🕵️ ייבוא אינטל החדש
 
 const activeConversations = new Map();
 const processingGroups = new Set(); // 🔒 מנעול לטיפול בהודעות מקבילות
@@ -204,6 +205,33 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderPhone, dbUserId
         }
 
         await sock.sendPresenceUpdate('composing', chatJid);
+
+        // 🕵️ INTEL INTERCEPT (System 2.0)
+        // Before asking the brain, check if this is a requested Intel command
+        try {
+            const intelResponse = await intelManager.handleNaturalQuery(text);
+            if (intelResponse) {
+                log(`🕵️ [Intel] Intercepted WhatsApp Query: ${text}`);
+
+                // Case A: Object (Weapon Meta with Image)
+                if (typeof intelResponse === 'object' && intelResponse.image) {
+                    await sock.sendMessage(chatJid, {
+                        image: { url: intelResponse.image },
+                        caption: intelResponse.text + `\n\n📌 **Code:** \`${intelResponse.code}\``
+                    }, { quoted: msg });
+                }
+                // Case B: Simple Text (News/Playlist)
+                else {
+                    const txt = typeof intelResponse === 'string' ? intelResponse : intelResponse.text;
+                    await sock.sendMessage(chatJid, { text: txt }, { quoted: msg });
+                }
+
+                return; // Stop here, don't ask AI
+            }
+        } catch (e) {
+            log(`⚠️ [Intel] Error during routing: ${e.message}`);
+            // Fallback to AI if Intel fails
+        }
 
         let imageBuffer = null;
         if (mediaMsg) {

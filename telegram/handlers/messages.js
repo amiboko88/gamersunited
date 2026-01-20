@@ -1,4 +1,5 @@
 const xpManager = require('../../handlers/economy/xpManager');
+const intelManager = require('../../handlers/intel/manager'); // 🕵️ Intel System
 const brain = require('../../handlers/ai/brain');
 const scanner = require('../utils/scanner');
 const voiceManager = require('../../handlers/ai/voice');
@@ -205,6 +206,27 @@ module.exports = (bot) => {
 
                 // שימוש ב-ID המקושר לזיכרון, או ב-TG ID זמני (אבל בלי לשמור ל-DB אם המוח חכם)
                 const targetId = isLinked ? resolvedId : telegramId;
+
+                // 🕵️ INTEL INTERCEPT
+                try {
+                    const intelResponse = await intelManager.handleNaturalQuery(text);
+                    if (intelResponse) {
+                        const txt = typeof intelResponse === 'string' ? intelResponse : intelResponse.text;
+
+                        if (typeof intelResponse === 'object' && intelResponse.image) {
+                            await ctx.replyWithPhoto(intelResponse.image, {
+                                caption: txt + `\n\n📌 **Code:** <code>${intelResponse.code}</code>`,
+                                parse_mode: "HTML"
+                            });
+                        } else {
+                            await ctx.reply(txt, { parse_mode: "Markdown" });
+                        }
+                        return; // Stop here
+                    }
+                } catch (e) {
+                    console.error('Intel Error:', e);
+                }
+
                 // ארגומנט אחרון: skipPersistence (true אם לא מקושר)
                 const response = await brain.ask(targetId, 'telegram', text, false, null, null, !isLinked);
 

@@ -78,6 +78,56 @@ class IntelManager {
         return `🔫 **BF6 Meta King:** ${top.name}\n\n${top.attachments.join('\n')}`;
     }
 
+    // --- NLP Routing ---
+
+    /**
+     * Routes natural language queries to the correct Intel function.
+     * Returns a formatted response string/object or NULL if no Intel intent found.
+     */
+    async handleNaturalQuery(text) {
+        const clean = text.toLowerCase().trim();
+
+        // 1. Meta / Loadout
+        if (clean.includes('meta') || clean.includes('loadout') || clean.includes('build') || clean.includes('class') || clean.includes('קוד') || clean.includes('נשק')) {
+            // Extract weapon name (remove keywords)
+            const weapon = clean.replace(/meta|loadout|build|class|קוד|נשק/g, '').trim();
+            if (weapon.length > 2) { // Avoid answering just "meta"
+                return await this.getMeta(weapon);
+            }
+        }
+
+        // 2. Playlists
+        if (clean.includes('playlist') || clean.includes('modes') || clean.includes('מודים') || clean.includes('משחק')) {
+            return await this.getPlaylists();
+        }
+
+        // 3. News / Updates / Nerfs
+        if (clean.includes('update') || clean.includes('news') || clean.includes('patch') || clean.includes('nerf') || clean.includes('buff') || clean.includes('עדכון') || clean.includes('חדשות') || clean.includes('נרף')) {
+            return await this.getLatestNews(clean);
+        }
+
+        // 4. BF6
+        if (clean.includes('bf6') || clean.includes('battlefield') || clean.includes('באטלפילד')) {
+            return await this.getBF6();
+        }
+
+        return null;
+    }
+
+    async getLatestNews(userQuery = "") {
+        const updates = await rssAdapter.fetchNews();
+        if (updates.length === 0) return "❌ לא מצאתי עדכונים ב-24 שעות האחרונות.";
+
+        // If specific query (e.g. "nerfs?"), filter? For now, return the latest big update.
+        const latest = updates[0];
+
+        // If it's the Official Patch Notes, we have the "Deep Dive" summary already in latest.summary
+
+        let response = `🚨 **${latest.title}**\n📅 ${new Date(latest.date).toLocaleDateString('he-IL')}\n\n${latest.summary}\n\n🔗 [קרא עוד](${latest.link})`;
+
+        return response;
+    }
+
     // --- Internal Logic ---
 
     // --- News / RSS ---

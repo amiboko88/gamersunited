@@ -141,19 +141,24 @@ class IntelManager {
             weapon = weapon.replace(/[?!.]/g, ''); // Remove punctuation
 
             // 5. Fallback Heuristic: If we still have multiple words, take the LAST one (90% case)
-            // e.g. "Best setup for the AMR9" -> "AMR9"
             if (weapon.includes(' ')) {
                 const words = weapon.split(' ');
                 const lastWord = words[words.length - 1];
                 if (lastWord.length > 2) {
-                    // Try the last word first, it's usually the weapon
                     const match = await this.getMeta(lastWord);
-                    if (!match.includes('לא מצאתי')) return match;
+                    // Check if valid response (Object = Weapon found, String = Error/Not Found)
+                    if (typeof match !== 'string' || !match.includes('לא מצאתי')) {
+                        return match; // Found it!
+                    }
                 }
             }
 
             if (weapon.length > 1) {
                 return await this.getMeta(weapon);
+            } else {
+                // ⚠️ CRITICIAL FIX: If user said "Give me meta" and we stripped everything, 
+                // DO NOT return null (which triggers Brain Hallucination). Return the Top List.
+                return await this.getMeta("absolute");
             }
         }
 
@@ -170,6 +175,17 @@ class IntelManager {
         // 4. BF6
         if (clean.includes('bf6') || clean.includes('battlefield') || clean.includes('באטלפילד')) {
             return await this.getBF6();
+        }
+
+        // 5. Implicit Intent (Direct Weapon Name)
+        // If the user just types "Kastov" or "Kogot" without "loadout", try to find it.
+        // We only return if we get a STRONG match (Object, not error string).
+        if (clean.length > 2 && clean.length < 20) {
+            const potentialMatch = await this.getMeta(clean);
+            if (typeof potentialMatch !== 'string') {
+                log(`🧠 [Intel] Implicit Intent Detected: "${clean}" -> Weapon Found`);
+                return potentialMatch;
+            }
         }
 
         return null;

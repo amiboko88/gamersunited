@@ -1,103 +1,53 @@
-const Parser = require('rss-parser');
-const { log } = require('../../../utils/logger');
 
-class RSSAdapter {
+const { log } = require('../../../utils/logger');
+// Dynamic import or lazy load browser to ensure singleton is used
+const browser = require('./browser');
+
+class IntelSourceManager {
     constructor() {
-        this.parser = new Parser({
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/rss+xml, application/xml, text/xml; q=0.1',
-            }
-        });
-        this.FEEDS = [
-            { name: 'CharlieIntel', url: 'https://charlieintel.com/feed/' },
-            { name: 'COD Official', url: 'https://www.callofduty.com/blog/rss' }
+        // No more RSS feeds to configure
+        this.sources = [
+            { name: 'Warzone', type: 'browser', method: 'getWZNews' },
+            { name: 'BF6', type: 'browser', method: 'getBF6News' },
+            { name: 'NVIDIA', type: 'browser', method: 'getNvidiaDriverUpdates' },
+            { name: 'Call of Duty', type: 'browser', method: 'getCODPatchNotes' }
         ];
     }
 
     async fetchNews() {
-        const updates = [];
-        const browser = require('./browser'); // Lazy load singleton
+        const globalUpdates = [];
 
-        for (const feed of this.FEEDS) {
+        for (const source of this.sources) {
             try {
-                const result = await this.parser.parseURL(feed.url);
-                const now = new Date(); // Filter Freshness
+                log(`[Intel] Checking ${source.name} via Scraper...`);
+                let result = null;
 
-                const freshItems = result.items.filter(item => {
-                    const pubDate = new Date(item.pubDate);
-                    return (now - pubDate) < (24 * 60 * 60 * 1000);
-                });
-
-                for (const item of freshItems) {
-                    let summary = item.contentSnippet || item.content;
-
-                    // 🕵️ OFFICIAL PATCH NOTES DEEP DIVE (Smart Header Slicer)
-                    if (feed.url.includes('callofduty.com') && (item.link.includes('patchnotes') || item.title.toLowerCase().includes('patch notes'))) {
-                        log(`🕵️ [Intel] Deep Parsing Official Patch Notes: ${item.title}`);
-                        try {
-                            const deepData = await browser._fetchPage(item.link, () => {
-                                // Smart Parser Logic (Runs in Browser)
-                                const allElements = Array.from(document.querySelectorAll('h2, h3, h4, p, li'));
-                                const months = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
-
-                                // 1. Find Latest Date (Topmost)
-                                let startIndex = -1;
-                                let title = document.title;
-
-                                for (let i = 0; i < allElements.length; i++) {
-                                    const txt = allElements[i].innerText.toUpperCase();
-                                    if (months.some(m => txt.includes(m)) && (allElements[i].tagName === 'H2' || allElements[i].tagName === 'H3')) {
-                                        startIndex = i;
-                                        title = allElements[i].innerText;
-                                        break;
-                                    }
-                                }
-
-                                if (startIndex === -1) {
-                                    // Fallback
-                                    return { title: document.title, sampleText: document.body.innerText.substring(0, 800) };
-                                }
-
-                                // 2. Find Next Date (Stop point)
-                                let endIndex = allElements.length;
-                                for (let i = startIndex + 1; i < allElements.length; i++) {
-                                    const txt = allElements[i].innerText.toUpperCase();
-                                    if (months.some(m => txt.includes(m)) && (allElements[i].tagName === 'H2' || allElements[i].tagName === 'H3')) {
-                                        endIndex = i;
-                                        break;
-                                    }
-                                }
-
-                                // 3. Extract Context
-                                const content = allElements.slice(startIndex, endIndex).map(el => el.innerText).join('\n');
-                                return { title, sampleText: content.substring(0, 2000) };
-                            });
-
-                            if (deepData && deepData.sampleText) {
-                                summary = `📝 **Official Updates (${deepData.title})**\n${deepData.sampleText}...`;
-                            }
-                        } catch (e) {
-                            log(`⚠️ [Intel] Deep Parse Failed: ${e.message}`);
-                        }
-                    }
-
-                    updates.push({
-                        source: feed.name,
-                        title: item.title,
-                        link: item.link,
-                        date: item.pubDate,
-                        summary: summary
-                    });
+                // Execute the scraper method
+                if (typeof browser[source.method] === 'function') {
+                    result = await browser[source.method]();
                 }
 
+                if (result) {
+                    // Check if result is an array (WZNews returns array) or single object
+                    if (Array.isArray(result)) {
+                        globalUpdates.push(...result.map(item => ({
+                            ...item,
+                            source: source.name
+                        })));
+                    } else {
+                        globalUpdates.push({
+                            ...result,
+                            source: source.name
+                        });
+                    }
+                }
             } catch (error) {
-                log(`⚠️ [RSS] Failed to fetch ${feed.name}: ${error.message}`);
+                log(`❌ [Intel] Failed to fetch ${source.name}: ${error.message}`);
             }
         }
 
-        return updates;
+        return globalUpdates;
     }
 }
 
-module.exports = new RSSAdapter();
+module.exports = new IntelSourceManager();

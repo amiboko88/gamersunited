@@ -14,7 +14,16 @@ class BrowserAdapter {
             log('[Browser] 🚀 Launching Headless Browser...');
             browser = await puppeteer.launch({
                 headless: "new",
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--single-process',
+                    '--disable-gpu'
+                ]
             });
         }
         return browser;
@@ -46,7 +55,7 @@ class BrowserAdapter {
         }
     }
 
-    // --- 1. WZ Meta Extraction ---
+    // --- 1. WZ Meta Extraction (Updated 2026 DOM) ---
     async getWZMeta() {
         return this._fetchPage(WZ_URL, () => {
             const results = { meta: [], absolute_meta: [] };
@@ -54,34 +63,54 @@ class BrowserAdapter {
             // Helper to clean text
             const clean = t => t ? t.innerText.trim() : null;
 
-            // Strategy: Find categories and iterate
-            // Note: Selectors must be generic enough to survive UI updates
-            document.querySelectorAll('.meta-category').forEach(cat => {
-                const title = clean(cat.querySelector('.meta-category__title'));
+            // The new structure uses H2 titles followed by a div.loadouts-list__group
+            // We iterate over all H2 elements to find categories
+            const headers = document.querySelectorAll('h2');
+
+            headers.forEach(h2 => {
+                const title = clean(h2);
+                if (!title) return;
+
+                // The weapon list is the next sibling element with class .loadouts-list__group
+                const listGroup = h2.nextElementSibling;
+                if (!listGroup || !listGroup.classList.contains('loadouts-list__group')) return;
+
                 const weapons = [];
+                listGroup.querySelectorAll('.loadout-card').forEach(card => {
+                    // Name is in .gun-badge__text
+                    const name = clean(card.querySelector('.gun-badge__text'));
+                    // Code is in .loadout-card-code__content
+                    const code = clean(card.querySelector('.loadout-card-code__content'));
+                    // Image
+                    const image = card.querySelector('.loadout-card__thumbnail img')?.src;
 
-                cat.querySelectorAll('.meta-weapon').forEach(w => {
-                    const name = clean(w.querySelector('.meta-weapon__name'));
-                    const code = clean(w.querySelector('.meta-weapon__code-value'));
-                    const image = w.querySelector('img')?.src;
-
-                    // Attachments
+                    // Attachments logic
                     const attachments = [];
-                    w.querySelectorAll('.meta-attachment').forEach(a => {
-                        attachments.push({
-                            part: clean(a.querySelector('.meta-attachment__type')),
-                            name: clean(a.querySelector('.meta-attachment__name'))
-                        });
+                    // Attachments are in .attachment-card
+                    card.querySelectorAll('.attachment-card').forEach(attCard => {
+                        const nameEl = attCard.querySelector('.attachment-card-content__name div');
+                        const typeEl = attCard.querySelector('.attachment-card-content__name span');
+
+                        if (nameEl && typeEl) {
+                            attachments.push({
+                                part: clean(typeEl), // e.g., "Muzzle"
+                                name: clean(nameEl)  // e.g., "Monolithic Suppressor"
+                            });
+                        }
                     });
 
-                    if (name) weapons.push({ name, code, image, attachments });
+                    if (name) {
+                        weapons.push({ name, code, image, attachments });
+                    }
                 });
 
-                if (title && title.toUpperCase().includes('ABSOLUTE')) {
+                // Assign to correct category in results
+                if (title.toUpperCase().includes('ABSOLUTE')) {
                     results.absolute_meta = weapons;
-                } else {
+                } else if (title.toUpperCase().includes('META')) {
                     results.meta.push({ category: title, weapons });
                 }
+                // We can also capture "Acceptable" if we want, but sticking to Meta for now
             });
 
             return results;

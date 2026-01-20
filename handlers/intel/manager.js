@@ -3,7 +3,7 @@ const rssAdapter = require('./adapters/rss');
 const brain = require('../ai/brain');
 const { log } = require('../../utils/logger');
 const db = require('../../utils/firebase');
-const graphics = require('../graphics/index'); // For weapon cards if needed
+const stringSimilarity = require('string-similarity'); // ✅ Robust Fuzzy Search
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
 
@@ -24,9 +24,6 @@ class IntelManager {
         this.telegram = telegramBot;
 
         log('🧠 [Intel] System 2.0 (The Newsroom) Initialized.');
-
-        // Initial Fetch (Lazy or Eager?)
-        // Let's do a background fetch to warm the cache
         this._updateCache();
     }
 
@@ -38,28 +35,53 @@ class IntelManager {
         const data = await this._getData('meta', () => browserAdapter.getWZMeta());
         if (!data) return "❌ Intel Error: Satellite Offline.";
 
-        const q = query.toLowerCase();
+        const q = query.toLowerCase().trim();
+        const allWeapons = data.absolute_meta || [];
 
-        // 1. Search in Absolute Meta
-        let found = data.absolute_meta.find(w => w.name.toLowerCase().includes(q));
+        // Flatten categories strictly for search if absolute_meta is missing
+        if (allWeapons.length === 0 && data.meta) {
+            data.meta.forEach(cat => allWeapons.push(...cat.weapons));
+        }
 
-        // 2. Search in broader list
+        if (allWeapons.length === 0) return "❌ No weapon data available.";
+
+        // 1. Exact/Includes Match
+        let found = allWeapons.find(w => w.name.toLowerCase().includes(q) || w.name.toLowerCase().replace(/[^a-z0-9]/g, '') === q.replace(/[^a-z0-9]/g, ''));
+
+        // 2. Fuzzy Match (string-similarity)
         if (!found) {
-            for (const category of data.meta) {
-                const match = category.weapons.find(w => w.name.toLowerCase().includes(q));
-                if (match) {
-                    found = match;
-                    break;
-                }
+            const weaponNames = allWeapons.map(w => w.name);
+            const matches = stringSimilarity.findBestMatch(q, weaponNames);
+            if (matches.bestMatch.rating > 0.4) { // 40% confidence threshold
+                found = allWeapons.find(w => w.name === matches.bestMatch.target);
             }
+        }
+
+        // 3. 🧠 Brain Fallback (Super AI: Hebrew to English)
+        // If we still didn't find it, ask the LLM what weapon this might be.
+        if (!found && q.length > 2) {
+            try {
+                // Short, cheap call to identify weapon
+                const candidates = allWeapons.map(w => w.name).slice(0, 50).join(', '); // Context
+                const aiGuess = await brain.generateInternal(`
+                User searched for weapon: "${query}" (Hebrew/Typo).
+                Identify the REAL weapon name from this list: [${candidates}]
+                Return ONLY the exact weapon name. If unsure, return "NULL".
+                `);
+
+                if (aiGuess && aiGuess !== 'NULL') {
+                    found = allWeapons.find(w => w.name.toLowerCase() === aiGuess.toLowerCase().trim());
+                    if (found) log(`🧠 [Intel] AI Resolved "${query}" -> "${found.name}"`);
+                }
+            } catch (e) { /* Ignore AI fail */ }
         }
 
         if (found) {
             return this._formatWeaponResponse(found);
         } else {
             // Return top 5 as fallback
-            const top5 = data.absolute_meta.slice(0, 5).map(w => w.name).join(', ');
-            return `לא מצאתי את "${query}".\n👑 **החזקים ביותר כרגע:** ${top5}`;
+            const top5 = allWeapons.slice(0, 5).map(w => w.name).join(', ');
+            return `לא מצאתי נשק בשם "${query}".\n👑 **החזקים ביותר כרגע:** ${top5}`;
         }
     }
 
@@ -88,10 +110,49 @@ class IntelManager {
         const clean = text.toLowerCase().trim();
 
         // 1. Meta / Loadout
-        if (clean.includes('meta') || clean.includes('loadout') || clean.includes('build') || clean.includes('class') || clean.includes('קוד') || clean.includes('נשק')) {
-            // Extract weapon name (remove keywords)
-            const weapon = clean.replace(/meta|loadout|build|class|קוד|נשק/g, '').trim();
-            if (weapon.length > 2) { // Avoid answering just "meta"
+        // Keywords: Meta, Loadout, Build, Class, Code, Weapon (English & Hebrew Variations)
+        const metaKeywords = [
+            'meta', 'muta', 'loadout', 'build', 'class', 'code', 'weapon',
+            'מטא', 'מטה', 'לודאוט', 'לודווט', 'לודאווט', 'בילד', 'מחלקה', 'קוד', 'נשק', 'רובה'
+        ];
+
+        if (metaKeywords.some(k => clean.includes(k))) {
+            // 1. Remove Strategy Keywords
+            let weapon = clean.replace(new RegExp(metaKeywords.join('|'), 'g'), ' ').trim();
+
+            // 2. Tokenize & Filter Stop Words (More robust than Regex for Hebrew)
+            const stopWords = new Set([
+                'שמעון', 'שימי', 'תביא', 'לי', 'אפשר', 'יש', 'לך', 'עבור', 'בשביל', 'את', 'ה', 'ל',
+                'שלח', 'תן', 'רוצה', 'צריך', 'מחפש', 'מבקש', 'מה', 'עם', 'זה',
+                'shimon', 'simi', 'give', 'me', 'can', 'you', 'get', 'for', 'to', 'the', 'is', 'have', 'send', 'want', 'need'
+            ]);
+
+            let tokens = weapon.split(/\s+/);
+
+            // Filter out stop words
+            tokens = tokens.filter(t => !stopWords.has(t));
+
+            // 3. Handle prefixes (Hebrew 'Lamed')
+            // If token starts with 'ל' and is longer than 3 chars ("לקוגוט"), strip it
+            tokens = tokens.map(t => (t.startsWith('ל') && t.length > 3) ? t.substring(1) : t);
+
+            // 4. Rejoin
+            weapon = tokens.join(' ').trim();
+            weapon = weapon.replace(/[?!.]/g, ''); // Remove punctuation
+
+            // 5. Fallback Heuristic: If we still have multiple words, take the LAST one (90% case)
+            // e.g. "Best setup for the AMR9" -> "AMR9"
+            if (weapon.includes(' ')) {
+                const words = weapon.split(' ');
+                const lastWord = words[words.length - 1];
+                if (lastWord.length > 2) {
+                    // Try the last word first, it's usually the weapon
+                    const match = await this.getMeta(lastWord);
+                    if (!match.includes('לא מצאתי')) return match;
+                }
+            }
+
+            if (weapon.length > 1) {
                 return await this.getMeta(weapon);
             }
         }

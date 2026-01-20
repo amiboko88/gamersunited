@@ -213,7 +213,8 @@ module.exports = {
         // --- 🕵️ Intel Newsroom (Every 30 Minutes) ---
         cron.schedule('*/30 * * * *', async () => {
             const intelManager = require('./intel/manager');
-            await intelManager.checkNews();
+            // 🛑 DEBUG: Disabled due to spam complaints. Re-enable after fixing "First Run" logic.
+            // await intelManager.checkNews();
         });
 
         log('[Scheduler] ✅ כל המשימות תוזמנו בהצלחה.');

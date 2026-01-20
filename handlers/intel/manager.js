@@ -32,6 +32,61 @@ class IntelManager {
         this._updateCache();
     }
 
+    // --- PatchBot Event Listener (Event-Driven Updates) ---
+    async handlePatchBot(msg) {
+        try {
+            // 1. Validate Source & Content
+            const PATCHBOT_CHANNEL = '1016291126992437268';
+            if (msg.channel.id !== PATCHBOT_CHANNEL) return;
+
+            if (msg.embeds.length === 0) return; // Second message usually has no embed or just image
+            const embed = msg.embeds[0];
+            const title = embed.title || embed.author?.name || "";
+            const rawUrl = embed.url || (embed.description && embed.description.match(/https:\/\/patchbot\.io\/click\/[a-zA-Z0-9%\-_]+/)?.[0]);
+
+            log(`🕵️ [Intel] PatchBot Message Detected! Title: "${title}"`);
+
+            // 2. Filter Relevant Games
+            // "Battlefield 6", "NVIDIA GeForce Driver", "Call of Duty", "EA SPORTS FC"
+            let type = null;
+            if (title.includes('Battlefield 6')) type = 'BF6';
+            else if (title.includes('NVIDIA') || title.includes('GeForce')) type = 'NVIDIA';
+            else if (title.includes('Call of Duty') || title.includes('Warzone')) type = 'COD';
+            else if (title.includes('EA SPORTS FC') || title.includes('FIFA')) type = 'FC26';
+
+            if (!type) {
+                log(`🕵️ [Intel] Ignoring PatchBot Update for: "${title}" (Not in Watchlist)`);
+                return;
+            }
+
+            if (!rawUrl) {
+                log(`⚠️ [Intel] PatchBot Update (${type}) detected but NO LINK found.`);
+                return;
+            }
+
+            log(`🚨 [Intel] Processing NEW ${type} Update from PatchBot...`);
+
+            // 3. Construct Item
+            const item = {
+                title: `${type} UPDATE: ${title}`,
+                link: rawUrl, // Browser/Enricher will handle the redirect
+                date: new Date().toISOString(),
+                summary: embed.description || "New Update Available."
+            };
+
+            // 4. Enrich & Summarize (Translation + Smart Summary)
+            // We force enrichment because this is a CONFIRMED update event
+            const enrichedItem = await enricher.enrich(item, "summary"); // "summary" triggers default prompt
+
+            // 5. Broadcast
+            await broadcaster.broadcast(enrichedItem, this.clients);
+            log(`✅ [Intel] Successfully Broadcasted ${type} Update.`);
+
+        } catch (error) {
+            log(`❌ [Intel] PatchBot Handler Error: ${error.message}`);
+        }
+    }
+
     // --- Core Data Fetchers (Delegated) ---
 
     async getMeta(query) {
@@ -150,6 +205,10 @@ class IntelManager {
             // Clean weapon name
             let weaponName = clean;
             metaKeywords.forEach(k => { weaponName = weaponName.replace(k, ''); });
+
+            // Remove Hebrew prefixes specifically (attached to the start of the word)
+            // e.g., לSGX -> SGX, בISO -> ISO
+            weaponName = weaponName.replace(/^([בלמכש])(?=[a-z0-9])/i, '');
 
             const stopWords = ['give', 'me', 'the', 'for', 'is', 'what', 'are', 'in', 'תן', 'לי', 'את', 'ה', 'בשביל', 'של', 'מה', 'יש', 'ב', 'כרגע', 'ל', 'תביא', 'אפשר', 'רוצה', 'צריך', 'מחפש'];
             stopWords.forEach(sw => { weaponName = weaponName.replace(new RegExp(`(^|\\s)${sw}($|\\s)`, 'g'), ' ').trim(); });

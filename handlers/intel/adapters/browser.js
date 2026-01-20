@@ -32,23 +32,32 @@ class BrowserAdapter {
         return browser;
     }
 
+    // --- Generic Article/Page Content Fetcher ---
+    async getArticleContent(url) {
+        return this._fetchPage(url, () => {
+            // Remove navigation, footer, ads to reduce noise
+            const noise = document.querySelectorAll('nav, footer, .ad, .social-share, .cookie-consent, script, style, header');
+            noise.forEach(e => e.remove());
+
+            // Get text from main content if possible
+            const main = document.querySelector('main, article, .content, #content, .patch-notes') || document.body;
+            return main ? main.innerText.slice(0, 5000) : "";
+        });
+    }
+
     async _fetchPage(url, processFunc) {
         let page = null;
         try {
             const b = await this._getBrowser();
             page = await b.newPage();
 
-            // Anti-Bot Evasion Headers
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
             await page.setViewport({ width: 1920, height: 1080 });
-
-            // Extra headers for Cloudflare
-            await page.setExtraHTTPHeaders({
-                'Accept-Language': 'en-US,en;q=0.9',
-            });
+            await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
 
             log(`[Browser] Navigating to ${url}...`);
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 }); // Faster load for XML
+            // Increased timeout and better wait condition for dynamic sites (Nvidia/COD)
+            await page.goto(url, { waitUntil: 'networkidle2', timeout: 90000 });
 
             const data = await page.evaluate(processFunc);
 
@@ -60,39 +69,6 @@ class BrowserAdapter {
             if (page) await page.close().catch(() => { });
             return null;
         }
-    }
-
-    /**
-     * Fetches raw text content (for RSS/XML/JSON) using the headless browser to bypass 403s.
-     */
-    async getRawContent(url) {
-        return this._fetchPage(url, () => document.body.innerText);
-    }
-
-    // --- Generic Article/Page Content Fetcher ---
-    async getArticleContent(url) {
-        return this._fetchPage(url, () => {
-            // Remove navigation, footer, ads to reduce noise
-            document.querySelectorAll('nav, footer, .ad, .social-share, .cookie-consent').forEach(e => e.remove());
-
-            // Get text from main content if possible
-            const main = document.querySelector('main, article, .content, #content') || document.body;
-            return main.innerText.slice(0, 5000); // Limit context for AI
-        });
-    }
-
-
-
-    // --- 8. Generic Article/Page Content Fetcher for AI ---
-    async getArticleContent(url) {
-        return this._fetchPage(url, () => {
-            // Remove navigation, footer, ads to reduce noise
-            document.querySelectorAll('nav, footer, .ad, .social-share, .cookie-consent').forEach(e => e.remove());
-
-            // Get text from main content if possible
-            const main = document.querySelector('main, article, .content, #content') || document.body;
-            return main.innerText.slice(0, 5000); // Limit context for AI
-        });
     }
 }
 

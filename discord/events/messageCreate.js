@@ -8,6 +8,13 @@ const intelManager = require('../../handlers/intel/manager'); // ✅ Intel 2.0
 module.exports = {
     name: Events.MessageCreate,
     async execute(message) {
+        // 0. Special Bot Logic (PatchBot Listener)
+        const PATCHBOT_ID = '402528814548254720';
+        if (message.author.id === PATCHBOT_ID) {
+            await intelManager.handlePatchBot(message);
+            return;
+        }
+
         if (message.author.bot) return;
 
         try {

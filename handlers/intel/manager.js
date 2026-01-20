@@ -1,9 +1,9 @@
 const browserAdapter = require('./adapters/browser');
-const rssAdapter = require('./adapters/rss');
+const rssAdapter = require('./adapters/rss'); // Acts as the Manager now
 const brain = require('../ai/brain');
 const { log } = require('../../utils/logger');
 const db = require('../../utils/firebase');
-const stringSimilarity = require('string-similarity'); // ✅ Robust Fuzzy Search
+const stringSimilarity = require('string-similarity');
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
 
@@ -27,19 +27,25 @@ class IntelManager {
         this._updateCache();
     }
 
-    /**
-     * Smart Search for Meta Weapons
-     * Usage: getMeta("Kogot") -> Returns full data including code/image
-     */
+    // --- Core Data Fetchers ---
+
     async getMeta(query) {
         const data = await this._getData('meta', () => browserAdapter.getWZMeta());
         if (!data) return "❌ Intel Error: Satellite Offline.";
 
         const q = query.toLowerCase().trim();
-        const allWeapons = data.absolute_meta || [];
 
-        // Flatten categories strictly for search if absolute_meta is missing
-        if (allWeapons.length === 0 && data.meta) {
+        // Handle "Absolute" / "Meta" general queries
+        if (q === 'absolute' || q === 'meta' || q.includes('מטא') || q.includes('הכי חזק')) {
+            if (data.absolute_meta && data.absolute_meta.length > 0) {
+                const list = data.absolute_meta.slice(0, 5).map(w => `• ${w.name}`).join('\n');
+                return `👑 **ABSOLUTE META (הכי חזקים):**\n${list}\n\nלפירוט על נשק, כתוב: "תן לי בילד ל[שם הנשק]"`;
+            }
+        }
+
+        const allWeapons = data.absolute_meta || [];
+        // Flatten categories
+        if (data.meta) {
             data.meta.forEach(cat => allWeapons.push(...cat.weapons));
         }
 
@@ -48,21 +54,19 @@ class IntelManager {
         // 1. Exact/Includes Match
         let found = allWeapons.find(w => w.name.toLowerCase().includes(q) || w.name.toLowerCase().replace(/[^a-z0-9]/g, '') === q.replace(/[^a-z0-9]/g, ''));
 
-        // 2. Fuzzy Match (string-similarity)
+        // 2. Fuzzy Match
         if (!found) {
             const weaponNames = allWeapons.map(w => w.name);
             const matches = stringSimilarity.findBestMatch(q, weaponNames);
-            if (matches.bestMatch.rating > 0.4) { // 40% confidence threshold
+            if (matches.bestMatch.rating > 0.4) {
                 found = allWeapons.find(w => w.name === matches.bestMatch.target);
             }
         }
 
-        // 3. 🧠 Brain Fallback (Super AI: Hebrew to English)
-        // If we still didn't find it, ask the LLM what weapon this might be.
+        // 3. Brain Fallback
         if (!found && q.length > 2) {
             try {
-                // Short, cheap call to identify weapon
-                const candidates = allWeapons.map(w => w.name).slice(0, 50).join(', '); // Context
+                const candidates = allWeapons.map(w => w.name).slice(0, 50).join(', ');
                 const aiGuess = await brain.generateInternal(`
                 User searched for weapon: "${query}" (Hebrew/Typo).
                 Identify the REAL weapon name from this list: [${candidates}]
@@ -79,111 +83,137 @@ class IntelManager {
         if (found) {
             return this._formatWeaponResponse(found);
         } else {
-            // Return top 5 as fallback
-            const top5 = allWeapons.slice(0, 5).map(w => w.name).join(', ');
-            return `לא מצאתי נשק בשם "${query}".\n👑 **החזקים ביותר כרגע:** ${top5}`;
+            return {
+                text: `לא מצאתי נשק בשם "${query}".\nנסה לחפש אחד מהרשימה:\n${allWeapons.slice(0, 5).map(w => w.name).join(', ')}`
+            };
         }
     }
 
     async getPlaylists() {
         const modes = await this._getData('playlists', () => browserAdapter.getPlaylists());
         if (!modes || modes.length === 0) return "❌ לא הצלחתי למשוך את הפלייליסטים. נסה שוב מאוחר יותר.";
-
-        return `🎮 **Active Playlists:**\n\n- ` + modes.join('\n- ');
+        return `🎮 **Active WZ Playlists:**\n\n- ` + modes.join('\n- ');
     }
 
     async getBF6() {
         const weapons = await this._getData('bf6', () => browserAdapter.getBF6Meta());
         if (!weapons || weapons.length === 0) return "❌ BF6 Data Unavailable.";
-
         const top = weapons[0];
-        return `🔫 **BF6 Meta King:** ${top.name}\n\n${top.attachments.join('\n')}`;
+        return this._formatWeaponResponse(top, "BF6 Meta King");
+    }
+
+    async getNvidia() {
+        const updates = await browserAdapter.getNvidiaDriverUpdates();
+        if (!updates) return "❌ לא מצאתי עדכוני NVIDIA.";
+        return `🖥️ **${updates.title}**\n\n${updates.summary}\n\n🔗 ${updates.link}`;
+    }
+
+    async getCODUpdates() {
+        const update = await browserAdapter.getCODPatchNotes();
+        if (!update) return "❌ לא מצאתי עדכוני COD רשמיים.";
+        return `🚨 **${update.title}**\n📅 ${new Date(update.date).toLocaleDateString('he-IL')}\n\n${update.summary}\n\n🔗 [קרא עוד](${update.link})`;
     }
 
     // --- NLP Routing ---
 
-    /**
-     * Routes natural language queries to the correct Intel function.
-     * Returns a formatted response string/object or NULL if no Intel intent found.
-     */
     async handleNaturalQuery(text) {
-        const clean = text.toLowerCase().trim();
+        let clean = text.toLowerCase().trim();
 
-        // 1. Meta / Loadout
-        // Keywords: Meta, Loadout, Build, Class, Code, Weapon (English & Hebrew Variations)
-        const metaKeywords = [
-            'meta', 'muta', 'loadout', 'build', 'class', 'code', 'weapon',
-            'מטא', 'מטה', 'לודאוט', 'לודווט', 'לודאווט', 'בילד', 'מחלקה', 'קוד', 'נשק', 'רובה'
-        ];
+        // Remove Punctuation for cleaner matches
+        clean = clean.replace(/[?.,!]/g, '');
 
-        if (metaKeywords.some(k => clean.includes(k))) {
-            // 1. Remove Strategy Keywords
-            let weapon = clean.replace(new RegExp(metaKeywords.join('|'), 'g'), ' ').trim();
+        // --- 0. Dictionary Normalization (Hebrew -> Key Terms) ---
+        clean = clean.replace(/וורזון/g, 'warzone')
+            .replace(/בילד/g, 'build')
+            .replace(/ביולד/g, 'build')
+            .replace(/לואודווט/g, 'loadout')
+            .replace(/לודווט/g, 'loadout')
+            .replace(/לודאוט/g, 'loadout')
+            .replace(/קוד/g, 'code')
+            .replace(/בתאל/g, 'bf6') // User specific
+            .replace(/באטלפילד/g, 'bf6')
+            .replace(/redsec/g, 'bf6') // User specific map to BF6 logic
+            // Preposition Fixes
+            .replace(/בmeta/g, ' meta')
+            .replace(/בwarzone/g, ' warzone');
 
-            // 2. Tokenize & Filter Stop Words (More robust than Regex for Hebrew)
-            const stopWords = new Set([
-                'שמעון', 'שימי', 'תביא', 'לי', 'אפשר', 'יש', 'לך', 'עבור', 'בשביל', 'את', 'ה', 'ל',
-                'שלח', 'תן', 'רוצה', 'צריך', 'מחפש', 'מבקש', 'מה', 'עם', 'זה',
-                'shimon', 'simi', 'give', 'me', 'can', 'you', 'get', 'for', 'to', 'the', 'is', 'have', 'send', 'want', 'need'
-            ]);
+        log(`🧠 [Intel] Normalized Query: "${clean}"`);
 
-            let tokens = weapon.split(/\s+/);
+        // --- 1. Specific High-Priority Routes ---
 
-            // Filter out stop words
-            tokens = tokens.filter(t => !stopWords.has(t));
-
-            // 3. Handle prefixes (Hebrew 'Lamed')
-            // If token starts with 'ל' and is longer than 3 chars ("לקוגוט"), strip it
-            tokens = tokens.map(t => (t.startsWith('ל') && t.length > 3) ? t.substring(1) : t);
-
-            // 4. Rejoin
-            weapon = tokens.join(' ').trim();
-            weapon = weapon.replace(/[?!.]/g, ''); // Remove punctuation
-
-            // 5. Fallback Heuristic: If we still have multiple words, take the LAST one (90% case)
-            if (weapon.includes(' ')) {
-                const words = weapon.split(' ');
-                const lastWord = words[words.length - 1];
-                if (lastWord.length > 2) {
-                    const match = await this.getMeta(lastWord);
-                    // Check if valid response (Object = Weapon found, String = Error/Not Found)
-                    if (typeof match !== 'string' || !match.includes('לא מצאתי')) {
-                        return match; // Found it!
-                    }
-                }
-            }
-
-            if (weapon.length > 1) {
-                return await this.getMeta(weapon);
-            } else {
-                // ⚠️ CRITICIAL FIX: If user said "Give me meta" and we stripped everything, 
-                // DO NOT return null (which triggers Brain Hallucination). Return the Top List.
-                return await this.getMeta("absolute");
-            }
+        // BF6 / Redsec
+        if (clean.includes('bf6')) {
+            return await this.getBF6();
         }
 
-        // 2. Playlists
+        // Nvidia
+        if (clean.includes('nvidia') || clean.includes('דרייבר')) {
+            return await this.getNvidia();
+        }
+
+        // Playlists
         if (clean.includes('playlist') || clean.includes('modes') || clean.includes('מודים') || clean.includes('משחק')) {
             return await this.getPlaylists();
         }
 
-        // 3. News / Updates / Nerfs
-        if (clean.includes('update') || clean.includes('news') || clean.includes('patch') || clean.includes('nerf') || clean.includes('buff') || clean.includes('עדכון') || clean.includes('חדשות') || clean.includes('נרף')) {
-            return await this.getLatestNews(clean);
+        // Official Updates (COD / WZ)
+        // User said: "Warzone Update" -> Official COD Site
+        const updateKeywords = ['update', 'patch', 'עדכון', 'חדש', 'changes', 'אפדייט', 'news', 'חדשות', 'שינויים'];
+        if (updateKeywords.some(k => clean.includes(k))) {
+            if (clean.includes('bf6')) return await browserAdapter.getBF6News(); // Future proofing
+            // Default to COD for generic update queries
+            return await this.getCODUpdates();
         }
 
-        // 4. BF6
-        if (clean.includes('bf6') || clean.includes('battlefield') || clean.includes('באטלפילד')) {
-            return await this.getBF6();
+        // --- 2. Meta / Weapon Logic ---
+        // Keywords: Meta, Loadout, Build, Code, Weapon
+        const metaKeywords = ['meta', 'loadout', 'build', 'code', 'weapon', 'class', 'נשק', 'רובה', 'נשקים', 'רובים', 'הנשקים', 'הרובים'];
+
+        if (metaKeywords.some(k => clean.includes(k))) {
+
+            // A. General Meta Query ("Give me meta", "What is meta?")
+            // If the query is SHORT and barely has words other than "meta", return the list.
+            const significantWords = clean.split(' ').filter(w => !metaKeywords.includes(w) && w.length > 2);
+
+            // Check if significant words are just common filler like "good", "best", "now", "here"
+            const filler = ['הכי', 'טובים', 'חזקים', 'כרגע', 'עכשיו', 'טוב', 'חזק', 'best', 'good', 'top', 'current', 'now', 'ב'];
+            const realWords = significantWords.filter(w => !filler.includes(w));
+
+            if (realWords.length === 0 || clean.includes('הכי חזק') || clean === 'meta') {
+                return await this.getMeta("absolute");
+            }
+
+            // B. Specific Weapon Extraction
+            // Remove keywords to isolate weapon name
+            let weaponName = clean;
+            metaKeywords.forEach(k => { weaponName = weaponName.replace(k, ''); });
+
+            // Remove stop words (Expanded)
+            const stopWords = [
+                'give', 'me', 'the', 'for', 'is', 'what', 'are', 'in',
+                'תן', 'לי', 'את', 'ה', 'בשביל', 'של', 'מה', 'יש', 'ב', 'כרגע', 'ל',
+                'תביא', 'אפשר', 'רוצה', 'צריך', 'מחפש', 'מבקש', 'איזה', 'אילו'
+            ];
+
+            stopWords.forEach(sw => {
+                weaponName = weaponName.replace(new RegExp(`(^|\\s)${sw}($|\\s)`, 'g'), ' ').trim();
+                // Twice for adjacent stop words
+                weaponName = weaponName.replace(new RegExp(`(^|\\s)${sw}($|\\s)`, 'g'), ' ').trim();
+            });
+
+            weaponName = weaponName.replace(/\s+/g, ' ').trim();
+
+            if (weaponName.length > 1) {
+                return await this.getMeta(weaponName);
+            }
         }
 
-        // 5. Implicit Intent (Direct Weapon Name)
-        // If the user just types "Kastov" or "Kogot" without "loadout", try to find it.
-        // We only return if we get a STRONG match (Object, not error string).
+        // Fallback: Implicit Intent (Direct Weapon Name)
         if (clean.length > 2 && clean.length < 20) {
+            // Only return if it finds a REAL result object
             const potentialMatch = await this.getMeta(clean);
-            if (typeof potentialMatch !== 'string') {
-                log(`🧠 [Intel] Implicit Intent Detected: "${clean}" -> Weapon Found`);
+            if (potentialMatch && potentialMatch.code) { // Check for 'code' property to confirm it's a weapon object
+                log(`🧠 [Intel] Implicit Intent Detected: "${clean}"`);
                 return potentialMatch;
             }
         }
@@ -192,130 +222,57 @@ class IntelManager {
     }
 
     async getLatestNews(userQuery = "") {
-        const updates = await rssAdapter.fetchNews();
-        if (updates.length === 0) return "❌ לא מצאתי עדכונים ב-24 שעות האחרונות.";
-
-        // If specific query (e.g. "nerfs?"), filter? For now, return the latest big update.
-        const latest = updates[0];
-
-        // If it's the Official Patch Notes, we have the "Deep Dive" summary already in latest.summary
-
-        let response = `🚨 **${latest.title}**\n📅 ${new Date(latest.date).toLocaleDateString('he-IL')}\n\n${latest.summary}\n\n🔗 [קרא עוד](${latest.link})`;
-
-        return response;
+        // Legacy method tailored to "Updates" route now
+        return await this.getCODUpdates();
     }
 
-    // --- Internal Logic ---
+    // --- Formatters ---
 
-    // --- News / RSS ---
+    _formatWeaponResponse(weapon, titlePrefix = "") {
+        // Better Formatting
+        let text = `🔫 **${titlePrefix || weapon.name}**\n\n`;
 
-    async checkNews() {
-        log('📰 [Intel] Checking for fresh news...');
-        const updates = await rssAdapter.fetchNews();
-        if (updates.length === 0) return;
-
-        const dbRef = db.collection('system_metadata').doc('intel_news');
-        const doc = await dbRef.get();
-        const seenLinks = doc.exists ? (doc.data().seenLinks || []) : [];
-        const newSeen = [...seenLinks];
-
-        for (const news of updates) {
-            if (seenLinks.includes(news.link)) continue;
-
-            log(`📢 [Intel] Breaking News found: ${news.title}`);
-
-            // Broadcast to all platforms
-            await this._broadcastNews(news);
-
-            newSeen.push(news.link);
+        if (weapon.attachments && weapon.attachments.length > 0) {
+            weapon.attachments.forEach(a => {
+                // Handle BF6 string vs WZ Object
+                if (typeof a === 'string') text += `• ${a}\n`;
+                else text += `• **${a.part}**: ${a.name}\n`;
+            });
         }
 
-        // Keep DB clean (last 50 links)
-        if (newSeen.length > 50) newSeen.splice(0, newSeen.length - 50);
-        await dbRef.set({ seenLinks: newSeen }, { merge: true });
+        // Separating Code from Image Logic
+        // The return object is handled by the platform adapters (Whatsapp/Discord)
+        // We ensure 'code' is distinct.
+        return {
+            text: text,
+            code: weapon.code || "No Code Available", // Distinct field
+            image: weapon.image,
+            isWeapon: true // Flag for handlers
+        };
     }
 
-    async _broadcastNews(news) {
-        // AI Summary to Hebrew
-        const summary = await brain.generateInternal(`
-        Translate and summarize this COD news to Hebrew (Gamer Slang/Miltitary Tone):
-        "${news.title} - ${news.summary}"
-        Keep it short (2 sentences).
-        `);
-
-        if (!summary) return;
-
-        const msg = `🚨 **עדכון מודיעין** (${news.source})\n\n${summary}\n\n[קרא עוד](${news.link})`;
-
-        // 1. Discord
-        if (this.discord) {
-            // Find main channel
-            const guild = this.discord.guilds.cache.first();
-            const channel = guild?.channels.cache.find(c => c.name.includes('news') || c.name.includes('general'));
-            if (channel) channel.send(msg);
-        }
-
-        // 2. WhatsApp
-        if (this.whatsapp) {
-            const mainGroup = process.env.WHATSAPP_MAIN_GROUP_ID;
-            if (mainGroup) this.whatsapp.sendMessage(mainGroup, { text: msg });
-        }
-
-        // 3. Telegram
-        if (this.telegram) {
-            const chatId = process.env.TELEGRAM_CHAT_ID;
-            if (chatId) this.telegram.api.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
-        }
-    }
-
+    // --- Internal Helpers ---
     async _updateCache() {
-        log('🔄 [Intel] Warming Cache...');
+        if (!process.env.FIREBASE_PRIVATE_KEY) return; // Skip in dev/test if no creds
         try {
             this.cache.meta.data = await browserAdapter.getWZMeta();
             this.cache.meta.timestamp = Date.now();
-
             this.cache.playlists.data = await browserAdapter.getPlaylists();
             this.cache.playlists.timestamp = Date.now();
-
             this.cache.bf6.data = await browserAdapter.getBF6Meta();
             this.cache.bf6.timestamp = Date.now();
-
-            log('✅ [Intel] Cache Updated.');
-        } catch (e) {
-            log(`⚠️ [Intel] Cache Update Failed: ${e.message}`);
-        }
+        } catch (e) { }
     }
-
     async _getData(key, fetchFunc) {
-        const entry = this.cache[key];
-        const isFresh = (Date.now() - entry.timestamp) < CACHE_TTL;
-
-        if (entry.data && isFresh) {
-            return entry.data;
+        if (this.cache[key] && this.cache[key].data && (Date.now() - this.cache[key].timestamp < CACHE_TTL)) {
+            return this.cache[key].data;
         }
-
-        log(`🔄 [Intel] Live Fetching ${key}...`);
-        const newData = await fetchFunc();
-        if (newData) {
-            this.cache[key] = { data: newData, timestamp: Date.now() };
-            return newData;
+        const data = await fetchFunc();
+        if (data) {
+            this.cache[key].data = data;
+            this.cache[key].timestamp = Date.now();
         }
-
-        // Fallback to stale data if fetch fails
-        return entry.data;
-    }
-
-    _formatWeaponResponse(weapon) {
-        let text = `🔫 **${weapon.name}**\n\n`;
-        weapon.attachments.forEach(a => {
-            text += `*${a.part}*: ${a.name}\n`;
-        });
-
-        return {
-            text: text,
-            code: weapon.code,
-            image: weapon.image
-        };
+        return data;
     }
 }
 

@@ -217,8 +217,16 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderPhone, dbUserId
                 if (typeof intelResponse === 'object' && intelResponse.image) {
                     await sock.sendMessage(chatJid, {
                         image: { url: intelResponse.image },
-                        caption: intelResponse.text + `\n\n📌 **Code:** \`${intelResponse.code}\``
+                        caption: intelResponse.text
                     }, { quoted: msg });
+
+                    // 💥 Send Code Separately for Easy Copy
+                    if (intelResponse.code && intelResponse.code !== "No Code Available") {
+                        // Small delay to ensure order
+                        setTimeout(async () => {
+                            await sock.sendMessage(chatJid, { text: intelResponse.code });
+                        }, 500);
+                    }
                 }
                 // Case B: Simple Text (News/Playlist)
                 else {

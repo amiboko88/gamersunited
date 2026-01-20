@@ -25,6 +25,8 @@ async function textToSpeech(text, specificVoiceId = null) {
                 }
             },
             {
+                // Request MP3 explicitly
+                params: { output_format: 'mp3_44100_128' },
                 headers: { 'xi-api-key': API_KEY, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' },
                 responseType: 'arraybuffer'
             }

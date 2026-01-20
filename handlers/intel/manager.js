@@ -35,8 +35,31 @@ class IntelManager {
     // --- Core Data Fetchers (Delegated) ---
 
     async getMeta(query) {
-        const data = await this._getData('meta', () => codSource.getMeta());
-        return await codSource.searchWeapon(query, data);
+        // 1. Try COD (Priority)
+        const codData = await this._getData('meta', () => codSource.getMeta());
+        const codResult = await codSource.searchWeapon(query, codData);
+
+        // If found valid weapon, return it
+        if (codResult && codResult.isWeapon) return codResult;
+
+        // 2. Try BF6 (Fallback)
+        const bf6Data = await this._getData('bf6', () => bf6Source.getMeta());
+        // We need a search method in BF6 source too, or ad-hoc here.
+        // Let's implement text search for BF6 here since it's simple list.
+        if (bf6Data && Array.isArray(bf6Data)) {
+            const q = query.toLowerCase().trim();
+            const found = bf6Data.find(w => w.name.toLowerCase().includes(q));
+            if (found) {
+                return {
+                    text: `🔫 **${found.name}** (BF6)\n\n${found.attachments.map(a => `• ${a.part}: ${a.name}`).join('\n')}`,
+                    image: found.image,
+                    isWeapon: true
+                };
+            }
+        }
+
+        // 3. Return original failure or tailored message
+        return codResult;
     }
 
     async getPlaylists() {
@@ -85,14 +108,28 @@ class IntelManager {
         log(`🧠 [Intel] Normalized Query: "${clean}"`);
 
         // 0. Specific High-Priority Routes (Must be before Generic Updates)
-        if (clean.includes('nvidia') || clean.includes('דרייבר')) return await this.getNvidia();
+        if (clean.includes('nvidia') || clean.includes('דרייבר')) {
+            const updates = await nvidiaSource.getUpdates();
+            // Wrap in Enricher if user asked a question or just general "update"
+            if (updates && updates.link && (clean.length > 15 || clean.includes('what') || clean.includes('מה'))) {
+                return await enricher.enrich(updates, text);
+            }
+            return nvidiaSource.formatUpdate(updates);
+        }
+
         if (clean.includes('playlist') || clean.includes('modes') || clean.includes('מודים')) return await this.getPlaylists();
 
         // 1. Updates (High Priority)
         const updateKeywords = ['update', 'patch', 'עדכון', 'חדש', 'changes', 'אפדייט', 'news', 'חדשות', 'שינויים'];
         if (updateKeywords.some(k => clean.includes(k))) {
-            if (clean.includes('bf6')) return await bf6Source.getUpdates();
-            return await this.getCODUpdates();
+            if (clean.includes('bf6')) {
+                const updates = await bf6Source.getUpdates();
+                if (updates && updates.link) {
+                    return await enricher.enrich(updates, text);
+                }
+                return "❌ No recent BF6 updates found.";
+            }
+            return await this.getLatestNews(text); // COD (Enriched)
         }
 
         // 2. Specific High-Priority Routes (BF6 Meta is handled here or below?)
@@ -164,19 +201,39 @@ class IntelManager {
                 const item = await check.source[check.method]();
                 if (!item || typeof item === 'string') continue;
 
+                // 1. Ancient History Guard: If update is older than 48 hours, IGNORE IT.
+                // This protects against DB wipes or resets causing spam.
+                const updateTime = new Date(item.date).getTime();
+                const now = Date.now();
+                if ((now - updateTime) > 48 * 60 * 60 * 1000) {
+                    // Too old to broadcast, but we update cache to suppress future checks
+                    // Only update DB if we don't have it, to keep sync
+                    if (md[check.titleKey] !== item.title) {
+                        await docRef.set({ [check.dateKey]: item.date, [check.titleKey]: item.title }, { merge: true });
+                    }
+                    continue;
+                }
+
                 let isNew = false;
-                const lastTitle = md[check.titleKey] || "";
+                const lastTitle = md[check.titleKey];
+                const lastDate = md[check.dateKey];
+
+                // 2. First Run / Empty DB Guard: 
+                // If we have NO history for this source, do NOT broadcast. Just save silently.
+                // This prevents spamming "new" news when the bot is first installed or DB is fresh.
+                if (!lastTitle && !lastDate) {
+                    log(`🛡️ [Intel] First run check for ${check.type}. Saving baseline (Silent).`);
+                    await docRef.set({ [check.dateKey]: item.date, [check.titleKey]: item.title }, { merge: true });
+                    continue;
+                }
 
                 if (check.checkType === 'title') {
                     // Strict Title Check
-                    if (item.title !== lastTitle) isNew = true;
+                    if (item.title && item.title !== lastTitle) isNew = true;
                 } else {
                     // Date Check (Legacy/COD)
-                    const lastDate = md[check.checkType] || 0;
-                    const updateDate = new Date(item.date).getTime();
-                    const savedDate = new Date(lastDate).getTime();
-                    // 24h freshness
-                    if (updateDate > savedDate && (Date.now() - updateDate) < 24 * 60 * 60 * 1000) isNew = true;
+                    const savedTime = new Date(lastDate || 0).getTime();
+                    if (updateTime > savedTime) isNew = true;
                 }
 
                 if (isNew) {

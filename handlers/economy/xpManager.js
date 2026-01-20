@@ -3,7 +3,8 @@ const { log } = require('../../utils/logger');
 const graphics = require('../graphics/index');
 const { economy } = require('../../config/settings');
 const { getSocket } = require('../../whatsapp/socket');
-const voiceManager = require('../ai/voice');
+const voiceManager = require('../media/voice'); // ✅ Switch to Working Voice Engine (Media)
+const waStore = require('../../whatsapp/store'); // ✅ Store for ID resolution
 const shimonBrain = require('../ai/brain');
 const learningEngine = require('../ai/learning');
 const fs = require('fs');
@@ -123,11 +124,15 @@ class XPManager {
             const cardBuffer = await graphics.profile.generateLevelUpCard(name, level, xp, avatar);
 
             if (platform === 'whatsapp' && contextObj.sock && contextObj.chatId) {
-                // A. Send Image with Caption (Mentions)
+                // A. Send Image with Caption (Fixed Mentions)
+                // Resolve Real Phone for tagging (to avoid 10077... LID)
+                const realPhone = waStore.getPhoneById(userId) || userId.split('@')[0];
+                const mentionJid = realPhone.includes('@') ? realPhone : `${realPhone}@s.whatsapp.net`;
+
                 await contextObj.sock.sendMessage(contextObj.chatId, {
                     image: cardBuffer,
-                    caption: `🎉 *LEVEL UP!* \nמזל טוב @${userId.split('@')[0]} עלית לרמה *${level}*!\n💰 קיבלת 100₪ מתנה לחשבון.`,
-                    mentions: [contextObj.msg?.key?.participant || userId]
+                    caption: `🎉 *LEVEL UP!* \nמזל טוב @${realPhone} עלית לרמה *${level}*!\n💰 קיבלת 100₪ מתנה לחשבון.`,
+                    mentions: [mentionJid]
                 });
 
                 // B. Generate Shimon Roast Voice Note 🎙️
@@ -146,11 +151,12 @@ class XPManager {
 
                     const script = await shimonBrain.generateInternal(prompt);
                     if (script) {
-                        const audioBuffer = await voiceManager.speak(script);
+                        // User Media Voice Engine (Hardcoded ID)
+                        const audioBuffer = await voiceManager.textToSpeech(script);
                         if (audioBuffer) {
                             await contextObj.sock.sendMessage(contextObj.chatId, {
                                 audio: audioBuffer,
-                                mimetype: 'audio/mp4',
+                                mimetype: 'audio/mpeg', // ✅ Changed from 'audio/mp4' for Android Compatibility
                                 ptt: true // Sent as "Voice Note"
                             });
                         }
@@ -160,6 +166,7 @@ class XPManager {
                 }
 
             } else {
+
                 // Discord Fallback
                 if (replyFunc) await replyFunc(`🎉 **LEVEL UP!** ${name} -> Level ${level} (+100 Coins 💰)`);
             }

@@ -272,7 +272,7 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderPhone, dbUserId
                 const voiceEngine = require('../../handlers/media/voice');
                 audioBuffer = await voiceEngine.textToSpeech(responseText);
                 if (audioBuffer) {
-                    await sock.sendMessage(chatJid, { audio: audioBuffer, ptt: true }, { quoted: msg });
+                    await sock.sendMessage(chatJid, { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: true }, { quoted: msg });
                     // אין return כאן כדי לאפשר ניקוי נעילה ב-finally
                 }
             } catch (e) {

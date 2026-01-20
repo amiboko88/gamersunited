@@ -32,10 +32,13 @@ class IntelBroadcaster {
         } catch (e) { log(`Error Broadcast WA: ${e.message}`); }
 
         // 3. Telegram
+        // 3. Telegram
         try {
-            if (telegram) {
+            // Telegraf uses 'telegram.sendMessage' (API) or 'bot.telegram.sendMessage'
+            const tg = telegram && telegram.telegram ? telegram.telegram : telegram;
+            if (tg && tg.sendMessage) {
                 const chatId = process.env.TG_MAIN_GROUP_ID || '-1001836262829';
-                await telegram.telegram.sendMessage(chatId, `${finalSummary}\n\n[קרא עוד](${item.link})`, { parse_mode: 'Markdown' });
+                await tg.sendMessage(chatId, `${finalSummary}\n\n[קרא עוד](${item.link})`, { parse_mode: 'Markdown' });
             }
         } catch (e) { log(`Error Broadcast TG: ${e.message}`); }
 

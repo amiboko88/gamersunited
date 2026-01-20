@@ -41,7 +41,7 @@ const source = {
             const titleEl = card.querySelector('h3');
             const dateEl = Array.from(card.querySelectorAll('span[class*="Typography_typography__"]')).find(s => s.innerText.match(/[A-Z][a-z]+ \d+,? \d{4}/));
 
-            if (titleEl) {
+            if (titleEl && titleEl.innerText.trim().length > 3) {
                 return {
                     title: `BF6 UPDATE: ${titleEl.innerText.trim()}`,
                     link: card.href,
@@ -56,6 +56,15 @@ const source = {
     // --- Formatter ---
     getFormattedMeta(weapons) {
         if (!weapons || weapons.length === 0) return "❌ BF6 Data Unavailable.";
+
+        // Sanity Check: If weapons look like COD keys (e.g. Kastov, M4, Taq), fail it.
+        const suspicious = ['kastov', 'm4', 'taq', 'iso', 'lachmann'];
+        const isSuspicious = weapons.some(w => suspicious.some(s => w.name.toLowerCase().includes(s)));
+
+        if (isSuspicious) {
+            return "⚠️ **Intel Warning**: קיבלתי מידע שגוי (נשקי Warzone). כנראה הערוץ המוצפן (BFHub) נפרץ או מעביר אותנו לכתובת אחרת.";
+        }
+
         const list = weapons.slice(0, 5).map(w => `• ${w.name}`).join('\n');
         return `🔫 **BF6 META LOADOUTS (Top 5):**\n${list}\n\nלפירוט על נשק, כתוב: "תן לי בילד ל[שם הנשק]"`;
     }

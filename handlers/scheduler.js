@@ -210,6 +210,12 @@ module.exports = {
             await ghostProtocol.startHunt();
         }, { timezone: "Asia/Jerusalem" });
 
+        // --- 🕵️ Intel Newsroom (Every 30 Minutes) ---
+        cron.schedule('*/30 * * * *', async () => {
+            const intelManager = require('./intel/manager');
+            await intelManager.checkNews();
+        });
+
         log('[Scheduler] ✅ כל המשימות תוזמנו בהצלחה.');
     }
 };

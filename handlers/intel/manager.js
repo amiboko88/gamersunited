@@ -1,190 +1,195 @@
-const scraper = require('./scraper');
-const admin = require('firebase-admin');
-const db = admin.firestore();
+const browserAdapter = require('./adapters/browser');
+const rssAdapter = require('./adapters/rss');
 const brain = require('../ai/brain');
-const voiceManager = require('../ai/voice');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+const { log } = require('../../utils/logger');
+const db = require('../../utils/firebase');
+const graphics = require('../graphics/index'); // For weapon cards if needed
 
-const COLLECTION_NAME = 'system_data';
-const DOC_ID = 'warzone_intel';
+const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
 
-let discordClientRef = null;
-let whatsappSockRef = null;
-let telegramBotRef = null;
-let mainGroupId = process.env.WHATSAPP_MAIN_GROUP_ID;
-
-async function initIntel(discordClient, whatsappSock, telegramBot) {
-    console.log('[Intel] Initializing Warzone Intel System...');
-
-    discordClientRef = discordClient;
-    whatsappSockRef = whatsappSock;
-    telegramBotRef = telegramBot;
-
-    // Initial check
-    await syncMeta();
-    await syncUpdates();
-
-    // Schedule
-    setInterval(async () => {
-        await syncUpdates();
-    }, 1000 * 60 * 60 * 4); // Every 4 hours
-
-    setInterval(async () => {
-        await syncMeta();
-    }, 1000 * 60 * 60 * 24); // Every 24 hours
-}
-
-async function syncMeta() {
-    console.log('[Intel] Syncing Meta...');
-    const data = await scraper.fetchMeta();
-    if (data && data.length > 0) {
-        await db.collection(COLLECTION_NAME).doc(DOC_ID).set({
-            meta_weapons: data,
-            meta_last_updated: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
-        console.log('[Intel] Meta synced.');
-    } else {
-        console.log('[Intel] No meta data found or error.');
+class IntelManager {
+    constructor() {
+        this.cache = {
+            meta: { data: null, timestamp: 0 },
+            playlists: { data: null, timestamp: 0 },
+            bf6: { data: null, timestamp: 0 }
+        };
     }
-}
 
-async function syncUpdates() {
-    console.log('[Intel] Checking for updates...');
-    const latest = await scraper.checkUpdates();
-    if (latest) {
-        const doc = await db.collection(COLLECTION_NAME).doc(DOC_ID).get();
-        const currentData = doc.exists ? doc.data() : {};
+    // --- Public API ---
 
-        // 🛡️ Double Check: URL mismatch AND Date mismatch
-        // Prevents re-firing if URL changes slightly but date is identical (unlikely but safe)
-        if (currentData.latest_patch_url !== latest.url) {
+    async initIntel(discordClient, whatsappSock, telegramBot) {
+        this.discord = discordClient;
+        this.whatsapp = whatsappSock;
+        this.telegram = telegramBot;
 
-            // Extra Safety: If we already have this DATE stored, skip it.
-            // (Unless it's a "Hotfix" on the same day? Usually they update the article)
-            if (currentData.latest_patch_date === latest.date) {
-                console.log(`[Intel] Update has new URL but same date (${latest.date}). Skipping to avoid spam.`);
-                return;
-            }
+        log('🧠 [Intel] System 2.0 (The Newsroom) Initialized.');
 
-            console.log('[Intel] New update found!', latest.title);
+        // Initial Fetch (Lazy or Eager?)
+        // Let's do a background fetch to warm the cache
+        this._updateCache();
+    }
 
-            // 1. Fetch content
-            const content = await scraper.getUpdateContent(latest.url);
+    /**
+     * Smart Search for Meta Weapons
+     * Usage: getMeta("Kogot") -> Returns full data including code/image
+     */
+    async getMeta(query) {
+        const data = await this._getData('meta', () => browserAdapter.getWZMeta());
+        if (!data) return "❌ Intel Error: Satellite Offline.";
 
-            // 2. Summarize & Translate via AI
-            // We ALWAYS summarize so the AI Brain has the context in the DB
-            const summary = await summarizeUpdate(latest.title, content);
+        const q = query.toLowerCase();
 
-            // 2.5 Check Nvidia Drivers (Only if broadcasting usually, but let's keep it simple)
-            let gpuNote = "";
-            try {
-                const gpuInfo = await scraper.checkNvidiaDrivers();
-                if (gpuInfo) {
-                    const driverDate = new Date(gpuInfo.date);
-                    const daysOld = (new Date() - driverDate) / (1000 * 60 * 60 * 24);
-                    if (daysOld < 5) {
-                        gpuNote = `\n\n💡 **טיפ טכני:** יצא גם דרייבר חדש ל-NVIDIA (${gpuInfo.version}). תתקינו שלא יקרוס!`;
-                    }
+        // 1. Search in Absolute Meta
+        let found = data.absolute_meta.find(w => w.name.toLowerCase().includes(q));
+
+        // 2. Search in broader list
+        if (!found) {
+            for (const category of data.meta) {
+                const match = category.weapons.find(w => w.name.toLowerCase().includes(q));
+                if (match) {
+                    found = match;
+                    break;
                 }
-            } catch (e) {
-                console.log('[Intel] GPU Check failed (minor)', e);
             }
+        }
 
-            const fullSummary = summary + gpuNote;
-
-            // 🛡️ AGE CHECK (The "Silent Update" Logic)
-            // If the update is older than 48 hours, we DO NOT annoy users.
-            // But we DO save it to DB so Shimon knows about it.
-            const updateDate = new Date(latest.date);
-            const now = new Date();
-            const hoursDiff = (now - updateDate) / (1000 * 60 * 60);
-            const isFresh = hoursDiff < 48;
-
-            let audioPath = null;
-            if (isFresh) {
-                // 2.6 Generate Audio Briefing Only for Fresh News
-                try {
-                    const ttsText = `עדכון חדש בוורזון! ${latest.title}. ${summary.substring(0, 250)}... יאללה ללובי.`;
-                    const audioBuffer = await voiceManager.speak(ttsText);
-                    if (audioBuffer) audioPath = audioBuffer;
-                } catch (e) { console.error('[Intel] TTS Gen Failed:', e); }
-            } else {
-                console.log(`[Intel] Update is valid but old (${hoursDiff.toFixed(1)} hours). Saving to DB without Broadcast.`);
-            }
-
-            // 3. Save to Firestore (Context is now updated!)
-            await db.collection(COLLECTION_NAME).doc(DOC_ID).set({
-                latest_patch_url: latest.url,
-                latest_patch_title: latest.title,
-                latest_patch_date: latest.date,
-                latest_patch_summary: fullSummary, // Saved!
-                update_last_checked: admin.firestore.FieldValue.serverTimestamp()
-            }, { merge: true });
-
-            // 4. Notify All Platforms (Only if fresh)
-            if (isFresh) {
-                await broadcastUpdate(fullSummary, latest.url, audioPath);
-            }
-
+        if (found) {
+            return this._formatWeaponResponse(found);
         } else {
-            console.log('[Intel] No new updates.');
+            // Return top 5 as fallback
+            const top5 = data.absolute_meta.slice(0, 5).map(w => w.name).join(', ');
+            return `לא מצאתי את "${query}".\n👑 **החזקים ביותר כרגע:** ${top5}`;
         }
     }
-}
 
-async function broadcastUpdate(summary, url, audioBuffer = null) {
-    const finalMsg = `📢 **עדכון וורזון חדש - דיווח שמעון!** 📢\n\n${summary}\n\n🔗 לינק מלא: ${url}`;
+    async getPlaylists() {
+        const modes = await this._getData('playlists', () => browserAdapter.getPlaylists());
+        if (!modes || modes.length === 0) return "❌ לא הצלחתי למשוך את הפלייליסטים. נסה שוב מאוחר יותר.";
 
-    // WhatsApp
-    if (whatsappSockRef && mainGroupId) {
+        return `🎮 **Active Playlists:**\n\n- ` + modes.join('\n- ');
+    }
+
+    async getBF6() {
+        const weapons = await this._getData('bf6', () => browserAdapter.getBF6Meta());
+        if (!weapons || weapons.length === 0) return "❌ BF6 Data Unavailable.";
+
+        const top = weapons[0];
+        return `🔫 **BF6 Meta King:** ${top.name}\n\n${top.attachments.join('\n')}`;
+    }
+
+    // --- Internal Logic ---
+
+    // --- News / RSS ---
+
+    async checkNews() {
+        log('📰 [Intel] Checking for fresh news...');
+        const updates = await rssAdapter.fetchNews();
+        if (updates.length === 0) return;
+
+        const dbRef = db.collection('system_metadata').doc('intel_news');
+        const doc = await dbRef.get();
+        const seenLinks = doc.exists ? (doc.data().seenLinks || []) : [];
+        const newSeen = [...seenLinks];
+
+        for (const news of updates) {
+            if (seenLinks.includes(news.link)) continue;
+
+            log(`📢 [Intel] Breaking News found: ${news.title}`);
+
+            // Broadcast to all platforms
+            await this._broadcastNews(news);
+
+            newSeen.push(news.link);
+        }
+
+        // Keep DB clean (last 50 links)
+        if (newSeen.length > 50) newSeen.splice(0, newSeen.length - 50);
+        await dbRef.set({ seenLinks: newSeen }, { merge: true });
+    }
+
+    async _broadcastNews(news) {
+        // AI Summary to Hebrew
+        const summary = await brain.generateInternal(`
+        Translate and summarize this COD news to Hebrew (Gamer Slang/Miltitary Tone):
+        "${news.title} - ${news.summary}"
+        Keep it short (2 sentences).
+        `);
+
+        if (!summary) return;
+
+        const msg = `🚨 **עדכון מודיעין** (${news.source})\n\n${summary}\n\n[קרא עוד](${news.link})`;
+
+        // 1. Discord
+        if (this.discord) {
+            // Find main channel
+            const guild = this.discord.guilds.cache.first();
+            const channel = guild?.channels.cache.find(c => c.name.includes('news') || c.name.includes('general'));
+            if (channel) channel.send(msg);
+        }
+
+        // 2. WhatsApp
+        if (this.whatsapp) {
+            const mainGroup = process.env.WHATSAPP_MAIN_GROUP_ID;
+            if (mainGroup) this.whatsapp.sendMessage(mainGroup, { text: msg });
+        }
+
+        // 3. Telegram
+        if (this.telegram) {
+            const chatId = process.env.TELEGRAM_CHAT_ID;
+            if (chatId) this.telegram.api.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
+        }
+    }
+
+    async _updateCache() {
+        log('🔄 [Intel] Warming Cache...');
         try {
-            await whatsappSockRef.sendMessage(mainGroupId, { text: finalMsg });
+            this.cache.meta.data = await browserAdapter.getWZMeta();
+            this.cache.meta.timestamp = Date.now();
 
-            if (audioBuffer) {
-                await whatsappSockRef.sendMessage(mainGroupId, {
-                    audio: audioBuffer, // Passing Buffer directly
-                    mimetype: 'audio/mp4',
-                    ptt: true // Send as Voice Note
-                });
-                // No text pointer needed, Voice Note appears naturally below
-            }
-        } catch (e) { console.error('[Intel] WA Broadcast Error:', e); }
+            this.cache.playlists.data = await browserAdapter.getPlaylists();
+            this.cache.playlists.timestamp = Date.now();
+
+            this.cache.bf6.data = await browserAdapter.getBF6Meta();
+            this.cache.bf6.timestamp = Date.now();
+
+            log('✅ [Intel] Cache Updated.');
+        } catch (e) {
+            log(`⚠️ [Intel] Cache Update Failed: ${e.message}`);
+        }
     }
 
-    // Telegram & Discord - Add logic if IDs are available structure-wise
-    console.log('[Intel] Broadcast sent:', finalMsg);
-}
+    async _getData(key, fetchFunc) {
+        const entry = this.cache[key];
+        const isFresh = (Date.now() - entry.timestamp) < CACHE_TTL;
 
-async function summarizeUpdate(title, content) {
-    const prompt = `
-    You are Shimon, the Gamer AI.
-    A new Call of Duty Warzone update has been released: "${title}".
-    
-    Here is the raw text content of the update (truncated):
-    ${content.slice(0, 3000)}...
-    
-    Task:
-    1. Summarize the MOST important changes (Nerfs/Buffs to popular weapons, new maps, big events).
-    2. Translate the summary to Hebrew (Slang/Gamer style).
-    3. Keep it short (max 3-4 bullet points).
-    4. End with a cool line like "יאללה ללובי".
-    
-    Output strictly the Hebrew summary.
-    `;
+        if (entry.data && isFresh) {
+            return entry.data;
+        }
 
-    try {
-        const AiResponse = await brain.generateInternal(prompt);
-        return AiResponse || "עדכון חדש ב-Warzone! (לא הצלחתי לסכם, תבדקו בקישור)";
-    } catch (e) {
-        console.error("AI Summary failed", e);
-        return "יש עדכון חדש! כנסו לראות.";
+        log(`🔄 [Intel] Live Fetching ${key}...`);
+        const newData = await fetchFunc();
+        if (newData) {
+            this.cache[key] = { data: newData, timestamp: Date.now() };
+            return newData;
+        }
+
+        // Fallback to stale data if fetch fails
+        return entry.data;
+    }
+
+    _formatWeaponResponse(weapon) {
+        let text = `🔫 **${weapon.name}**\n\n`;
+        weapon.attachments.forEach(a => {
+            text += `*${a.part}*: ${a.name}\n`;
+        });
+
+        return {
+            text: text,
+            code: weapon.code,
+            image: weapon.image
+        };
     }
 }
 
-module.exports = {
-    initIntel,
-    syncMeta,
-    syncUpdates
-};
+module.exports = new IntelManager();

@@ -4,6 +4,7 @@ const nvidiaSource = require('./sources/nvidia');
 
 const broadcaster = require('./services/broadcaster');
 const enricher = require('./services/enricher');
+const classifier = require('./services/classifier');
 
 const { log } = require('../../utils/logger');
 const db = require('../../utils/firebase');
@@ -149,85 +150,55 @@ class IntelManager {
 
     // --- NLP Routing ---
 
+
+
     async handleNaturalQuery(text) {
-        let clean = text.toLowerCase().trim().replace(/[?.,!]/g, '');
+        // 1. Basic cleaning (remove "Shimon" trigger word, keep the rest raw)
+        const cleanText = text.replace(/^(שמעון|שימי|shimon),?\s*/i, '').trim();
 
-        // Dictionary Normalization
-        clean = clean.replace(/וורזון/g, 'warzone')
-            .replace(/בילד/g, 'build').replace(/ביולד/g, 'build')
-            .replace(/לואודווט/g, 'loadout').replace(/לודווט/g, 'loadout').replace(/לודאוט/g, 'loadout')
-            .replace(/קוד/g, 'code')
-            .replace(/בתאל/g, 'bf6').replace(/באטלפילד/g, 'bf6').replace(/redsec/g, 'bf6')
-            .replace(/בmeta/g, ' meta').replace(/בwarzone/g, ' warzone');
+        // 2. AI Classification
+        const classification = await classifier.classify(cleanText);
+        const { intent, entity, game } = classification;
 
-        log(`🧠 [Intel] Normalized Query: "${clean}"`);
+        if (classification.confidence < 0.5 && intent === 'GENERAL_CHAT') return null;
 
-        // 0. Specific High-Priority Routes (Must be before Generic Updates)
-        if (clean.includes('nvidia') || clean.includes('דרייבר')) {
-            const updates = await nvidiaSource.getUpdates();
-            // Wrap in Enricher if user asked a question or just general "update"
-            if (updates && updates.link && (clean.length > 15 || clean.includes('what') || clean.includes('מה'))) {
-                return await enricher.enrich(updates, text);
-            }
-            return nvidiaSource.formatUpdate(updates);
-        }
+        log(`🧠 [Intel] Routing Intent: ${intent} | Entity: ${entity} | Game: ${game}`);
 
-        if (clean.includes('playlist') || clean.includes('modes') || clean.includes('מודים')) return await this.getPlaylists();
-
-        // 1. Updates (High Priority)
-        const updateKeywords = ['update', 'patch', 'עדכון', 'חדש', 'changes', 'אפדייט', 'news', 'חדשות', 'שינויים'];
-        if (updateKeywords.some(k => clean.includes(k))) {
-            if (clean.includes('bf6')) {
-                const updates = await bf6Source.getUpdates();
-                if (updates && updates.link) {
-                    return await enricher.enrich(updates, text);
+        // 3. Routing Switch
+        switch (intent) {
+            case 'WEAPON_META':
+                if (entity) {
+                    return await this.getMeta(entity); // getMeta handles "absolute" internally if entity is "meta"
                 }
-                return "❌ No recent BF6 updates found.";
-            }
-            return await this.getLatestNews(text); // COD (Enriched)
-        }
-
-        // 2. Specific High-Priority Routes (BF6 Meta is handled here or below?)
-        if (clean.includes('bf6')) return await this.getBF6();
-
-        // 3. Weapon Logic (Delegated to COD Source via getMeta)
-        const metaKeywords = ['meta', 'loadout', 'build', 'code', 'weapon', 'class', 'נשק', 'רובה', 'נשקים', 'רובים'];
-
-        if (metaKeywords.some(k => clean.includes(k))) {
-            const significantWords = clean.split(' ').filter(w => !metaKeywords.includes(w) && w.length > 2);
-            const filler = ['הכי', 'טובים', 'חזקים', 'כרגע', 'עכשיו', 'טוב', 'חזק', 'best', 'good', 'top', 'current', 'now', 'ב', 'give', 'me'];
-            const realWords = significantWords.filter(w => !filler.includes(w));
-
-            if (realWords.length === 0 || clean.includes('הכי חזק') || clean === 'meta') {
                 return await this.getMeta("absolute");
-            }
 
-            // Clean weapon name
-            let weaponName = clean;
-            metaKeywords.forEach(k => { weaponName = weaponName.replace(k, ''); });
+            case 'GAME_UPDATE':
+                if (game === 'BF6') {
+                    const updates = await bf6Source.getUpdates();
+                    if (updates && updates.link) return await enricher.enrich(updates, text);
+                    return "❌ No recent BF6 updates found.";
+                } else if (game === 'NVIDIA' || (entity && entity.toLowerCase().includes('nvidia'))) {
+                    const updates = await nvidiaSource.getUpdates();
+                    if (updates && updates.link) return await enricher.enrich(updates, text);
+                    return nvidiaSource.formatUpdate(updates);
+                } else {
+                    // Default to COD / General Update
+                    return await this.getLatestNews(text);
+                }
 
-            // Remove Hebrew prefixes specifically (attached to the start of the word)
-            // e.g., לSGX -> SGX, בISO -> ISO
-            weaponName = weaponName.replace(/^([בלמכש])(?=[a-z0-9])/i, '');
+            case 'DRIVER_UPDATE':
+                const updates = await nvidiaSource.getUpdates();
+                if (updates && updates.link) return await enricher.enrich(updates, text);
+                return nvidiaSource.formatUpdate(updates);
 
-            const stopWords = ['give', 'me', 'the', 'for', 'is', 'what', 'are', 'in', 'תן', 'לי', 'את', 'ה', 'בשביל', 'של', 'מה', 'יש', 'ב', 'כרגע', 'ל', 'תביא', 'אפשר', 'רוצה', 'צריך', 'מחפש'];
-            stopWords.forEach(sw => { weaponName = weaponName.replace(new RegExp(`(^|\\s)${sw}($|\\s)`, 'g'), ' ').trim(); });
+            case 'PLAYLIST_INFO':
+                return await this.getPlaylists();
 
-            if (weaponName.replace(/\s+/g, ' ').trim().length > 1) {
-                return await this.getMeta(weaponName);
-            }
+            case 'GENERAL_CHAT':
+            default:
+                // Let the Brain handle conversation
+                return null;
         }
-
-        // Implicit Intent
-        if (clean.length > 2 && clean.length < 20) {
-            const potentialMatch = await this.getMeta(clean);
-            if (potentialMatch && potentialMatch.code) {
-                log(`🧠 [Intel] Implicit Intent Detected: "${clean}"`);
-                return potentialMatch;
-            }
-        }
-
-        return null;
     }
 
     // --- Automated News Cycle (Scheduler) ---

@@ -55,9 +55,18 @@ class BrowserAdapter {
             await page.setViewport({ width: 1920, height: 1080 });
             await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
 
+            await page.setRequestInterception(true);
+            page.on('request', (req) => {
+                if (['image', 'stylesheet', 'font', 'media', 'websocket'].includes(req.resourceType())) {
+                    req.abort();
+                } else {
+                    req.continue();
+                }
+            });
+
             log(`[Browser] Navigating to ${url}...`);
-            // Increased timeout and better wait condition for dynamic sites (Nvidia/COD)
-            await page.goto(url, { waitUntil: 'networkidle2', timeout: 90000 });
+            // Optimized: Block heavy assets & wait for DOM only (faster, less timeouts)
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
             const data = await page.evaluate(processFunc);
 

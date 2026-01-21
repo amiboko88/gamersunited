@@ -41,13 +41,19 @@ const source = {
             const titleEl = card.querySelector('h3');
             // FIX: EA Changed Date Format/Class. Use safer generic date finder.
             const dateText = Array.from(card.querySelectorAll('span, div')).find(el => el.innerText.match(/[A-Za-z]+ \d{1,2},? \d{4}/))?.innerText;
-            const dateISO = dateText ? new Date(dateText).toISOString() : new Date().toISOString();
+
+            let finalDate = new Date().toISOString();
+            if (dateText) {
+                try {
+                    finalDate = new Date(dateText).toISOString();
+                } catch (e) { /* Fallback to now */ }
+            }
 
             if (titleEl && titleEl.innerText.trim().length > 3) {
                 return {
                     title: `BF6 UPDATE: ${titleEl.innerText.trim()}`,
                     link: card.href,
-                    date: dateEl ? new Date(dateEl.innerText).toISOString() : new Date().toISOString(),
+                    date: finalDate,
                     summary: "Official BF6 Game Update. Click to read full patch notes."
                 };
             }

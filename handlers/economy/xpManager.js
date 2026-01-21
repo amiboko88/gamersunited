@@ -124,15 +124,35 @@ class XPManager {
             const cardBuffer = await graphics.profile.generateLevelUpCard(name, level, xp, avatar);
 
             if (platform === 'whatsapp' && contextObj.sock && contextObj.chatId) {
-                // A. Send Image with Caption (Fixed Mentions)
-                // Resolve Real Phone for tagging (to avoid 10077... LID)
-                const realPhone = waStore.getPhoneById(userId) || userId.split('@')[0];
-                const mentionJid = realPhone.includes('@') ? realPhone : `${realPhone}@s.whatsapp.net`;
+                // A. Send Image with Caption (Smart Mentions)
+                // The goal is to avoid displaying the ugly LID (429...) in the text.
+
+                let displayTag = "";
+                const mentions = [userId]; // Always mention the target ID (LID or Phone) so they get notified
+
+                // Try to find a clean phone number for the visual tag
+                let phoneJid = waStore.getPhoneById(userId);
+
+                // If the userId itself looks like a phone number (not LID), use it
+                if (!phoneJid && !userId.includes('lid') && userId.includes('@s.whatsapp.net')) {
+                    phoneJid = userId;
+                }
+
+                if (phoneJid) {
+                    // We have a phone number! Use it for the pretty tag
+                    const cleanPhone = phoneJid.split('@')[0];
+                    displayTag = `@${cleanPhone}`;
+                    mentions.push(phoneJid); // Add phone JID to mentions just in case
+                } else {
+                    // We only have a LID and couldn't resolve the phone. 
+                    // Fallback: Use the Name text instead of an ugly number tag.
+                    displayTag = `*${name}*`;
+                }
 
                 await contextObj.sock.sendMessage(contextObj.chatId, {
                     image: cardBuffer,
-                    caption: `🎉 *LEVEL UP!* \nמזל טוב @${realPhone} עלית לרמה *${level}*!\n💰 קיבלת 100₪ מתנה לחשבון.`,
-                    mentions: [mentionJid]
+                    caption: `🎉 *LEVEL UP!* \nמזל טוב ${displayTag} עלית לרמה *${level}*!\n💰 קיבלת 100₪ מתנה לחשבון.`,
+                    mentions: mentions
                 });
 
                 // B. Generate Shimon Roast Voice Note 🎙️
@@ -154,10 +174,14 @@ class XPManager {
                         // User Media Voice Engine (Hardcoded ID)
                         const audioBuffer = await voiceManager.textToSpeech(script);
                         if (audioBuffer) {
+                            // 🔄 Convert to OGG Opus for Android Compatibility
+                            const converter = require('../media/converter');
+                            const oggBuffer = await converter.convertToOgg(audioBuffer);
+
                             await contextObj.sock.sendMessage(contextObj.chatId, {
-                                audio: audioBuffer,
-                                mimetype: 'audio/mpeg', // ✅ Changed from 'audio/mp4' for Android Compatibility
-                                ptt: true // Sent as "Voice Note"
+                                audio: oggBuffer,
+                                mimetype: 'audio/ogg; codecs=opus', // ✅ Verified Android Fix
+                                ptt: true
                             });
                         }
                     }

@@ -36,11 +36,18 @@ class WhatsAppScout {
                 // p.id is typically the Phone JID (e.g. 97250...@s.whatsapp.net)
                 // p.lid is the LID JID (e.g. 12345...@lid) - THIS IS WHAT WE MISSING
 
-                const phoneJid = p.id || '';
-                const lidJid = p.lid || '';
+                let phoneJid = p.id || '';
+                let lidJid = p.lid || '';
 
-                const realPhone = phoneJid.split('@')[0];
-                const realLid = lidJid.split('@')[0];
+                // 🐛 FIX: Baileys sometimes puts the LID in 'id' and the Phone in 'phoneNumber'
+                if (phoneJid.includes('@lid')) {
+                    lidJid = phoneJid;
+                    phoneJid = p.phoneNumber || '';
+                    // If phoneNumber is missing, we might have a problem, but usually it's there
+                }
+
+                const realPhone = phoneJid ? phoneJid.split('@')[0] : '';
+                const realLid = lidJid ? lidJid.split('@')[0] : '';
 
                 if (!realPhone) continue;
 

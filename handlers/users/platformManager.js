@@ -143,80 +143,23 @@ class PlatformManager {
         await interaction.editReply({ files: [{ attachment: card, name: 'dashboard_dc.png' }], components: [row], embeds: [] });
     }
 
-    // --- �🖋️ HTML GENERATORS ---
-
-    getHtmlTemplate(title, color, stats, icon) {
-        return `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap');
-                body { margin:0; background:#050505; font-family:'Outfit', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; color:white; display:flex; align-items:center; justify-content:center; height:400px; width:800px; overflow:hidden; }
-                .card { width:100%; height:100%; display:flex; padding:40px; box-sizing:border-box; background:radial-gradient(circle at top right, ${color}15 0%, #050505 60%); border: 1px solid ${color}33; position: relative; z-index: 1; }
-                .left { flex:1; display:flex; flex-direction:column; justify-content:center; z-index: 2; }
-                .right { width:320px; display:flex; flex-direction:column; gap:16px; justify-content:center; z-index: 2; }
-                
-                h1 { font-size:42px; margin:0; line-height:1; text-transform:uppercase; letter-spacing:1px; font-weight: 900; text-shadow: 0 0 20px ${color}44; }
-                .subtitle { font-size:18px; color:#888; font-weight:700; margin-bottom:24px; text-transform:uppercase; letter-spacing:3px; display:flex; align-items:center; gap:10px; }
-                
-                .stat-box { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); padding:16px 24px; border-radius:12px; display:flex; justify-content:space-between; align-items:center; backdrop-filter: blur(10px); }
-                .stat-label { color:#bbb; font-size:16px; font-weight:600; letter-spacing: 0.5px; }
-                .stat-value { font-size:22px; font-weight:800; color:#fff; text-shadow: 0 0 10px ${color}66; }
-                
-                .status-badge { display:inline-flex; align-items:center; gap:8px; padding:6px 14px; border-radius:30px; background:${color}11; border:1px solid ${color}44; color:${color}; font-weight:bold; font-size:13px; margin-bottom:12px; width:fit-content; box-shadow: 0 0 15px ${color}11; }
-                .icon-bg { position:absolute; right:-40px; bottom:-40px; font-size:350px; opacity:0.04; pointer-events:none; z-index: 0; filter: grayscale(100%); }
-            </style>
-        </head>
-        <body>
-            <div class="icon-bg">${icon}</div>
-            <div class="card">
-                <div class="left">
-                    <div class="status-badge">● ONLINE</div>
-                    <h1>${title}</h1>
-                    <div class="subtitle">${icon} DASHBOARD</div>
-                </div>
-                <div class="right">
-                    ${stats.map(s => `
-                    <div class="stat-box">
-                        <span class="stat-label">${s.label}</span>
-                        <span class="stat-value">${s.value}</span>
-                    </div>`).join('')}
-                </div>
-            </div>
-        </body>
-        </html>`;
-    }
+    // --- �️ HTML GENERATORS (Moved to Graphics) ---
+    // All card generation logic is now in handlers/graphics/dashboards.js 
+    // to keep this file under 500 lines.
 
     async generateWhatsAppCard(deviceStatus, linkedCount, missingPfpCount) {
-        const stats = [
-            { label: 'DEVICE', value: deviceStatus },
-            { label: 'LINKED USERS', value: linkedCount },
-            { label: 'MISSING PFP', value: missingPfpCount || '✅' }
-        ];
-        return this.renderCard(this.getHtmlTemplate('WHATSAPP BRIDGE', '#00e676', stats, '💬'));
+        const dashboardGraphics = require('../graphics/dashboards');
+        return await dashboardGraphics.generateWhatsAppCard(deviceStatus, linkedCount, missingPfpCount);
     }
 
     async generateTelegramCard(webhookStatus, orphansCount, confidence) {
-        const stats = [
-            { label: 'STATUS', value: webhookStatus },
-            { label: 'SUSPECTS', value: orphansCount },
-            { label: 'AVG CONFIDENCE', value: confidence + '%' }
-        ];
-        return this.renderCard(this.getHtmlTemplate('TELEGRAM SCOUT', '#29b6f6', stats, '✈️'));
+        const dashboardGraphics = require('../graphics/dashboards');
+        return await dashboardGraphics.generateTelegramCard(webhookStatus, orphansCount, confidence);
     }
 
     async generateDiscordCard(memberCount, ghostCount, deadCount) {
-        const stats = [
-            { label: 'MEMBERS', value: memberCount },
-            { label: 'DB GHOSTS', value: ghostCount },
-            { label: 'INACTIVE', value: deadCount }
-        ];
-        return this.renderCard(this.getHtmlTemplate('DISCORD CORE', '#5865F2', stats, '🎮'));
-    }
-
-    async renderCard(html) {
-        return await graphics.render(html, 800, 400);
+        const dashboardGraphics = require('../graphics/dashboards');
+        return await dashboardGraphics.generateDiscordCard(memberCount, ghostCount, deadCount);
     }
 
     // --- 🛠️ TOOLS & ACTIONS ---
@@ -420,151 +363,20 @@ class PlatformManager {
         }
     }
 
-    // --- 📊 STATS DASHBOARD (New) ---
+    // --- 📊 STATS DASHBOARD (Moved to statsReview.js) ---
     async showStatsReview(interaction) {
-        if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 });
-        const db = require('../../utils/firebase');
-
-        try {
-            const pendingSnap = await db.collection('pending_stats').orderBy('timestamp', 'desc').limit(5).get();
-
-            if (pendingSnap.empty) {
-                return interaction.editReply({
-                    content: '✅ **No Pending Stats to Review.** All clean!',
-                    embeds: [], components: []
-                });
-            }
-
-            const embeds = [];
-            const rows = [];
-
-            pendingSnap.forEach((doc, index) => {
-                const data = doc.data();
-                const embed = new EmbedBuilder()
-                    .setTitle(`Unknown User: ${data.username}`)
-                    .setDescription(`Matches found for **${data.username}** needs linking.`)
-                    .addFields(
-                        { name: 'Kills', value: `${data.kills}`, inline: true },
-                        { name: 'Damage', value: `${data.damage}`, inline: true },
-                        { name: 'Uploaded By', value: `${data.uploadedBy}`, inline: true }
-                    )
-                    .setColor('#FFA500'); // Orange
-
-                if (data.proofUrl) embed.setThumbnail(data.proofUrl);
-
-                embeds.push(embed);
-
-                // Add Actions for this item
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId(`btn_stat_approve_${doc.id}`).setLabel('Link User').setStyle(ButtonStyle.Success).setEmoji('🔗'),
-                    new ButtonBuilder().setCustomId(`btn_stat_delete_${doc.id}`).setLabel('Discard').setStyle(ButtonStyle.Danger).setEmoji('🗑️')
-                );
-                rows.push(row);
-            });
-
-            await interaction.editReply({
-                content: `**⚠️ Found ${pendingSnap.size} Pending Stats**\nReview below:`,
-                embeds: embeds,
-                components: rows
-            });
-
-        } catch (error) {
-            log(`❌ [Stats Review] Error: ${error.message}`);
-            interaction.editReply({ content: '❌ System Error loading stats.' });
-        }
+        const statsReview = require('./statsReview');
+        await statsReview.showStatsReview(interaction);
     }
 
     async handleStatsAction(interaction, action, docId) {
-        if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 });
-        const db = require('../../utils/firebase');
-        const userManager = require('./manager');
-
-        try {
-            const statRef = db.collection('pending_stats').doc(docId);
-            const doc = await statRef.get();
-
-            if (!doc.exists) {
-                return interaction.editReply({ content: '❌ Stat record not found (Already processed?).' });
-            }
-
-            if (action === 'delete') {
-                await statRef.delete();
-                await interaction.editReply({ content: '🗑️ Deleted pending stat.' });
-            }
-            else if (action === 'approve') {
-                // We need to ask WHICH user to link to.
-                // Since this is a button click, we can't easily open a user select menu immediately if we are in ephemeral reply context sometimes.
-                // Better approach: Show a User Select Menu now.
-
-                const { StringSelectMenuBuilder, UserSelectMenuBuilder, ActionRowBuilder } = require('discord.js');
-
-                const userSelect = new UserSelectMenuBuilder()
-                    .setCustomId(`menu_stat_link_user_${docId}`)
-                    .setPlaceholder('Select the Discord User to link this score to')
-                    .setMaxValues(1);
-
-                const row = new ActionRowBuilder().addComponents(userSelect);
-
-                await interaction.editReply({
-                    content: `🔗 **Linking Stats for '${doc.data().username}'**\nSelect the user below:`,
-                    components: [row]
-                });
-                return; // Stop here, wait for menu selection
-            }
-
-            // Refresh default view
-            setTimeout(() => this.showStatsReview(interaction), 2000);
-
-        } catch (e) {
-            log(`❌ [Stats Action] Error: ${e.message}`);
-            interaction.editReply({ content: `Error: ${e.message}` });
-        }
+        const statsReview = require('./statsReview');
+        await statsReview.handleStatsAction(interaction, action, docId);
     }
 
     async finalizeStatsLink(interaction, docId, targetUserId) {
-        if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 });
-        const db = require('../../utils/firebase');
-
-        try {
-            const statRef = db.collection('pending_stats').doc(docId);
-            const statDoc = await statRef.get();
-
-            if (!statDoc.exists) return interaction.editReply('❌ Stats gone.');
-
-            const data = statDoc.data();
-            const userRef = db.collection('users').doc(targetUserId);
-
-            // 1. Save to User Profile
-            await userRef.collection('games').add({
-                game: 'Warzone',
-                mode: data.mode || 'Unknown',
-                kills: data.kills,
-                damage: data.damage,
-                placement: 0,
-                evidence_batch: data.evidence_batch,
-                timestamp: data.timestamp,
-                manual_link: true
-            });
-
-            // 2. Add Alias to User Identity (So next time it auto-links)
-            // We only add the exact username found in the image
-            await userRef.set({
-                identity: {
-                    aliases: admin.firestore.FieldValue.arrayUnion(data.username.toLowerCase())
-                }
-            }, { merge: true });
-
-            // 3. Delete Pending
-            await statRef.delete();
-
-            await interaction.editReply(`✅ **Linked!**\nStats moved to <@${targetUserId}>.\nAdded alias "${data.username}" for future auto-detection.`);
-
-            setTimeout(() => this.showStatsReview(interaction), 3000);
-
-        } catch (e) {
-            log(`❌ [Stats Link] Error: ${e.message}`);
-            interaction.editReply(`Error: ${e.message}`);
-        }
+        const statsReview = require('./statsReview');
+        await statsReview.finalizeStatsLink(interaction, docId, targetUserId);
     }
 
     // --- UTILS ---

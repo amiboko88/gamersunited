@@ -45,130 +45,110 @@ class VoiceRenderer {
                 }
                 .card {
                     width: 800px; height: 450px;
-                    background: radial-gradient(circle at top right, #2b2d42 0%, #0d0d11 75%);
+                    background: radial-gradient(circle at center, #1a1a2e 0%, #000000 90%);
                     font-family: 'Outfit', 'Noto Color Emoji', 'Segoe UI Emoji', sans-serif;
                     color: white;
                     display: flex; flex-direction: column;
                     align-items: center;
                     justify-content: center;
                     box-sizing: border-box;
-                    padding-top: 20px;
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    border-radius: 24px;
+                    padding-top: 40px;
                     position: relative;
-                    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
                     overflow: hidden;
+                    /* No Border Radius as requested */
                 }
 
-                /* Glass Effect Overlay */
+                /* Subtle background grid/noise for premium feel */
                 .card::before {
                     content: '';
                     position: absolute;
-                    top: -50%; left: -50%;
-                    width: 200%; height: 200%;
-                    background: radial-gradient(circle, rgba(255,255,255,0.03) 0%, transparent 60%);
+                    top: 0; left: 0; width: 100%; height: 100%;
+                    background-image: 
+                        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+                    background-size: 40px 40px;
+                    opacity: 0.3;
                     pointer-events: none;
                 }
                 
                 .live-badge {
-                    position: absolute;
-                    top: 25px;
-                    background: linear-gradient(90deg, #ff0044, #ff4444);
+                    background: #ff0044;
                     color: white;
-                    padding: 6px 16px;
-                    border-radius: 20px;
-                    font-weight: 800;
-                    font-size: 13px;
-                    box-shadow: 0 0 20px rgba(255, 0, 68, 0.4);
+                    padding: 8px 24px;
+                    border-radius: 40px; /* Badge stays rounded */
+                    font-weight: 900;
+                    font-size: 16px;
+                    box-shadow: 0 0 30px rgba(255, 0, 68, 0.6);
                     text-transform: uppercase;
-                    letter-spacing: 1.5px;
-                    display: flex; align-items: center; gap: 8px;
+                    letter-spacing: 3px;
+                    margin-bottom: 20px;
                     z-index: 2;
                 }
-                .live-dot {
-                    width: 8px; height: 8px; background: white; border-radius: 50%;
-                    animation: pulse 1.5s infinite;
-                }
-                @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
                 .channel-name {
-                    font-size: 38px;
+                    font-size: 64px; /* BIGGER */
                     font-weight: 900;
-                    margin-top: 35px;
-                    margin-bottom: 40px;
+                    margin-bottom: 50px;
                     text-transform: uppercase;
-                    letter-spacing: 1px;
+                    letter-spacing: 2px;
                     color: #fff;
-                    text-shadow: 0 0 30px rgba(255,255,255,0.1);
+                    text-shadow: 0 0 40px rgba(255,255,255,0.2);
                     text-align: center;
-                    max-width: 85%;
+                    max-width: 90%;
                     white-space: nowrap;
                     overflow: hidden;
                     text-overflow: ellipsis;
                     z-index: 2;
+                    display: flex; align-items: center; justify-content: center; gap: 15px;
                 }
                 
                 .users-grid {
                     display: flex;
                     flex-wrap: wrap;
                     justify-content: center;
-                    gap: 25px;
+                    gap: 30px;
                     width: 90%;
-                    max-height: 250px;
                     z-index: 2;
                 }
 
                 .avatar-wrapper {
                     display: flex; flex-direction: column; align-items: center;
-                    width: 85px;
-                    opacity: 0;
-                    animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+                    width: 100px; /* Slightly wider */
                 }
-                .avatar-wrapper:nth-child(1) { animation-delay: 0.1s; }
-                .avatar-wrapper:nth-child(2) { animation-delay: 0.15s; }
-                .avatar-wrapper:nth-child(3) { animation-delay: 0.2s; }
-                .avatar-wrapper:nth-child(4) { animation-delay: 0.25s; }
-                
-                @keyframes popIn { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
                 .avatar {
-                    width: 75px; height: 75px;
+                    width: 85px; height: 85px; /* Bigger Avatars */
                     border-radius: 50%;
-                    border: 3px solid #4CAF50;
+                    border: 3px solid #00e676; /* Green ring */
                     object-fit: cover;
                     background: #222;
-                    box-shadow: 0 8px 20px rgba(0,0,0,0.4);
-                    transition: transform 0.2s;
+                    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
                 }
                 
                 .name {
-                    margin-top: 10px;
-                    font-size: 14px;
-                    font-weight: 600;
-                    color: rgba(255,255,255,0.9);
+                    margin-top: 12px;
+                    font-size: 16px;
+                    font-weight: 700;
+                    color: #ddd;
                     text-align: center;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
                     width: 100%;
                 }
 
                 .extra-count {
-                    width: 75px; height: 75px;
+                    width: 85px; height: 85px;
                     border-radius: 50%;
                     background: rgba(255,255,255,0.1);
                     border: 2px dashed rgba(255,255,255,0.3);
                     display: flex; align-items: center; justify-content: center;
-                    font-size: 22px;
+                    font-size: 28px;
                     font-weight: 800;
                     color: #aaa;
-                    backdrop-filter: blur(5px);
                 }
             </style>
         </head>
         <body>
             <div class="card">
-                <div class="live-badge"><div class="live-dot"></div>LIVE NOW</div>
+                <div class="live-badge">LIVE NOW</div>
                 <div class="channel-name">${SafeChannelName}</div>
                 
                 <div class="users-grid">

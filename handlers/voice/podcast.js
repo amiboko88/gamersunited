@@ -1,8 +1,10 @@
 // 📁 handlers/voice/podcast.js
 const { log } = require('../../utils/logger');
 const { getUserData } = require('../../utils/userUtils');
-const audioManager = require('../audio/manager'); // Using the robust audio manager
-const openaiTTS = require('../ai/openai_tts');
+const audioManager = require('../audio/manager');
+const voiceManager = require('../ai/voice'); // ✅ ElevenLabs Manager
+const config = require('../ai/config');
+const db = require('../../utils/firebase'); // For Stats Query
 const { OpenAI } = require('openai');
 const fs = require('fs');
 const path = require('path');
@@ -11,16 +13,14 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const MIN_USERS = 3;
 const COOLDOWN = 30 * 60 * 1000;
 let lastPodcastTime = 0;
-// We use a simple lock to prevent double-triggering
 let isStabilizing = false;
 let activeChannelId = null;
 
 class PodcastManager {
 
     async handleVoiceStateUpdate(oldState, newState) {
-        // 🛑 1. Ignore Bot's own movements (Prevent Zombie Loop)
+        // 🛑 1. Ignore Bot's own movements
         if (newState.member.user.bot) {
-            // If the bot disconnected, clear state immediately
             if (!newState.channelId && oldState.channelId === activeChannelId) {
                 log('[Podcast] Bot disconnected. Clearing state.');
                 activeChannelId = null;
@@ -31,23 +31,21 @@ class PodcastManager {
 
         const channel = newState.channel;
 
-        // 🛑 2. Active Session Logic (Exit if crowd disperses)
+        // 🛑 2. Active Session Logic
         if (activeChannelId) {
-            // strict check: if the event is unrelated to the active channel, ignore
             if (oldState.channelId !== activeChannelId && newState.channelId !== activeChannelId) return;
 
             const guild = oldState.guild || newState.guild;
             const activeChannel = guild.channels.cache.get(activeChannelId);
 
             if (!activeChannel) {
-                activeChannelId = null; // Channel deleted?
+                activeChannelId = null;
                 return;
             }
 
             const currentMembers = activeChannel.members.filter(m => !m.user.bot).size;
             if (currentMembers < MIN_USERS) {
                 log('[Podcast] Audience too small (<3). Stopping session.');
-                // Force stop audio
                 const audioPlayer = require('../audio/manager');
                 if (audioPlayer.stop) audioPlayer.stop(guild.id);
                 activeChannelId = null;
@@ -57,9 +55,8 @@ class PodcastManager {
         }
 
         // 🛑 3. Validation for New Session
-        if (!channel) return; // Disconnect event (handled above if active, ignored otherwise)
+        if (!channel) return;
 
-        // Custom Test Channel
         const TEST_CHANNEL_ID = '1396779274173943828';
         const isTestMode = channel.id === TEST_CHANNEL_ID;
 
@@ -76,7 +73,6 @@ class PodcastManager {
             log(`[Podcast] Crowd detected... Stabilizing (6s)...`);
 
             setTimeout(async () => {
-                // Re-validate after delay
                 const targetChannel = newState.guild.channels.cache.get(channel.id);
                 if (!targetChannel) { isStabilizing = false; return; }
 
@@ -92,7 +88,6 @@ class PodcastManager {
                 lastPodcastTime = Date.now();
                 activeChannelId = channel.id;
 
-                // Pick Victim
                 const victim = humans.find(h => h.id === newState.member.id) || humans[Math.floor(Math.random() * humans.length)];
 
                 try {
@@ -109,57 +104,87 @@ class PodcastManager {
     }
 
     async playPersonalPodcast(voiceChannel, member) {
-        log(`[Podcast] Generating Script (GPT-4o) for ${member.displayName}...`);
+        log(`[Podcast] Generating Script (ElevenLabs + Stats) for ${member.displayName}...`);
 
-        // 1. Data Fetch
+        // 1. Data Fetch (Stats + Facts)
         const userData = await getUserData(member.id, 'discord');
         const roasts = userData?.brain?.roasts || [];
         const facts = userData?.brain?.facts?.map(f => f.content) || [];
-        const contextData = [...facts, ...roasts].sort(() => 0.5 - Math.random()).slice(0, 3);
-        const contextStr = contextData.length ? contextData.join('\n') : "Just roast him for being boring.";
+
+        // 🔍 Fetch Last Game Stats
+        let statsContext = "No recent games recorded.";
+        try {
+            const gamesSnap = await db.collection('users').doc(member.id).collection('games')
+                .orderBy('timestamp', 'desc').limit(1).get();
+
+            if (!gamesSnap.empty) {
+                const game = gamesSnap.docs[0].data();
+                const kills = game.kills || 0;
+                const damage = game.damage || 0;
+                const mode = game.mode || 'Warzone';
+
+                let performance = "AVERAGE";
+                if (kills === 0) performance = "TRASH (0 Kills)";
+                else if (kills > 7) performance = "SWEATY TRYHARD";
+                else if (damage < 500) performance = "PACIFIST (No Damage)";
+
+                statsContext = `LAST MATCH (${mode}): ${kills} Kills, ${damage} Dmg. Performance: ${performance}.`;
+            }
+        } catch (e) { log(`⚠️ Failed to fetch stats: ${e.message}`); }
+
+        const contextData = [...facts, ...roasts].slice(0, 3);
+        const personalContext = contextData.length ? contextData.join('\n') : "Just roast him generically.";
 
         // 2. GPT-4o Script Generation
         const prompt = `
         Characters:
-        1. Shimon: 40yo Israeli Ars. Rude, loud, slang-heavy.
-        2. Shirly: 25yo Cynical Tel-Avivian. Sarcastic, bored.
+        1. Shimon: 40yo Israeli Ars. Voice: Deep, Hoarse, Aggressive.
+        2. Shirly: 25yo Cynical Tel-Avivian. Voice: High, Bored, Sarcastic.
 
         Goal: Roast "${member.displayName}".
-        Context: ${contextStr}
+        
+        🔥 REQUIRED CONTEXT 🔥
+        ${statsContext}
+        
+        Additional Info:
+        ${personalContext}
 
         Rules:
-        - Language: STREET HEBREW (Slang allowed).
+        - ⚠️ MUST reference the Kills/Damage from the Last Match if available!
+        - Language: STREET HEBREW (Slang allowed, English gaming terms ok).
         - Length: EXACTLY 3 lines.
         - Format: Speaker: Text
         - Order: Shimon -> Shirly -> Shimon.
-        - Vibe: Savage, funny.
+        - Style: Brutal, Funny, Authentic.
 
         Output Example:
-        Shimon: תגידי שירלי, ראית את הטישרט של עמי? נראה כמו סחבה.
-        Shirly: עזוב נו, הוא חושב שזה וינטג', בפועל זה סתם כתם של טחינה.
-        Shimon: וינטג' עאלק, זה נראה כמו משהו שמצאו בפח של רמי לוי.
+        Shimon: בואנה שירלי, ראית את ה-0 הריגות של עמי? פדיחות.
+        Shirly: עזוב נו, הוא עשה 200 נזק, הוא ירה בציפורים כל המשחק.
+        Shimon: ציפורים עאלק, זה נראה כאילו הוא משחק עם הרגליים.
         `;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "system", content: "You are a savage Israeli comedy writer." }, { role: "user", content: prompt }],
-            max_tokens: 250,
-            temperature: 0.9
+            max_tokens: 300,
+            temperature: 0.95
         });
 
         const rawScript = completion.choices[0].message.content;
         const script = rawScript.split('\n').filter(l => l.includes(':')).map(line => {
             const [speaker, ...textParts] = line.split(':');
+            const name = speaker.trim().toLowerCase();
             return {
-                speaker: speaker.trim().toLowerCase(),
+                speaker: name,
                 text: textParts.join(':').trim(),
-                persona: speaker.toLowerCase().includes('shirly') ? 'shirly' : 'shimon'
+                // Select Voice ID based on speaker name
+                voiceId: name.includes('shirly') ? config.SHIRLY_VOICE_ID : config.SHIMON_VOICE_ID
             };
         });
 
         if (!script.length) throw new Error("Script generation failed (Empty)");
 
-        // 3. Audio Construction
+        // 3. Audio Construction (ElevenLabs)
         const queue = [];
 
         // Intro
@@ -171,20 +196,29 @@ class PodcastManager {
         if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
         for (const [i, line] of script.entries()) {
-            const buffer = await openaiTTS.speak(line.text, line.persona);
+            // Call ElevenLabs via VoiceManager
+            const buffer = await voiceManager.speak(line.text, {
+                voiceId: line.voiceId,
+                stability: 0.5,
+                similarityBoost: 0.8
+            });
+
             if (buffer) {
-                const filePath = path.join(tempDir, `pod_${member.id}_${i}_${Date.now()}.mp3`);
+                const filePath = path.join(tempDir, `pod_eleven_${member.id}_${i}_${Date.now()}.mp3`);
                 fs.writeFileSync(filePath, buffer);
                 queue.push({ type: 'file', path: filePath, temp: true });
             }
         }
 
+        // Laugh Track
+        const laughPath = path.join(__dirname, '../../assets/audio/effects/laugh.mp3');
+        if (fs.existsSync(laughPath)) queue.push({ type: 'file', path: laughPath });
+
         // 4. Playback
         for (const item of queue) {
-            // Check if still active before playing next track
             if (!activeChannelId) break;
             await audioManager.playLocalFileAndWait(voiceChannel.guild.id, voiceChannel.id, item.path);
-            await new Promise(r => setTimeout(r, 600)); // Pacing
+            await new Promise(r => setTimeout(r, 600)); // Natural pause between speakers
         }
 
         // 5. Cleanup
@@ -192,13 +226,10 @@ class PodcastManager {
             queue.filter(i => i.temp).forEach(i => {
                 try { fs.unlinkSync(i.path); } catch (e) { }
             });
-            // Graceful exit
             activeChannelId = null;
-            // audioManager.stop(voiceChannel.guild.id); // Optional: Disconnect after show? User might want bot to stay.
-            // Let's disconnect to be safe and avoid getting stuck.
             const am = require('../audio/manager');
             if (am.stop) am.stop(voiceChannel.guild.id);
-        }, 1000); // Quick cleanup
+        }, 2000);
     }
 }
 

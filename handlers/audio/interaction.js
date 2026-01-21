@@ -14,7 +14,7 @@ class AudioInteractionHandler {
         // (הקוד של התפריט הראשי נשאר אותו דבר כמו ששלחתי קודם)
         // אני מקצר כאן כדי לחסוך מקום, תעתיק את showConsole מהגרסה הקודמת
         // או שאשלח לך שוב אם תבקש. העיקר נמצא למטה ב-handleFilePlay.
-         const embed = new EmbedBuilder()
+        const embed = new EmbedBuilder()
             .setTitle('🎧 Shimon DJ Console')
             .setDescription('מערכת הסאונד המרכזית.\nבחר קטגוריה כדי לטעון קבצים.')
             .setColor('#2b2d31')
@@ -38,10 +38,10 @@ class AudioInteractionHandler {
             new ButtonBuilder().setCustomId('audio_ctrl_stop').setEmoji('⏹️').setStyle(ButtonStyle.Danger)
         );
 
-        await interaction.reply({ 
-            embeds: [embed], 
+        await interaction.reply({
+            embeds: [embed],
             components: [new ActionRowBuilder().addComponents(menu), controls],
-            ephemeral: false 
+            ephemeral: false
         });
     }
 
@@ -50,7 +50,7 @@ class AudioInteractionHandler {
         const selection = interaction.values[0];
 
         if (!interaction.member.voice.channel) {
-            return interaction.reply({ content: '❌ כנס קודם לערוץ קול!', ephemeral: true });
+            return interaction.reply({ content: '❌ כנס קודם לערוץ קול!', flags: 64 });
         }
         await manager.joinChannel(interaction.member.voice.channel);
 
@@ -62,7 +62,7 @@ class AudioInteractionHandler {
 
         let files = [];
         let type = '';
-        
+
         if (selection === 'mode_tracks') {
             files = scanner.getTracks();
             type = 'track';
@@ -72,7 +72,7 @@ class AudioInteractionHandler {
         }
 
         if (files.length === 0) {
-            return interaction.reply({ content: '❌ התיקייה ריקה.', ephemeral: true });
+            return interaction.reply({ content: '❌ התיקייה ריקה.', flags: 64 });
         }
 
         const fileOptions = files.slice(0, 25).map(f => ({
@@ -90,7 +90,7 @@ class AudioInteractionHandler {
         await interaction.reply({
             content: `📂 **בחר מה לנגן:**`,
             components: [new ActionRowBuilder().addComponents(fileMenu)],
-            ephemeral: true
+            flags: 64
         });
     }
 
@@ -106,12 +106,12 @@ class AudioInteractionHandler {
 
         if (now - lastPress < COOLDOWN_SECONDS * 1000) {
             // במקרה של ספאם, אנחנו חייבים להגיב, אז נשתמש ב-reply שקט
-            return interaction.reply({ content: '⏳ חכה רגע...', ephemeral: true });
+            return interaction.reply({ content: '⏳ חכה רגע...', flags: 64 });
         }
         userCooldowns.set(userId, now);
 
         // --- התיקון: אנחנו "בולעים" את הלחיצה בלי להקפיץ הודעה ---
-        await interaction.deferUpdate(); 
+        await interaction.deferUpdate();
 
         const filename = interaction.values[0];
         const type = interaction.customId.includes('track') ? 'track' : 'effect';
@@ -120,11 +120,11 @@ class AudioInteractionHandler {
 
         if (fileObj) {
             if (type === 'track') {
-                await manager.playTrack(fileObj.path, fileObj.name);
+                await manager.playTrack(fileObj.fullPath, fileObj.name); // ✅ Fix: fileObj.fullPath
                 // אופציונלי: אפשר לערוך את ההודעה המקורית (editReply) כדי להראות מה מתנגן
                 // אבל אם אנחנו רוצים חוויה חלקה של "לחץ ונגן", עדיף לא לגעת.
             } else {
-                await manager.playEffect(fileObj.path);
+                await manager.playEffect(fileObj.fullPath); // ✅ Fix: fileObj.fullPath
             }
         }
     }
@@ -132,12 +132,12 @@ class AudioInteractionHandler {
     async handleControls(interaction) {
         // גם בכפתורי השליטה נשתמש ב-deferUpdate לחוויה חלקה
         await interaction.deferUpdate();
-        
+
         const action = interaction.customId.replace('audio_ctrl_', '');
         if (action === 'stop') manager.stop();
         else if (action === 'pause') manager.togglePause();
         else if (action === 'loop') manager.isLooping = !manager.isLooping;
-        
+
         // כאן אפשר לעדכן את הכפתורים (למשל לשנות את כפתור הלופ לירוק)
         // ע"י interaction.editReply({ components: ... })
         // אבל זה דורש לבנות מחדש את ה-Embed. לשיקולך.

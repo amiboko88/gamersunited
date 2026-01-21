@@ -26,6 +26,7 @@ class WhatsAppScout {
             store.addContacts(participants);
 
             let recognizedUsers = 0;
+            let skippedLog = [];
 
             for (const p of participants) {
                 // p.id is typically the Phone JID (e.g. 97250...@s.whatsapp.net)
@@ -63,25 +64,22 @@ class WhatsAppScout {
                             recognizedUsers++;
                         }
                     } else {
-                        // User not in DB at all? 
-                        // Scout should NOT create users blindly (UserUtils guards this).
-                        // But if we want to support "Auto Register" we can.
-                        // For now, adhere to "Link Only" policy or "Orphan" policy?
-                        // UserUtils.ensureUserExists will block creation if platform=whatsapp.
-                        // So we do nothing.
+                        // User not found in DB
+                        skippedLog.push({ phone: realPhone, reason: 'Not in DB' });
                     }
                 }
 
                 // Case 2: No LID in metadata (Should not happen in modern WA)
                 else {
-                    // Just check existence
-                    const userRef = await userUtils.getUserRef(realPhone, 'whatsapp');
-                    const userDoc = await userRef.get();
-                    if (userDoc.exists) recognizedUsers++;
+                    skippedLog.push({ phone: realPhone, reason: 'No LID in Metadata' });
                 }
             }
 
             log(`✅ [WhatsApp Scout] סריקה הסתיימה. ${recognizedUsers}/${participants.length} משתמשים מזוהים ומקושרים.`);
+            if (skippedLog.length > 0) {
+                log(`⚠️ [WhatsApp Scout] Skipped ${skippedLog.length} users:`);
+                skippedLog.forEach(s => log(`- Phone: ${s.phone} | Reason: ${s.reason}`));
+            }
 
         } catch (error) {
             log(`❌ [WhatsApp Scout] שגיאה בסריקה: ${error.message}`);

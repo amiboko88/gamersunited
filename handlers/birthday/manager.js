@@ -123,8 +123,10 @@ class BirthdayManager {
         snapshot.forEach(doc => {
             const data = doc.data();
             // מי שמחובר לוואטסאפ אבל אין לו יום הולדת
-            if (!data.identity?.birthday?.day && data.platforms?.whatsapp) {
-                const phone = data.platforms.whatsapp.replace('@s.whatsapp.net', '');
+            const whatsappId = data.platforms?.whatsapp || data.identity?.whatsappPhone;
+
+            if (!data.identity?.birthday?.day && whatsappId) {
+                const phone = whatsappId.replace('@s.whatsapp.net', '');
                 missingUsers.push(`@${phone}`);
             }
         });

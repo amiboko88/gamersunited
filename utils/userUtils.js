@@ -28,11 +28,23 @@ async function getUserRef(id, platform = 'discord') {
         if (!snapshot.empty) return snapshot.docs[0].ref;
     }
 
-    // 3. חיפוש מספר ישן (תאימות לאחור)
+    // 3. חיפוש מספר טלפון (תמיכה בפורמטים שונים)
     if (!isLid) {
-        const possibleOldId = cleanId.startsWith('972') ? cleanId : `972${cleanId.replace(/^0+/, '')}`;
-        snapshot = await db.collection('users').where('identity.whatsappPhone', 'in', [cleanId, possibleOldId]).limit(1).get();
+        // מנרמל את ה-ID הנכנס (שהוא בדרך כלל בפורמט בינלאומי מוואטסאפ: 97250...)
+        const international = cleanId.startsWith('972') ? cleanId : `972${cleanId.replace(/^0+/, '')}`;
+
+        // מייצר גרסה מקומית (050...) למקרה שהמשתמש הזין כך ב-DB
+        const local = international.replace(/^972/, '0');
+
+        // חיפוש גמיש בשדה הזהות (legacy field)
+        snapshot = await db.collection('users').where('identity.whatsappPhone', 'in', [international, local, cleanId]).limit(1).get();
         if (!snapshot.empty) return snapshot.docs[0].ref;
+
+        // 4. חיפוש גמיש בשדה הפלטפורמה (למקרה שנשמר כמספר מקומי ב-platforms)
+        if (platform === 'whatsapp') {
+            snapshot = await db.collection('users').where('platforms.whatsapp', 'in', [international, local]).limit(1).get();
+            if (!snapshot.empty) return snapshot.docs[0].ref;
+        }
     }
 
     // אם לא מצאנו - מחזירים רפרנס למסמך (אבל לא יוצרים אותו!)

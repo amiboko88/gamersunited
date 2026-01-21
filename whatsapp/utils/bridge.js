@@ -28,10 +28,11 @@ async function handleVoiceAlerts(oldState, newState) {
 
             if (userDoc.exists) {
                 const data = userDoc.data();
-                if (data.platforms && data.platforms.whatsapp) {
-                    whatsappPhone = data.platforms.whatsapp.includes('@')
-                        ? data.platforms.whatsapp
-                        : `${data.platforms.whatsapp}@s.whatsapp.net`;
+                const rawPhone = data.platforms?.whatsapp || data.identity?.whatsappPhone;
+                if (rawPhone) {
+                    whatsappPhone = rawPhone.includes('@')
+                        ? rawPhone
+                        : `${rawPhone}@s.whatsapp.net`;
                 }
             }
 

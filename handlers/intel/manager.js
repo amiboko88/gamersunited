@@ -1,6 +1,7 @@
 const codSource = require('./sources/cod');
 const bf6Source = require('./sources/bf6');
 const nvidiaSource = require('./sources/nvidia');
+const fc26Source = require('./sources/fc26');
 
 const broadcaster = require('./services/broadcaster');
 const enricher = require('./services/enricher');
@@ -137,7 +138,7 @@ class IntelManager {
     async getCODUpdates() {
         const update = await codSource.getPatchNotes();
         if (!update) return "❌ לא מצאתי עדכוני COD רשמיים.";
-        return `🚨 **${update.title}**\n📅 ${new Date(update.date).toLocaleDateString('he-IL')}\n\n${update.summary}\n\n🔗 [קרא עוד](${update.link})`;
+        return `🚨 **${update.title}**\n📅 ${new Date(update.date).toLocaleDateString('he-IL')}\n\n${update.summary}`;
     }
 
     async getLatestNews(userQuery = "") {
@@ -181,6 +182,10 @@ class IntelManager {
                     const updates = await nvidiaSource.getUpdates();
                     if (updates && updates.link) return await enricher.enrich(updates, text);
                     return nvidiaSource.formatUpdate(updates);
+                } else if (game === 'FC26' || (entity && (entity.includes('FIFA') || entity.includes('FC')))) {
+                    const updates = await fc26Source.getUpdates();
+                    if (updates && updates.link) return await enricher.enrich(updates, text);
+                    return fc26Source.formatUpdate(updates);
                 } else {
                     // Default to COD / General Update
                     return await this.getLatestNews(text);

@@ -28,7 +28,8 @@ const source = {
                 listGroup.querySelectorAll('.loadout-card').forEach(card => {
                     const name = clean(card.querySelector('.gun-badge__text'));
                     const code = clean(card.querySelector('.loadout-card-code__content'));
-                    const image = card.querySelector('.loadout-card__thumbnail img')?.src;
+                    const imgEl = card.querySelector('.loadout-card__thumbnail img');
+                    const image = imgEl ? (imgEl.dataset.src || imgEl.src) : null;
 
                     const attachments = [];
                     card.querySelectorAll('.attachment-card').forEach(attCard => {
@@ -96,14 +97,21 @@ const source = {
 
             // 2. Fallback: Search for any "Warzone" related headers
             const allLinks = Array.from(document.querySelectorAll('a[href*="/patchnotes/"]'));
-            const wzLink = allLinks.find(l => l.href.toLowerCase().includes('warzone') && l.href.includes('2026')); // Prefer current year
 
-            if (wzLink) {
+            // Prioritize "Season 01 Reloaded" or newest date
+            // The links usually contain the date in URL: /2026/01/...
+            let bestLink = allLinks.find(l => l.innerText.includes('Season 01 Reloaded') || l.href.includes('reloaded'));
+
+            if (!bestLink) {
+                bestLink = allLinks.find(l => l.href.toLowerCase().includes('warzone') && l.href.includes('2026'));
+            }
+
+            if (bestLink) {
                 return {
-                    title: `COD OFFICIAL: ${wzLink.innerText.trim()}`,
-                    link: wzLink.href,
+                    title: `COD OFFICIAL: ${bestLink.innerText.trim()}`,
+                    link: bestLink.href,
                     date: new Date().toISOString(),
-                    summary: "Official Warzone Patch Notes (Fallback). Click to read."
+                    summary: "Official Warzone Patch Notes. Click to read full changes."
                 };
             }
 
@@ -129,7 +137,7 @@ const source = {
         const q = query.toLowerCase().trim();
 
         // Handle "Absolute" / "Meta" general queries
-        if (q === 'absolute' || q === 'meta' || q.includes('מטא') || q.includes('הכי חזק')) {
+        if (q === 'absolute' || q === 'meta' || q.includes('מטא') || q.includes('מטה') || q.includes('הכי חזק')) {
             if (cachedData.absolute_meta && cachedData.absolute_meta.length > 0) {
                 const list = cachedData.absolute_meta.slice(0, 5).map(w => `• ${w.name}`).join('\n');
                 return {

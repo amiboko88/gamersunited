@@ -231,8 +231,13 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderPhone, dbUserId
                 }
                 // Case B: Simple Text (News/Playlist)
                 else {
-                    const txt = typeof intelResponse === 'string' ? intelResponse : intelResponse.text;
-                    await sock.sendMessage(chatJid, { text: txt }, { quoted: msg });
+                    // Fix: Intel items return 'summary' or 'aiSummary', rarely 'text' unless simple string
+                    const txt = typeof intelResponse === 'string' ? intelResponse : (intelResponse.aiSummary || intelResponse.summary || intelResponse.text);
+                    if (txt) {
+                        await sock.sendMessage(chatJid, { text: txt }, { quoted: msg });
+                    } else {
+                        log(`⚠️ [Intel] Response object has no text/summary to send: ${JSON.stringify(intelResponse)}`);
+                    }
                 }
 
                 return; // Stop here, don't ask AI

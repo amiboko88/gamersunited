@@ -36,8 +36,10 @@ class IntelClassifier {
             Rules:
             1. If asking for specific weapon (e.g., "Build for MP5"), entity="MP5", game="COD" (default) or "BF6".
             2. If "Nvidia" or "Drivers", intent="DRIVER_UPDATE".
-            3. If just "Update", guess game based on context or null.
-            4. Ignore conversational filler ("Shimon", "please", "bro").
+               - "בתאל", "באטל", "בטלפילד" -> game="BF6"
+               - "קוד", "וורזון", "warzone" -> game="COD"
+               - "פיפא", "fifa", "fc26", "fc" -> game="FC26"
+               - "מטה", "מטא" -> intent="WEAPON_META"
             `;
 
             const runner = await openai.chat.completions.create({

@@ -23,22 +23,16 @@ class IntelBroadcaster {
 
         // 2. WhatsApp
         try {
-            // We use the whatsapp module's exported function if possible, 
-            // but since we are refactoring, we might need to rely on the socket passed or the module.
-            // Manager was using: const { sendToMainGroup } = require('../../whatsapp/index');
-            // We'll stick to that for now to avoid breaking the specific implementation of "Main Group"
             const { sendToMainGroup } = require('../../../whatsapp/index');
-            await sendToMainGroup(`${finalSummary}\n\n🔗 ${item.link}`);
+            await sendToMainGroup(`${finalSummary}`);
         } catch (e) { log(`Error Broadcast WA: ${e.message}`); }
 
         // 3. Telegram
-        // 3. Telegram
         try {
-            // Telegraf uses 'telegram.sendMessage' (API) or 'bot.telegram.sendMessage'
             const tg = telegram && telegram.telegram ? telegram.telegram : telegram;
             if (tg && tg.sendMessage) {
                 const chatId = process.env.TG_MAIN_GROUP_ID || '-1001836262829';
-                await tg.sendMessage(chatId, `${finalSummary}\n\n[קרא עוד](${item.link})`, { parse_mode: 'Markdown' });
+                await tg.sendMessage(chatId, `${finalSummary}`, { parse_mode: 'Markdown' });
             }
         } catch (e) { log(`Error Broadcast TG: ${e.message}`); }
 
@@ -46,7 +40,7 @@ class IntelBroadcaster {
         try {
             if (discord) {
                 const channel = discord.channels.cache.find(c => c.name.includes('news') || c.name.includes('עדכונים'));
-                if (channel) channel.send(`**${item.title}**\n${finalSummary}\n${item.link}`);
+                if (channel) channel.send(`**${item.title}**\n${finalSummary}`);
             }
         } catch (e) { log(`Error Broadcast DS: ${e.message}`); }
     }

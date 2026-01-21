@@ -78,12 +78,12 @@ class DashboardLogic {
     }
 
     async executeTelegramLink(tgId, discordId) {
-        // 1. Update User in DB
-        await db.collection('users').doc(discordId).update({
-            'platforms.telegram': tgId,
-            'identity.telegramId': tgId,
-            'meta.lastLinked': new Date().toISOString()
-        });
+        // 1. Update User in DB (Safe Merge)
+        await db.collection('users').doc(discordId).set({
+            platforms: { telegram: tgId },
+            identity: { telegramId: tgId },
+            meta: { lastLinked: new Date().toISOString() }
+        }, { merge: true });
 
         // 2. Remove from lists
         const orphanRef = db.collection('system_metadata').doc('telegram_orphans');
@@ -124,11 +124,21 @@ class DashboardLogic {
 
     // --- WhatsApp Logic ---
     async finalizeWhatsAppLink(discordId, phone) {
-        await db.collection('users').doc(discordId).update({
-            'platforms.whatsapp_lid': phone,
-            'identity.whatsappPhone': phone,
-            'meta.lastLinked': new Date().toISOString()
-        });
+        if (!discordId || !phone) throw new Error("Missing ID or Phone");
+
+        // Manual Link: We map the PHONE to the user.
+        // The scout will later fill in the LID if it finds a match.
+        await db.collection('users').doc(discordId).set({
+            platforms: { whatsapp: phone }, // Legacy/Phone field
+            identity: { whatsappPhone: phone }, // Identity Field
+            meta: { lastLinked: new Date().toISOString() }
+        }, { merge: true });
+
+        // Also remove from orphans list if exists
+        try {
+            await matchmaker.removeOrphan(phone);
+        } catch (e) { /* ignore */ }
+
         return true;
     }
 }

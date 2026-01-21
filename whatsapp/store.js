@@ -13,14 +13,29 @@ class SimpleStore {
      */
     bind(ev) {
         // 1. Load History
-        ev.on('messaging-history.set', ({ contacts }) => {
-            if (!contacts) return;
-            let lidCount = 0;
-            for (const contact of contacts) {
-                this._updateContact(contact);
-                if (contact.lid) lidCount++;
+        // 1. Load History
+        ev.on('messaging-history.set', ({ contacts, messages }) => {
+            // A. Contacts
+            if (contacts) {
+                let lidCount = 0;
+                for (const contact of contacts) {
+                    this._updateContact(contact);
+                    if (contact.lid) lidCount++;
+                }
+                log(`🧠 [Store] History Loaded: ${contacts.length} contacts (${lidCount} with LID).`);
             }
-            log(`🧠 [Store] History Loaded: ${contacts.length} contacts (${lidCount} with LID).`);
+
+            // B. Messages (Fix: Capture initial history)
+            if (messages) {
+                let msgCount = 0;
+                for (const msg of messages) {
+                    if (msg.key.remoteJid) {
+                        this.addMessage(msg.key.remoteJid, msg);
+                        msgCount++;
+                    }
+                }
+                log(`🧠 [Store] Message History Hydrated: ${msgCount} messages.`);
+            }
         });
 
         // 2. Contacts Upsert

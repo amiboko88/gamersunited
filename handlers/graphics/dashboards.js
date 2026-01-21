@@ -9,7 +9,7 @@ function getHtmlTemplate(title, color, stats, icon) {
     <head>
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap');
-            body { margin:0; background:#050505; font-family:'Outfit', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; color:white; display:flex; align-items:center; justify-content:center; height:400px; width:800px; overflow:hidden; }
+            body { margin:0; background:#050505; font-family:'Outfit', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif; color:white; display:flex; align-items:center; justify-content:center; height:400px; width:800px; overflow:hidden; }
             .card { width:100%; height:100%; display:flex; padding:40px; box-sizing:border-box; background:radial-gradient(circle at top right, ${color}15 0%, #050505 60%); border: 1px solid ${color}33; position: relative; z-index: 1; }
             .left { flex:1; display:flex; flex-direction:column; justify-content:center; z-index: 2; }
             .right { width:320px; display:flex; flex-direction:column; gap:16px; justify-content:center; z-index: 2; }

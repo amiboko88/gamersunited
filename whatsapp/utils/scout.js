@@ -49,6 +49,9 @@ class WhatsAppScout {
                 const realPhone = phoneJid ? phoneJid.split('@')[0] : '';
                 const realLid = lidJid ? lidJid.split('@')[0] : '';
 
+                // 🛑 EXCLUDE SHIMON (BOT) FROM SYNC
+                if (realPhone === '972549220819') continue;
+
                 if (!realPhone) continue;
 
                 // Case 1: We have a LID. Let's ensure it's saved.

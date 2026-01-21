@@ -28,6 +28,10 @@ class WhatsAppScout {
             let recognizedUsers = 0;
             let skippedLog = [];
 
+            if (participants.length > 0) {
+                console.log('🔍 [Debug] Raw Participant Sample:', JSON.stringify(participants[0], null, 2));
+            }
+
             for (const p of participants) {
                 // p.id is typically the Phone JID (e.g. 97250...@s.whatsapp.net)
                 // p.lid is the LID JID (e.g. 12345...@lid) - THIS IS WHAT WE MISSING

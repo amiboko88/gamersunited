@@ -66,14 +66,14 @@ class PlatformManager {
             const sock = getSocket();
             const deviceStatus = sock ? 'CONNECTED' : 'DISCONNECTED';
 
-            // Count Linked Users
-            const linkedSnapshot = await db.collection('users').where('identity.whatsappPhone', '!=', null).count().get();
+            // Count Linked Users (Checking platforms.whatsapp as the primary source)
+            const linkedSnapshot = await db.collection('users').where('platforms.whatsapp', '!=', null).count().get();
             const linkedCount = linkedSnapshot.data().count;
 
-            // Health Check (Missing PFP)
+            // Health Check (Missing PFP) - Check users who HAVE whatsapp but NO avatar
             const missingPfpSnapshot = await db.collection('users')
-                .where('identity.whatsappPhone', '!=', null)
-                .where('identity.avatar_whatsapp', '==', null) // Only checks if field is missing/null
+                .where('platforms.whatsapp', '!=', null)
+                .where('identity.avatar_whatsapp', '==', null)
                 .count().get();
             const missingPfpCount = missingPfpSnapshot.data().count;
 

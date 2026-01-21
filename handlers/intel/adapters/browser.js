@@ -68,6 +68,27 @@ class BrowserAdapter {
             // Optimized: Block heavy assets & wait for DOM only (faster, less timeouts)
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
+            // 🛡️ Age Gate / Cookie Bypass
+            try {
+                // Common Age Gate Selectors (EA, Activision, etc.)
+                const ageSelectors = [
+                    'a.age-gate-submit', 'button.age-gate-submit',
+                    '#age-gate-submit', '#btn-enter',
+                    'button[aria-label="Enter Site"]',
+                    '.kt-age-gate__submit', // Common generic
+                    'a[href="#"]' // sometimes 'Enter' is just a hash link
+                ];
+
+                for (const sel of ageSelectors) {
+                    if (await page.$(sel)) {
+                        log(`[Browser] 🛡️ Attempting Age Gate bypass: ${sel}`);
+                        await page.click(sel);
+                        await page.waitForNavigation({ timeout: 2000 }).catch(() => { });
+                        break;
+                    }
+                }
+            } catch (e) { /* Ignore bypass fail */ }
+
             const data = await page.evaluate(processFunc);
 
             await page.close();

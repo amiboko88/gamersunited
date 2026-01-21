@@ -3,70 +3,78 @@ const { log } = require('../utils/logger');
 
 class SimpleStore {
     constructor() {
-        this.contacts = {}; // מפתח: JID (טלפון)
-        this.lidMap = {};   // מפתח: LID -> ערך: JID
+        this.contacts = {}; // Key: JID
+        this.lidMap = {};   // Key: LID -> JID
+        this.messages = {}; // Key: JID -> Array of messages (Max 50)
     }
 
     /**
-     * מחבר את הזיכרון לאירועים של וואטסאפ
+     * Bind to events
      */
     bind(ev) {
-        // 1. הצינור הראשי: היסטוריית ההודעות ואנשי הקשר (קורה בשניות הראשונות לחיבור)
+        // 1. Load History
         ev.on('messaging-history.set', ({ contacts }) => {
             if (!contacts) return;
-
             let lidCount = 0;
             for (const contact of contacts) {
                 this._updateContact(contact);
                 if (contact.lid) lidCount++;
             }
-            log(`🧠 [Store] היסטוריה נטענה: ${contacts.length} אנשי קשר (מתוכם ${lidCount} עם LID).`);
+            log(`🧠 [Store] History Loaded: ${contacts.length} contacts (${lidCount} with LID).`);
         });
 
-        // 2. עדכונים שוטפים (Upsert)
+        // 2. Contacts Upsert
         ev.on('contacts.upsert', (contacts) => {
             for (const contact of contacts) {
                 this._updateContact(contact);
             }
         });
 
-        // 3. עדכונים ספציפיים (Update)
+        // 3. Contacts Update
         ev.on('contacts.update', (updates) => {
             for (const update of updates) {
-                // לעיתים העדכון מכיל רק LID ו-ID, זה זהב בשבילנו
                 this._updateContact(update);
             }
         });
 
-        // 4. טעינת LIDs מהמסד נתונים (Hydration)
+        // ✅ 4. Messages Upsert (Rolling Buffer)
+        ev.on('messages.upsert', ({ messages }) => {
+            for (const msg of messages) {
+                if (msg.key.remoteJid) {
+                    this.addMessage(msg.key.remoteJid, msg);
+                }
+            }
+        });
+
+        // 5. Load LIDs from DB
         this.loadLidsFromDB().catch(e => log(`❌ [Store] LID Hydration Failed: ${e.message}`));
     }
 
     /**
-     * טוען את כל ה-LIDs הידועים מה-DB לזיכרון (כדי לא לשכוח משתמשים)
+     * Load known LIDs from DB to memory
      */
     async loadLidsFromDB() {
-        const db = require('../utils/firebase');
-        const snapshot = await db.collection('users').get();
-        let loaded = 0;
+        try {
+            const db = require('../utils/firebase');
+            const snapshot = await db.collection('users').get();
+            let loaded = 0;
 
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            const waPhone = data.platforms?.whatsapp; // המספר האמיתי (ID)
-            const waLid = data.platforms?.whatsapp_lid; // המספר הארוך (LID)
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                const waPhone = data.platforms?.whatsapp;
+                const waLid = data.platforms?.whatsapp_lid;
 
-            if (waPhone && waLid) {
-                // שמירה במפה בזיכרון
-                this.lidMap[waLid] = waPhone + '@s.whatsapp.net';
-                loaded++;
-            }
-        });
-        log(`📂 [Store] נטענו ${loaded} LIDs מה-DB לזיכרון.`);
+                if (waPhone && waLid) {
+                    this.lidMap[waLid] = waPhone + '@s.whatsapp.net';
+                    loaded++;
+                }
+            });
+            log(`📂 [Store] Hydrated ${loaded} LIDs from DB.`);
+        } catch (e) {
+            log(`⚠️ [Store] DB Hydration Warning: ${e.message}`);
+        }
     }
 
-    /**
-     * הוספה ידנית של אנשי קשר (למשל מה-Scout)
-     */
     addContacts(contacts) {
         if (!contacts || !Array.isArray(contacts)) return;
         for (const contact of contacts) {
@@ -74,45 +82,33 @@ class SimpleStore {
         }
     }
 
-    /**
-     * פונקציה פנימית לעדכון ומיפוי
-     */
     _updateContact(contact) {
-        const id = contact.id; // זה בדרך כלל ה-JID (טלפון)
-
-        // שמירה בזיכרון הראשי
+        const id = contact.id;
         this.contacts[id] = {
             ...(this.contacts[id] || {}),
             ...contact
         };
-
-        // מיפוי LID -> JID (החלק הקריטי)
         if (contact.lid) {
             this.lidMap[contact.lid] = id;
         }
     }
 
-    /**
-     * מנסה למצוא מספר טלפון (JID) לפי מזהה כלשהו (LID או JID)
-     */
     getPhoneById(identifier) {
         if (!identifier) return null;
         const cleanId = identifier.split('@')[0];
 
-        // 1. אם זה כבר נראה כמו JID (טלפון), נחזיר אותו
-        // (בדיקה פשוטה: אם זה לא LID, אז זה כנראה טלפון)
+        // Direct Lookup
         if (identifier.includes('@s.whatsapp.net') && !this.lidMap[identifier]) {
-            // אבל רגע, אולי זה LID שפשוט יש לו סיומת כזו? נבדוק במפה
+            // Maybe check if it's a contact?
         }
 
-        // 2. בדיקה במפת ה-LID (הכי מדויק)
-        // מנסים לחפש את ה-LID המלא, או רק את המספר
+        // LID Lookup
         const mappedJid = this.lidMap[identifier] || this.lidMap[cleanId];
         if (mappedJid) {
-            return mappedJid.split('@')[0]; // מחזירים מספר נקי
+            return mappedJid.split('@')[0];
         }
 
-        // 3. חיפוש הפוך ברוטלי (למקרה שהמפה התפקששה)
+        // Brute Force Reverse Lookup
         const found = Object.values(this.contacts).find(c => c.lid === identifier || c.lid === cleanId);
         if (found && found.id) {
             return found.id.split('@')[0];
@@ -123,6 +119,25 @@ class SimpleStore {
 
     getContact(jid) {
         return this.contacts[jid];
+    }
+
+    // --- 📨 Message Buffer Logic ---
+
+    addMessage(jid, msg) {
+        if (!jid || !msg) return;
+        if (!this.messages[jid]) this.messages[jid] = [];
+
+        // Append
+        this.messages[jid].push(msg);
+
+        // Limit to 50
+        if (this.messages[jid].length > 50) {
+            this.messages[jid].shift(); // Remove oldest
+        }
+    }
+
+    getMessages(jid) {
+        return this.messages[jid] || [];
     }
 }
 

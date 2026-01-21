@@ -27,7 +27,8 @@ class PlatformManager {
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('btn_plat_wa_main').setLabel('WhatsApp').setStyle(ButtonStyle.Success).setEmoji('🟢'),
                 new ButtonBuilder().setCustomId('btn_plat_tg_main').setLabel('Telegram').setStyle(ButtonStyle.Primary).setEmoji('✈️'),
-                new ButtonBuilder().setCustomId('btn_plat_dc_main').setLabel('Discord').setStyle(ButtonStyle.Secondary).setEmoji('🎮')
+                new ButtonBuilder().setCustomId('btn_plat_dc_main').setLabel('Discord').setStyle(ButtonStyle.Secondary).setEmoji('🎮'),
+                new ButtonBuilder().setCustomId('btn_plat_stats').setLabel('Review Stats').setStyle(ButtonStyle.Danger).setEmoji('📊')
             );
 
             // Close button
@@ -79,7 +80,9 @@ class PlatformManager {
             const card = await this.generateWhatsAppCard(deviceStatus, linkedCount, missingPfpCount);
 
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('btn_plat_wa_sync_pfp').setLabel('Force PFP Sync').setStyle(ButtonStyle.Primary).setEmoji('🔄'),
+                new ButtonBuilder().setCustomId('btn_plat_wa_sync_pfp').setLabel('Sync PFP').setStyle(ButtonStyle.Secondary).setEmoji('🖼️'),
+                new ButtonBuilder().setCustomId('btn_plat_wa_sync_members').setLabel('Sync Members (LID Patch)').setStyle(ButtonStyle.Primary).setEmoji('👥'),
+                new ButtonBuilder().setCustomId('btn_plat_wa_scan').setLabel('Scan Group (Last 50)').setStyle(ButtonStyle.Danger).setEmoji('🕵️'),
                 new ButtonBuilder().setCustomId('btn_plat_wa_link').setLabel('Link Users').setStyle(ButtonStyle.Success).setEmoji('🔗'),
                 new ButtonBuilder().setCustomId('btn_plat_main').setLabel('Back').setStyle(ButtonStyle.Secondary)
             );
@@ -319,6 +322,249 @@ class PlatformManager {
 
         // Loop back to dashboard safe check
         setTimeout(() => this.showWhatsAppDashboard(interaction, true), 3000);
+    }
+
+    async syncWhatsAppMembers(interaction) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 });
+
+        const scout = require('../../whatsapp/utils/scout');
+        const { getSocket } = require('../../whatsapp/socket');
+        const sock = getSocket();
+        const MAIN_GROUP_ID = process.env.WHATSAPP_MAIN_GROUP_ID;
+
+        if (!sock || !MAIN_GROUP_ID) return this.safeReply(interaction, '❌ WhatsApp disconnected.', true);
+
+        try {
+            await interaction.editReply('⏳ Syncing Group Members & Patching LIDs...');
+            await scout.syncGroupMembers(sock, MAIN_GROUP_ID);
+            await interaction.editReply('✅ **Sync Complete!** All LIDs patched.');
+        } catch (e) {
+            await interaction.editReply(`❌ Error: ${e.message}`);
+        }
+        setTimeout(() => this.showWhatsAppDashboard(interaction, true), 3000);
+    }
+
+    // --- 🕵️ SCAN LOGIC (Triggered by Button) ---
+    async scanWhatsAppImages(interaction) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 });
+
+        const store = require('../../whatsapp/store');
+        const { getSocket } = require('../../whatsapp/socket');
+        const visionSystem = require('../media/vision');
+        const codStats = require('../ai/tools/cod_stats');
+        const { generateContent } = require('../ai/gemini');
+
+        const MAIN_GROUP_ID = process.env.WHATSAPP_MAIN_GROUP_ID;
+        const sock = getSocket();
+
+        if (!sock || !MAIN_GROUP_ID) {
+            return this.safeReply(interaction, '❌ WhatsApp disconnected or Group ID missing.', true);
+        }
+
+        try {
+            const messages = store.getMessages(MAIN_GROUP_ID);
+            log(`🕵️ [Scan] Checking ${messages.length} messages in memory for Group ${MAIN_GROUP_ID}...`);
+
+            let foundImages = [];
+            for (const m of messages) {
+                const imgParams = m.message?.imageMessage;
+                if (imgParams) foundImages.push(m);
+            }
+
+            if (foundImages.length === 0) {
+                return interaction.editReply('🕵️ **Scan Complete:** No recent images found in memory (last 50 msgs).');
+            }
+
+            await interaction.editReply(`🕵️ Found **${foundImages.length}** images. Analyzing... ⏳`);
+
+            // Download All
+            const buffers = [];
+            for (const imgMsg of foundImages) {
+                try {
+                    const buf = await visionSystem.downloadWhatsAppImage(imgMsg, sock);
+                    if (buf) buffers.push(buf);
+                } catch (e) { }
+            }
+
+            if (buffers.length === 0) return interaction.editReply('❌ Failed to download images (Too old?).');
+
+            // Vision Extract Pipeline (Direct)
+            const parts = [{ text: "Extract Warzone Scoreboard data from these images. Return JSON list: [{username, kills, damage, placement, mode}]. If not a scoreboard, return empty list." }];
+            buffers.forEach(b => parts.push({ inlineData: { mimeType: "image/jpeg", data: b.toString("base64") } }));
+
+            const result = await generateContent(parts, "gemini-2.0-flash");
+
+            const jsonMatch = result.match(/\[.*\]/s);
+            if (!jsonMatch) {
+                return interaction.editReply('❌ AI Analysis failed: No JSON found.');
+            }
+
+            const matches = JSON.parse(jsonMatch[0]);
+            const saveArgs = { matches };
+
+            // Save via COD Stats (Hashing handles duplicates)
+            // UserId = 'AdminScan' makes it clear who triggered it
+            const report = await codStats.execute(saveArgs, 'AdminScan', MAIN_GROUP_ID, buffers);
+
+            await interaction.editReply({
+                content: `✅ **Scan & Process Complete!**\n\n${report}\n\nCheck 'Review Stats' for any unknowns.`,
+                embeds: [], components: []
+            });
+
+            // Loop back
+            setTimeout(() => this.showWhatsAppDashboard(interaction, true), 5000);
+
+        } catch (error) {
+            log(`❌ [Scan] Error: ${error.message}`);
+            interaction.editReply(`❌ Error: ${error.message}`);
+        }
+    }
+
+    // --- 📊 STATS DASHBOARD (New) ---
+    async showStatsReview(interaction) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 });
+        const db = require('../../utils/firebase');
+
+        try {
+            const pendingSnap = await db.collection('pending_stats').orderBy('timestamp', 'desc').limit(5).get();
+
+            if (pendingSnap.empty) {
+                return interaction.editReply({
+                    content: '✅ **No Pending Stats to Review.** All clean!',
+                    embeds: [], components: []
+                });
+            }
+
+            const embeds = [];
+            const rows = [];
+
+            pendingSnap.forEach((doc, index) => {
+                const data = doc.data();
+                const embed = new EmbedBuilder()
+                    .setTitle(`Unknown User: ${data.username}`)
+                    .setDescription(`Matches found for **${data.username}** needs linking.`)
+                    .addFields(
+                        { name: 'Kills', value: `${data.kills}`, inline: true },
+                        { name: 'Damage', value: `${data.damage}`, inline: true },
+                        { name: 'Uploaded By', value: `${data.uploadedBy}`, inline: true }
+                    )
+                    .setColor('#FFA500'); // Orange
+
+                if (data.proofUrl) embed.setThumbnail(data.proofUrl);
+
+                embeds.push(embed);
+
+                // Add Actions for this item
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId(`btn_stat_approve_${doc.id}`).setLabel('Link User').setStyle(ButtonStyle.Success).setEmoji('🔗'),
+                    new ButtonBuilder().setCustomId(`btn_stat_delete_${doc.id}`).setLabel('Discard').setStyle(ButtonStyle.Danger).setEmoji('🗑️')
+                );
+                rows.push(row);
+            });
+
+            await interaction.editReply({
+                content: `**⚠️ Found ${pendingSnap.size} Pending Stats**\nReview below:`,
+                embeds: embeds,
+                components: rows
+            });
+
+        } catch (error) {
+            log(`❌ [Stats Review] Error: ${error.message}`);
+            interaction.editReply({ content: '❌ System Error loading stats.' });
+        }
+    }
+
+    async handleStatsAction(interaction, action, docId) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 });
+        const db = require('../../utils/firebase');
+        const userManager = require('./manager');
+
+        try {
+            const statRef = db.collection('pending_stats').doc(docId);
+            const doc = await statRef.get();
+
+            if (!doc.exists) {
+                return interaction.editReply({ content: '❌ Stat record not found (Already processed?).' });
+            }
+
+            if (action === 'delete') {
+                await statRef.delete();
+                await interaction.editReply({ content: '🗑️ Deleted pending stat.' });
+            }
+            else if (action === 'approve') {
+                // We need to ask WHICH user to link to.
+                // Since this is a button click, we can't easily open a user select menu immediately if we are in ephemeral reply context sometimes.
+                // Better approach: Show a User Select Menu now.
+
+                const { StringSelectMenuBuilder, UserSelectMenuBuilder, ActionRowBuilder } = require('discord.js');
+
+                const userSelect = new UserSelectMenuBuilder()
+                    .setCustomId(`menu_stat_link_user_${docId}`)
+                    .setPlaceholder('Select the Discord User to link this score to')
+                    .setMaxValues(1);
+
+                const row = new ActionRowBuilder().addComponents(userSelect);
+
+                await interaction.editReply({
+                    content: `🔗 **Linking Stats for '${doc.data().username}'**\nSelect the user below:`,
+                    components: [row]
+                });
+                return; // Stop here, wait for menu selection
+            }
+
+            // Refresh default view
+            setTimeout(() => this.showStatsReview(interaction), 2000);
+
+        } catch (e) {
+            log(`❌ [Stats Action] Error: ${e.message}`);
+            interaction.editReply({ content: `Error: ${e.message}` });
+        }
+    }
+
+    async finalizeStatsLink(interaction, docId, targetUserId) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 });
+        const db = require('../../utils/firebase');
+
+        try {
+            const statRef = db.collection('pending_stats').doc(docId);
+            const statDoc = await statRef.get();
+
+            if (!statDoc.exists) return interaction.editReply('❌ Stats gone.');
+
+            const data = statDoc.data();
+            const userRef = db.collection('users').doc(targetUserId);
+
+            // 1. Save to User Profile
+            await userRef.collection('games').add({
+                game: 'Warzone',
+                mode: data.mode || 'Unknown',
+                kills: data.kills,
+                damage: data.damage,
+                placement: 0,
+                evidence_batch: data.evidence_batch,
+                timestamp: data.timestamp,
+                manual_link: true
+            });
+
+            // 2. Add Alias to User Identity (So next time it auto-links)
+            // We only add the exact username found in the image
+            await userRef.set({
+                identity: {
+                    aliases: admin.firestore.FieldValue.arrayUnion(data.username.toLowerCase())
+                }
+            }, { merge: true });
+
+            // 3. Delete Pending
+            await statRef.delete();
+
+            await interaction.editReply(`✅ **Linked!**\nStats moved to <@${targetUserId}>.\nAdded alias "${data.username}" for future auto-detection.`);
+
+            setTimeout(() => this.showStatsReview(interaction), 3000);
+
+        } catch (e) {
+            log(`❌ [Stats Link] Error: ${e.message}`);
+            interaction.editReply(`Error: ${e.message}`);
+        }
     }
 
     // --- UTILS ---

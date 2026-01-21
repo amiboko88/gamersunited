@@ -19,9 +19,9 @@ class LearningSystem {
      */
     async learnFromContext(userId, userName, platform, text) {
         if (!this.isReady) return;
-        
+
         // סינון רעשים
-        if (!text || text.length < 8 || text.startsWith('/') || text.startsWith('!')) return;
+        if (!text || text.length < 4 || text.startsWith('/') || text.startsWith('!')) return;
 
         try {
             const fact = await this.extractFact(text);
@@ -83,21 +83,31 @@ class LearningSystem {
 
     async extractFact(text) {
         try {
+            // Relaxed Prompt to capture nuances
             const response = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
                 messages: [
                     {
                         role: "system",
-                        content: `Analyze the user's message. If it contains a FACT about the user (name, location, hobby, profession, age, pet, opinion), extract it as a short Hebrew sentence. If just chat, return "FALSE".`
+                        content: `Analyze the user's message.
+                        Extract any new information about the user:
+                        - Personal details (Name, Age, Location, Job)
+                        - Gaming preferences (Favorite guns, Playstyle, Skill level)
+                        - Behavior/Personality (Toxic, Funny, Noob, Rich)
+                        - Relationships (Hates X, Loves Y)
+                        
+                        Output ONLY the extraction in a short Hebrew sentence.
+                        If nothing new/useful, return "FALSE".`
                     },
                     { role: "user", content: text }
                 ],
-                temperature: 0,
-                max_tokens: 60
+                temperature: 0.1, // Slight creativity allowed
+                max_tokens: 100
             });
 
             const result = response.choices[0].message.content.trim();
-            return result === "FALSE" ? null : result;
+            if (result === "FALSE" || result.length < 5) return null;
+            return result;
         } catch (e) {
             return null;
         }

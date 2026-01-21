@@ -44,7 +44,9 @@ class IntelEnricher {
                     "${articleText.slice(0, 5000)}"
                     `;
                 } else {
-                    // Default Summary Mode
+                    // Default Summary Mode (Interactive Strategy)
+                    const isLongText = articleText.length > 6000;
+
                     systemPrompt = `
                     Task: Translate and summarize these Game Patch Notes into cool, slang-heavy Hebrew for gamers.
                     
@@ -54,6 +56,7 @@ class IntelEnricher {
                     2. Bullet points for key changes (Nerfs/Buffs/New Modes).
                     3. Keep it under 150 words.
                     4. Use emojis.
+                    ${isLongText ? `5. HUGE UPDATE DETECTED: Summarize ONLY the Top 3 biggest changes. End with: "יש פה עוד ים דברים (שינויי מפה, נשקים). תהיה ספציפי מה אתה מחפש!"` : ''}
                     
                     Content:
                     "${articleText.slice(0, 4000)}"

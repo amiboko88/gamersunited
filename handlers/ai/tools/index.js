@@ -11,11 +11,11 @@ const allTools = [dj, ranking, identity, birthday, match, codStats];
 
 exports.definitions = allTools.map(t => t.definition);
 
-exports.execute = async (name, args, userId, chatId, imageBuffer) => {
+exports.execute = async (name, args, userId, chatId, imageBuffers) => {
     const tool = allTools.find(t => t.definition.function.name === name);
     if (tool) {
         try {
-            return await tool.execute(args, userId, chatId, imageBuffer); // ✅ העברת תמונה לכלי שצריך אותה
+            return await tool.execute(args, userId, chatId, imageBuffers); // ✅ העברת תמונות לכלי
         } catch (e) {
             return `Error: ${e.message}`;
         }

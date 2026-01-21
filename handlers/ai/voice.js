@@ -61,11 +61,10 @@ class VoiceManager {
         };
 
         try {
-            log(`🗣️ [Voice] Generating audio...
+            log(`🗣️ [Voice] Generating audio (ElevenLabs)...
             - Text: "${cleanText.substring(0, 20)}..."
             - Voice: ${voiceId}
-            - Model: ${modelId}
-            - Settings: Stable=${settings.stability}, Sim=${settings.similarity_boost}`);
+            - Model: ${modelId}`);
 
             const response = await axios({
                 method: 'POST',
@@ -86,18 +85,15 @@ class VoiceManager {
             return Buffer.from(response.data);
 
         } catch (error) {
-            // 🔥 Deep Debug: Log the actual API error message
             if (error.response && error.response.data) {
                 const errMsg = Buffer.isBuffer(error.response.data)
                     ? error.response.data.toString()
                     : JSON.stringify(error.response.data);
                 log(`❌ [Voice] TTS Critical Failure (${voiceId}): ${errMsg}`);
-
-                // Propagate specific error for handling in caller (e.g. Fallback)
-                throw new Error(errMsg);
+                return null;
             } else {
                 log(`❌ [Voice] TTS Failed: ${error.message}`);
-                throw error;
+                return null;
             }
         }
     }

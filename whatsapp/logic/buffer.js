@@ -45,11 +45,11 @@ function addToBuffer(senderId, msg, text, processCallback) {
     if (session) {
         clearTimeout(session.timer);
     } else {
-        session = { textParts: [], mediaMsg: null, lastMsg: msg };
+        session = { textParts: [], mediaArray: [], lastMsg: msg };
     }
 
     if (text) session.textParts.push(text);
-    if (msg.message.imageMessage) session.mediaMsg = msg;
+    if (msg.message.imageMessage) session.mediaArray.push(msg);
     session.lastMsg = msg;
 
     // לוג קבלת הודעה (פנימי)
@@ -72,12 +72,13 @@ function addToBuffer(senderId, msg, text, processCallback) {
 function executeSession(senderId, session, processCallback) {
     messageBuffer.delete(senderId);
     const fullText = session.textParts.join(" ");
-    const primaryMsg = session.mediaMsg || session.lastMsg;
+    // Use the first media message as "primary" for quoting, or the last text message
+    const primaryMsg = session.mediaArray.length > 0 ? session.mediaArray[session.mediaArray.length - 1] : session.lastMsg;
 
     // ✅ לוג משוחזר: מראה שהבאפר סיים ומשחרר ל-Core
-    log(`[Buffer] ⏩ Processed batch for ${senderId}: "${fullText}" (Images: ${session.mediaMsg ? 'Yes' : 'No'})`);
+    log(`[Buffer] ⏩ Processed batch for ${senderId}: "${fullText}" (Images: ${session.mediaArray.length})`);
 
-    processCallback(primaryMsg, fullText, session.mediaMsg);
+    processCallback(primaryMsg, fullText, session.mediaArray);
 }
 
 module.exports = { addToBuffer };

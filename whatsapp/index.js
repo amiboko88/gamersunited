@@ -44,6 +44,7 @@ async function connectToWhatsApp() {
 
         setSocket(sock); // ✅ שומרים במודול החיצוני
 
+        // Bind Store to Socket Events
         store.bind(sock.ev);
 
         sock.ev.on('connection.update', (update) => {

@@ -68,6 +68,8 @@ module.exports = {
                     // WhatsApp
                     else if (id === 'btn_plat_wa_main') await platformManager.showWhatsAppDashboard(interaction, false);
                     else if (id === 'btn_plat_wa_sync_pfp') await platformManager.syncWhatsAppAvatars(interaction);
+                    else if (id === 'btn_plat_wa_sync_members') await platformManager.syncWhatsAppMembers(interaction); // ✅
+                    else if (id === 'btn_plat_wa_scan') await platformManager.scanWhatsAppImages(interaction); // ✅
                     else if (id === 'btn_plat_wa_link') await dashboardHandler.showLinkPanel(interaction); // Reuse existing linker
 
                     // Telegram
@@ -87,6 +89,23 @@ module.exports = {
                         await interaction.followUp({ content: `✅ **סנכרון הושלם!**\nשמות: ${resultNames.count}\nחדשים: ${resultMissing.count}`, ephemeral: true });
                         await platformManager.showDiscordDashboard(interaction);
                     }
+
+                    // Stats Review
+                    else if (id === 'btn_plat_stats') await platformManager.showStatsReview(interaction);
+                }
+
+                // 🛠️ Stats Actions (Outside main prefix check if needed, or included)
+                // Since they start with btn_stat_ we handle them here:
+                else if (id.startsWith('btn_stat_')) {
+                    const platformManager = require('../../handlers/users/platformManager');
+                    if (id.startsWith('btn_stat_approve_')) await platformManager.handleStatsAction(interaction, 'approve', id.split('_')[3]);
+                    else if (id.startsWith('btn_stat_delete_')) await platformManager.handleStatsAction(interaction, 'delete', id.split('_')[3]);
+                }
+                else if (id.startsWith('menu_stat_link_user_')) {
+                    const platformManager = require('../../handlers/users/platformManager');
+                    const docId = id.split('_')[4];
+                    const targetUserId = interaction.values[0]; // User Select Menu returns ID in values[0]
+                    await platformManager.finalizeStatsLink(interaction, docId, targetUserId);
                 }
 
                 // 1. Navigation & Views (Legacy Support)

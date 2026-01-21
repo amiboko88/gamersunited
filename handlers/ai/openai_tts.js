@@ -6,22 +6,36 @@ const { log } = require('../../utils/logger');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 class OpenAITTS {
-    async speak(text, voice = 'alloy') {
-        try {
-            log(`🗣️ [OpenAI TTS] Generating audio for: "${text.substring(0, 20)}..." (Voice: ${voice})`);
+    constructor() {
+        this.voiceMap = {
+            'shimon': 'onyx',   // Deep, Authoritative
+            'shirly': 'shimmer' // Clear, Expressive
+        };
+    }
 
-            const response = await openai.audio.speech.create({
-                model: "tts-1-hd", // High Quality Model
+    /**
+     * Generate Speech using OpenAI tts-1-hd
+     * @param {string} text - The text to speak
+     * @param {string} persona - 'shimon' or 'shirly'
+     * @returns {Promise<Buffer|null>} Audio buffer
+     */
+    async speak(text, persona = 'shimon') {
+        try {
+            const voice = this.voiceMap[persona] || 'alloy';
+            log(`🗣️ [OpenAI TTS] Generating (${voice}): "${text.substring(0, 20)}..."`);
+
+            const mp3 = await openai.audio.speech.create({
+                model: "tts-1-hd",
                 voice: voice,
                 input: text,
-                response_format: "mp3" // Discord friendly
+                response_format: "mp3"
             });
 
-            const buffer = Buffer.from(await response.arrayBuffer());
+            const buffer = Buffer.from(await mp3.arrayBuffer());
             return buffer;
 
         } catch (error) {
-            log(`❌ [OpenAI TTS] Generation Failed: ${error.message}`);
+            log(`❌ [OpenAI TTS] Error: ${error.message}`);
             return null;
         }
     }

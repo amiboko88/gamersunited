@@ -13,7 +13,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 class ShimonBrain {
 
-    async ask(userId, platform, userQuery, isAdmin = false, imageBuffer = null, chatId = null, skipPersistence = false) {
+    async ask(userId, platform, userQuery, isAdmin = false, imageBuffers = null, chatId = null, skipPersistence = false) {
         try {
             // 1. הקשרים והיסטוריה
             const history = memoryManager.getHistory(platform, userId);
@@ -24,12 +24,18 @@ class ShimonBrain {
             let userContent = [];
             if (userQuery) userContent.push({ type: "text", text: userQuery });
 
-            if (imageBuffer) {
-                const base64Image = imageBuffer.toString('base64');
-                userContent.push({
-                    type: "image_url",
-                    image_url: { url: `data:image/jpeg;base64,${base64Image}` }
-                });
+            if (imageBuffers) {
+                // If single buffer passed by mistake, wrap it
+                const buffers = Array.isArray(imageBuffers) ? imageBuffers : [imageBuffers];
+
+                for (const buf of buffers) {
+                    if (!buf) continue;
+                    const base64Image = buf.toString('base64');
+                    userContent.push({
+                        type: "image_url",
+                        image_url: { url: `data:image/jpeg;base64,${base64Image}` }
+                    });
+                }
             }
 
             // 3. הרכבת הפרומפט
@@ -106,7 +112,10 @@ class ShimonBrain {
                         JSON.parse(toolCall.function.arguments),
                         userId,
                         chatId,
-                        imageBuffer
+                        JSON.parse(toolCall.function.arguments),
+                        userId,
+                        chatId,
+                        imageBuffers // ✅ Passing ARRAY now
                     );
 
                     messages.push({

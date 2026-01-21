@@ -120,16 +120,99 @@ async function handleMessageLogic(sock, msg, text) {
         }
     } catch (e) { }
 
-    bufferSystem.addToBuffer(senderPhone, msg, text, (finalMsg, combinedText, mediaMsg) => {
+    bufferSystem.addToBuffer(senderPhone, msg, text, (finalMsg, combinedText, mediaArray) => {
         // We pass BOTH indices: One for chat (phone), one for DB (linkedId)
-        executeCoreLogic(sock, finalMsg, combinedText, mediaMsg, senderPhone, linkedDbId, chatJid, isAdmin);
+        executeCoreLogic(sock, finalMsg, combinedText, mediaArray, senderPhone, linkedDbId, chatJid, isAdmin);
     });
 }
 
-async function executeCoreLogic(sock, msg, text, mediaMsg, senderPhone, dbUserId, chatJid, isAdmin) {
+async function executeCoreLogic(sock, msg, text, mediaArray, senderPhone, dbUserId, chatJid, isAdmin) {
     // 🛡️ ONLY update DB if we have a valid Linked DB ID
     if (dbUserId) {
         try { await userManager.updateLastActive(dbUserId); } catch (e) { }
+    }
+
+    // ... [No changes to XP/Spam logic lines 135-183] ...
+
+    // 🛡️ ONLY update DB if we have a valid Linked DB ID
+    if (dbUserId) {
+        try { await userManager.updateLastActive(dbUserId); } catch (e) { }
+    }
+
+    // 🕵️ SCAN COMMAND (Admin Only)
+    // "Force Scan" the last 50 messages for missed scoreboards
+    if (text === '!scan' && isAdmin) {
+        const store = require('../store');
+        const messages = store.getMessages(chatJid);
+        log(`🕵️ [Scan] Checking ${messages.length} messages in memory...`);
+
+        let foundImages = [];
+        for (const m of messages) {
+            // Check for Image
+            const imgParams = m.message?.imageMessage;
+            if (imgParams) foundImages.push(m);
+        }
+
+        if (foundImages.length === 0) {
+            await sock.sendMessage(chatJid, { text: '🕵️ Scan Complete: No recent images found in memory.' }, { quoted: msg });
+            return;
+        }
+
+        await sock.sendMessage(chatJid, { text: `🕵️ Found ${foundImages.length} images. Processing...` }, { quoted: msg });
+
+        // Download All
+        const buffers = [];
+        for (const imgMsg of foundImages) {
+            try {
+                const buf = await visionSystem.downloadWhatsAppImage(imgMsg, sock);
+                if (buf) buffers.push(buf);
+            } catch (e) { }
+        }
+
+        // Process via COD Stats (Hashing will filter duplicates)
+        const codStats = require('../../handlers/ai/tools/cod_stats');
+        // We need to fake the "args" structure or call a specialized method? 
+        // cod_stats.execute expects ARGS.matches.
+        // Wait, we need the AI to EXTRACT them first.
+        // We can't just send raw images to cod_stats.execute, that tool SAVES data. It doesn't EXTRACT.
+        // We need to run Vision Extraction first.
+
+        // RE-USE BRAIN? 
+        // No, ShimonBrain.ask handles text.
+        // We need a direct "Extract & Save" pipeline.
+
+        try {
+            // 1. Vision Extract (We need a direct vision tool helper?)
+            // Actually, let's use the Brain with a specific system instruction?
+            // Or better: Just call standard brain flow for each image? No, that's spammy.
+
+            // IMPLEMENTATION: We'll construct a direct Vision Call here for efficiency.
+            const { generateContent } = require('../../handlers/ai/gemini');
+
+            // Prepare Parts
+            const parts = [{ text: "Extract Warzone Scoreboard data from these images. Return JSON list: [{username, kills, damage, placement, mode}]. If not a scoreboard, return empty list." }];
+            buffers.forEach(b => parts.push({ inlineData: { mimeType: "image/jpeg", data: b.toString("base64") } }));
+
+            const result = await generateContent(parts, "gemini-2.0-flash");
+
+            // Extract JSON
+            const jsonMatch = result.match(/\[.*\]/s);
+            if (!jsonMatch) {
+                await sock.sendMessage(chatJid, { text: '❌ Analysis failed: No JSON found.' });
+                return;
+            }
+
+            const matches = JSON.parse(jsonMatch[0]);
+            const saveArgs = { matches };
+
+            // Save
+            const report = await cod_stats.execute(saveArgs, dbUserId || 'ScanAdmin', chatJid, buffers);
+            await sock.sendMessage(chatJid, { text: `📊 **Scan Report:**\n${report}` });
+
+        } catch (e) {
+            await sock.sendMessage(chatJid, { text: `❌ Scan Error: ${e.message}` });
+        }
+        return;
     }
 
     if (text === "BLOCKED_SPAM") return;
@@ -181,7 +264,8 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderPhone, dbUserId
             const botId = sock.user?.id?.split(':')[0] || sock.user?.id?.split('@')[0];
             if (quotedParticipant && !quotedParticipant.includes(botId)) return;
 
-            if (!mediaMsg && text.length > 10) {
+            const hasMedia = mediaArray && mediaArray.length > 0;
+            if (!hasMedia && text.length > 10) {
                 // Brain needs to know who is talking. If not linked, treat as "Guest (Phone)"
                 const brainUserIdentity = dbUserId || senderPhone;
                 const shouldIntervene = await shimonBrain.shouldReply(brainUserIdentity, text);
@@ -247,9 +331,16 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderPhone, dbUserId
             // Fallback to AI if Intel fails
         }
 
-        let imageBuffer = null;
-        if (mediaMsg) {
-            imageBuffer = await visionSystem.downloadWhatsAppImage(mediaMsg, sock);
+        let imageBuffers = [];
+        if (mediaArray && mediaArray.length > 0) {
+            // Bulk Download
+            log(`📥 [Core] Downloading ${mediaArray.length} images...`);
+            for (const mediaMsg of mediaArray) {
+                try {
+                    const buf = await visionSystem.downloadWhatsAppImage(mediaMsg, sock);
+                    if (buf) imageBuffers.push(buf);
+                } catch (err) { log(`❌ Error downloading image: ${err.message}`); }
+            }
         }
 
         // Ask the brain. If not linked, we pass senderPhone but Brain must treat it gracefully.
@@ -263,9 +354,20 @@ async function executeCoreLogic(sock, msg, text, mediaMsg, senderPhone, dbUserId
             'whatsapp',
             text,
             isAdmin,
-            imageBuffer,
+            imageBuffers, // Passing ARRAY now
             chatJid
         );
+
+        // ✅ FEEDBACK: If we processed images successfully, give a LIKE
+        if (mediaArray && mediaArray.length > 0 && aiResponse && !aiResponse.includes("Error")) {
+            setTimeout(async () => {
+                await sock.sendMessage(chatJid, {
+                    react: { text: "👍", key: msg.key }
+                }).catch(() => { });
+            }, 1000);
+        }
+
+        return aiResponse;
 
         let responseText = aiResponse;
         let audioBuffer = null;

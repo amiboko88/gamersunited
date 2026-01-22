@@ -139,6 +139,59 @@ async function executeCoreLogic(sock, msg, text, mediaArray, senderPhone, dbUser
         try { await userManager.updateLastActive(dbUserId); } catch (e) { }
     }
 
+    // 🕵️ AUTO-SCAN (Private Images)
+    // If a user sends an image in DM, assume it might be a scoreboard and try to scan it.
+    if (isPrivate && bufferSystem.hasMedia(senderPhone)) {
+        // Retrieve media from buffer (since mediaArray might be passed empty in some flows, let's be safe)
+        const storeMessages = bufferSystem.getBuffer(senderPhone);
+        const privateImages = storeMessages.filter(m => m.message?.imageMessage);
+
+        if (privateImages.length > 0) {
+            log(`🕵️ [Auto-Scan] Processing ${privateImages.length} private images from ${senderPhone}...`);
+            await sock.sendMessage(chatJid, { text: '🕵️ בודק סריקת נתונים...' }, { quoted: msg });
+
+            const buffers = [];
+            for (const imgMsg of privateImages) {
+                try {
+                    const buf = await visionSystem.downloadWhatsAppImage(imgMsg, sock);
+                    if (buf) buffers.push(buf);
+                } catch (e) { }
+            }
+
+            if (buffers.length > 0) {
+                try {
+                    const { generateContent } = require('../../handlers/ai/gemini');
+                    const codStats = require('../../handlers/ai/tools/cod_stats');
+
+                    // Extract Data
+                    const parts = [{ text: "Extract Warzone Scoreboard data from these images. Return JSON list: [{username, kills, damage, placement, mode}]. If not a scoreboard, return empty list." }];
+                    buffers.forEach(b => parts.push({ inlineData: { mimeType: "image/jpeg", data: b.toString("base64") } }));
+
+                    const result = await generateContent(parts, "gemini-2.0-flash");
+                    const jsonMatch = result.match(/\[.*\]/s);
+
+                    if (jsonMatch) {
+                        const matches = JSON.parse(jsonMatch[0]);
+                        if (matches.length > 0) {
+                            // Save Data
+                            // Use dbUserId if available (Linked), otherwise use Phone as ID (Fallback)
+                            const targetId = dbUserId || senderPhone;
+                            const report = await cod_stats.execute({ matches }, targetId, chatJid, buffers);
+                            await sock.sendMessage(chatJid, { text: `📊 **דוח סריקה (פרטי):**\n${report}` });
+
+                            // Clear buffer to prevent double processing by AI
+                            bufferSystem.clearBuffer(senderPhone);
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    log(`⚠️ [Auto-Scan] Failed to process private image: ${e.message}`);
+                    // Fallthrough to normal AI chat if scan fails
+                }
+            }
+        }
+    }
+
     // 🕵️ SCAN COMMAND (Admin Only)
     // "Force Scan" the last 50 messages for missed scoreboards
     if (text === '!scan' && isAdmin) {

@@ -66,9 +66,17 @@ class PlatformManager {
             const sock = getSocket();
             const deviceStatus = sock ? 'CONNECTED' : 'DISCONNECTED';
 
-            // Count Linked Users (Checking platforms.whatsapp as the primary source)
-            const linkedSnapshot = await db.collection('users').where('platforms.whatsapp', '!=', null).count().get();
-            const linkedCount = linkedSnapshot.data().count;
+            // Count Linked Users (Exclude Shimon Bot)
+            const linkedSnapshot = await db.collection('users')
+                .where('platforms.whatsapp', '!=', null)
+                .select('platforms.whatsapp') // Optimization: Fetch only this field
+                .get();
+
+            // Filter out Shimon (972549220819)
+            const linkedCount = linkedSnapshot.docs.filter(doc => {
+                const phone = doc.data().platforms?.whatsapp;
+                return phone !== '972549220819';
+            }).length;
 
             // Health Check (Missing PFP) - Check users who HAVE whatsapp but NO avatar
             const missingPfpSnapshot = await db.collection('users')

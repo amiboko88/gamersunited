@@ -14,7 +14,10 @@ class SimpleStore {
     bind(ev) {
         // 1. Load History
         // 1. Load History
-        ev.on('messaging-history.set', ({ contacts, messages }) => {
+        ev.on('messaging-history.set', (data) => {
+            const { contacts, messages, isLatest } = data;
+            log(`🧠 [Store] History Event: Keys=[${Object.keys(data).join(', ')}]`);
+
             // A. Contacts
             if (contacts) {
                 let lidCount = 0;
@@ -35,6 +38,8 @@ class SimpleStore {
                     }
                 }
                 log(`🧠 [Store] Message History Hydrated: ${msgCount} messages.`);
+            } else {
+                log(`⚠️ [Store] No 'messages' field in history event.`);
             }
         });
 

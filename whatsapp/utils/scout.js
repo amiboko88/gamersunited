@@ -78,8 +78,11 @@ class WhatsAppScout {
                             recognizedUsers++;
                         }
                     } else {
-                        // User not found in DB
-                        skippedLog.push({ phone: realPhone, reason: 'Not in DB' });
+                        // User not found in DB -> Register as Orphan for Manual Linking
+                        // skippedLog.push({ phone: realPhone, reason: 'Not in DB' });
+                        const matchmaker = require('../../handlers/matchmaker');
+                        await matchmaker.registerOrphan(realPhone, p.notify || 'Unknown', 'Scout Auto-Detect');
+                        skippedLog.push({ phone: realPhone, reason: 'Registered as Orphan' });
                     }
                 }
 

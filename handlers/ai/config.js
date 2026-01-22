@@ -1,4 +1,8 @@
 module.exports = {
+   // 🎙️ Voice IDs (User Provided)
+   SHIMON_VOICE_ID: "txHtK15K5KtX959ZtpRa",
+   SHIRLY_VOICE_ID: "BZgkqPqms7Kj9ulSkVzn",
+
    MODEL: "gpt-4o-mini", // ✅ חיסכון של 95% בעלויות (במקום gpt-4o)
    MAX_TOKENS: 800,
    TEMPERATURE: 0.9,

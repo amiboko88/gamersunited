@@ -288,31 +288,42 @@ class SimpleStore {
     /**
      * PERSISTENCE: Load/Save
      */
-    async loadFromFile() {
+    /**
+     * PERSISTENCE: Firestore (Cloud & Docker Safe) ☁️
+     */
+    async loadFromFirestore() {
         try {
-            const fs = require('fs');
-            if (fs.existsSync('./baileys_messages.json')) {
-                const data = JSON.parse(fs.readFileSync('./baileys_messages.json'));
-                this.messages = data.messages || {};
-                this.contacts = data.contacts || {};
-                this.lidMap = data.lidMap || {};
-                log(`💾 [Store] Loaded from disk: ${Object.keys(this.messages).length} chats.`);
+            const db = require('../utils/firebase');
+            const doc = await db.collection('system_cache').doc('whatsapp_store').get();
+
+            if (doc.exists) {
+                const data = doc.data();
+                // Hydrate
+                this.messages = data.messages ? JSON.parse(data.messages) : {};
+                this.lidMap = data.lidMap ? JSON.parse(data.lidMap) : {};
+                // Contacts might be too big/unnecessary to persist full history, but we keep LIDs
+
+                log(`☁️ [Store] Hydrated from Firestore: ${Object.keys(this.messages).length} chats restored.`);
             }
         } catch (e) {
-            log(`⚠️ [Store] Load Failed: ${e.message}`);
+            log(`⚠️ [Store] Firestore Load Failed: ${e.message}`);
         }
     }
 
-    async saveToFile() {
+    async saveToFirestore() {
         try {
-            const fs = require('fs');
-            fs.writeFileSync('./baileys_messages.json', JSON.stringify({
-                messages: this.messages,
-                contacts: this.contacts,
-                lidMap: this.lidMap
-            }, null, 2));
+            const db = require('../utils/firebase');
+            // Serialize and save (Handling large objects by JSON stringify to avoid Map issues)
+            // Limit checks: If too big, maybe trim? (Auto-trim is in addMessage)
+
+            await db.collection('system_cache').doc('whatsapp_store').set({
+                messages: JSON.stringify(this.messages),
+                lidMap: JSON.stringify(this.lidMap),
+                timestamp: new Date()
+            });
+            // log(`☁️ [Store] Saved state to Firestore.`); // Verbose
         } catch (e) {
-            log(`⚠️ [Store] Save Failed: ${e.message}`);
+            log(`⚠️ [Store] Firestore Save Failed: ${e.message}`);
         }
     }
 

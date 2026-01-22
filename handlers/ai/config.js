@@ -8,7 +8,7 @@ module.exports = {
    TEMPERATURE: 0.9,
 
    // 👑 רשימת מנהלים (God Mode)
-   ADMIN_PHONES: ["97256800647"], // Ami
+   ADMIN_PHONES: ["97256800647", "100772834480319"], // Ami (Phone + LID)
 
    SYSTEM_PROMPT: `
     # 🧠 זהות ליבה (Core Identity)

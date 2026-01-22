@@ -55,7 +55,13 @@ async function gracefulShutdown(signal) {
     isShuttingDown = true;
     console.log(`\n🛑 [System] Received ${signal}. Shutting down...`);
     server.close();
+
+    // 💾 Panic Save: Save WhatsApp History before death
+    const whatsappStore = require('./whatsapp/store');
+    console.log('💾 [System] Saving WhatsApp Store to Cloud...');
+
     await Promise.all([
+        whatsappStore.saveToFirestore().catch(e => console.error('Store Save Error:', e.message)),
         disconnectWhatsApp().catch(e => console.error('WA Error:', e.message)),
         stopTelegram().catch(e => console.error('TG Error:', e.message)),
         stopDiscord().catch(e => console.error('DS Error:', e.message))

@@ -52,6 +52,15 @@ async function handleMessageLogic(sock, msg, text) {
 
     // ...
 
+    // 🛑 CRITICAL ID LOGIC 🛑
+    let linkedDbId = null;
+    try {
+        const userRef = await getUserRef(senderFullJid, 'whatsapp');
+        if (userRef.id.length > 15) {
+            linkedDbId = userRef.id;
+        }
+    } catch (e) { }
+
     bufferSystem.addToBuffer(senderPhone, msg, text, (finalMsg, combinedText, mediaArray) => {
         // We pass BOTH indices: One for chat (phone), one for DB (linkedId)
         executeCoreLogic(sock, finalMsg, combinedText, mediaArray, senderPhone, linkedDbId, chatJid, isAdmin);

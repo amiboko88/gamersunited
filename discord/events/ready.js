@@ -28,19 +28,19 @@ module.exports = {
             await voiceLogistics.updateVoiceIndicator(guild);
         }
 
-        // 1. אתחול ימי הולדת
-        birthdayManager.init(client, null, null, null);
+        // 1. אתחול ימי הולדת - הועבר ל-index.js
+        // birthdayManager.init(...);
 
-        // 2. אתחול המתזמן הראשי
-        // scheduler.initScheduler(client); // ❌ הוסר למניעת כפילות (רץ מ-index.js)
+        // 2. אתחול המתזמן הראשי - הועבר ל-index.js
+        // scheduler.initScheduler(client); 
 
-        // 3. הפעלת מנקה הפיפו האוטומטי
-        fifoCleaner.startAutoClean(client);
+        // 3. הפעלת מנקה הפיפו האוטומטי - הועבר ל-index.js
+        // fifoCleaner.startAutoClean(client);
 
-        // 4. הפעלת רוטציית סטטוסים (מהמיקום החדש)
-        if (statusRotator && typeof statusRotator.start === 'function') {
-            statusRotator.start(client);
-        }
+        // 4. הפעלת רוטציית סטטוסים - הועבר ל-index.js
+        // if (statusRotator && typeof statusRotator.start === 'function') {
+        //     statusRotator.start(client);
+        // }
 
         // 5. בדיקת ערוץ האימות
         await checkVerificationChannel(client);

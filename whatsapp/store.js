@@ -337,6 +337,9 @@ class SimpleStore {
     }
 
     // ...
+    getMessages(jid) {
+        return this.messages[jid] || [];
+    }
 }
 
 module.exports = new SimpleStore();

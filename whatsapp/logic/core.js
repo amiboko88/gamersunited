@@ -127,6 +127,7 @@ async function handleMessageLogic(sock, msg, text) {
 }
 
 async function executeCoreLogic(sock, msg, text, mediaArray, senderPhone, dbUserId, chatJid, isAdmin) {
+    const isPrivate = !chatJid.endsWith('@g.us');
     // 🛡️ ONLY update DB if we have a valid Linked DB ID
     if (dbUserId) {
         try { await userManager.updateLastActive(dbUserId); } catch (e) { }

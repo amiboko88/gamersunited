@@ -75,7 +75,8 @@ class PlatformManager {
             // Filter out Shimon (972549220819)
             const linkedCount = linkedSnapshot.docs.filter(doc => {
                 const phone = doc.data().platforms?.whatsapp;
-                return phone !== '972549220819';
+                const cleanPhone = String(phone || '').replace(/\D/g, '');
+                return cleanPhone !== '972549220819';
             }).length;
 
             // Health Check (Missing PFP) - Check users who HAVE whatsapp but NO avatar

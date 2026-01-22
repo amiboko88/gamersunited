@@ -26,11 +26,13 @@ function isTriggered(text, msg, sock) {
 
 // ...
 
-async function handleMessageLogic(sock, msg, text) {
-    const chatJid = msg.key.remoteJid;
+async function handleMessageLogic(sock, msg, text, resolvedPhone) {
+    const isPrivate = !msg.key.remoteJid.endsWith('@g.us');
+    // 🛡️ JID Fix: Always reply to the Real Phone Number in DMs (not LID)
+    const chatJid = (isPrivate && resolvedPhone) ? `${resolvedPhone}@s.whatsapp.net` : msg.key.remoteJid;
+
     const senderFullJid = msg.key.participant || msg.participant || chatJid;
-    const senderPhone = senderFullJid.split('@')[0];
-    const isPrivate = !chatJid.endsWith('@g.us');
+    const senderPhone = resolvedPhone || senderFullJid.split('@')[0];
 
     // --- בדיקת שעות פעילות ---
     const systemStatus = isSystemActive();

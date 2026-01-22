@@ -149,7 +149,7 @@ async function connectToWhatsApp() {
                 }
 
                 if (coreLogic && coreLogic.handleMessageLogic) {
-                    await coreLogic.handleMessageLogic(sock, msg, text);
+                    await coreLogic.handleMessageLogic(sock, msg, text, realSenderPhone);
                 }
 
                 // 👻 Ghost Protocol (Monitoring Hunt)

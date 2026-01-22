@@ -4,7 +4,7 @@ const bufferSystem = require('./buffer');
 const { isSystemActive } = require('../utils/timeHandler');
 const { getUserRef } = require('../../utils/userUtils');
 const visionSystem = require('../../handlers/media/vision');
-const { whatsapp } = require('../../config/ Settings'); // Typo in original require line? No, it's correct.
+const { whatsapp } = require('../../config/settings');
 const config = require('../../handlers/ai/config'); // Load Config for Admin List
 
 // מערכות

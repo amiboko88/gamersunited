@@ -18,6 +18,11 @@ module.exports = (bot) => {
         ctx.reply("פונג! אני חי וקיים. 🏓");
     });
 
+    // 🕵️ Debug: Reveal Chat ID
+    bot.command("id", (ctx) => {
+        ctx.reply(`🆔 **Chat ID:** \`${ctx.chat.id}\``, { parse_mode: "Markdown" });
+    });
+
     // --- 🏆 Leaderboard ---
     bot.command(["top", "leaderboard"], async (ctx) => {
         try {

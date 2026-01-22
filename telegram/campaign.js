@@ -2,21 +2,32 @@ const { getBot } = require('./client');
 const { log } = require('../utils/logger');
 const brain = require('../handlers/ai/brain');
 
-const TARGET_CHANNEL_ID = '-1002220458635'; // ID של קבוצת הטלגרם
-// הערה: ניתן להוציא ל-.env אם יש מספר קבוצות, כרגע זה מקודד קשיח לפי הלוגים
+const TARGET_CHANNEL_ID_DEFAULT = '-1002220458635'; // Fallback
 
 async function runWeeklySpark() {
     const bot = getBot();
     if (!bot) return;
 
-    log('✨ [Telegram Campaign] מתחיל את ה-Weekly Spark...');
+    // 🧠 Fetch Real Group ID from DB (Auto-Learned)
+    const db = require('../utils/firebase');
+    let targetChatId = TARGET_CHANNEL_ID_DEFAULT;
+
+    try {
+        const doc = await db.collection('system_metadata').doc('config').get();
+        if (doc.exists && doc.data().telegram_main_group) {
+            targetChatId = doc.data().telegram_main_group;
+        }
+    } catch (e) { }
+
+    log(`✨ [Telegram Campaign] מתחיל את ה-Weekly Spark (Target: ${targetChatId})...`);
 
     try {
         // 1. יצירת תוכן בעזרת AI
         const prompt = "כתוב הודעה קצרה, שנונה ומצחיקה לקבוצת גיימרים בטלגרם. המטרה: לגרום להם להגיב כדי שנדע שהם חיים. תשאל שאלה כמו 'מה המשחק ששרף לכם את השבוע?' או משהו בסגנון. תהיה קליל, שמעון הבוט.";
 
-        // נשתמש במוח כדי לייצר את ההודעה (נשלח כאילו ליוזר מערכת 0)
-        let messageText = await brain.ask('system', 'telegram', prompt);
+        // נשתמש במוח כדי לייצר את ההודעה (נשלח כאילו ליוזר מערכת - מספר דמה תקין שעובר ולידציה)
+        // '100000000000000000' is 18 chars, solving the "cleanWhatsAppId" becoming empty string issue.
+        let messageText = await brain.ask('100000000000000000', 'telegram', prompt, true, null, null, true); // true = skipPersistence
 
         // אם ה-AI נכשל, הודעת ברירת מחדל
         if (!messageText) {
@@ -30,17 +41,21 @@ async function runWeeklySpark() {
         const { InlineKeyboard } = require("grammy");
         const keyboard = new InlineKeyboard().url("🔗 סנכרן אותי עכשיו", "https://t.me/GamersUnited_Bot?start=sync");
 
-        const msg = await bot.api.sendMessage(TARGET_CHANNEL_ID, fullMessage, {
+        const msg = await bot.api.sendMessage(targetChatId, fullMessage, {
             reply_markup: keyboard,
             parse_mode: "Markdown"
         });
 
         // 4. נעיצה (Pin) להקפצת התראה
-        await bot.api.pinChatMessage(TARGET_CHANNEL_ID, msg.message_id);
+        await bot.api.pinChatMessage(targetChatId, msg.message_id).catch(e => log(`⚠️ [Telegram] Pin failed (Admin rights?): ${e.message}`));
         log('✅ [Telegram Campaign] הודעה נשלחה וננעצה בהצלחה.');
 
     } catch (e) {
-        console.error('❌ [Telegram Campaign Error]', e);
+        if (e.description?.includes('chat not found')) {
+            log(`❌ [Telegram Error] הבוט לא מוצא את הקבוצה ${targetChatId}. וודא שהבוט חבר בקבוצה ויש לו הרשאות!`);
+        } else {
+            console.error('❌ [Telegram Campaign Error]', e);
+        }
     }
 }
 

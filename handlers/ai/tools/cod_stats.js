@@ -129,7 +129,16 @@ async function execute(args, userId, chatId, imageBuffers) {
 
     let response = `✅ Processed ${args.matches.length} rows.\n`;
     if (savedCount > 0) response += `• ${savedCount} saved to profiles.\n`;
-    if (pendingCount > 0) response += `• ${pendingCount} pending review (Unknown users).\n`;
+
+    if (pendingCount > 0) {
+        // Collect unknown names for the user to see
+        const unknownNames = args.matches
+            .filter(m => !users.find(u => u.aliases.some(alias => m.username.toLowerCase().includes(alias) || alias.includes(m.username.toLowerCase()))))
+            .map(m => m.username);
+
+        response += `• ${pendingCount} Unknown Users (Pending):\n   [ ${unknownNames.join(', ')} ]\n`;
+        response += `💡 **Admin Tip:** Add these exact names to 'identity.aliases' in Firestore to link them next time.`;
+    }
 
     return response;
 }

@@ -147,6 +147,18 @@ module.exports = (bot) => {
         const handled = await flowHandler.handleMessage(ctx);
         if (handled) return; // אם טופל ע"י הפלואו, נעצור כאן
 
+        // 🧠 Auto-Learn Group ID (Self-Healing)
+        // אם ההודעה מגיעה מהקבוצה הראשית, נשמור את ה-ID שלה לעתיד.
+        if ((ctx.chat.type === 'supergroup' || ctx.chat.type === 'group') &&
+            ctx.chat.title && ctx.chat.title.toLowerCase().includes('gamers united')) {
+
+            // שמירה אסינכרונית בלי לעצור את הזרם
+            const db = require('../../utils/firebase');
+            db.collection('system_metadata').doc('config').set({
+                telegram_main_group: ctx.chat.id.toString()
+            }, { merge: true }).catch(err => console.error('Failed to save TG ID:', err));
+        }
+
         // 🕵️ בדיקה: האם זו הודעה מועברת בפרטי? (Manual Scan)
         if (ctx.chat.type === 'private' && (ctx.message.forward_date || ctx.message.forward_from)) {
             if (ctx.message.forward_from) {

@@ -421,8 +421,6 @@ async function executeCoreLogic(sock, msg, text, mediaArray, senderPhone, dbUser
             }, 1000);
         }
 
-        return aiResponse;
-
         let responseText = aiResponse;
         let audioBuffer = null;
 

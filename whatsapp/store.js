@@ -12,9 +12,9 @@ class SimpleStore {
      * Bind to events
      */
     bind(ev) {
-        // 0. Load Persistence
-        this.loadFromFile();
-        setInterval(() => this.saveToFile(), 10000); // Save every 10 seconds
+        // 0. Load Persistence (Cloud Compatible) ☁️
+        this.loadFromFirestore();
+        setInterval(() => this.saveToFirestore(), 30000); // Save every 30 seconds to DB
 
         // 1. Load History
         // 1. Load History

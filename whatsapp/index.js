@@ -61,6 +61,11 @@ async function connectToWhatsApp() {
                 if (MAIN_GROUP_ID) {
                     setTimeout(() => {
                         whatsappScout.syncGroupMembers(sock, MAIN_GROUP_ID);
+
+                        // 🧟 Resurrection Protocol: Check for missed insults
+                        const resurrection = require('../handlers/ai/resurrection');
+                        resurrection.execute(sock, MAIN_GROUP_ID);
+
                     }, 15000);
                 }
             }

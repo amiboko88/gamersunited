@@ -127,17 +127,45 @@ async function execute(args, userId, chatId, imageBuffers) {
 
     await batchOps.commit();
 
-    let response = `✅ Processed ${args.matches.length} rows.\n`;
-    if (savedCount > 0) response += `• ${savedCount} saved to profiles.\n`;
+    // 4. GENERATE GRAPHIC CARD 🎨
+    try {
+        const graphics = require('../../graphics/statsCard');
+        const imageBuffer = await graphics.generateMatchCard(args.matches);
 
-    if (pendingCount > 0) {
-        // Collect unknown names for the user to see
+        // 5. SEND TO CHAT (Bypassing LLM Text Output)
+        if (chatId) {
+            if (chatId.includes('@')) {
+                // WhatsApp
+                const { getWhatsAppSock } = require('../../../whatsapp/index');
+                const sock = getWhatsAppSock();
+                if (sock) {
+                    await sock.sendMessage(chatId, {
+                        image: imageBuffer,
+                        caption: `📊 **דוח משחק - ${new Date().toLocaleTimeString('he-IL')}**\nעובד ע"י שמעון AI`,
+                        mimetype: 'image/png'
+                    });
+                }
+            } else {
+                // Discord (Assuming numeric ID)
+                // TODO: Add Discord Image Send Logic if needed
+            }
+        }
+    } catch (gErr) {
+        log(`❌ [COD Stats] Graphics Error: ${gErr.message}`);
+    }
+
+    // 6. Return Text Summary (Hidden/Short)
+    let response = `✅ הנתונים נשמרו בהצלחה ודוח גרפי נשלח לקבוצה.`;
+
+    // Only show technical warnings to the Admin in Private Chat (not in Group)
+    const isGroup = chatId && chatId.includes('@g.us');
+
+    if (pendingCount > 0 && !isGroup) {
         const unknownNames = args.matches
             .filter(m => !users.find(u => u.aliases.some(alias => m.username.toLowerCase().includes(alias) || alias.includes(m.username.toLowerCase()))))
             .map(m => m.username);
 
-        response += `• ${pendingCount} Unknown Users (Pending):\n   [ ${unknownNames.join(', ')} ]\n`;
-        response += `💡 **Admin Tip:** Add these exact names to 'identity.aliases' in Firestore to link them next time.`;
+        response += `\n⚠️ **שים לב (ADMIN ONLY):** המשתמשים הבאים לא זוהו: [${unknownNames.join(', ')}]. יש להוסיף אותם ידנית ב-DB.`;
     }
 
     return response;

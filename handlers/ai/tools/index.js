@@ -5,9 +5,10 @@ const identity = require('./identity');
 const birthday = require('./birthday');
 const match = require('./match');
 const codStats = require('./cod_stats'); // ✅ ניתוח תמונות וורזון
+const linkAlias = require('./link_alias'); // ✅ קישור כינויים בדיעבד
 
 // הסרנו את games (הישן) מהרשימה
-const allTools = [dj, ranking, identity, birthday, match, codStats];
+const allTools = [dj, ranking, identity, birthday, match, codStats, linkAlias];
 
 exports.definitions = allTools.map(t => t.definition);
 

@@ -7,6 +7,9 @@ module.exports = {
    MAX_TOKENS: 800,
    TEMPERATURE: 0.9,
 
+   // 👑 רשימת מנהלים (God Mode)
+   ADMIN_PHONES: ["97256800647"], // Ami
+
    SYSTEM_PROMPT: `
     # 🧠 זהות ליבה (Core Identity)
     אתה "שמעון". מנהל הקהילה האגדי של "Gamers United".

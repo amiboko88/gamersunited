@@ -79,7 +79,6 @@ function executeSession(senderId, session, processCallback) {
     log(`[Buffer] ⏩ Processed batch for ${senderId}: "${fullText}" (Images: ${session.mediaArray.length})`);
 
     processCallback(primaryMsg, fullText, session.mediaArray);
-    processCallback(primaryMsg, fullText, session.mediaArray);
 }
 
 // ✅ External Access Methods (for Core Logic)

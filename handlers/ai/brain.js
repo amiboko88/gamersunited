@@ -197,6 +197,12 @@ class ShimonBrain {
 
     async trackStats(userId, chars) {
         if (!userId) return;
+
+        // 🛡️ BLOCK GHOST DOCS:
+        // Do not write stats for unlinked phone numbers (Length < 16).
+        // Only write for Discord/Linked IDs (Snowflake is ~18 chars).
+        if (userId.toString().length < 16) return;
+
         try {
             await db.collection('users').doc(userId.toString()).set({
                 stats: { aiCharsUsed: admin.firestore.FieldValue.increment(chars) },

@@ -20,7 +20,7 @@ const definition = {
 
 async function execute(args, userId, chatId) {
     // 1. Admin Check
-    if (!config.ADMIN_PHONES.includes(userId) && userId !== '972549380404') {
+    if (!config.ADMIN_PHONES.includes(userId) && userId !== '972526800647') {
         return "❌ Error: Only Admins can link aliases.";
     }
 

@@ -11,7 +11,7 @@ class VoiceManager {
     constructor() {
         // תמיכה בשמות שהמשתמש הגדיר (ELEVEN_*) בלבד (לבקשת המשתמש)
         this.elevenLabsKey = process.env.ELEVEN_API_KEY;
-        this.voiceId = process.env.ELEVEN_VOICE_ID || 'txHtK15K5KtX959ZtpRa';
+        this.voiceId = 'txHtK15K5KtX959ZtpRa';
     }
 
     /**
@@ -50,13 +50,13 @@ class VoiceManager {
         // Determine Configuration
         // Priority: Options -> Default Class Property -> Hardcoded Fallback
         const voiceId = options.voiceId || this.voiceId;
-        const modelId = options.modelId || "eleven_multilingual_v3";
+        const modelId = options.modelId || "eleven_v3"; // ✅ Confirmed working ID from media/voice.js
 
         // Settings: Allow per-call overrides, otherwise use defaults
         const settings = {
-            stability: options.stability || 0.5,
-            similarity_boost: options.similarityBoost || 0.75, // Default High (WhatsApp quality)
-            style: options.style || 0.0,
+            stability: options.stability !== undefined ? options.stability : 0.0, // V3 requires 0.0 for creativity
+            similarity_boost: options.similarityBoost || 0.8,
+            style: options.style || 0.5, // V3 supports style
             use_speaker_boost: options.useSpeakerBoost !== undefined ? options.useSpeakerBoost : true
         };
 

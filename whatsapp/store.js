@@ -119,6 +119,10 @@ class SimpleStore {
 
     getPhoneById(identifier) {
         if (!identifier) return null;
+
+        // 🛡️ Admin Hardcode Fix: Prevent LID "Ghosting"
+        if (identifier.includes('100772834480319')) return '972526800647'; // Corrected to AMI's Number
+
         const cleanId = identifier.split('@')[0];
 
         // Direct Lookup

@@ -39,7 +39,12 @@ class IntelClassifier {
                - "בתאל", "באטל", "בטלפילד" -> game="BF6"
                - "קוד", "וורזון", "warzone" -> game="COD"
                - "פיפא", "fifa", "fc26", "fc" -> game="FC26"
-               - "מטה", "מטא" -> intent="WEAPON_META"
+               - "מטה", "מטא", "meta" -> intent="WEAPON_META"
+            3. KEYWORD EXCEPTIONS (CRITICAL):
+               - "מת" (Dead), "מתה", "נפטר", "הלך לעולמו" -> intent="GENERAL_CHAT" (This is NOT Meta).
+               - "שמעון מת" -> intent="GENERAL_CHAT".
+               - "מתי" (When) != "Meta" -> intent="GENERAL_CHAT" (unless specifically asking "מתי עדכון").
+               - Only classify as WEAPON_META if the user explicitly asks for "Meta", "Best Loadout", "Class", or "Weapon".
             `;
 
             const runner = await openai.chat.completions.create({

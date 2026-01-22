@@ -79,6 +79,23 @@ function executeSession(senderId, session, processCallback) {
     log(`[Buffer] ⏩ Processed batch for ${senderId}: "${fullText}" (Images: ${session.mediaArray.length})`);
 
     processCallback(primaryMsg, fullText, session.mediaArray);
+    processCallback(primaryMsg, fullText, session.mediaArray);
 }
 
-module.exports = { addToBuffer };
+// ✅ External Access Methods (for Core Logic)
+function hasMedia(senderId) {
+    const session = messageBuffer.get(senderId);
+    return session && session.mediaArray && session.mediaArray.length > 0;
+}
+
+function getBuffer(senderId) {
+    const session = messageBuffer.get(senderId);
+    // Return the media array or empty array if none
+    return session ? session.mediaArray : [];
+}
+
+function clearBuffer(senderId) {
+    messageBuffer.delete(senderId);
+}
+
+module.exports = { addToBuffer, hasMedia, getBuffer, clearBuffer };

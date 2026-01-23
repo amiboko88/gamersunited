@@ -104,66 +104,12 @@ class VoiceLogistics {
     }
 
     /**
-     * 👑 כרוז מלכותי ל-MVP (Royal Entrance)
+     * 🗑️ (Deprecated) MVP Logic moved to mvp_manager.js
+     * This ensures no accidental calls to the old broken system.
      */
     async handleMVPEntrance(member, channelId) {
-        if (!member || !channelId) return;
-
-        try {
-            const db = require('../../utils/firebase');
-            const mvpDoc = await db.collection('system_metadata').doc('current_mvp').get();
-            if (!mvpDoc.exists) return;
-
-            const mvpData = mvpDoc.data();
-
-            // בדיקה אם המשתמש שנכנס הוא ה-MVP
-            if (member.id !== mvpData.id) return;
-
-            // בדיקת תוקף הזכייה (7 ימים)
-            const wonDate = new Date(mvpData.wonAt || 0);
-            if ((Date.now() - wonDate) > 7 * 24 * 60 * 60 * 1000) return;
-
-            // מניעת ספאם (Cooldown של 30 דקות לכניסה מלכותית)
-            // נשתמש ב-Map מקומי או בנכס על הממבר בזיכרון
-            const lastEntrance = member.lastMvpEntrance || 0;
-            if (Date.now() - lastEntrance < 30 * 60 * 1000) return;
-
-            member.lastMvpEntrance = Date.now(); // שמירה בזיכרון
-
-            log(`👑 [Voice] ה-MVP (${member.displayName}) נכנס לחדר! מכין קבלת פנים...`);
-
-            // במקום setTimeout פשוט, נשתמש בטיימר אסינכרוני כדי לא לתקוע את ה-Event
-            setTimeout(async () => {
-                try {
-                    // בדיקה חוזרת שהוא עדיין שם
-                    if (member.voice.channelId !== channelId) return;
-
-                    const { getTTS } = require('../../utils/tts');
-
-                    // טקסטים מתחלפים לקבלת פנים
-                    const greetings = [
-                        `הוד רוממותו ${mvpData.name} נכנס לחדר. כולם לתת כבוד.`,
-                        `שימו לב! ה-MVP ${mvpData.name} הגיע.`,
-                        `הבוס הגדול ${mvpData.name} כאן. שקט בבקשה.`
-                    ];
-                    const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)];
-
-                    const audioPath = await getTTS(randomGreeting);
-
-                    if (audioPath) {
-                        // ניגון דרך הנגן הראשי (פשוט וקל)
-                        // נשתמש ב-playLocalFile שיודע לנהל חיבורים
-                        log(`👑 [Voice] מנגן כרוז ל-MVP...`);
-                        await musicPlayer.playLocalFile(member.guild.id, channelId, audioPath);
-                    }
-                } catch (innerError) {
-                    console.error('[MVP Voice] Inner Error:', innerError);
-                }
-            }, 3000); // 3 שניות השהייה
-
-        } catch (error) {
-            console.error('[MVP Voice] Error:', error);
-        }
+        // Deprecated. See handlers/voice/mvp_manager.js
+        return;
     }
 }
 

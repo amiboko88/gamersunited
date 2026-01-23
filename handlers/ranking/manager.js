@@ -144,12 +144,15 @@ class RankingManager {
                                     wonAt: new Date().toISOString()
                                 });
 
-                                // 💰 מענק כספי (Royal Pass)
+                                // 💰 מענק כספי (Royal Pass) + 🏆 עדכון ספירת זכיות
                                 const bonusAmount = 1000;
                                 await db.collection('users').doc(winnerId).set({
                                     economy: {
                                         balance: admin.firestore.FieldValue.increment(bonusAmount),
                                         totalEarnings: admin.firestore.FieldValue.increment(bonusAmount)
+                                    },
+                                    stats: {
+                                        mvpWins: admin.firestore.FieldValue.increment(1) // ✅ ספירת זכיות לשימוש ה-AI
                                     }
                                 }, { merge: true });
                                 log(`[MVP] 💰 הוענק מענק זכייה של ${bonusAmount} למשתמש ${winnerMember.displayName}`);

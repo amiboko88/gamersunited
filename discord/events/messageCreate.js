@@ -24,6 +24,9 @@ module.exports = {
                 return;
             }
 
+            // 0.5. Block Hidden Channels from XP/Logic (Staff Logger) 🛑
+            if (message.channel.id === '881445829100060723') return;
+
             // 1. Ensures User Exists & XP
             // Lazy creation for users who joined before the bot was active
             const { ensureUserExists } = require('../../utils/userUtils');

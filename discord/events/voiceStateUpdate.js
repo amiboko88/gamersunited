@@ -9,6 +9,7 @@ const voiceBridge = require('./voiceBridge');                     // גשר לו
 const gameStats = require('../../handlers/users/stats');          // ✅ הסטטיסטיקות החדשות (מה ששלחת)
 const xpManager = require('../../handlers/economy/xpManager');    // ✅ מנהל ה-XP
 const userManager = require('../../handlers/users/manager');      // ✅ מנהל המשתמשים (זמן פעילות)
+const mvpManager = require('../../handlers/voice/mvp_manager');   // ✅ מנהל ה-MVP החדש
 
 // מפה למעקב זמני כניסה
 const joinTimestamps = new Map();
@@ -51,17 +52,20 @@ module.exports = {
                 await logistics.handleBF6Announcer(member, newChannel.id);
 
                 // 👑 כרוז MVP (לכל חדר)
-                await logistics.handleMVPEntrance(member, newChannel.id);
+                await mvpManager.handleEntrance(member, newChannel.id);
             }
             // טיפול במעבר ערוץ (לצורך BF6)
             else if (newChannel && oldChannel && newChannel.id !== oldChannel.id) {
                 await logistics.handleBF6Announcer(member, newChannel.id);
                 // 👑 כרוז MVP (גם במעבר חדר)
-                await logistics.handleMVPEntrance(member, newChannel.id);
+                await mvpManager.handleEntrance(member, newChannel.id);
             }
 
             // --- יציאה מערוץ (Leave) ---
             if (oldChannel && !newChannel) {
+                // Cancel MVP Timer if they leave
+                await mvpManager.handleExit(member);
+
                 const joinedAt = joinTimestamps.get(userId);
 
                 if (joinedAt) {

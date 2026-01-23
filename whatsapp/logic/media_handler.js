@@ -37,19 +37,31 @@ async function handleVoice(aiResponse, sock, chatJid, msg) {
     return null; // Not voice
 }
 
-async function handleScanCommand(sock, msg, chatJid, dbUserId, isAdmin, directBuffers = []) {
+async function handleScanCommand(sock, msg, chatJid, dbUserId, isAdmin, directBuffers = [], isAutoMode = false) {
     let buffers = [];
 
-    // 🚀 Speed Path: Use pre-downloaded buffers from Core (Auto-Scan)
+    // 1. Direct Buffers (Caption on Image) OR Auto-Scan
     if (directBuffers && directBuffers.length > 0) {
-        log(`🕵️ [Scan] Using ${directBuffers.length} pre-loaded images (Fast Path).`);
+        log(`🕵️ [Scan] Processing ${directBuffers.length} images (Auto: ${isAutoMode}).`);
         buffers = directBuffers;
     }
-    // 🐌 Slow Path: Fetch from Store history (Manual !scan command)
-    else {
+    // 2. Cache Fallback (User sent Image then "!scan")
+    else if (lastImageCache.has(chatJid)) {
+        const cached = lastImageCache.get(chatJid);
+        if (Date.now() - cached.time < 120000) { // 2 min validity
+            log(`🕵️ [Scan] Found ${cached.buffers.length} images in recent cache.`);
+            buffers = cached.buffers;
+            lastImageCache.delete(chatJid); // Consume cache
+        }
+    }
+
+    // 3. Store Fallback (Legacy/Laggy)
+    if (buffers.length === 0) {
+        if (isAutoMode) return; // Silent exit if auto and no images (shouldn't happen given logic)
+
         const store = require('../store');
         const messages = store.getMessages(chatJid);
-        log(`🕵️ [Scan] Checking ${messages.length} messages in memory...`);
+        log(`🕵️ [Scan] Manual Scan: Checking ${messages.length} messages in memory...`);
 
         let foundImages = messages.filter(m => m.message?.imageMessage);
 
@@ -72,7 +84,8 @@ async function handleScanCommand(sock, msg, chatJid, dbUserId, isAdmin, directBu
         const chunkIndex = Math.floor(i / CHUNK_SIZE) + 1;
         const totalChunks = Math.ceil(buffers.length / CHUNK_SIZE);
 
-        if (totalChunks > 1) {
+        // Notify only if Manual or Bulk
+        if (!isAutoMode && totalChunks > 1) {
             await sock.sendMessage(chatJid, { text: `⏳ Processing batch ${chunkIndex}/${totalChunks}...` });
         }
 
@@ -93,17 +106,28 @@ async function handleScanCommand(sock, msg, chatJid, dbUserId, isAdmin, directBu
         }
     }
 
+    // SILENT EXIT if no matches found in Auto Mode (e.g. Cat picture) 🤫
     if (allMatches.length === 0) {
-        await sock.sendMessage(chatJid, { text: '❌ Analysis failed: No valid data found in any image.' });
+        if (!isAutoMode) {
+            await sock.sendMessage(chatJid, { text: '❌ Analysis failed: No valid scoreboard data found.' });
+        } else {
+            log(`🤫 [AutoScan] Ignored non-scoreboard images from ${chatJid}`);
+        }
         return;
     }
 
     // Execute Stats Logic on Aggregated Results
     try {
         const report = await codStats.execute({ matches: allMatches }, dbUserId || 'ScanAdmin', chatJid, buffers);
+        // Always send report if matches found (even in Auto Mode)
         await sock.sendMessage(chatJid, { text: `📊 **Scan Report:**\n${report}` });
+
+        // React to original message to confirm processing
+        if (msg.key) await sock.sendMessage(chatJid, { react: { text: "✅", key: msg.key } });
+
     } catch (e) {
-        await sock.sendMessage(chatJid, { text: `❌ Save Error: ${e.message}` });
+        if (!isAutoMode) await sock.sendMessage(chatJid, { text: `❌ Save Error: ${e.message}` });
+        else log(`❌ [AutoScan] Save Error: ${e.message}`);
     }
 }
 
@@ -119,4 +143,4 @@ async function handleClearCache(sock, chatJid, msg) {
     }
 }
 
-module.exports = { downloadImages, handleVoice, handleScanCommand, handleClearCache };
+module.exports = { downloadImages, handleVoice, handleScanCommand, handleClearCache, cacheRecentImages };

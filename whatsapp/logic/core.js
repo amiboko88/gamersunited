@@ -71,11 +71,30 @@ async function handleMessageLogic(sock, msg, text, resolvedPhone) {
 
             // B. Media Download
             const imageBuffers = await mediaHandler.downloadImages(mediaArray, sock);
+            if (imageBuffers.length > 0) {
+                // Save to Short-Term Memory for !scan command
+                mediaHandler.cacheRecentImages(chatJid, imageBuffers);
+            }
 
-            // C. Auto-Scan (Private)
-            if (isPrivate && imageBuffers.length > 0) {
-                await mediaHandler.handleScanCommand(sock, finalMsg, chatJid, linkedDbId || 'AutoScan', isAdmin);
+            // C. Auto-Scan (Universal - Private & Group) 🌍
+            if (imageBuffers.length > 0) {
+                // If it's a manual command, we already handled it above.
+                // If we are here, it's just an image message.
+
+                // Determine Identity properly
+                const scanIdentity = linkedDbId || senderPhone;
+
+                // Trigger Scan in "Auto Mode" (Silent errors)
+                // Pass 'true' as the last arg for isAutoMode
+                await mediaHandler.handleScanCommand(sock, finalMsg, chatJid, scanIdentity, isAdmin, imageBuffers, true);
+
+                // If Private, clear buffer immediately. If Group, maybe keep for context?
+                // Clearing is safer to avoid double processing if they type text later.
                 bufferSystem.clearBuffer(senderPhone);
+
+                // Even if we scanned, we might want to continue to Processor if there was text?
+                // Usually Scoreboards don't need AI chat response unless asked.
+                // Let's return to prevent Shimon from hallucinating on the image if he already extracted stats.
                 return;
             }
 

@@ -143,4 +143,15 @@ async function handleClearCache(sock, chatJid, msg) {
     }
 }
 
+// --- 💾 Image Cache System (For Split Messages) ---
+const lastImageCache = new Map();
+
+function cacheRecentImages(chatJid, buffers) {
+    log(`💾 [Cache] Storing ${buffers.length} images for ${chatJid} (2 min validity).`);
+    lastImageCache.set(chatJid, {
+        buffers: buffers,
+        time: Date.now()
+    });
+}
+
 module.exports = { downloadImages, handleVoice, handleScanCommand, handleClearCache, cacheRecentImages };

@@ -1,422 +1,120 @@
 // 📁 whatsapp/logic/core.js
+// 🧱 Orchestrator Module (Refactored)
 const { log } = require('../../utils/logger');
 const bufferSystem = require('./buffer');
-const { isSystemActive } = require('../utils/timeHandler');
-const { getUserRef } = require('../../utils/userUtils');
-const visionSystem = require('../../handlers/media/vision');
 const { whatsapp } = require('../../config/settings');
-const config = require('../../handlers/ai/config'); // Load Config for Admin List
-
-// מערכות
 const shimonBrain = require('../../handlers/ai/brain');
-const learningEngine = require('../../handlers/ai/learning');
-const userManager = require('../../handlers/users/manager');
-const xpManager = require('../../handlers/economy/xpManager'); // ✅ 1. ייבוא מערכת ה-XP
-const gameManager = require('../../handlers/economy/gameManager'); // ✅ 2. ייבוא מערכת ההימורים
-const intelManager = require('../../handlers/intel/manager'); // 🕵️ ייבוא אינטל החדש
 
-const activeConversations = new Map();
-const processingGroups = new Set(); // 🔒 מנעול לטיפול בהודעות מקבילות
+// Modules
+const router = require('./router');
+const processor = require('./processor');
+const mediaHandler = require('./media_handler');
 
-// ...
-
-function isTriggered(text, msg, sock) {
-    // ...
-}
-
-// ...
+// State
+const processingGroups = new Set();
 
 async function handleMessageLogic(sock, msg, text, resolvedPhone) {
-    const isPrivate = !msg.key.remoteJid.endsWith('@g.us');
-    // 🛡️ JID Fix: Always reply to the Real Phone Number in DMs (not LID)
-    const chatJid = (isPrivate && resolvedPhone) ? `${resolvedPhone}@s.whatsapp.net` : msg.key.remoteJid;
+    // 1. Route & Analyze
+    const route = await router.analyzeRequest(sock, msg, text, resolvedPhone);
+    const { chatJid, senderPhone, isAdmin, isPrivate, refusalReason, lidDebug, linkedDbId } = route;
 
-    const senderFullJid = msg.key.participant || msg.participant || chatJid;
-    const senderPhone = resolvedPhone || senderFullJid.split('@')[0];
-
-    // --- בדיקת שעות פעילות ---
-    const systemStatus = isSystemActive();
-
-    // 👑 Admin Override Logic (Robust)
-    let isAdmin = config.ADMIN_PHONES.includes(senderPhone);
-
-    // If Logic ID (LID) is used, check if it maps to an Admin Phone
-    if (!isAdmin && senderPhone.length > 15) {
-        // Hardcoded LID check for immediate fix (Ami's LID)
-        if (senderPhone === '100772834480319') isAdmin = true;
-
-        // Future proof: Check against DB if needed, but hardcode + config is safest for now
-    }
-
-    if (!systemStatus.active && !isAdmin) {
-        // ... (Rest of Mode Logic)
-    }
-
-    // ...
-
-    // 🛑 CRITICAL ID LOGIC 🛑
-    let linkedDbId = null;
-    try {
-        const userRef = await getUserRef(senderFullJid, 'whatsapp');
-        if (userRef.id.length > 15) {
-            linkedDbId = userRef.id;
-        }
-    } catch (e) { }
-
-    bufferSystem.addToBuffer(senderPhone, msg, text, (finalMsg, combinedText, mediaArray) => {
-        // We pass BOTH indices: One for chat (phone), one for DB (linkedId)
-        executeCoreLogic(sock, finalMsg, combinedText, mediaArray, senderPhone, linkedDbId, chatJid, isAdmin);
-    });
-}
-
-async function executeCoreLogic(sock, msg, text, mediaArray, senderPhone, dbUserId, chatJid, isAdmin) {
-    log(`🔍 [Core] Executing for: ${senderPhone} (Admin: ${isAdmin}) | Text: "${text.substring(0, 50)}..."`); // DEBUG LOG
-
-    const isPrivate = !chatJid.endsWith('@g.us');
-    // ...
-    // 🛡️ ONLY update DB if we have a valid Linked DB ID
-    if (dbUserId) {
-        try { await userManager.updateLastActive(dbUserId); } catch (e) { }
-    }
-
-    // ... [No changes to XP/Spam logic lines 135-183] ...
-
-    // 🛡️ ONLY update DB if we have a valid Linked DB ID
-    if (dbUserId) {
-        try { await userManager.updateLastActive(dbUserId); } catch (e) { }
-    }
-
-    // 🕵️ AUTO-SCAN (Private Images)
-    // If a user sends an image in DM, assume it might be a scoreboard and try to scan it.
-    if (isPrivate && bufferSystem.hasMedia(senderPhone)) {
-        // Retrieve media from buffer (since mediaArray might be passed empty in some flows, let's be safe)
-        const storeMessages = bufferSystem.getBuffer(senderPhone);
-        const privateImages = storeMessages.filter(m => m.message?.imageMessage);
-
-        if (privateImages.length > 0) {
-            log(`🕵️ [Auto-Scan] Processing ${privateImages.length} private images from ${senderPhone}...`);
-            await sock.sendMessage(chatJid, { text: '🕵️ בודק סריקת נתונים...' }, { quoted: msg });
-
-            const buffers = [];
-            for (const imgMsg of privateImages) {
-                try {
-                    const buf = await visionSystem.downloadWhatsAppImage(imgMsg, sock);
-                    if (buf) buffers.push(buf);
-                } catch (e) { }
-            }
-
-            if (buffers.length > 0) {
-                try {
-                    const { generateContent } = require('../../handlers/ai/gemini');
-                    const codStats = require('../../handlers/ai/tools/cod_stats');
-
-                    // Extract Data
-                    const parts = [{ text: "Extract Warzone Scoreboard data from these images. Return JSON list: [{username, kills, damage, placement, mode}]. If not a scoreboard, return empty list." }];
-                    buffers.forEach(b => parts.push({ inlineData: { mimeType: "image/jpeg", data: b.toString("base64") } }));
-
-                    const result = await generateContent(parts, "gemini-2.0-flash");
-                    const jsonMatch = result.match(/\[.*\]/s);
-
-                    if (jsonMatch) {
-                        const matches = JSON.parse(jsonMatch[0]);
-                        if (matches.length > 0) {
-                            // Save Data
-                            // Use dbUserId if available (Linked), otherwise use Phone as ID (Fallback)
-                            const targetId = dbUserId || senderPhone;
-                            const report = await cod_stats.execute({ matches }, targetId, chatJid, buffers);
-                            await sock.sendMessage(chatJid, { text: `📊 **דוח סריקה (פרטי):**\n${report}` });
-
-                            // Clear buffer to prevent double processing by AI
-                            bufferSystem.clearBuffer(senderPhone);
-                            return;
-                        }
-                    }
-                } catch (e) {
-                    log(`⚠️ [Auto-Scan] Failed to process private image: ${e.message}`);
-                    // Fallthrough to normal AI chat if scan fails
-                }
-            }
-        }
-    }
-
-    // 🕵️ SCAN COMMAND (Admin Only)
-    // "Force Scan" the last 50 messages for missed scoreboards
-    if (text === '!scan' && isAdmin) {
-        const store = require('../store');
-        const messages = store.getMessages(chatJid);
-        log(`🕵️ [Scan] Checking ${messages.length} messages in memory...`);
-
-        let foundImages = [];
-        for (const m of messages) {
-            // Check for Image
-            const imgParams = m.message?.imageMessage;
-            if (imgParams) foundImages.push(m);
-        }
-
-        if (foundImages.length === 0) {
-            await sock.sendMessage(chatJid, { text: '🕵️ Scan Complete: No recent images found in memory.' }, { quoted: msg });
-            return;
-        }
-
-        await sock.sendMessage(chatJid, { text: `🕵️ Found ${foundImages.length} images. Processing...` }, { quoted: msg });
-
-        // Download All
-        const buffers = [];
-        for (const imgMsg of foundImages) {
-            try {
-                const buf = await visionSystem.downloadWhatsAppImage(imgMsg, sock);
-                if (buf) buffers.push(buf);
-            } catch (e) { }
-        }
-
-        // Process via COD Stats (Hashing will filter duplicates)
-        const codStats = require('../../handlers/ai/tools/cod_stats');
-        // We need to fake the "args" structure or call a specialized method? 
-        // cod_stats.execute expects ARGS.matches.
-        // Wait, we need the AI to EXTRACT them first.
-        // We can't just send raw images to cod_stats.execute, that tool SAVES data. It doesn't EXTRACT.
-        // We need to run Vision Extraction first.
-
-        // RE-USE BRAIN? 
-        // No, ShimonBrain.ask handles text.
-        // We need a direct "Extract & Save" pipeline.
-
-        try {
-            // 1. Vision Extract (We need a direct vision tool helper?)
-            // Actually, let's use the Brain with a specific system instruction?
-            // Or better: Just call standard brain flow for each image? No, that's spammy.
-
-            // IMPLEMENTATION: We'll construct a direct Vision Call here for efficiency.
-            const { generateContent } = require('../../handlers/ai/gemini');
-
-            // Prepare Parts
-            const parts = [{ text: "Extract Warzone Scoreboard data from these images. Return JSON list: [{username, kills, damage, placement, mode}]. If not a scoreboard, return empty list." }];
-            buffers.forEach(b => parts.push({ inlineData: { mimeType: "image/jpeg", data: b.toString("base64") } }));
-
-            const result = await generateContent(parts, "gemini-2.0-flash");
-
-            // Extract JSON
-            const jsonMatch = result.match(/\[.*\]/s);
-            if (!jsonMatch) {
-                await sock.sendMessage(chatJid, { text: '❌ Analysis failed: No JSON found.' });
-                return;
-            }
-
-            const matches = JSON.parse(jsonMatch[0]);
-            const saveArgs = { matches };
-
-            // Save
-            const report = await cod_stats.execute(saveArgs, dbUserId || 'ScanAdmin', chatJid, buffers);
-            await sock.sendMessage(chatJid, { text: `📊 **Scan Report:**\n${report}` });
-
-        } catch (e) {
-            await sock.sendMessage(chatJid, { text: `❌ Scan Error: ${e.message}` });
-        }
-        return;
-    }
-
-    if (text === "BLOCKED_SPAM") return;
-
-    // 🧹 ADMIN: CLEAR HASH CACHE (For testing)
-    if (text === '!clearcache' && isAdmin) {
-        const db = require('../../utils/firebase');
-        const snap = await db.collection('processed_images')
-            .orderBy('timestamp', 'desc')
-            .limit(20) // Nuke last 20 images
-            .get();
-
-        if (snap.empty) {
-            await sock.sendMessage(chatJid, { text: '🧹 Cache is already clean.' }, { quoted: msg });
-        } else {
-            const batch = db.batch();
-            snap.docs.forEach(doc => batch.delete(doc.ref));
-            await batch.commit();
-            await sock.sendMessage(chatJid, { text: `🧹 **Cache Cleared!**\nDeleted ${snap.size} recent image hashes.\nYou can now re-send the same images.` }, { quoted: msg });
-        }
-        return;
-    }
-    // If not linked, user gets no XP (Guest Mode). This prevents DB pollution.
-    if (dbUserId) {
-        xpManager.handleXP(dbUserId, 'whatsapp', text, { sock, chatId: chatJid }, async (response) => {
-            if (typeof response === 'string') {
-                await sock.sendMessage(chatJid, { text: response }, { quoted: msg });
-            }
+    // 2. Debug Reporting (LID)
+    if (lidDebug) {
+        await sock.sendMessage(lidDebug.target, {
+            text: `📊 *LID Debug Report*\n🆔 **מקור:** \`${lidDebug.lid}\` (LID)\n👤 **זוהה כ:** \`${lidDebug.realId}\`\n✅ **סטטוס:** סנכרון תקין.`
         });
     }
 
-    // 🔒 Global Group Lock: בדיקה אם אנחנו כבר מטפלים בתשובה לקבוצה הזו
-    if (processingGroups.has(chatJid)) {
-        log(`🔒 [Core] התעלמתי מפנייה מ-${senderPhone} כי אני כבר מגיב לקבוצה ${chatJid}`);
-        return;
+    // 3. System Status Refusal (AI Powered)
+    if (refusalReason) {
+        // Quick Trigger Check for Refusal
+        const isTriggered = text.includes('@') || whatsapp.wakeWords.some(w => text.toLowerCase().includes(w));
+
+        if (isPrivate || isTriggered) {
+            log(`🛑 [Core] System Inactive (${refusalReason}). AI Refusing ${senderPhone}.`);
+            const refusalContext = `
+            [SYSTEM OVERRIDE: INACTIVE MODE]
+            Current Status: ${refusalReason}.
+            The user tried to contact you, but the station is CLOSED.
+            MISSION: Refuse to help. Tell them to come back later.
+            STYLE: If Night -> "Go to sleep". If Shabbat -> "Shabbat Shalom / I'm resting".
+            Maintain Shimon persona.
+            `;
+            const aiResponse = await shimonBrain.ask(linkedDbId || senderPhone, 'whatsapp', `${refusalContext}\n\nUser Says: "${text}"`, isAdmin, null, chatJid);
+            await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });
+        }
+        return; // Stop
     }
 
-    // נועלים את הקבוצה
-    processingGroups.add(chatJid);
-
-    // טיימר שחרור חירום (אם משהו נתקע, שחרר אחרי 10 שניות)
-    const lockTimeout = setTimeout(() => processingGroups.delete(chatJid), 10000);
-
-    try {
-        let isExplicitCall = isTriggered(text, msg, sock);
-
-        // Conversation history uses the SENDER PHONE for short-term chat memory (not DB)
-        const lastInteraction = activeConversations.get(senderPhone);
-
-        // 🛑 Anti-Spam (Auto-Reply Cooldown)
-        if (!isExplicitCall) {
-            const groupCooldown = activeConversations.get(chatJid + '_last_auto_reply');
-            if (groupCooldown && Date.now() - groupCooldown < 20000) {
-                return;
-            }
+    // 4. Buffer & Process
+    bufferSystem.addToBuffer(senderPhone, msg, text, async (finalMsg, combinedText, mediaArray) => {
+        // 🔒 Locking
+        if (processingGroups.has(chatJid)) {
+            log(`🔒 [Core] Group Lock Active: ${chatJid}`);
+            return;
         }
+        processingGroups.add(chatJid);
+        const lockTimeout = setTimeout(() => processingGroups.delete(chatJid), 10000);
 
-        const isInConversation = lastInteraction && (Date.now() - lastInteraction < whatsapp.conversationTimeout);
-
-        // ✅ המוח החכם
-        if (!isExplicitCall && !isInConversation) {
-            const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-            if (mentionedJids.length > 0) return;
-
-            const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant;
-            const botId = sock.user?.id?.split(':')[0] || sock.user?.id?.split('@')[0];
-            if (quotedParticipant && !quotedParticipant.includes(botId)) return;
-
-            const hasMedia = mediaArray && mediaArray.length > 0;
-            if (!hasMedia && text.length > 10) {
-                // Brain needs to know who is talking. If not linked, treat as "Guest (Phone)"
-                const brainUserIdentity = dbUserId || senderPhone;
-                const shouldIntervene = await shimonBrain.shouldReply(brainUserIdentity, text);
-
-                if (shouldIntervene) {
-                    log(`💡 [Smart AI] Shimon decided to intervene on: "${text}"`);
-                    isExplicitCall = true;
-                } else {
-                    // Only learn if linked? Or learn globally? 
-                    // Safe to learn if we use dbUserId. If guest, maybe skip to save DB space?
-                    if (dbUserId) await learningEngine.learnFromContext(dbUserId, "Gamer", 'whatsapp', text);
-                    return;
-                }
-            } else {
-                return;
-            }
-        }
-
-        activeConversations.set(senderPhone, Date.now());
-        if (!isExplicitCall) {
-            activeConversations.set(chatJid + '_last_auto_reply', Date.now());
-        }
-
-        await sock.sendPresenceUpdate('composing', chatJid);
-
-        // 🕵️ INTEL INTERCEPT (System 2.0)
-        // Before asking the brain, check if this is a requested Intel command
         try {
-            const intelResponse = await intelManager.handleNaturalQuery(text);
-            if (intelResponse) {
-                log(`🕵️ [Intel] Intercepted WhatsApp Query: ${text}`);
-
-                // Case A: Object (Weapon Meta with Image)
-                if (typeof intelResponse === 'object' && intelResponse.image) {
-                    await sock.sendMessage(chatJid, {
-                        image: { url: intelResponse.image },
-                        caption: intelResponse.text
-                    }, { quoted: msg });
-
-                    // 💥 Send Code Separately for Easy Copy
-                    if (intelResponse.code && intelResponse.code !== "No Code Available") {
-                        // Small delay to ensure order
-                        setTimeout(async () => {
-                            await sock.sendMessage(chatJid, { text: intelResponse.code });
-                        }, 500);
-                    }
-                }
-                // Case B: Simple Text (News/Playlist)
-                else {
-                    // Fix: Intel items return 'summary' or 'aiSummary', rarely 'text' unless simple string
-                    const txt = typeof intelResponse === 'string' ? intelResponse : (intelResponse.aiSummary || intelResponse.summary || intelResponse.text);
-                    if (txt) {
-                        await sock.sendMessage(chatJid, { text: txt }, { quoted: msg });
-                    } else {
-                        log(`⚠️ [Intel] Response object has no text/summary to send: ${JSON.stringify(intelResponse)}`);
-                    }
-                }
-
-                return; // Stop here, don't ask AI
+            // A. Admin Commands
+            if (combinedText === '!scan' && isAdmin) {
+                await mediaHandler.handleScanCommand(sock, finalMsg, chatJid, linkedDbId, isAdmin);
+                return;
             }
+            if (combinedText === '!clearcache' && isAdmin) {
+                await mediaHandler.handleClearCache(sock, chatJid, finalMsg);
+                return;
+            }
+
+            // B. Media Download
+            const imageBuffers = await mediaHandler.downloadImages(mediaArray, sock);
+
+            // C. Auto-Scan (Private)
+            if (isPrivate && imageBuffers.length > 0) {
+                await mediaHandler.handleScanCommand(sock, finalMsg, chatJid, linkedDbId || 'AutoScan', isAdmin);
+                bufferSystem.clearBuffer(senderPhone);
+                return;
+            }
+
+            // D. Process Request (Brain/Intel/XP)
+            const result = await processor.processRequest(sock, finalMsg, combinedText, route, imageBuffers);
+
+            if (!result) return; // Silent ignore
+
+            // E. Handle Response
+            if (result.type === 'intel') {
+                const data = result.data;
+                if (typeof data === 'object' && data.image) {
+                    await sock.sendMessage(chatJid, { image: { url: data.image }, caption: data.text }, { quoted: finalMsg });
+                    if (data.code) setTimeout(() => sock.sendMessage(chatJid, { text: data.code }), 500);
+                } else {
+                    const txt = typeof data === 'string' ? data : (data.aiSummary || data.text);
+                    if (txt) await sock.sendMessage(chatJid, { text: txt }, { quoted: finalMsg });
+                }
+            }
+            else if (result.type === 'brain') {
+                const aiText = result.data;
+                // Feedback for Image processing
+                if (imageBuffers.length > 0 && !aiText.includes('Error')) {
+                    setTimeout(() => sock.sendMessage(chatJid, { react: { text: "👍", key: finalMsg.key } }).catch(() => { }), 1000);
+                }
+
+                // Voice & Send
+                const playedVoice = await mediaHandler.handleVoice(aiText, sock, chatJid, finalMsg);
+                if (playedVoice !== true) { // If not true (sent audio), it returns stripped text or null
+                    const textToSend = playedVoice || aiText;
+                    if (textToSend) await sock.sendMessage(chatJid, { text: textToSend }, { quoted: finalMsg });
+                }
+            }
+
         } catch (e) {
-            log(`⚠️ [Intel] Error during routing: ${e.message}`);
-            // Fallback to AI if Intel fails
+            log(`❌ [Core] Error: ${e.message}`);
+        } finally {
+            clearTimeout(lockTimeout);
+            setTimeout(() => processingGroups.delete(chatJid), 2000);
         }
-
-        let imageBuffers = [];
-        if (mediaArray && mediaArray.length > 0) {
-            // Bulk Download
-            log(`📥 [Core] Downloading ${mediaArray.length} images...`);
-            for (const mediaMsg of mediaArray) {
-                try {
-                    const buf = await visionSystem.downloadWhatsAppImage(mediaMsg, sock);
-                    if (buf) imageBuffers.push(buf);
-                } catch (err) { log(`❌ Error downloading image: ${err.message}`); }
-            }
-        }
-
-        // Ask the brain. If not linked, we pass senderPhone but Brain must treat it gracefully.
-        // Brain usually needs a DB ID to fetch context. If we pass phone, it might try to fetch doc(phone) and fail (which is good) or create it (bad).
-        // Check ShimonBrain later. For now, pass safest ID: dbUserId if exists, else senderPhone (for chat context).
-        // But wait, if Brain creates user, we are back to square one.
-        // Let's assume Brain READS only unless explicit "saveFact".
-
-        const aiResponse = await shimonBrain.ask(
-            dbUserId || senderPhone,
-            'whatsapp',
-            text,
-            isAdmin,
-            imageBuffers, // Passing ARRAY now
-            chatJid
-        );
-
-        // ✅ FEEDBACK: If we processed images successfully, give a LIKE
-        if (mediaArray && mediaArray.length > 0 && aiResponse && !aiResponse.includes("Error")) {
-            setTimeout(async () => {
-                await sock.sendMessage(chatJid, {
-                    react: { text: "👍", key: msg.key }
-                }).catch(() => { });
-            }, 1000);
-        }
-
-        let responseText = aiResponse;
-        let audioBuffer = null;
-
-        // ✅ זיהוי מוד קול (Toxic Voice)
-        if (aiResponse && aiResponse.includes('[VOICE]')) {
-            responseText = aiResponse.replace('[VOICE]', '').trim();
-            try {
-                const voiceEngine = require('../../handlers/media/voice');
-                audioBuffer = await voiceEngine.textToSpeech(responseText);
-                if (audioBuffer) {
-                    await sock.sendMessage(chatJid, { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: true }, { quoted: msg });
-                    // אין return כאן כדי לאפשר ניקוי נעילה ב-finally
-                }
-            } catch (e) {
-                log(`❌ [Voice] Generation failed: ${e.message}`);
-                // אם נכשל הקול, נשלח את הטקסט כגיבוי
-            }
-        }
-
-        // שליחת טקסט (אם לא נשלח אודיו או אם האודיו נכשל)
-        if (responseText && !audioBuffer) {
-            await sock.sendMessage(chatJid, { text: responseText }, { quoted: msg });
-        }
-
-    } catch (error) {
-        log(`❌ [Core] Error: ${error.message}`);
-        processingGroups.delete(chatJid); // שחרור במקרה של שגיאה קריטית
-    } finally {
-        // משחררים את הנעילה בכל מקרה (הצלחה או כישלון)
-        clearTimeout(lockTimeout);
-        // השהיה קטנה נוספת של 2 שניות לשחרור כדי למנוע Spam מיידי
-        setTimeout(() => processingGroups.delete(chatJid), 2000);
-    }
+    });
 }
 
 module.exports = { handleMessageLogic };

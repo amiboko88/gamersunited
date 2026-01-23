@@ -2,7 +2,7 @@
 const { EmbedBuilder, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const db = require('../../utils/firebase');
 const { log, logRoleChange } = require('../../utils/logger'); // הוספתי logRoleChange למקרה הצורך
-const brain = require('../ai/brain'); 
+const brain = require('../ai/brain');
 
 class VerificationHandler {
 
@@ -12,7 +12,7 @@ class VerificationHandler {
     async showVerificationModal(interaction) {
         const userId = interaction.user.id;
         const currentName = interaction.member.displayName || interaction.user.username;
-        
+
         try {
             const userDoc = await db.collection('users').doc(userId).get();
             const userData = userDoc.exists ? userDoc.data() : null;
@@ -24,9 +24,9 @@ class VerificationHandler {
             if (userData && hasPhone && hasBirthday) {
                 await interaction.deferReply({ ephemeral: true });
                 const result = await this.verifyUser(interaction.member, {}, 'smart_check');
-                
-                await interaction.editReply({ 
-                    content: `👋 היי **${currentName}**!\nאני רואה שכל הפרטים שלך כבר מעודכנים אצלי.\n\n${result.message}` 
+
+                await interaction.editReply({
+                    content: `👋 היי **${currentName}**!\nאני רואה שכל הפרטים שלך כבר מעודכנים אצלי.\n\n${result.message}`
                 });
                 return;
             }
@@ -73,7 +73,7 @@ class VerificationHandler {
             new ActionRowBuilder().addComponents(phoneInput),
             new ActionRowBuilder().addComponents(platformInput)
         );
-        
+
         await interaction.showModal(modal);
     }
 
@@ -99,9 +99,29 @@ class VerificationHandler {
 
             log(`[Verification] 🛡️ מתחיל תהליך אימות עבור ${currentDisplayName} (${userId}) דרך ${source}...`);
 
+            // 🛡️ Seniority Protection (הגנה על משתמשים ותיקים)
+            // מונע מאימות אוטומטי (Console Auto) לדרוס נתונים של משתמש שכבר אומת בעבר
+            if (source === 'console_auto') {
+                const existingDoc = await db.collection('users').doc(userId).get();
+                const existingData = existingDoc.exists ? existingDoc.data() : null;
+
+                if (existingData && existingData.meta && existingData.meta.isVerified) {
+                    log(`[Verification] 🛡️ Seniority Defense: Blocked auto-verify for verified user ${currentDisplayName}. Updating lastSeen only.`);
+
+                    // עדכון בטוח בלבד (בלי לגעת ב-verifiedAt או Source)
+                    await db.collection('users').doc(userId).update({
+                        'meta.lastSeen': new Date().toISOString(),
+                        'identity.displayName': currentDisplayName,
+                        'identity.avatarURL': member.user.displayAvatarURL()
+                    });
+
+                    return { success: true, message: '✅ Seniority Protected (Safe Update Only).' };
+                }
+            }
+
             // --- ✅ תיקון קריטי: מבנה אובייקט מקונן (Nested Object) ---
             // זה מונע את יצירת השדות עם הנקודות ('identity.name')
-            
+
             const updates = {
                 identity: {
                     discordId: userId,
@@ -119,14 +139,14 @@ class VerificationHandler {
             };
 
             // הוספת שדות אופציונליים רק אם קיימים
-            if (data.phone) updates.identity.whatsappPhone = data.phone; 
+            if (data.phone) updates.identity.whatsappPhone = data.phone;
             if (data.bday) {
                 // מנסה לפרק תאריך אם הגיע בפורמט טקסט
                 const parts = data.bday.split('/');
                 if (parts.length === 2) {
-                    updates.identity.birthday = { 
-                        day: parseInt(parts[0]), 
-                        month: parseInt(parts[1]) 
+                    updates.identity.birthday = {
+                        day: parseInt(parts[0]),
+                        month: parseInt(parts[1])
                     };
                 } else {
                     updates.identity.birthdayString = data.bday; // גיבוי
@@ -138,7 +158,7 @@ class VerificationHandler {
 
             // שמירה בטוחה
             await db.collection('users').doc(userId).set(updates, { merge: true });
-            
+
             // --- סוף תיקון DB ---
 
             // 2. טיפול ברול
@@ -147,9 +167,9 @@ class VerificationHandler {
                 role = guild.roles.cache.get(process.env.VERIFIED_ROLE_ID);
             }
             if (!role) {
-                role = guild.roles.cache.find(r => 
-                    r.name.toLowerCase() === 'verified' || 
-                    r.name.includes('מאומת') || 
+                role = guild.roles.cache.find(r =>
+                    r.name.toLowerCase() === 'verified' ||
+                    r.name.includes('מאומת') ||
                     r.name === 'Member'
                 );
             }
@@ -183,7 +203,7 @@ class VerificationHandler {
     async sendWelcomeDM(member, data) {
         try {
             let prompt = `המשתמש ${member.displayName} סיים אימות בדיסקורד. `;
-            
+
             if (!data.phone && !data.bday) {
                 prompt += "הוא בחר לא למלא פרטים נוספים (טלפון/יומולדת). תברך אותו קצר ותציע לו בעדינות לעדכן בהמשך אם ירצה.";
             } else {
@@ -191,7 +211,7 @@ class VerificationHandler {
             }
 
             const aiResponse = await brain.ask(member.id, 'discord', prompt);
-            await member.send(aiResponse).catch(() => {});
+            await member.send(aiResponse).catch(() => { });
         } catch (e) { console.error('AI DM Error:', e); }
     }
 }

@@ -37,40 +37,73 @@ async function handleVoice(aiResponse, sock, chatJid, msg) {
     return null; // Not voice
 }
 
-async function handleScanCommand(sock, msg, chatJid, dbUserId, isAdmin) {
-    const store = require('../store');
-    const messages = store.getMessages(chatJid);
-    log(`🕵️ [Scan] Checking ${messages.length} messages in memory...`);
+async function handleScanCommand(sock, msg, chatJid, dbUserId, isAdmin, directBuffers = []) {
+    let buffers = [];
 
-    let foundImages = messages.filter(m => m.message?.imageMessage);
-
-    if (foundImages.length === 0) {
-        await sock.sendMessage(chatJid, { text: '🕵️ Scan Complete: No recent images found.' }, { quoted: msg });
-        return;
+    // 🚀 Speed Path: Use pre-downloaded buffers from Core (Auto-Scan)
+    if (directBuffers && directBuffers.length > 0) {
+        log(`🕵️ [Scan] Using ${directBuffers.length} pre-loaded images (Fast Path).`);
+        buffers = directBuffers;
     }
+    // 🐌 Slow Path: Fetch from Store history (Manual !scan command)
+    else {
+        const store = require('../store');
+        const messages = store.getMessages(chatJid);
+        log(`🕵️ [Scan] Checking ${messages.length} messages in memory...`);
 
-    await sock.sendMessage(chatJid, { text: `🕵️ Found ${foundImages.length} images. Processing...` }, { quoted: msg });
+        let foundImages = messages.filter(m => m.message?.imageMessage);
 
-    const buffers = await downloadImages(foundImages, sock);
-
-    try {
-        const parts = [{ text: "Extract Warzone Scoreboard data from these images. Return JSON list: [{username, kills, damage, placement, mode}]. If not a scoreboard, return empty list." }];
-        buffers.forEach(b => parts.push({ inlineData: { mimeType: "image/jpeg", data: b.toString("base64") } }));
-
-        const result = await generateContent(parts, "gemini-2.0-flash");
-        const jsonMatch = result.match(/\[.*\]/s);
-
-        if (!jsonMatch) {
-            await sock.sendMessage(chatJid, { text: '❌ Analysis failed: No JSON found.' });
+        if (foundImages.length === 0) {
+            await sock.sendMessage(chatJid, { text: '🕵️ Scan Complete: No recent images found.' }, { quoted: msg });
             return;
         }
 
-        const matches = JSON.parse(jsonMatch[0]);
-        const report = await codStats.execute({ matches }, dbUserId || 'ScanAdmin', chatJid, buffers);
-        await sock.sendMessage(chatJid, { text: `📊 **Scan Report:**\n${report}` });
+        await sock.sendMessage(chatJid, { text: `🕵️ Found ${foundImages.length} images. Processing...` }, { quoted: msg });
+        buffers = await downloadImages(foundImages, sock);
+    }
 
+    // --- Batch Processing (Resilience) 🛡️ ---
+    const CHUNK_SIZE = 5;
+    let allMatches = [];
+    let errors = [];
+
+    for (let i = 0; i < buffers.length; i += CHUNK_SIZE) {
+        const chunk = buffers.slice(i, i + CHUNK_SIZE);
+        const chunkIndex = Math.floor(i / CHUNK_SIZE) + 1;
+        const totalChunks = Math.ceil(buffers.length / CHUNK_SIZE);
+
+        if (totalChunks > 1) {
+            await sock.sendMessage(chatJid, { text: `⏳ Processing batch ${chunkIndex}/${totalChunks}...` });
+        }
+
+        try {
+            const parts = [{ text: "Extract Warzone Scoreboard data from these images. Return JSON list: [{username, kills, damage, placement, mode}]. If not a scoreboard, return empty list." }];
+            chunk.forEach(b => parts.push({ inlineData: { mimeType: "image/jpeg", data: b.toString("base64") } }));
+
+            const result = await generateContent(parts, "gemini-2.0-flash");
+            const jsonMatch = result.match(/\[.*\]/s);
+
+            if (jsonMatch) {
+                const matches = JSON.parse(jsonMatch[0]);
+                allMatches.push(...matches);
+            }
+        } catch (e) {
+            log(`❌ Batch ${chunkIndex} failed: ${e.message}`);
+            errors.push(`Batch ${chunkIndex}: ${e.message}`);
+        }
+    }
+
+    if (allMatches.length === 0) {
+        await sock.sendMessage(chatJid, { text: '❌ Analysis failed: No valid data found in any image.' });
+        return;
+    }
+
+    // Execute Stats Logic on Aggregated Results
+    try {
+        const report = await codStats.execute({ matches: allMatches }, dbUserId || 'ScanAdmin', chatJid, buffers);
+        await sock.sendMessage(chatJid, { text: `📊 **Scan Report:**\n${report}` });
     } catch (e) {
-        await sock.sendMessage(chatJid, { text: `❌ Scan Error: ${e.message}` });
+        await sock.sendMessage(chatJid, { text: `❌ Save Error: ${e.message}` });
     }
 }
 

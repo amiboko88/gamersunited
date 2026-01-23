@@ -388,6 +388,22 @@ class PlatformManager {
         await statsReview.finalizeStatsLink(interaction, docId, targetUserId);
     }
 
+    // --- Manual Link Delegation ---
+    async handleManualEntry(interaction) {
+        const statsReview = require('./statsReview');
+        await statsReview.handleManualEntry(interaction);
+    }
+
+    async handleManualModalSubmit(interaction) {
+        const statsReview = require('./statsReview');
+        await statsReview.handleManualModalSubmit(interaction);
+    }
+
+    async finalizeManualLink(interaction, alias, targetUserId) {
+        const statsReview = require('./statsReview');
+        await statsReview.finalizeManualLink(interaction, alias, targetUserId);
+    }
+
     // --- UTILS ---
     safeReply(interaction, content, ephemeral = true) {
         const payload = { content, embeds: [], components: [], files: [] };

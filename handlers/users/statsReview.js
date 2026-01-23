@@ -15,9 +15,14 @@ class StatsReviewManager {
             const pendingSnap = await db.collection('pending_stats').orderBy('timestamp', 'desc').limit(5).get();
 
             if (pendingSnap.empty) {
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('btn_stat_manual_entry').setLabel('Manual Link').setStyle(ButtonStyle.Secondary).setEmoji('🛠️'),
+                    new ButtonBuilder().setCustomId('btn_plat_main').setLabel('Back').setStyle(ButtonStyle.Secondary)
+                );
+
                 const payload = {
-                    content: '✅ **No Pending Stats to Review.** All clean!',
-                    embeds: [], components: []
+                    content: '✅ **No Pending Stats to Review.** All clean!\n*Use the button below to manually link a gaming alias.*',
+                    embeds: [], components: [row]
                 };
                 return interaction.replied || interaction.deferred ? interaction.editReply(payload) : interaction.reply(payload);
             }

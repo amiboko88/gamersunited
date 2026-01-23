@@ -58,11 +58,13 @@ async function handleMessageLogic(sock, msg, text, resolvedPhone) {
 
         try {
             // A. Admin Commands
-            if (combinedText === '!scan' && isAdmin) {
-                await mediaHandler.handleScanCommand(sock, finalMsg, chatJid, linkedDbId, isAdmin);
+            if (combinedText === 'סרוק' && isAdmin) {
+                // If the command came WITH active images (e.g. caption on image), use them.
+                const directScanBuffers = await mediaHandler.downloadImages(mediaArray, sock);
+                await mediaHandler.handleScanCommand(sock, finalMsg, chatJid, linkedDbId, isAdmin, directScanBuffers);
                 return;
             }
-            if (combinedText === '!clearcache' && isAdmin) {
+            if (combinedText === 'נקה' && isAdmin) {
                 await mediaHandler.handleClearCache(sock, chatJid, finalMsg);
                 return;
             }

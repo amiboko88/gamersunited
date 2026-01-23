@@ -77,25 +77,31 @@ async function execute(args, userId, chatId, imageBuffers) {
         batchOps.set(ref, { timestamp: new Date(), uploadedBy: userId });
     });
 
-    // 3. Process Matches
+    // 3. Process Matches (Smart Linking Logic 🧠)
     const userSnapshot = await db.collection('users').get();
     const users = [];
     userSnapshot.forEach(doc => {
         const d = doc.data();
         users.push({
             id: doc.id,
+            displayName: d.identity?.displayName || "Unknown",
             aliases: [
                 d.identity?.battleTag,
                 d.identity?.discordName,
                 d.identity?.whatsappName,
+                d.identity?.displayName,
                 ...(d.identity?.aliases || [])
-            ].filter(Boolean).map(a => a.toLowerCase())
+            ].filter(Boolean).map(a => a.toLowerCase().trim())
         });
     });
 
+    const suggestions = [];
+
     for (const match of args.matches) {
-        const cleanName = match.username.toLowerCase();
-        const foundUser = users.find(u => u.aliases.some(alias => cleanName.includes(alias) || alias.includes(cleanName)));
+        const cleanName = match.username.toLowerCase().trim();
+
+        // A. Exact Match Strategy
+        const foundUser = users.find(u => u.aliases.some(alias => alias === cleanName || alias.includes(cleanName) || cleanName.includes(alias)));
 
         const statData = {
             game: 'Warzone',
@@ -104,22 +110,41 @@ async function execute(args, userId, chatId, imageBuffers) {
             damage: match.damage,
             placement: match.placement || 0,
             evidence_batch: batchId,
-            proofUrl: proofUrl, // ✅ Link to Evidence
+            proofUrl: proofUrl,
             timestamp: new Date()
         };
 
         if (foundUser) {
-            // ✅ EXACT MATCH - Save to User DB
+            // ✅ EXACT/STRONG MATCH - Save to User DB
             const gameRef = db.collection('users').doc(foundUser.id).collection('games').doc();
             batchOps.set(gameRef, statData);
             savedCount++;
         } else {
-            // ❓ UNKNOWN - Save to Pending
+            // ❓ UNKNOWN - Logic for Smart Suggestion
+            // Check for fuzzy match (e.g. "MatanCh" vs "Matan")
+            const fuzzyCandidate = users.find(u => {
+                // Check if 70% of characters match or simple containment implies strong link
+                return u.aliases.some(alias =>
+                    (cleanName.length > 3 && alias.includes(cleanName)) ||
+                    (alias.length > 3 && cleanName.includes(alias))
+                );
+            });
+
+            if (fuzzyCandidate) {
+                suggestions.push({
+                    unknown: match.username,
+                    candidateName: fuzzyCandidate.displayName,
+                    candidateId: fuzzyCandidate.id
+                });
+            }
+
+            // Save to Pending anyway
             const pendingRef = db.collection('pending_stats').doc();
             batchOps.set(pendingRef, {
                 username: match.username,
                 ...statData,
                 uploadedBy: userId,
+                suggestedUserId: fuzzyCandidate ? fuzzyCandidate.id : null // Help the Linker later
             });
             pendingCount++;
         }
@@ -132,10 +157,8 @@ async function execute(args, userId, chatId, imageBuffers) {
         const graphics = require('../../graphics/statsCard');
         const imageBuffer = await graphics.generateMatchCard(args.matches);
 
-        // 5. SEND TO CHAT (Bypassing LLM Text Output)
         if (chatId) {
             if (chatId.includes('@')) {
-                // WhatsApp
                 const { getWhatsAppSock } = require('../../../whatsapp/index');
                 const sock = getWhatsAppSock();
                 if (sock) {
@@ -145,19 +168,15 @@ async function execute(args, userId, chatId, imageBuffers) {
                         mimetype: 'image/png'
                     });
                 }
-            } else {
-                // Discord (Assuming numeric ID)
-                // TODO: Add Discord Image Send Logic if needed
             }
         }
     } catch (gErr) {
         log(`❌ [COD Stats] Graphics Error: ${gErr.message}`);
     }
 
-    // 6. Return Text Summary (Hidden/Short)
+    // 5. Return Text Summary
     let response = `✅ הנתונים נשמרו בהצלחה ודוח גרפי נשלח לקבוצה.`;
 
-    // Only show technical warnings to the Admin in Private Chat (not in Group)
     const isGroup = chatId && chatId.includes('@g.us');
 
     if (pendingCount > 0 && !isGroup) {
@@ -165,7 +184,45 @@ async function execute(args, userId, chatId, imageBuffers) {
             .filter(m => !users.find(u => u.aliases.some(alias => m.username.toLowerCase().includes(alias) || alias.includes(m.username.toLowerCase()))))
             .map(m => m.username);
 
-        response += `\n⚠️ **שים לב (ADMIN ONLY):** המשתמשים הבאים לא זוהו: [${unknownNames.join(', ')}]. יש להוסיף אותם ידנית ב-DB.`;
+        if (suggestions.length > 0) {
+            response += `\n\n💡 **הצעת שיוך חכמה:**\n`;
+            suggestions.forEach(s => {
+                response += `- האם **${s.unknown}** הוא **${s.candidateName}**? \n  👉 כתוב: \`!link ${s.unknown} @${s.candidateId}\`\n`;
+            });
+        }
+
+        const trulyUnknown = unknownNames.filter(n => !suggestions.some(s => s.unknown === n));
+        if (trulyUnknown.length > 0) {
+            response += `\n⚠️ **לא זוהו:** [${trulyUnknown.join(', ')}].`;
+        }
+    }
+
+    // 6. Notify Admin via Discord DM (Real-Time Alert 🚨)
+    if (pendingCount > 0) {
+        try {
+            // Import Client dynamically to avoid circular deps
+            const { client } = require('../../../discord/index');
+            const adminId = process.env.DISCORD_ADMIN_ID || '524302700695912506'; // Matan's ID
+
+            const adminUser = await client.users.fetch(adminId).catch(() => null);
+            if (adminUser) {
+                const unknownNames = args.matches
+                    .filter(m => !users.find(u => u.aliases.some(alias => m.username.toLowerCase().includes(alias) || alias.includes(m.username.toLowerCase()))))
+                    .map(m => `\`${m.username}\``);
+
+                let dmText = `⚠️ **[Scan Report]** Found **${pendingCount}** unknown users in recent scan.\nUnknowns: ${unknownNames.join(', ')}`;
+
+                if (suggestions.length > 0) {
+                    dmText += `\n💡 **System Suggestions:** ${suggestions.length} potential fuzzy matches found.`;
+                }
+
+                dmText += `\n👉 Go to **Discord Dashboard** -> **Review Stats** to link them.`;
+
+                await adminUser.send(dmText);
+            }
+        } catch (dmErr) {
+            log(`❌ [COD Stats] Failed to DM Admin: ${dmErr.message}`);
+        }
     }
 
     return response;

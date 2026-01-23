@@ -100,12 +100,19 @@ module.exports = {
                     const platformManager = require('../../handlers/users/platformManager');
                     if (id.startsWith('btn_stat_approve_')) await platformManager.handleStatsAction(interaction, 'approve', id.split('_')[3]);
                     else if (id.startsWith('btn_stat_delete_')) await platformManager.handleStatsAction(interaction, 'delete', id.split('_')[3]);
+                    else if (id === 'btn_stat_manual_entry') await platformManager.handleManualEntry(interaction);
                 }
                 else if (id.startsWith('menu_stat_link_user_')) {
                     const platformManager = require('../../handlers/users/platformManager');
                     const docId = id.split('_')[4];
                     const targetUserId = interaction.values[0]; // User Select Menu returns ID in values[0]
                     await platformManager.finalizeStatsLink(interaction, docId, targetUserId);
+                }
+                else if (id.startsWith('menu_stat_manual_confirm_')) {
+                    const platformManager = require('../../handlers/users/platformManager');
+                    const alias = id.split('_')[4]; // Extract alias from ID
+                    const targetUserId = interaction.values[0];
+                    await platformManager.finalizeManualLink(interaction, alias, targetUserId);
                 }
 
                 // 1. Navigation & Views (Legacy Support)
@@ -204,6 +211,10 @@ module.exports = {
                 const id = interaction.customId;
                 if (id === 'modal_bd_submit') await birthdayHandler.handleModalSubmit(interaction);
                 else if (id === 'verification_modal_submit') await verificationHandler.handleModalSubmit(interaction);
+                else if (id === 'modal_stat_manual_link') {
+                    const platformManager = require('../../handlers/users/platformManager');
+                    await platformManager.handleManualModalSubmit(interaction);
+                }
             }
 
         } catch (error) {

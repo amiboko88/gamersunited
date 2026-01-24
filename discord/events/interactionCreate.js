@@ -89,6 +89,12 @@ module.exports = {
                         await interaction.followUp({ content: `✅ **סנכרון הושלם!**\nשמות: ${resultNames.count}\nחדשים: ${resultMissing.count}`, ephemeral: true });
                         await platformManager.showDiscordDashboard(interaction);
                     }
+                    else if (id === 'btn_plat_dc_sync_usernames') {
+                        await interaction.deferUpdate();
+                        const result = await userManager.syncUsernames(interaction.guild);
+                        await interaction.followUp({ content: `✅ **סנכרון שמות משתמש (Usernames) הושלם!**\nעודכנו: ${result.count} משתמשים.\nשדה 'fullName' הישן נמחק.`, ephemeral: true });
+                        await platformManager.showDiscordDashboard(interaction);
+                    }
 
                     // Stats Review
                     else if (id === 'btn_plat_stats') await platformManager.showStatsReview(interaction);
@@ -122,6 +128,13 @@ module.exports = {
                 }
                 else if (id === 'btn_manage_view_link') await dashboardHandler.showLinkPanel(interaction);
                 else if (id === 'btn_manage_view_debug') await dashboardHandler.showDebugPanel(interaction);
+                else if (id === 'btn_manage_cancel') {
+                    // Close the panel (Delete the message)
+                    try {
+                        await interaction.deferUpdate();
+                        await interaction.message.delete();
+                    } catch (e) { /* Ignore if already deleted */ }
+                }
 
                 // 2. Actions (Sync, Purge)
                 else if (id === 'btn_manage_sync_names') {

@@ -148,6 +148,79 @@ class StatsReviewManager {
             interaction.editReply(`Error: ${e.message}`);
         }
     }
+
+    async handleManualEntry(interaction) {
+        // Must NOT defer if we want a Modal, but checking flow...
+        // If we want a Modal, we must not have replied. 
+        // If the button is click, we can show Modal.
+        // Let's ask for the ALIAS first via Modal.
+
+        try {
+            const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+
+            const modal = new ModalBuilder()
+                .setCustomId('modal_manual_link_alias')
+                .setTitle('Manual Linking');
+
+            const aliasInput = new TextInputBuilder()
+                .setCustomId('aliasInput')
+                .setLabel("What is the Gaming Alias?")
+                .setPlaceholder("e.g. Ninja, Shroud...")
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true);
+
+            const row = new ActionRowBuilder().addComponents(aliasInput);
+            modal.addComponents(row);
+
+            await interaction.showModal(modal);
+
+        } catch (e) {
+            // If interaction already deferred/replied, we can't show modal.
+            // Fallback to instruction.
+            const payload = { content: '❌ Cannot open form. Please use `/link [alias] @user` command instead.', ephemeral: true };
+            if (interaction.deferred || interaction.replied) await interaction.followUp(payload);
+            else await interaction.reply(payload);
+        }
+    }
+
+    // Called after Modal Submit -> Now ask for User
+    async handleManualEntryStep2(interaction, alias) {
+        const userSelect = new UserSelectMenuBuilder()
+            .setCustomId(`menu_stat_manual_confirm_${alias}`)
+            .setPlaceholder(`Who owns the alias '${alias}'?`)
+            .setMaxValues(1);
+
+        const row = new ActionRowBuilder().addComponents(userSelect);
+
+        await interaction.reply({
+            content: `🔗 **Linking Alias: '${alias}'**\nSelect the Discord User who owns this alias:`,
+            components: [row],
+            ephemeral: true
+        });
+    }
+
+    async finalizeManualLink(interaction, alias, targetUserId) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 });
+
+        try {
+            const userRef = db.collection('users').doc(targetUserId);
+
+            // Add Alias to User Identity
+            await userRef.set({
+                identity: {
+                    aliases: admin.firestore.FieldValue.arrayUnion(alias.toLowerCase())
+                }
+            }, { merge: true });
+
+            await interaction.editReply({
+                content: `✅ **Success!**\nLinked alias **"${alias}"** to <@${targetUserId}>.\nFuture stats will auto-link.`
+            });
+
+        } catch (e) {
+            log(`❌ [Manual Link] Error: ${e.message}`);
+            interaction.editReply(`Error: ${e.message}`);
+        }
+    }
 }
 
 module.exports = new StatsReviewManager();

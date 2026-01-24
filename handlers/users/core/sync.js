@@ -85,7 +85,7 @@ async function syncMissingUsers(guild) {
             continue;
         }
 
-        // המשתמש חסר ב-DB - יצירה
+        // המשתמש חסר ב-DB - יצירה מלאה (Full Schema)
         const ref = db.collection('users').doc(id);
         const userData = {
             identity: {
@@ -95,6 +95,15 @@ async function syncMissingUsers(guild) {
                 avatar: member.user.displayAvatarURL()
             },
             economy: { xp: 0, balance: 0, level: 1 },
+            stats: {
+                voiceMinutes: 0, messagesSent: 0, commandsUsed: 0,
+                mvpWins: 0, casinoWins: 0, casinoLosses: 0, aiCharsUsed: 0
+            },
+            tracking: {
+                status: 'active',
+                statusStage: 'active',
+                joinedAt: new Date().toISOString()
+            },
             meta: { firstSeen: new Date().toISOString() }
         };
 

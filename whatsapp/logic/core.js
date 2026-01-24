@@ -57,6 +57,12 @@ async function handleMessageLogic(sock, msg, text, resolvedPhone) {
         const lockTimeout = setTimeout(() => processingGroups.delete(chatJid), 10000);
 
         try {
+            // 🛡️ IGNORE EMPTY MESSAGES (Audio, Stickers without caption) to prevent Hallucinations ("Silence silence")
+            if ((!combinedText || combinedText.trim().length === 0) && mediaArray.length === 0) {
+                log(`🔇 [Core] Ignoring empty/audio message from ${senderPhone}`);
+                return;
+            }
+
             // A. Admin Commands
             if (combinedText === 'סרוק' && isAdmin) {
                 // If the command came WITH active images (e.g. caption on image), use them.

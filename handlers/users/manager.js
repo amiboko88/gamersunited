@@ -51,6 +51,70 @@ class UserManager {
         return syncModule.syncMissingUsers(guild);
     }
 
+    // 🆕 Universal Username Sync (Replaces local script)
+    async syncUsernames(guild) {
+        log('🔄 [UserManager] Starting Global Username Sync...');
+        const snapshot = await db.collection('users').get();
+        let updatedCount = 0;
+        let batch = db.batch();
+        let batchCount = 0;
+
+        // Pre-fetch all members to map (faster than one-by-one)
+        const members = await guild.members.fetch();
+        log(`👥 Fetched ${members.size} members from Discord.`);
+
+        for (const doc of snapshot.docs) {
+            const data = doc.data();
+            const discordId = data.identity?.discordId || doc.id;
+
+            // Try to find member in guild cache
+            const member = members.get(discordId);
+
+            let needsUpdate = false;
+            let updatePayload = {};
+
+            if (member) {
+                const realUsername = member.user.username; // The universal Handle
+                const currentUsername = data.identity?.username;
+
+                // Update Username if changed/missing
+                if (currentUsername !== realUsername) {
+                    updatePayload['identity.username'] = realUsername;
+                    // Also refresh avatar while we are at it
+                    updatePayload['identity.avatar'] = member.user.displayAvatarURL({ extension: 'png' });
+                    needsUpdate = true;
+                }
+            }
+
+            // Cleanup Legacy 'fullName'
+            if (data.identity?.fullName !== undefined) {
+                updatePayload['identity.fullName'] = admin.firestore.FieldValue.delete();
+                needsUpdate = true;
+            }
+
+            if (needsUpdate) {
+                const docRef = db.collection('users').doc(doc.id);
+                // Use update to be safe (requires existence, which we know)
+                batch.update(docRef, updatePayload);
+                batchCount++;
+                updatedCount++;
+            }
+
+            if (batchCount >= 400) {
+                await batch.commit();
+                batchCount = 0;
+                batch = db.batch(); // Re-init
+            }
+        }
+
+        if (batchCount > 0) {
+            await batch.commit();
+        }
+
+        log(`✅ [UserManager] Username Sync Complete. Updated ${updatedCount} users.`);
+        return { count: updatedCount };
+    }
+
     // --- Cleanup & Restoration Methods ---
 
     async getGhostUsers(guild) {

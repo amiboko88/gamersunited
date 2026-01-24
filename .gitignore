@@ -2,3 +2,7 @@
 .env.local
 .firebase
 debug_scripts/
+scripts/
+serviceAccountKey.json
+.env
+.DS_Store

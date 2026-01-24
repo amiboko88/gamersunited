@@ -22,65 +22,100 @@ async function getRealMVP() {
             xp: data.economy?.xp || 0
         };
     } catch (error) {
-        console.error('Error fetching MVP for status:', error.message);
-        return null;
+        return null; // Silent fail
     }
 }
 
 /**
- * מבצע את החלפת הסטטוס
+ * 💓 THE PULSE: מערכת סטטוסים חכמה שמגיבה למה שקורה בשרת
  */
 async function rotateStatus(client) {
     if (!client.user) return;
 
-    // 1. איסוף נתונים חיים
+    // 1. איסוף מודיעין מהשטח
     let totalVoice = 0;
+    let gamesMap = new Map(); // ספירת משחקים
+
     client.guilds.cache.forEach(g => {
         g.channels.cache.forEach(c => {
-            if (c.type === 2) totalVoice += c.members.filter(m => !m.user.bot).size;
+            if (c.type === 2) { // Voice
+                const members = c.members.filter(m => !m.user.bot);
+                totalVoice += members.size;
+
+                // בדיקה מה משחקים
+                members.forEach(m => {
+                    const activity = m.presence?.activities?.find(a => a.type === 0); // Playing
+                    if (activity && activity.name) {
+                        gamesMap.set(activity.name, (gamesMap.get(activity.name) || 0) + 1);
+                    }
+                });
+            }
         });
     });
 
+    // מציאת המשחק הפופולרי כרגע
+    let topGame = null;
+    let topGameCount = 0;
+    for (const [game, count] of gamesMap.entries()) {
+        if (count > topGameCount) {
+            topGame = game;
+            topGameCount = count;
+        }
+    }
+
     const mvp = await getRealMVP();
 
-    // 2. מאגר הסטטוסים המשודרג
-    const activities = [
-        // --- סטטוסים תחרותיים ---
-        { name: `Call of Duty: Black Ops 6`, type: ActivityType.Playing },
-        { name: `!פיפו | מחלק פקודות`, type: ActivityType.Custom }, // או Competing
-        
-        // --- סטטוסים ניהוליים ---
-        { name: `על ${client.users.cache.size} משתמשים`, type: ActivityType.Watching },
-        { name: `תלונות בוואטסאפ`, type: ActivityType.Listening },
-        
-        // --- סטטוסים ציניים (האופי של שמעון) ---
-        { name: `מי יקבל באן היום?`, type: ActivityType.Thinking },
-        { name: `מחשב כמה עליתם לי`, type: ActivityType.Watching },
-        { name: `איפה יוגי?`, type: ActivityType.Watching },
-    ];
+    // 2. בניית מאגר סטטוסים דינמי
+    const activities = [];
 
-    // הוספה דינמית: אם יש אנשים בחדרים
-    if (totalVoice > 0) {
-        activities.push({ 
-            name: `${totalVoice} אנשים צועקים בחדרים`, 
-            type: ActivityType.Listening 
-        });
+    // --- A. מצב שקט (0-2 אנשים) ---
+    if (totalVoice <= 2) {
+        activities.push(
+            { name: `את השקט... 🦗`, type: ActivityType.Listening },
+            { name: `מי יקבל באן היום?`, type: ActivityType.Thinking },
+            { name: `מנקה את השרת 🧹`, type: ActivityType.Custom },
+            { name: `נטפליקס עם עצמי`, type: ActivityType.Watching }
+        );
+    }
+    // --- B. מצב פעיל (3-9 אנשים) ---
+    else if (totalVoice < 10) {
+        activities.push(
+            { name: `על ${totalVoice} אנשים בחדרים`, type: ActivityType.Watching },
+            { name: `שיחות סלון`, type: ActivityType.Listening },
+            { name: `תלונות בוואטסאפ`, type: ActivityType.Listening }
+        );
+        if (topGame && topGameCount > 1) {
+            activities.push({ name: `${topGame} עם החבר'ה`, type: ActivityType.Playing });
+        }
+    }
+    // --- C. מצב מלחמה (10+ אנשים) ---
+    else {
+        activities.push(
+            { name: `🔥 השרת עולה באש!`, type: ActivityType.Playing },
+            { name: `תביאו מטף דחוף!`, type: ActivityType.Competing },
+            { name: `על הכאוס בחדרים`, type: ActivityType.Watching }
+        );
     }
 
-    // הוספה דינמית: אם יש MVP
+    // --- תוספות קבועות (MVP וכו') ---
     if (mvp) {
-        activities.push({ 
-            name: `👑 המלך: ${mvp.name} (${mvp.xp} XP)`, 
-            type: ActivityType.Competing 
-        });
+        activities.push({ name: `👑 המלך: ${mvp.name}`, type: ActivityType.Competing });
     }
 
-    // בחירה וביצוע
+    // סטטוסים קבועים של שמעון
+    activities.push(
+        { name: `!פיפו | מחלק פקודות`, type: ActivityType.Custom },
+        { name: `מחשב כמה עליתם לי`, type: ActivityType.Watching }
+    );
+
+    // 3. בחירה רנדומלית (עדיף על סדר רץ במערכת דינמית)
+    // אלא אם רוצים סדר? שמעון אוהב הפתעות.
     const status = activities[currentIndex % activities.length];
-    
+
+    // 4. עדכון
     client.user.setPresence({
         activities: [{ name: status.name, type: status.type }],
-        status: 'online'
+        status: totalVoice > 5 ? 'dnd' : 'online' // משנה צבע לאדום אם יש עומס!
     });
 
     currentIndex++;
@@ -88,9 +123,9 @@ async function rotateStatus(client) {
 
 module.exports = {
     start: (client) => {
-        rotateStatus(client); 
-        // החלפה כל 20 שניות (קצת יותר מהר כדי שיהיה מעניין)
-        setInterval(() => rotateStatus(client), 20000); 
-        log('[StatusSystem] ✅ מערכת הסטטוסים המשודרגת הופעלה.');
+        rotateStatus(client);
+        // החלפה כל 20 שניות
+        setInterval(() => rotateStatus(client), 20000);
+        log('[StatusSystem] ✅ מערכת "The Pulse" הופעלה.');
     }
 };

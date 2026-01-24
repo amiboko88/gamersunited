@@ -1,5 +1,5 @@
 const { default: makeWASocket, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
-const pino = require('pino');
+const pino = require('pino'); // Logger
 const { useFirestoreAuthState } = require('./auth');
 const coreLogic = require('./logic/core');
 const { ensureUserExists } = require('../utils/userUtils');
@@ -32,7 +32,7 @@ async function connectToWhatsApp() {
 
         const sock = makeWASocket({
             version,
-            logger: pino({ level: 'silent' }),
+            logger: pino({ level: 'fatal' }), // 🤫 Silence the session key dumps
             auth: state,
             msgRetryCounterCache,
             connectTimeoutMs: 60000,

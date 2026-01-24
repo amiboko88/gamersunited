@@ -143,7 +143,8 @@ class PlatformManager {
         const card = await this.generateDiscordCard(memberCount, ghostUsers.length, activityStats.dead.length);
 
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('btn_plat_dc_sync_names').setLabel('Sync Names').setStyle(ButtonStyle.Primary).setEmoji('🆔'),
+            new ButtonBuilder().setCustomId('btn_plat_dc_sync_names').setLabel('Sync Nicknames (Server)').setStyle(ButtonStyle.Primary).setEmoji('🆔'),
+            new ButtonBuilder().setCustomId('btn_plat_dc_sync_usernames').setLabel('Sync Real Usernames').setStyle(ButtonStyle.Success).setEmoji('🏷️'), // New
             new ButtonBuilder().setCustomId('btn_plat_dc_purge').setLabel(`Purge Ghosts (${ghostUsers.length})`).setStyle(ButtonStyle.Danger).setEmoji('👻').setDisabled(ghostUsers.length === 0),
             new ButtonBuilder().setCustomId('btn_plat_dc_kick').setLabel(`Purge Inactive (${activityStats.dead.length})`).setStyle(ButtonStyle.Danger).setEmoji('💀').setDisabled(activityStats.dead.length === 0),
             new ButtonBuilder().setCustomId('btn_plat_main').setLabel('Back').setStyle(ButtonStyle.Secondary)

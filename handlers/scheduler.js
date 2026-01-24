@@ -96,8 +96,18 @@ module.exports = {
                     });
 
                     // ניקח את הערוץ הראשון שיש בו הכי הרבה אנשים בשביל השם
+                    // ניקח את הערוץ הראשון שיש בו הכי הרבה אנשים בשביל השם
                     const mainChannel = guild.channels.cache.filter(c => c.type === 2).sort((a, b) => b.members.size - a.members.size).first();
-                    const channelName = mainChannel ? mainChannel.name : 'Voice Channels';
+                    let channelName = mainChannel ? mainChannel.name : 'Voice Channels';
+
+                    // 🧹 SANITIZE: Remove ONLY the specific broken char (middle dot ・)
+                    // User confirmed Emojis render fine, so we keep them!
+                    channelName = channelName
+                        .replace(/・/g, ' ') // Replace dot with space for "🎮 main"
+                        .trim();
+
+                    // Fallback if name becomes empty
+                    if (!channelName) channelName = "Voice Lounge";
 
                     const imageBuffer = await graphics.voice.generateCard(channelName, allMembers);
 

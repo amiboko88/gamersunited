@@ -7,7 +7,7 @@ const { log } = require('../utils/logger');
 const whatsappScout = require('./utils/scout');
 const matchmaker = require('../handlers/matchmaker');
 const store = require('./store');
-const store = require('./store');
+
 const { setSocket, getSocket } = require('./socket');
 const graphicsWelcome = require('../handlers/graphics/welcomeCard'); // 🎨 Welcome Graphics
 

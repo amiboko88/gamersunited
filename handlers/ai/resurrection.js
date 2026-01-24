@@ -77,26 +77,32 @@ async function execute(sock, chatId) {
 
     // 3. Generate Comeback
     const prompt = `
-    Context: You (Shimon) just crashed/restarted. You were offline for a while.
-    While you were "dead", the users in the group were talking about you.
+    Context: You (Shimon) just restarted after a crash.
     
     TRANSCRIPT OF MISSED MESSAGES:
     ${missedMentions.map(m => `- ${m.name}: "${m.text}"`).join('\n')}
     
-    Task: Write ONE single message to the group.
-    1. Acknowledge you are back ("I'm alive").
-    2. Roast the specific people who talked trash while you were gone ("I heard you, Omri").
-    3. Explain (jokingly) that you were just upgrading your brain or taking a nap.
+    Task: Decide if you need to reply.
+    - If they are just saying "bot is down" or technical stuff -> Reply "SKIP".
+    - If they are laughing at you, insulting you, or asking where you are -> Reply.
     
-    Tone: Menacing but funny.
+    Response Rules (If replying):
+    1. MAX 10 WORDS.
+    2. Be sharp, not dramatic. No "I have returned".
+    3. Just roast them for missing you.
+    
+    Example: "שמעתי אתכם, יא בכיינים. חזרתי."
+    Tone: Cool, dismissive.
     Language: Hebrew (Slang).
     `;
 
     // Use 'system' as user to bypass stats
     const comeback = await brain.ask('100000000000000000', 'whatsapp', prompt, true);
 
-    if (comeback) {
+    if (comeback && !comeback.includes('SKIP')) {
         await sock.sendMessage(chatId, { text: comeback });
+    } else {
+        log(`🧟 [Resurrection] Decided to stay silent (AI: SKIP).`);
     }
 }
 

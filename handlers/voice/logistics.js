@@ -48,6 +48,7 @@ class VoiceLogistics {
                         name: newName,
                         type: ChannelType.GuildVoice,
                         parent: CONFIG.COUNTER_CAT,
+                        position: fifoChannel.position, // Insert ABOVE the FIFO channel (pushes FIFO down)
                         permissionOverwrites: [
                             { id: guild.id, deny: [PermissionFlagsBits.Connect], allow: [PermissionFlagsBits.ViewChannel] }
                         ]

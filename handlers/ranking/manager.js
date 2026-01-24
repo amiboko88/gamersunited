@@ -1,6 +1,6 @@
-// 📁 handlers/ranking/manager.js
 const cron = require('node-cron');
 const db = require('../../utils/firebase');
+const admin = require('firebase-admin'); // ✅ Added missing import
 const rankingCore = require('./core');
 // const rankingRenderer = require('./render'); // ❌ נמחק
 const graphics = require('../graphics/index'); // ✅ המערכת הגרפית החדשה

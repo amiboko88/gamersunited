@@ -1,5 +1,6 @@
 // 📁 handlers/users/manager.js
 const db = require('../../utils/firebase');
+const admin = require('firebase-admin'); // ✅ Added for FieldValue operations
 const { log } = require('../../utils/logger');
 
 // 📦 ייבוא המודולים המפוצלים (Core Modules)

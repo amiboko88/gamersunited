@@ -1,4 +1,5 @@
 const db = require('../../../utils/firebase');
+const admin = require('firebase-admin'); // ✅ Top-Level Import
 
 const DAYS = {
     DEAD: 180,
@@ -102,7 +103,7 @@ async function getInactivityStats(guild) {
 async function addVoiceMinutes(userId, minutes) {
     if (!userId || !minutes) return;
     try {
-        const admin = require('firebase-admin');
+        // const admin = require('firebase-admin'); // Moved to top
         await db.collection('users').doc(userId).set({
             stats: {
                 voiceMinutes: admin.firestore.FieldValue.increment(minutes)

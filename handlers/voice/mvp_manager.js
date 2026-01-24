@@ -114,7 +114,12 @@ class MVPVoiceManager {
 
             // D. Play Audio
             // We need to save to temp file because musicPlayer expects path
-            const tempPath = path.join(__dirname, `../../temp/mvp_${Date.now()}.mp3`);
+            const tempDir = path.join(__dirname, '../../temp');
+            if (!require('fs').existsSync(tempDir)) {
+                require('fs').mkdirSync(tempDir, { recursive: true });
+            }
+
+            const tempPath = path.join(tempDir, `mvp_${Date.now()}.mp3`);
             require('fs').writeFileSync(tempPath, audioBuffer);
 
             // Play Sequence: Speech -> Wait -> Xbox Sound

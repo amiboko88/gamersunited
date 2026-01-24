@@ -100,8 +100,17 @@ async function execute(args, userId, chatId, imageBuffers) {
     for (const match of args.matches) {
         const cleanName = match.username.toLowerCase().trim();
 
-        // A. Exact Match Strategy
-        const foundUser = users.find(u => u.aliases.some(alias => alias === cleanName || alias.includes(cleanName) || cleanName.includes(alias)));
+        // A. Exact & Strict Match Strategy
+        // Priority 1: Exact Match (e.g. "ami" === "ami")
+        let foundUser = users.find(u => u.aliases.some(alias => alias === cleanName));
+
+        // Priority 2: Word Boundary/Token Match (e.g. "ami" matches "ami cohen" but NOT "familia")
+        if (!foundUser) {
+            foundUser = users.find(u => u.aliases.some(alias => {
+                const tokens = alias.split(/[\s-_]+/); // Split by space, dash, underscore
+                return tokens.includes(cleanName);
+            }));
+        }
 
         const statData = {
             game: 'Warzone',
@@ -120,10 +129,9 @@ async function execute(args, userId, chatId, imageBuffers) {
             batchOps.set(gameRef, statData);
             savedCount++;
         } else {
-            // ❓ UNKNOWN - Logic for Smart Suggestion
-            // Check for fuzzy match (e.g. "MatanCh" vs "Matan")
+            // ❓ UNKNOWN / AMBIGUOUS - Logic for Smart Suggestion
+            // Now we check for partial matches ("includes") BUT only as a SUGGESTION
             const fuzzyCandidate = users.find(u => {
-                // Check if 70% of characters match or simple containment implies strong link
                 return u.aliases.some(alias =>
                     (cleanName.length > 3 && alias.includes(cleanName)) ||
                     (alias.length > 3 && cleanName.includes(alias))

@@ -147,5 +147,29 @@ module.exports = {
             // log(`❌ [VoiceStateUpdate] Error: ${error.message}`);
             console.error(error);
         }
+    },
+
+    // 🆕 Restore Sessions on Bot Restart
+    async restoreSessions(client) {
+        if (!client.isReady()) return;
+
+        let restoredCount = 0;
+        const now = Date.now();
+
+        client.guilds.cache.forEach(guild => {
+            guild.voiceStates.cache.forEach(voiceState => {
+                if (voiceState.member && !voiceState.member.user.bot && voiceState.channelId) {
+                    // Check if already tracking (safety)
+                    if (!joinTimestamps.has(voiceState.id)) {
+                        joinTimestamps.set(voiceState.id, now);
+                        restoredCount++;
+                    }
+                }
+            });
+        });
+
+        if (restoredCount > 0) {
+            log(`🔄 [Voice] Restored tracking for ${restoredCount} active users.`);
+        }
     }
 };

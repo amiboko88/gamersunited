@@ -9,7 +9,8 @@ const scheduler = require('../../handlers/scheduler');
 const birthdayManager = require('../../handlers/birthday/manager');
 const fifoCleaner = require('../../handlers/fifo/cleaner');
 const statusRotator = require('../../handlers/system/statusRotator');
-const voiceLogistics = require('../../handlers/voice/logistics'); // ✅ תוספת למערכת הקולית
+const voiceLogistics = require('../../handlers/voice/logistics');
+const voiceStateUpdate = require('./voiceStateUpdate'); // ✅ For restoring sessions
 
 // הגדרות ערוץ האימות
 const VERIFY_CHANNEL_ID = '1120791404583587971';
@@ -27,6 +28,9 @@ module.exports = {
         if (guild) {
             await voiceLogistics.updateVoiceIndicator(guild);
         }
+
+        // 🧠 Restore Voice Sessions (Crash recovery)
+        await voiceStateUpdate.restoreSessions(client);
 
         // 1. אתחול ימי הולדת - הועבר ל-index.js
         // birthdayManager.init(...);

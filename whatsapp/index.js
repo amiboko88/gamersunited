@@ -7,7 +7,9 @@ const { log } = require('../utils/logger');
 const whatsappScout = require('./utils/scout');
 const matchmaker = require('../handlers/matchmaker');
 const store = require('./store');
+const store = require('./store');
 const { setSocket, getSocket } = require('./socket');
+const graphicsWelcome = require('../handlers/graphics/welcomeCard'); // 🎨 Welcome Graphics
 
 const msgRetryCounterCache = new Map();
 const MAIN_GROUP_ID = process.env.WHATSAPP_MAIN_GROUP_ID;
@@ -78,12 +80,53 @@ async function connectToWhatsApp() {
             if (notification.id !== MAIN_GROUP_ID) return;
             const { action, participants } = notification;
             for (const participant of participants) {
-                const realPhone = getRealPhoneNumber(participant);
+                const realPhone = getRealPhoneNumber(participant) || participant.split('@')[0];
+
                 if (action === 'add') {
                     console.log(`👋 [WhatsApp] משתמש הצטרף: ${realPhone}`);
-                    const userRef = await ensureUserExists(realPhone, "New Gamer", "whatsapp");
-                    const welcomeText = `👋 ברוך הבא לקבוצה @${realPhone}!\nתציג את עצמך שנכיר.`;
-                    await sock.sendMessage(MAIN_GROUP_ID, { text: welcomeText, mentions: [participant] });
+
+                    // 1. Ensure User in DB
+                    await ensureUserExists(realPhone, "New Gamer", "whatsapp");
+
+                    // 2. Fetch Profile Pic (Smart Fallback Strategy 🧠)
+                    let pfpUrl = undefined;
+                    try {
+                        // A. Try WhatsApp (Most relevant)
+                        pfpUrl = await sock.profilePictureUrl(participant, 'image');
+                    } catch (e) {
+                        // Privacy settings hidden? Ignore.
+                    }
+
+                    if (!pfpUrl) {
+                        // B. Try DB (Linked Discord Avatar)
+                        try {
+                            const db = require('../utils/firebase');
+                            const userRef = await ensureUserExists(realPhone, "New Gamer", "whatsapp");
+                            const userDoc = await userRef.get();
+
+                            // Check for synced Discord avatar
+                            pfpUrl = userDoc.data()?.identity?.avatar ||
+                                userDoc.data()?.identity?.avatar_discord;
+
+                            if (pfpUrl) console.log(`✅ [Welcome] Using Discord Avatar for ${realPhone}`);
+                        } catch (dbErr) { }
+                    }
+
+                    // 3. Generate Card
+                    try {
+                        const cardBuffer = await graphicsWelcome.generateWelcomeCard(realPhone, pfpUrl);
+                        const caption = `👋 ברוך הבא לקבוצה @${realPhone}!\nתציג את עצמך שנכיר.`;
+
+                        await sock.sendMessage(MAIN_GROUP_ID, {
+                            image: cardBuffer,
+                            caption: caption,
+                            mentions: [participant]
+                        });
+                    } catch (err) {
+                        console.error('❌ Failed to send welcome card:', err);
+                        // Fallback to text
+                        await sock.sendMessage(MAIN_GROUP_ID, { text: `👋 ברוך הבא @${realPhone}!`, mentions: [participant] });
+                    }
                 }
             }
         });

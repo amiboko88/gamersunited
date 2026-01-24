@@ -67,8 +67,8 @@ class RankingManager {
         try {
             log('📊 [Ranking] מחשב לידרבורד שבועי...');
 
-            // 1. שליפת נתוני הטופ 10 מה-DB
-            const leaders = await rankingCore.getWeeklyLeaderboard(10);
+            // 1. שליפת נתוני הטופ 5 מה-DB (לבקשת המשתמש: טבלה גדולה ומרוכזת)
+            const leaders = await rankingCore.getWeeklyLeaderboard(5);
             if (!leaders || leaders.length === 0) {
                 log('⚠️ [Ranking] No data found (Empty). Skipping broadcast.');
                 return;
@@ -104,88 +104,70 @@ class RankingManager {
             // 6. הפצה לשאר הפלטפורמות (שליחה כהודעה חדשה)
             await rankingBroadcaster.broadcastOthers(this.clients, imageBuffer, weekNum);
 
-            // 7. עדכון רול MVP (הענקת הגביע לזוכה) 🏆
-            // מזהה הרול סופק על ידי המשתמש
-            const MVP_ROLE_ID = '1372701819167440957';
+            // 7. חלוקת פרסים (Tiered Rewards) ועדכון רולים 🏆💰
+            // Rewards: 1st=1000, 2nd=500, 3rd=250, 4th=100, 5th=100
+            const REWARDS = [1000, 500, 250, 100, 100];
+            let reportText = `💰 *דוח חלוקת רווחים שבועי:*\n`;
+            let totalDistributed = 0;
 
-            try {
-                const guild = this.clients.discord.guilds.cache.first(); // הנחה: הבוט נמצא בשרת אחד ראשי
-                if (guild) {
+            const MVP_ROLE_ID = '1372701819167440957';
+            const guild = this.clients.discord.guilds.cache.first();
+
+            for (let i = 0; i < leaders.length; i++) {
+                const user = leaders[i];
+                const amount = REWARDS[i] || 0; // אם יש יותר משתמשים מפרסים, מקבלים 0
+
+                if (amount > 0) {
+                    // Update DB with Bonus + Stats
+                    const updateData = {
+                        economy: {
+                            balance: admin.firestore.FieldValue.increment(amount),
+                            totalEarnings: admin.firestore.FieldValue.increment(amount)
+                        }
+                    };
+
+                    // MVP Special Handling
+                    if (i === 0) {
+                        updateData.stats = { mvpWins: admin.firestore.FieldValue.increment(1) };
+                        // Save Metadata
+                        await db.collection('system_metadata').doc('current_mvp').set({
+                            id: user.id,
+                            name: user.name,
+                            avatar: user.avatar,
+                            stats: user.stats,
+                            score: user.score,
+                            wonAt: new Date().toISOString()
+                        });
+                        reportText += `👑 *${user.name}:* ₪${amount}\n`;
+                    } else {
+                        const medal = i === 1 ? '🥈' : i === 2 ? '🥉' : i === 3 ? '4️⃣' : '5️⃣';
+                        reportText += `${medal} *${user.name}:* ₪${amount}\n`;
+                    }
+
+                    await db.collection('users').doc(user.id).set(updateData, { merge: true });
+                    totalDistributed += amount;
+                }
+            }
+
+            reportText += `\n💵 *סה"כ חולק:* ₪${totalDistributed.toLocaleString()}\n_תבזבזו בחכמה._`;
+
+            // Role Management (MVP Only)
+            if (guild) {
+                try {
                     const winnerId = leaders[0].id;
                     const role = await guild.roles.fetch(MVP_ROLE_ID).catch(() => null);
-
                     if (role) {
-                        // א. הסרת הרול מכולם (ניקוי הזוכה הקודם)
-                        // נשים לב: ה-role.members הוא Collection שצריך למשוך אותו לפעמים
-                        // ליתר ביטחון נמשוך מחדש את הרול עם הממברס
-                        // בפועל הדרך הכי בטוחה היא לעבור על הממברס של הרול אם הם בקאש, או לשמור מי היה הזוכה הקודם.
-                        // אבל הכי פשוט: 
+                        // Remove from everyone
                         for (const member of role.members.values()) {
-                            if (member.id !== winnerId) {
-                                await member.roles.remove(role, 'Weekly Leaderboard Refresh');
-                                log(`[MVP] 🔻 הרול הוסר מ-${member.displayName}`);
-                            }
+                            if (member.id !== winnerId) await member.roles.remove(role);
                         }
-
-                        // ב. הענקת הרול לזוכה החדש
+                        // Add to winner
                         const winnerMember = await guild.members.fetch(winnerId).catch(() => null);
-                        if (winnerMember) {
-                            if (!winnerMember.roles.cache.has(MVP_ROLE_ID)) {
-                                await winnerMember.roles.add(role, 'Weekly Leaderboard Winner');
-                                log(`[MVP] 🏆 👑 ${winnerMember.displayName} הוכתר כ-MVP השבועי החדש!`);
-
-                                // שמירת הנתונים לשימוש עתידי (הכרזה + AI)
-                                await db.collection('system_metadata').doc('current_mvp').set({
-                                    id: winnerId,
-                                    name: winnerMember.displayName,
-                                    avatar: leaders[0].avatar, // שימוש באוואטר מהלידרבורד (שכבר עבר עיבוד)
-                                    stats: leaders[0].stats,
-                                    score: leaders[0].score,
-                                    wonAt: new Date().toISOString()
-                                });
-
-                                // 💰 מענק כספי (Royal Pass) + 🏆 עדכון ספירת זכיות
-                                const bonusAmount = 1000;
-                                await db.collection('users').doc(winnerId).set({
-                                    economy: {
-                                        balance: admin.firestore.FieldValue.increment(bonusAmount),
-                                        totalEarnings: admin.firestore.FieldValue.increment(bonusAmount)
-                                    },
-                                    stats: {
-                                        mvpWins: admin.firestore.FieldValue.increment(1) // ✅ ספירת זכיות לשימוש ה-AI
-                                    }
-                                }, { merge: true });
-                                log(`[MVP] 💰 הוענק מענק זכייה של ${bonusAmount} למשתמש ${winnerMember.displayName}`);
-
-                                // אופציונלי: שליחת הודעה פרטית לזוכה
-                                // await winnerMember.send(`🎉 ברכות! זכית בתואר **MVP השבועי** בשרת GamersUnited!`).catch(() => {});
-                            } else {
-                                log(`[MVP] ✅ ${winnerMember.displayName} שמר על תוארו כ-MVP שבוע נוסף.`);
-                                // עדיין נעדכן את הסטטיסטיקות העדכניות
-                                await db.collection('system_metadata').doc('current_mvp').set({
-                                    id: winnerId,
-                                    name: winnerMember.displayName,
-                                    avatar: leaders[0].avatar,
-                                    stats: leaders[0].stats,
-                                    score: leaders[0].score,
-                                    wonAt: new Date().toISOString()
-                                }, { merge: true });
-
-                                // גם שומר תואר מקבל מענק (אולי מופחת? כרגע מלא)
-                                await db.collection('users').doc(winnerId).set({
-                                    economy: { balance: admin.firestore.FieldValue.increment(1000) }
-                                }, { merge: true });
-                            }
-                        } else {
-                            log(`[MVP] ⚠️ הזוכה (${winnerId}) לא נמצא בשרת הדיסקורד.`);
+                        if (winnerMember && !winnerMember.roles.cache.has(MVP_ROLE_ID)) {
+                            await winnerMember.roles.add(role);
                         }
-                    } else {
-                        log(`[MVP] ❌ רול ה-MVP לא נמצא (ID: ${MVP_ROLE_ID})`);
                     }
-                }
-            } catch (roleError) {
-                log(`[MVP] ❌ שגיאה בניהול רולים: ${roleError.message}`);
-                console.error(roleError);
+                } catch (e) { console.error('Role Error:', e); }
             }
 
             // 8. שמירת המזהה החדש ב-DB לעדכון בשבוע הבא
@@ -267,7 +249,7 @@ class RankingManager {
             if (this.clients.whatsapp) {
                 const { sendToMainGroup } = require('../../whatsapp/index');
                 await sendToMainGroup(
-                    `👑 *All Hail The King!*\nקבלו את ה-MVP של השבוע: *${mvpData.name}*!\n\nכבוד מלכים מגיע לו השבוע.`,
+                    `👑 *All Hail The King!*\nקבלו את ה-MVP של השבוע: *${mvpData.name}*!\n\n${reportText}`,
                     [],
                     imageBuffer
                 );

@@ -83,6 +83,11 @@ class UserManager {
     calculateLastSeen(member, userData, userGames) {
         return statsModule.calculateLastSeen(member, userData, userGames);
     }
+
+    // ✅ שוחזר: עדכון דקות שיחה (Critical for Leaderboard)
+    async addVoiceMinutes(userId, minutes) {
+        return statsModule.addVoiceMinutes(userId, minutes);
+    }
 }
 
 module.exports = new UserManager();

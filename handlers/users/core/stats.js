@@ -99,4 +99,20 @@ async function getInactivityStats(guild) {
     } catch (error) { return null; }
 }
 
-module.exports = { getInactivityStats, calculateLastSeen };
+async function addVoiceMinutes(userId, minutes) {
+    if (!userId || !minutes) return;
+    try {
+        const admin = require('firebase-admin');
+        await db.collection('users').doc(userId).set({
+            stats: {
+                voiceMinutes: admin.firestore.FieldValue.increment(minutes)
+            },
+            meta: { lastActive: new Date().toISOString() }
+        }, { merge: true });
+        // log(`⏱️ [Stats] Updated ${minutes} voice minutes for ${userId}`);
+    } catch (e) {
+        console.error(`Failed to update voice stats: ${e.message}`);
+    }
+}
+
+module.exports = { getInactivityStats, calculateLastSeen, addVoiceMinutes };

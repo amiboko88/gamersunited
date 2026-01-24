@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { log } = require('../../utils/logger');
 
-const API_KEY = process.env.GOOGLE_AI_KEY || process.env.GEMINI_API_KEY;
+const API_KEY = process.env.GEMINI_STUDIO_AI;
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 /**
@@ -36,15 +36,36 @@ async function generateContent(parts, model = "gemini-2.0-flash") {
     try {
         const url = `${BASE_URL}/${model}:generateContent?key=${API_KEY}`;
 
-        const response = await axios.post(url, {
-            contents: contents,
-            generationConfig: {
-                temperature: 0.7,
-                maxOutputTokens: 1000
+        // Retry Mechanism for 429 (Rate Limit) 🛡️
+        const MAX_RETRIES = 3;
+        let attempt = 0;
+        let response;
+
+        while (attempt < MAX_RETRIES) {
+            try {
+                response = await axios.post(url, {
+                    contents: contents,
+                    generationConfig: {
+                        temperature: 0.7,
+                        maxOutputTokens: 1000
+                    }
+                }, {
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                break; // Success!
+            } catch (err) {
+                if (err.response && err.response.status === 429) {
+                    attempt++;
+                    const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s...
+                    log(`⏳ [Gemini] Rate Limit (429). Retrying in ${delay / 1000}s... (Attempt ${attempt}/${MAX_RETRIES})`);
+                    await new Promise(res => setTimeout(res, delay));
+                } else {
+                    throw err; // Not a rate limit, throw normally
+                }
             }
-        }, {
-            headers: { 'Content-Type': 'application/json' }
-        });
+        }
+
+        if (!response) throw new Error("Max retries exceeded for Gemini API.");
 
         const candidates = response.data?.candidates;
         if (!candidates || candidates.length === 0) return "";

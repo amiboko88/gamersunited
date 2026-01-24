@@ -20,12 +20,12 @@ module.exports = {
         await interaction.deferReply({ ephemeral: true });
         try {
             let isFallback = false;
-            // נסיון 1: נתונים שבועיים
-            let leaders = await rankingCore.getWeeklyLeaderboard(10, false);
+            // נסיון 1: נתונים שבועיים (Top 5 Only)
+            let leaders = await rankingCore.getWeeklyLeaderboard(5, false);
 
             // נסיון 2: נתוני כל הזמנים (אם ריק)
             if (!leaders || leaders.length === 0) {
-                leaders = await rankingCore.getWeeklyLeaderboard(10, true);
+                leaders = await rankingCore.getWeeklyLeaderboard(5, true);
                 isFallback = true;
             }
 

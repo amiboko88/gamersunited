@@ -83,6 +83,14 @@ async function handleMessageLogic(sock, msg, text, resolvedPhone) {
                 return;
             }
 
+            // 🚀 Admin User Campaign Trigger (The Deserters)
+            if (['תפעיל קמפיין נוטשים', 'תפעיל פרוטוקול נוטשים'].some(phrase => combinedText.includes(phrase)) && isAdmin) {
+                const campaign = require('../../handlers/campaigns/deserters');
+                // Run in background so we don't block the loop, but initial message is sent inside
+                campaign.runFullCampaign(sock, chatJid).catch(e => log(`❌ Campaign Error: ${e.message}`));
+                return;
+            }
+
             // B. Media Download
             const imageBuffers = await mediaHandler.downloadImages(mediaArray, sock);
             if (imageBuffers.length > 0) {

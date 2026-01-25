@@ -247,6 +247,7 @@ class RankingManager {
 
             // 4. שליחה לוואטסאפ (אם קיים)
             if (this.clients.whatsapp) {
+                const { sendToMainGroup } = require('../../whatsapp/index');
                 await sendToMainGroup(
                     `👑 *All Hail The King!*\nקבלו את ה-MVP של השבוע: *${mvpData.name}*!\n\nכבוד מלכים מגיע לו.`,
                     [],

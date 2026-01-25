@@ -131,6 +131,37 @@ class ContextManager {
             // 4. זמן דיבור (המרת דקות לשעות)
             const voiceHours = ((stats.voiceMinutes || 0) / 60).toFixed(1);
 
+            // 5. Recent Gaming Performance (The Roast Material 🍖)
+            let gamesContext = "";
+            try {
+                // Determine Identity (Phone or Discord ID)
+                const targetRef = await getUserRef(userId, platform);
+                const gamesSnap = await targetRef.collection('games')
+                    .orderBy('timestamp', 'desc')
+                    .limit(5) // Last 5 games
+                    .get();
+
+                if (!gamesSnap.empty) {
+                    const games = gamesSnap.docs.map(g => g.data());
+                    const lastGame = games[0];
+
+                    // Analyst Logic
+                    const totalKills = games.reduce((acc, g) => acc + (g.kills || 0), 0);
+                    const avgKills = (totalKills / games.length).toFixed(1);
+                    const totalDmg = games.reduce((acc, g) => acc + (g.damage || 0), 0);
+                    const avgDmg = (totalDmg / games.length).toFixed(0);
+
+                    gamesContext = `
+            -- Recent Gaming Performance (LAST 5 GAMES) --
+            Avg Kills: ${avgKills} | Avg Damage: ${avgDmg}
+            Last Game: ${lastGame.kills} Kills, ${lastGame.damage} Dmg (${dayjs(lastGame.timestamp.toDate()).locale('he').fromNow()})
+            Play Style: ${avgKills > 5 ? "DEMON 😈" : avgKills < 2 ? "BOT 🤖" : "Soldier 🫡"}
+            `;
+                } else {
+                    gamesContext = `\n            -- Gaming --\n            No recent stats recorded (Safe from roasting... for now).`;
+                }
+            } catch (err) { }
+
             // הרכבת הדוח הסופי ל-AI
             return `
             --- 🕵️ INTELLIGENCE REPORT ---
@@ -143,6 +174,8 @@ class ContextManager {
             Voice Time: ${voiceHours} hours
             Messages Sent: ${stats.messagesSent || 0}
             API Cost: ${costStatus}
+
+            ${gamesContext}
             
             Platform: ${platform}
             -----------------------------

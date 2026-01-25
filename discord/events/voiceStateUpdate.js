@@ -141,6 +141,14 @@ module.exports = {
 
                 // עדכון מונה חדרים ביציאה
                 await logistics.updateVoiceIndicator(oldState.guild);
+
+                // 🌅 End of Session Detection (The "Good Night" Protocol)
+                // If the channel is now EMPTY, check if we should generate a Summary Card.
+                if (oldChannel.members.size === 0 && oldChannel.id !== oldState.guild.afkChannelId) {
+                    const sessionManager = require('../../handlers/gamers/session_manager');
+                    // We fire this asynchronously to not block the event loop
+                    sessionManager.handleSessionEnd(oldState.guild, oldChannel).catch(e => console.error(e));
+                }
             }
 
         } catch (error) {

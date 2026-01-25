@@ -75,6 +75,14 @@ async function handleMessageLogic(sock, msg, text, resolvedPhone) {
                 return;
             }
 
+            // 👑 Admin Manual MVP Trigger
+            if (['שלח mvp', 'שלח MVP', 'הכרז mvp'].includes(combinedText) && isAdmin) {
+                await sock.sendMessage(chatJid, { text: '⏳ מפעיל הכרזת MVP ידנית (Manual Trigger)...' }, { quoted: finalMsg });
+                const rankingManager = require('../../handlers/ranking/manager');
+                rankingManager.announceMVP().catch(e => log(`❌ Manual MVP Error: ${e.message}`));
+                return;
+            }
+
             // B. Media Download
             const imageBuffers = await mediaHandler.downloadImages(mediaArray, sock);
             if (imageBuffers.length > 0) {

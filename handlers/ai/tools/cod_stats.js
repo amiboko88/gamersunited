@@ -160,10 +160,53 @@ async function execute(args, userId, chatId, imageBuffers) {
 
     await batchOps.commit();
 
-    // 4. GENERATE GRAPHIC CARD 🎨
+    // 4. GENERATE GRAPHIC CARD 🎨 (Aggregated Summary)
     try {
         const graphics = require('../../graphics/statsCard');
-        const imageBuffer = await graphics.generateMatchCard(args.matches);
+
+        // Helper: Normalize & Aggregate
+        const aggregatedMap = new Map();
+
+        args.matches.forEach(m => {
+            // Find aliases logic again or just use simple normalization for the graphic?
+            // User requested "Show all identified users in ONE image with totals".
+            // We should use the 'foundUser.displayName' if matched, otherwise raw username.
+
+            // Re-resolve identity for grouping (Reuse logic briefly for display grouping)
+            let displayName = m.username;
+            const cleanName = m.username.toLowerCase().trim();
+            const knownUser = users.find(u => u.aliases.some(alias => alias === cleanName || alias.includes(cleanName)));
+            if (knownUser) displayName = knownUser.displayName;
+
+            if (!aggregatedMap.has(displayName)) {
+                aggregatedMap.set(displayName, {
+                    username: displayName,
+                    kills: 0,
+                    damage: 0,
+                    score: 0,
+                    matches: 0,
+                    bestPlacement: 99
+                });
+            }
+
+            const entry = aggregatedMap.get(displayName);
+            entry.kills += (m.kills || 0);
+            entry.damage += (m.damage || 0);
+            entry.score += (m.score || 0); // Assuming Gemini extracts score or we calc it
+            entry.matches += 1;
+            if (m.placement && m.placement < entry.bestPlacement) entry.bestPlacement = m.placement;
+        });
+
+        const summaryStats = Array.from(aggregatedMap.values());
+
+        // Pass "isSummary: true" if we aggregated multiple matches
+        // But the user always wants the summary view if multiple images.
+        // Actually, let's just pass the aggregated list.
+
+        const imageBuffer = await graphics.generateMatchCard(summaryStats, {
+            isAggregated: buffers.length > 1, // Only show "Totals" badge if multiple images used
+            totalGames: buffers.length // Approximation of games count
+        });
 
         if (chatId) {
             if (chatId.includes('@')) {

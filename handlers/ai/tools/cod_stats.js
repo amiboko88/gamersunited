@@ -96,20 +96,40 @@ async function execute(args, userId, chatId, imageBuffers) {
     });
 
     const suggestions = [];
+    // Store resolved names for the graphic to ensure consistency
+    const resolvedNamesMap = new Map();
 
     for (const match of args.matches) {
         const cleanName = match.username.toLowerCase().trim();
 
         // A. Exact & Strict Match Strategy
         // Priority 1: Exact Match (e.g. "ami" === "ami")
-        let foundUser = users.find(u => u.aliases.some(alias => alias === cleanName));
+        let foundUser = users.find(u => u.aliases.some(alias => {
+            const isMatch = alias === cleanName;
+            if (isMatch) matchReason = `Exact match on alias '${alias}'`;
+            return isMatch;
+        }));
 
         // Priority 2: Word Boundary/Token Match (e.g. "ami" matches "ami cohen" but NOT "familia")
         if (!foundUser) {
             foundUser = users.find(u => u.aliases.some(alias => {
                 const tokens = alias.split(/[\s-_]+/); // Split by space, dash, underscore
-                return tokens.includes(cleanName);
+                const isMatch = tokens.includes(cleanName);
+                if (isMatch) matchReason = `Token match on alias '${alias}'`;
+                return isMatch;
             }));
+        }
+
+        // Store the result for the graphic later
+        if (foundUser) {
+            log(`✅ [SmartLink] Linked '${match.username}' -> ${foundUser.displayName} (${matchReason})`);
+            resolvedNamesMap.set(match.username, foundUser.displayName);
+        } else {
+            // Sanitize raw username for display if not found
+            // Use Unicode-aware regex to keep Hebrew/English letters but remove emojis/junk
+            // \p{L} = Any Unicode Letter, \p{N} = Number
+            const safeName = match.username.replace(/[^\p{L}\p{N}\s\-\.\[\]]/gu, '').trim() || match.username;
+            resolvedNamesMap.set(match.username, safeName);
         }
 
         const statData = {
@@ -168,15 +188,8 @@ async function execute(args, userId, chatId, imageBuffers) {
         const aggregatedMap = new Map();
 
         args.matches.forEach(m => {
-            // Find aliases logic again or just use simple normalization for the graphic?
-            // User requested "Show all identified users in ONE image with totals".
-            // We should use the 'foundUser.displayName' if matched, otherwise raw username.
-
-            // Re-resolve identity for grouping (Reuse logic briefly for display grouping)
-            let displayName = m.username;
-            const cleanName = m.username.toLowerCase().trim();
-            const knownUser = users.find(u => u.aliases.some(alias => alias === cleanName || alias.includes(cleanName)));
-            if (knownUser) displayName = knownUser.displayName;
+            // Use the CONSISTENT name we resolved earlier
+            const displayName = resolvedNamesMap.get(m.username) || m.username;
 
             if (!aggregatedMap.has(displayName)) {
                 aggregatedMap.set(displayName, {
@@ -215,7 +228,7 @@ async function execute(args, userId, chatId, imageBuffers) {
                 if (sock) {
                     await sock.sendMessage(chatId, {
                         image: imageBuffer,
-                        caption: `📊 **דוח משחק - ${new Date().toLocaleTimeString('he-IL')}**\nעובד ע"י שמעון AI`,
+                        caption: `📊 דוח משחק - הנתונים נשמרו בהצלחה ✅`,
                         mimetype: 'image/png'
                     });
                 }

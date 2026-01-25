@@ -267,9 +267,9 @@ class DashboardUI {
         users.slice(0, 25).forEach(u => {
             select.addOptions(
                 new StringSelectMenuOptionBuilder()
-                    .setLabel(`${u.displayName} (@${u.username})`)
+                    .setLabel(u.username && u.username !== 'No Username' ? `${u.displayName} (@${u.username})` : u.displayName)
                     .setDescription(`ID: ${u.tgId}`)
-                    .setValue(u.tgId)
+                    .setValue(String(u.tgId))
             );
         });
 

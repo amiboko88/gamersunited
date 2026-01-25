@@ -65,16 +65,22 @@ class MVPRenderer {
 
                 /* כתר */
                 .crown-icon {
-                    font-size: 120px;
-                    filter: drop-shadow(0 0 30px #ffd700);
-                    margin-bottom: -40px; z-index: 20;
+                    position: absolute;
+                    top: -90px;
+                    left: 50%;
+                    transform: translateX(-50%); 
+                    width: 100px;
+                    height: 100px;
+                    z-index: 20;
+                    filter: drop-shadow(0 0 20px #ffd700);
                     animation: float 3s ease-in-out infinite;
                 }
 
                 /* תמונת פרופיל */
                 .avatar-container {
                     position: relative;
-                    margin: 20px 0;
+                    margin: 60px 0 20px; /* More top margin for crown space */
+                    display: flex; justify-content: center;
                 }
                 
                 .avatar {
@@ -132,13 +138,12 @@ class MVPRenderer {
             <div class="ring"></div>
             
             <div class="card-content">
-                <div class="crown-icon">
-                    <svg viewBox="0 0 576 512" fill="#ffd700" width="100" height="100" style="overflow: visible;">
-                        <path d="M576 136c0 22.09-17.91 40-40 40c-.248 0-.4551-.1266-.7031-.1308l-50.49 247.7C484 424.5 482.2 424.9 480.2 424.9H94.18c-2.127 0-3.936-.459-4.707-.7686L39.04 175.9C38.71 175.9 38.46 176 38.1 176c-22.09 0-40-17.91-40-40S17.91 96 40 96c14.07 0 26.54 7.29 33.91 18.25l133.7 200.7L314 59.45c4.78-7.98 13.91-12.27 23.36-10.96c9.46 1.3 17.13 7.82 19.63 16.92l5.65 20.66L427.3 103.6c5.84-24.31 29.57-39.7 54.04-35.34c24.47 4.36 40.57 27.69 36.6 51.69c-1.31 7.9-5.18 14.77-10.63 19.96zM96.79 469.8l-12.75 8.924C80.37 481.3 80 482.6 80 484c0 15.46 12.54 28 28 28h360c15.46 0 28-12.54 28-28c0-1.408-.3652-2.736-1.037-5.264l-12.75-8.924C480.7 468.6 480.4 468.3 480.2 468h-384C95.53 468.3 95.27 468.6 96.79 469.8z"/>
-                    </svg>
-                </div>
-                
                 <div class="avatar-container">
+                    <div class="crown-icon">
+                        <svg viewBox="0 0 576 512" fill="#ffd700" width="100%" height="100%" style="overflow: visible;">
+                            <path d="M576 136c0 22.09-17.91 40-40 40c-.248 0-.4551-.1266-.7031-.1308l-50.49 247.7C484 424.5 482.2 424.9 480.2 424.9H94.18c-2.127 0-3.936-.459-4.707-.7686L39.04 175.9C38.71 175.9 38.46 176 38.1 176c-22.09 0-40-17.91-40-40S17.91 96 40 96c14.07 0 26.54 7.29 33.91 18.25l133.7 200.7L314 59.45c4.78-7.98 13.91-12.27 23.36-10.96c9.46 1.3 17.13 7.82 19.63 16.92l5.65 20.66L427.3 103.6c5.84-24.31 29.57-39.7 54.04-35.34c24.47 4.36 40.57 27.69 36.6 51.69c-1.31 7.9-5.18 14.77-10.63 19.96zM96.79 469.8l-12.75 8.924C80.37 481.3 80 482.6 80 484c0 15.46 12.54 28 28 28h360c15.46 0 28-12.54 28-28c0-1.408-.3652-2.736-1.037-5.264l-12.75-8.924C480.7 468.6 480.4 468.3 480.2 468h-384C95.53 468.3 95.27 468.6 96.79 469.8z"/>
+                        </svg>
+                    </div>
                     <img src="${mvpData.avatar}" class="avatar" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
                 </div>
 

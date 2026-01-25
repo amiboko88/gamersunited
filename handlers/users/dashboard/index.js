@@ -153,7 +153,8 @@ class DashboardHandler {
             await interaction.followUp({ content: '✅ **חובר בהצלחה!** (הוסר מהרשימות)', ephemeral: true });
             await platformManager.showTelegramDashboard(interaction);
         } catch (e) {
-            await interaction.followUp({ content: '❌ שגיאה בחיבור.', ephemeral: true });
+            log(`❌ [TgLink] Error: ${e.message}`);
+            await interaction.followUp({ content: `❌ שגיאה בחיבור: ${e.message}`, ephemeral: true });
         }
     }
 

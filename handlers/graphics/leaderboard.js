@@ -34,11 +34,11 @@ class LeaderboardRenderer {
                 * { box-sizing: border-box; }
 
                 body {
-                    margin: 0; padding: 60px; width: 1400px; min-height: 100vh;
+                    margin: 0; padding: 60px; width: 1800px;
                     background: #101010;
                     background-image: radial-gradient(circle at 50% -20%, #202025 0%, #101010 60%);
-                    /* Added Emoji fonts to fallback stack */
-                    font-family: 'Outfit', 'Segoe UI Emoji', 'Noto Color Emoji', 'Apple Color Emoji', sans-serif; 
+                    /* Robust Layout & Fonts for 3344 Squares Issue */
+                    font-family: 'Outfit', 'Segoe UI Emoji', 'Noto Color Emoji', 'Apple Color Emoji', 'Arial', sans-serif; 
                     color: white; 
                     display: flex; flex-direction: column; align-items: center;
                 }
@@ -173,9 +173,9 @@ class LeaderboardRenderer {
         </html>`;
 
         // שימוש במנוע הליבה (Core)
-        // רוחב 1400 נותן מראה רחב וגדול ("Premium")
+        // רוחב 1800 נותן מראה רחב וגדול ("Premium")
         // גובה הותאם ל-5 שורות מרווחות
-        return core.render(html, 1400, 1600, true);
+        return core.render(html, 1800, 1600, true);
     }
 }
 

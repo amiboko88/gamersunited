@@ -91,7 +91,7 @@ class DesertersCampaign {
 
             // 3. Send Message
             const jid = `${phone}@s.whatsapp.net`;
-            const caption = `היי ${cardData.name}, שמעון כאן.\nעבר הרבה זמן. הנתונים שלך מעלים אבק, אבל אנחנו זוכרים.\n\nהאם תרצה לחזור הביתה?`;
+            const caption = `היי ${cardData.name}, שמעון כאן.\nהמערכת שלי זיהתה שכבר היית אצלנו בקבוצה (Gamers United).\nהנתונים שלך עדיין שמורים אצלנו - האם תרצה לחזור הביתה?`;
 
             await sock.sendMessage(jid, {
                 image: imageBuffer,
@@ -146,10 +146,10 @@ class DesertersCampaign {
         - SPECIAL: You MUST include the link: ${CAMPAIGN_GROUP_LINK}
 
         SCENARIO D: CONFUSION / SUSPICION / FEAR ("Who is this?", "How did you get my number?", "Spam")
-        - ACTION: DE-ESCALATE IMMEDIATELY. BE FRIENDLY.
-        - TONE: "Brotherly", "Chill", "Explanatory".
-        - CONTENT: "Relax brother, it's Shimon from Gamers United (Ami's group). Just wanted to say hi."
-        - CRITICAL: DO NOT be toxic here. We don't want to be reported.
+        - ACTION: DE-ESCALATE IMMEDIATELY. BE PROFESSIONAL & POLITE.
+        - TONE: "Chill", "Explanatory", "Safe".
+        - CONTENT: "Relax brother, everything is fine. Just inviting you back to our WhatsApp group (Gamers United). If you want to join, reply and I'll send a link. If not, have a wonderful day."
+        - CRITICAL: NO data leaks ("Ami upgraded me"), NO toxicity. Just pure polite explanation to avoid reports.
 
         OUTPUT FORMAT JSON:
         {

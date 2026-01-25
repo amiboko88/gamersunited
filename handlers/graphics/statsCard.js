@@ -54,12 +54,9 @@ async function generateMatchCard(matches, options = {}) {
             body { 
                 margin: 0; padding: 0; width: ${width}px; height: ${height}px;
                 background: #020617; /* Deep Slate */
-                background-image: 
-                    linear-gradient(45deg, rgba(30, 41, 59, 0.4) 25%, transparent 25%, transparent 75%, rgba(30, 41, 59, 0.4) 75%, rgba(30, 41, 59, 0.4)),
-                    linear-gradient(45deg, rgba(30, 41, 59, 0.4) 25%, transparent 25%, transparent 75%, rgba(30, 41, 59, 0.4) 75%, rgba(30, 41, 59, 0.4));
-                background-size: 60px 60px;
-                background-position: 0 0, 30px 30px;
-                font-family: 'Outfit', sans-serif;
+                /* Removed complex pattern to fix "bad background" */
+                background-image: radial-gradient(circle at 50% -20%, #1e293b 0%, #020617 70%);
+                font-family: 'Outfit', 'Segoe UI Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
                 color: white;
                 display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
                 position: relative;
@@ -130,7 +127,7 @@ async function generateMatchCard(matches, options = {}) {
             .rank { color: #64748b; font-weight: 900; font-size: 28px; }
             .mvp-row .rank { color: #fbbf24; }
 
-            .name { display: flex; align-items: center; gap: 15px; color: #f1f5f9; letter-spacing: -0.5px; }
+            .name { display: flex; align-items: center; gap: 15px; color: #f1f5f9; letter-spacing: -0.5px; font-family: 'Outfit', 'Segoe UI Emoji', 'Arial', sans-serif; }
             .mvp-row .name { color: #ffffff; text-shadow: 0 0 20px rgba(251, 191, 36, 0.3); }
 
             .stat { font-family: 'Outfit', monospace; letter-spacing: -1px; }

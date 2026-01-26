@@ -115,9 +115,9 @@ async function execute(args, userId, chatId) {
         let stats = { kills: 0, damage: 0, matches: 0, score: 0 };
         gamesSnap.forEach(doc => {
             const d = doc.data();
-            stats.kills += (d.kills || 0);
-            stats.damage += (d.damage || 0);
-            stats.score += (d.score || 0);
+            stats.kills += (parseInt(d.kills) || 0);
+            stats.damage += (parseInt(d.damage) || 0);
+            stats.score += (parseInt(d.score) || 0);
             stats.matches++;
         });
 
@@ -130,14 +130,38 @@ async function execute(args, userId, chatId) {
 
         if (!imageBuffer) return "Failed to generate card.";
 
-        // 5. Send
+        // 5. Generate Dynamic Sexy/Toxic Caption
+        const { getWhatsAppSock } = require('../../../whatsapp/index');
+        const brain = require('../brain'); // Circular dependency handled by require inside function usually safe, or pass brain instance
+
+        let caption = `🪖 *OPERATOR CARD:* ${targetName}\n📊 K/D: ${stats.kdr}`;
+
+        try {
+            const prompt = `
+            You are Shimon, a toxic/sexy AI gamer.
+            Write a ONE-LINE Hebrew slang caption for this player's stats:
+            Player: ${targetName}
+            K/D: ${stats.kdr}
+            Matches: ${stats.matches}
+            
+            Style: ${stats.kdr > 2 ? 'Impressed, Flirty (if female), Respect' : 'Roasting, Mocking, "Go practice"'}
+            Language: Hebrew Slang (Israeli Army/Street).
+            Max Length: 10 words. Cannot be boring.
+            `;
+            const dynamicText = await brain.generateInternal(prompt);
+            if (dynamicText) caption = dynamicText.replace(/"/g, '');
+        } catch (e) {
+            log(`⚠️ [ShowProfile] Caption Gen Failed: ${e.message}`);
+        }
+
+        // 6. Send
         const sock = getWhatsAppSock();
         if (sock && chatId) {
             await sock.sendMessage(chatId, {
                 image: imageBuffer,
-                caption: `🪖 **OPERATOR CARD:** ${targetName}\n📊 K/D: ${stats.kdr} | Matches: ${stats.matches}`
+                caption: caption
             });
-            return `Displaying profile card for ${targetName}.`;
+            return `[RESPONSE_SENT] Displayed profile card for ${targetName}.`;
         }
 
         return "Error: Socket unavailable.";

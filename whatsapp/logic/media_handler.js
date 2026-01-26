@@ -158,8 +158,9 @@ async function handleScanCommand(sock, msg, chatJid, dbUserId, isAdmin, directBu
 
         // Case 3: Success
         else {
-            // ✅ SUCCESS -> Standard Report
-            await sock.sendMessage(chatJid, { text: `📊 **Scan Report:**\n${report}` });
+            // ✅ SUCCESS -> Visual Only (Reaction + Image from cod_stats)
+            // User requested to REMOVE "Scan Report" text.
+            log(`📊 [Scan] Report generated successfully (Silent Mode).`);
             processor.touchBotActivity();
 
             // React to original message to confirm processing

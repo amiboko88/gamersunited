@@ -141,7 +141,7 @@ async function execute(args, userId, chatId, imageBuffers) {
 
         // Store the result for the graphic later
         if (foundUser) {
-            log(`✅ [SmartLink] Linked '${match.username}' -> ${foundUser.displayName} (${matchReason})`);
+            // log(`✅ [SmartLink] Linked '${match.username}' -> ${foundUser.displayName} (${matchReason})`); // Too verbose
             resolvedNamesMap.set(match.username, foundUser.displayName);
         } else {
             // Sanitize raw username for display if not found
@@ -154,9 +154,10 @@ async function execute(args, userId, chatId, imageBuffers) {
         const statData = {
             game: 'Warzone',
             mode: match.mode || 'Unknown',
-            kills: match.kills,
-            damage: match.damage,
-            placement: match.placement || 0,
+            kills: parseInt(match.kills) || 0,
+            damage: parseInt(match.damage) || 0,
+            score: parseInt(match.score) || 0,
+            placement: parseInt(match.placement) || 0,
             evidence_batch: batchId,
             proofUrl: proofUrl,
             timestamp: new Date()
@@ -199,63 +200,20 @@ async function execute(args, userId, chatId, imageBuffers) {
 
     await batchOps.commit();
 
+    log(`✅ [SmartLink] Processed ${args.matches.length} matches. Saved: ${savedCount}, Pending: ${pendingCount}.`);
+
     // 4. GENERATE GRAPHIC CARD 🎨 (Aggregated Summary)
-    try {
-        const graphics = require('../../graphics/statsCard');
+    // 🛑 SILENCED: User requested NO IMMEDIATE REPORT (Night Spam Prevention).
+    // The data is saved. The report will be generated daily at 12:00 PM via 'dailyRecap.js'.
 
-        // Helper: Normalize & Aggregate
-        const aggregatedMap = new Map();
+    /* 
+    const graphics = require('../../graphics/statsCard');
+    const aggregatedMap = new Map();
+    // ... (Logic preserved in comments or removed if clutter)
+    // Removing generation logic to save resources too.
+    */
 
-        args.matches.forEach(m => {
-            // Use the CONSISTENT name we resolved earlier
-            const displayName = resolvedNamesMap.get(m.username) || m.username;
-
-            if (!aggregatedMap.has(displayName)) {
-                aggregatedMap.set(displayName, {
-                    username: displayName,
-                    kills: 0,
-                    damage: 0,
-                    score: 0,
-                    matches: 0,
-                    bestPlacement: 99
-                });
-            }
-
-            const entry = aggregatedMap.get(displayName);
-            entry.kills += (parseInt(m.kills) || 0);
-            entry.damage += (parseInt(m.damage) || 0);
-            entry.score += (parseInt(m.score) || 0);
-            entry.matches += 1;
-            if (m.placement && m.placement < entry.bestPlacement) entry.bestPlacement = m.placement;
-        });
-
-        const summaryStats = Array.from(aggregatedMap.values());
-
-        // Pass "isSummary: true" if we aggregated multiple matches
-        // But the user always wants the summary view if multiple images.
-        // Actually, let's just pass the aggregated list.
-
-        const imageBuffer = await graphics.generateMatchCard(summaryStats, {
-            isAggregated: buffers.length > 1, // Only show "Totals" badge if multiple images used
-            totalGames: buffers.length // Approximation of games count
-        });
-
-        if (chatId) {
-            if (chatId.includes('@')) {
-                const { getWhatsAppSock } = require('../../../whatsapp/index');
-                const sock = getWhatsAppSock();
-                if (sock) {
-                    await sock.sendMessage(chatId, {
-                        image: imageBuffer,
-                        caption: `📊 דוח משחק - הנתונים נשמרו בהצלחה ✅`,
-                        mimetype: 'image/png'
-                    });
-                }
-            }
-        }
-    } catch (gErr) {
-        log(`❌ [COD Stats] Graphics Error: ${gErr.message}`);
-    }
+    log(`✅ [COD Stats] Stats saved silently. Daily Report will cover this.`);
 
     // 5. Return Text Summary
     // 🤫 SILENCE: Don't send "Scan Report" text effectively. The Image/Reaction is enough.

@@ -3,11 +3,42 @@ const core = require('./core');
 class VoiceRenderer {
 
     /**
+     * Helper: Convert "Fancy" Unicode (Math Bold/Italic) to standard ASCII
+     * Solves the "Squares" issue when users name channels "𝗕𝗙𝟲" etc.
+     */
+    normalizeFancyText(text) {
+        if (!text) return "";
+        return text
+            .normalize("NFKD")
+            // Replace Mathematical Bold/Italic/Monospace ranges with ASCII
+            .replace(/[\u{1D400}-\u{1D7FF}]/gu, (char) => {
+                const code = char.codePointAt(0);
+                // Bold A-Z
+                if (code >= 0x1D400 && code <= 0x1D419) return String.fromCharCode(code - 0x1D400 + 65);
+                // Bold a-z
+                if (code >= 0x1D41A && code <= 0x1D433) return String.fromCharCode(code - 0x1D41A + 97);
+                // Sans-Bold A-Z (The ones used in 𝗕𝗙𝟲)
+                if (code >= 0x1D5D4 && code <= 0x1D5ED) return String.fromCharCode(code - 0x1D5D4 + 65);
+                // Sans-Bold a-z
+                if (code >= 0x1D5EE && code <= 0x1D607) return String.fromCharCode(code - 0x1D5EE + 97);
+                // Bold Digits 0-9
+                if (code >= 0x1D7CE && code <= 0x1D7D7) return String.fromCharCode(code - 0x1D7CE + 48);
+                // Sans-Bold Digits 0-9
+                if (code >= 0x1D7EC && code <= 0x1D7F5) return String.fromCharCode(code - 0x1D7EC + 48);
+
+                return char;
+            })
+            .replace(/・/g, " • ") // Fix the "Small Circle" layout disruptor
+            .replace(/\|/g, " | "); // Ensure pipes are spaced
+    }
+
+    /**
      * מייצר תמונה מעוצבת של "שידור חי" עם האווטרים של המשתמשים
      */
     async generateCard(channelName, members) {
-        // We want to DISPLAY emojis, not strip them. PFP sync logic ensures names are safe.
-        const SafeChannelName = channelName.trim() || "Voice Channel";
+        // Normalize the name to kill the squares
+        const cleanName = this.normalizeFancyText(channelName);
+        const SafeChannelName = cleanName.trim() || "Voice Channel";
 
         // לוגיקה לאווטרים: אם יש מעל 5, נחלק לשורות (עד 10)
         // אם יש המון, נציג 8 ופלוס

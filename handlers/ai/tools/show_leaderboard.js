@@ -66,9 +66,9 @@ async function execute(args, userId, chatId) {
 
                 games.forEach(g => {
                     const d = g.data();
-                    p.kills += (d.kills || 0);
-                    p.damage += (d.damage || 0);
-                    p.score += (d.score || 0);
+                    p.kills += (parseInt(d.kills) || 0);
+                    p.damage += (parseInt(d.damage) || 0);
+                    p.score += (parseInt(d.score) || 0);
                     p.matches++;
                 });
 
@@ -114,7 +114,7 @@ async function execute(args, userId, chatId) {
                 image: imageBuffer,
                 caption: `🏆 **${periodText} Leaderboard**\nSorted by: ${sortStat.toUpperCase()}`
             });
-            return "Displaying leaderboard image.";
+            return "[RESPONSE_SENT] Displaying leaderboard image.";
         } else {
             return "Error: Socket unavailable.";
         }

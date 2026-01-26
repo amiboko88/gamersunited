@@ -112,11 +112,14 @@ class ShimonBrain {
                         JSON.parse(toolCall.function.arguments),
                         userId,
                         chatId,
-                        JSON.parse(toolCall.function.arguments),
-                        userId,
-                        chatId,
                         imageBuffers // ✅ Passing ARRAY now
                     );
+
+                    // 🛑 SILENT SIGNAL: If tool handled the response completely
+                    if (String(result).includes('[RESPONSE_SENT]')) {
+                        log(`🤫 [Brain] Tool handled response. Silence mode activated.`);
+                        return ""; // Exit immediately, no text reply
+                    }
 
                     messages.push({
                         role: "tool",

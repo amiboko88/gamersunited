@@ -34,7 +34,7 @@ async function generateMatchCard(matches, options = {}) {
         <div class="row ${isMvp ? 'mvp-row' : ''}">
             <div class="rank">#${i + 1}</div>
             <div class="name">
-                ${isMvp ? '👑 ' : ''}${p.username}
+                ${isMvp ? '👑 ' : ''}${normalizeFancyText(p.username)}
             </div>
             <div class="stat kills">${p.kills}</div>
             <div class="stat damage">${p.damage}</div>
@@ -176,6 +176,24 @@ async function generateMatchCard(matches, options = {}) {
     `;
 
     return core.render(html, width, height);
+}
+
+function normalizeFancyText(text) {
+    if (!text) return "";
+    return text
+        .normalize("NFKD")
+        .replace(/[\u{1D400}-\u{1D7FF}]/gu, (char) => {
+            const code = char.codePointAt(0);
+            if (code >= 0x1D400 && code <= 0x1D419) return String.fromCharCode(code - 0x1D400 + 65);
+            if (code >= 0x1D41A && code <= 0x1D433) return String.fromCharCode(code - 0x1D41A + 97);
+            if (code >= 0x1D5D4 && code <= 0x1D5ED) return String.fromCharCode(code - 0x1D5D4 + 65);
+            if (code >= 0x1D5EE && code <= 0x1D607) return String.fromCharCode(code - 0x1D5EE + 97);
+            if (code >= 0x1D7CE && code <= 0x1D7D7) return String.fromCharCode(code - 0x1D7CE + 48);
+            if (code >= 0x1D7EC && code <= 0x1D7F5) return String.fromCharCode(code - 0x1D7EC + 48);
+            return char;
+        })
+        .replace(/・/g, " • ")
+        .replace(/\|/g, " | ");
 }
 
 module.exports = { generateMatchCard };

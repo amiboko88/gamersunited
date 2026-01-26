@@ -227,6 +227,12 @@ module.exports = {
             // await intelManager.checkNews();
         });
 
+        // --- 📊 Daily War Report (Every day at 12:00) ---
+        cron.schedule('0 12 * * *', async () => {
+            const recap = require('./campaigns/dailyRecap');
+            await recap.executeDailyRecap();
+        }, { timezone: "Asia/Jerusalem" });
+
         log('[Scheduler] ✅ כל המשימות תוזמנו בהצלחה.');
     }
 };

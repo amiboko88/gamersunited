@@ -86,7 +86,8 @@ async function execute(sock, chatId) {
             const scanResult = await mediaHandler.handleScanCommand(sock, imagesToProcess[imagesToProcess.length - 1], chatId, null, true, buffers, true);
 
             if (scanResult && scanResult.type === 'duplicate') {
-                imageContext = `\n[SYSTEM NOTE]: The images are DUPLICATES (History). You already analyzed them. IGNORE THEM completely in your reply unless they asked "Did you see this?". Do NOT say "I recall these stats". Just be cool.`;
+                log(`🧟 [Resurrection] Duplicates detected. FORCING SILENCE. 🤫`);
+                return; // 🛑 HARD STOP: Do not even ask the AI. Sleep tight.
             } else if (scanResult && scanResult.reason === 'quality') {
                 imageContext = `\n[SYSTEM NOTE]: The images they sent were UNREADABLE (Bad quality). Mock them for taking bad photos while you were gone.`;
             } else {

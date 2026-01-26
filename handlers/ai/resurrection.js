@@ -105,13 +105,13 @@ async function execute(sock, chatId) {
     
     Task: Decide if you need to reply.
     - If they completely ignored you / General chat: Reply "SKIP".
-    - If they mentioned you, the bot, the crash, or sent images: Reply.
+    - If they mentioned you, the bot, the crash, or sent images THAT ARE NEW: Reply.
+    - If images are DUPLICATES: REPLY "SKIP". Do not say anything. Silence is better than spam.
     
     Response Rules (If replying):
     1. Tone: Cool, dismissive, Hebrew Slang.
-    2. If images are DUPLICATES: Say "I already have these, relaxation". Don't accuse of spam.
-    3. If only insults: Roast them back ("I heard you crying").
-    4. MAX 15 WORDS.
+    2. If only insults: Roast them back ("I heard you crying").
+    3. MAX 15 WORDS.
     `;
 
     // Use a numeric ID to pass Firestore validation (UserUtils strips non-digits)

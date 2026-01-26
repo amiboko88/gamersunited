@@ -222,9 +222,9 @@ async function execute(args, userId, chatId, imageBuffers) {
             }
 
             const entry = aggregatedMap.get(displayName);
-            entry.kills += (m.kills || 0);
-            entry.damage += (m.damage || 0);
-            entry.score += (m.score || 0); // Assuming Gemini extracts score or we calc it
+            entry.kills += (parseInt(m.kills) || 0);
+            entry.damage += (parseInt(m.damage) || 0);
+            entry.score += (parseInt(m.score) || 0);
             entry.matches += 1;
             if (m.placement && m.placement < entry.bestPlacement) entry.bestPlacement = m.placement;
         });

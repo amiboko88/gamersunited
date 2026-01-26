@@ -156,7 +156,6 @@ async function handleMessageLogic(sock, msg, text, resolvedPhone) {
         } catch (e) {
             log(`❌ [Core] Error: ${e.message}`);
         } finally {
-            clearTimeout(lockTimeout);
             setTimeout(() => processingGroups.delete(chatJid), 2000);
         }
     });

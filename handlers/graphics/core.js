@@ -7,11 +7,20 @@ class GraphicsCore {
     }
 
     async getBrowser() {
-        if (!this.browser || !this.browser.isConnected()) {
+        if (this.browser) {
+            // Check if process is still alive
+            if (!this.browser.isConnected() || !this.browser.process()) {
+                // console.log('♻️ [Graphics] Browser disconnected/dead. Restarting...');
+                try { await this.browser.close().catch(() => { }); } catch (e) { }
+                this.browser = null;
+            }
+        }
+
+        if (!this.browser) {
             // console.log('🚀 [Graphics] Launching new browser instance...');
             this.browser = await puppeteer.launch({
                 headless: 'new',
-                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
             });
         }
         return this.browser;
@@ -27,12 +36,22 @@ class GraphicsCore {
             page = await browser.newPage();
 
             await page.setViewport({ width: width, height: height || 1000, deviceScaleFactor: 2 });
-            await page.setContent(html, { waitUntil: 'networkidle0' });
+
+            // Optimization: 'domcontentloaded' is much faster than 'networkidle0'
+            // Added explicit timeout to prevent hanging forever
+            await page.setContent(html, {
+                waitUntil: 'domcontentloaded',
+                timeout: 15000
+            });
 
             if (fullPage) {
                 const bodyHeight = await page.evaluate(() => document.body.scrollHeight);
                 await page.setViewport({ width: width, height: bodyHeight, deviceScaleFactor: 2 });
             }
+
+            // Small delay to ensure heavy fonts (Google Fonts) finish rendering even after DOM ready
+            // Safe trade-off: 500ms delay vs infinite hang on 'networkidle0'
+            await new Promise(r => setTimeout(r, 500));
 
             if (format === 'jpeg') {
                 return await page.screenshot({ type: 'jpeg', quality: 90, fullPage: fullPage });
@@ -42,7 +61,11 @@ class GraphicsCore {
 
         } catch (err) {
             console.error(`❌ [GraphicsCore] Error: ${err.message}`);
-            return null;
+            // If browser crashed, kill ref so we restart next time
+            if (err.message.includes('Session closed') || err.message.includes('not opened')) {
+                this.browser = null;
+            }
+            throw err; // Propagate error so outer timeouts know
         } finally {
             if (page) await page.close().catch(() => { });
         }

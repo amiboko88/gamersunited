@@ -90,11 +90,18 @@ async function handleSessionEnd(guild, voiceChannel) {
 
         const summaryStats = Array.from(aggregatedMap.values());
 
-        // 4. Generate Graphic
-        const imageBuffer = await graphics.generateMatchCard(summaryStats, {
-            isAggregated: true,
-            totalGames: allGames.length
-        });
+        // 4. Generate Graphic (with protection)
+        log(`🎨 [Session] Rendering graphics...`);
+
+        const imageBuffer = await Promise.race([
+            graphics.generateMatchCard(summaryStats, {
+                isAggregated: true,
+                totalGames: allGames.length
+            }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout generating graphics")), 20000))
+        ]);
+
+        log(`✅ [Session] Graphics generated (${imageBuffer.length} bytes). Sending...`);
 
         // 5. Send to Discord (General or specific channel)
         // Try to find a text channel named "general", "chat", or "warzone"

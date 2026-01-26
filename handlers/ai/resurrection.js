@@ -32,11 +32,15 @@ async function execute(sock, chatId) {
 
     if (relevantMessages.length === 0) return;
 
-    // 2. Identify "The Gap"
-    // Find messages that mention Shimon but have NO Bot Reply after them
+    const mediaHandler = require('../../whatsapp/logic/media_handler');
+
+    // ...
+
+    // 2. Identify "The Gap" (Text & Images)
     const botId = sock.user?.id?.split(':')[0];
 
     let missedMentions = [];
+    let missedImages = []; // Stores the message objects
     let lastBotReplyTime = 0;
 
     // Sort by time ascending
@@ -46,54 +50,71 @@ async function execute(sock, chatId) {
         const isBot = msg.key.fromMe || (msg.key.participant && msg.key.participant.includes(botId));
         const timestamp = (msg.messageTimestamp || 0) * 1000;
         const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || "";
+        const hasImage = msg.message?.imageMessage;
 
         if (isBot) {
             lastBotReplyTime = timestamp;
             continue;
         }
 
-        // Check for triggers regarding Shimon Death/Status
-        const cleanText = text.toLowerCase();
-        const triggers = ["שמעון", "מת", "נפל", "בוט", "לא עונה", "מסנן", "מוצץ", "זבל", "איפה אתה"];
+        // Only count if UNANSWERED
+        if (lastBotReplyTime < timestamp) {
+            const senderName = msg.pushName || msg.key.participant?.split('@')[0] || "Unknown";
 
-        if (triggers.some(t => cleanText.includes(t))) {
-            // Check if this specific message got a reply LATER?
-            // Heuristic: If lastBotReplyTime > timestamp, we probably answered it (or something else).
-            // But if the bot replied 10 mins ago, and this msg is 5 mins ago, and no bot reply since...
-            // Then it is UNANSWERED.
-            if (lastBotReplyTime < timestamp) {
-                const senderName = msg.pushName || msg.key.participant?.split('@')[0] || "Unknown";
+            // Check for Insults/Mentions
+            const cleanText = text.toLowerCase();
+            const triggers = ["שמעון", "מת", "נפל", "בוט", "לא עונה", "מסנן", "מוצץ", "זבל", "איפה אתה", "תתעד", "סרוק"];
+
+            if (triggers.some(t => cleanText.includes(t))) {
                 missedMentions.push({ name: senderName, text: text });
+            }
+
+            // Check for Images
+            if (hasImage) {
+                missedImages.push(msg);
             }
         }
     }
 
-    if (missedMentions.length === 0) {
-        log(`🧟 [Resurrection] No missed mentions found.`);
+    if (missedMentions.length === 0 && missedImages.length === 0) {
+        log(`🧟 [Resurrection] No missed mentions or images found.`);
         return;
     }
 
-    log(`🧟 [Resurrection] Found ${missedMentions.length} missed messages. Revenge time.`);
+    log(`🧟 [Resurrection] Found ${missedMentions.length} texts and ${missedImages.length} images.`);
 
-    // 3. Generate Comeback
+    // 3. Process Missed Images (If any)
+    let imageContext = "";
+    if (missedImages.length > 0) {
+        const buffers = await mediaHandler.downloadImages(missedImages, sock);
+        if (buffers.length > 0) {
+            // Trigger Silent Scan (Auto Mode) to save stats
+            const scanResult = await mediaHandler.handleScanCommand(sock, missedImages[missedImages.length - 1], chatId, null, true, buffers, true);
+
+            if (scanResult && scanResult.type === 'duplicate') {
+                imageContext = `\n[SYSTEM NOTE]: The images they sent were DUPLICATES (User tried to spam/scam). Roast them for sending old stats while you were gone.`;
+            } else {
+                imageContext = `\n[SYSTEM NOTE]: You also found ${buffers.length} scoreboard images they sent while you were gone. I have already processed them. Mention this.`;
+            }
+        }
+    }
+
+    // 4. Generate Comeback
     const prompt = `
-    Context: You (Shimon) just restarted after a crash.
+    Context: You (Shimon) just restarted after a crash/nap.
     
     TRANSCRIPT OF MISSED MESSAGES:
     ${missedMentions.map(m => `- ${m.name}: "${m.text}"`).join('\n')}
+    ${imageContext}
     
-    Task: Decide if you need to reply.
-    - If they are just saying "bot is down" or technical stuff -> Reply "SKIP".
-    - If they are laughing at you, insulting you, or asking where you are -> Reply.
+    Task: Reply to the group.
     
-    Response Rules (If replying):
-    1. MAX 10 WORDS.
-    2. Be sharp, not dramatic. No "I have returned".
-    3. Just roast them for missing you.
-    
-    Example: "שמעתי אתכם, יא בכיינים. חזרתי."
-    Tone: Cool, dismissive.
-    Language: Hebrew (Slang).
+    Rules:
+    1. If duplicates found: Mock them ("Trying to scam me with old pics?").
+    2. If valid images: Apologize sarcastically but say you captured them ("Relax, stats are safe").
+    3. If only insults: Roast them back ("I heard you crying").
+    4. Language: Hebrew (Slang).
+    5. MAX 15 WORDS.
     `;
 
     // Use 'system' as user to bypass stats

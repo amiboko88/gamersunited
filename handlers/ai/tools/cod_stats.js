@@ -47,7 +47,12 @@ async function execute(args, userId, chatId, imageBuffers) {
     // Check if ANY of these images were processed before
     const seenSnap = await db.collection('processed_images').where('hash', 'in', hashes).get();
     if (!seenSnap.empty) {
-        return "⚠️ Images already processed. Duplicate stats ignored.";
+        // Return structured signal so Media Handler can trigger AI interaction
+        return JSON.stringify({
+            type: "duplicate",
+            message: "Images already processed.",
+            batchId: batchId
+        });
     }
 
     // 2. Upload Evidence to Storage (The Evidence Locker)
@@ -109,6 +114,20 @@ async function execute(args, userId, chatId, imageBuffers) {
             if (isMatch) matchReason = `Exact match on alias '${alias}'`;
             return isMatch;
         }));
+
+        // Priority 1.5: Simplified Equality (Handle "Yogi ツ" vs "Yogi")
+        // Removes all non-alphanumeric chars (keep only a-z, 0-9) and checks equal
+        if (!foundUser) {
+            const simpleClean = cleanName.replace(/[^a-z0-9]/g, '');
+            if (simpleClean.length >= 2) { // Safety: Don't match single letters like "a"
+                foundUser = users.find(u => u.aliases.some(alias => {
+                    const simpleAlias = alias.replace(/[^a-z0-9]/g, '');
+                    const isMatch = simpleAlias === simpleClean;
+                    if (isMatch) matchReason = `Simplified match ('${alias}' -> '${simpleAlias}' vs '${simpleClean}')`;
+                    return isMatch;
+                }));
+            }
+        }
 
         // Priority 2: Word Boundary/Token Match (e.g. "ami" matches "ami cohen" but NOT "familia")
         if (!foundUser) {

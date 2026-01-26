@@ -11,7 +11,7 @@ const userManager = require('../../handlers/users/manager');
 const mvpManager = require('../../handlers/voice/mvp_manager');
 
 // 💾 CONTINUOUS SAVING (Crash Protection)
-// Map Stores: { userId: startTime }
+// Map Stores: { userId: { sessionStart: number, lastCheckpoint: number } }
 const joinTimestamps = new Map();
 
 // Save every 5 minutes (300,000ms)
@@ -19,17 +19,15 @@ const joinTimestamps = new Map();
 setInterval(async () => {
     if (joinTimestamps.size === 0) return;
 
-    // log(`💾 [Voice] Periodic Save for ${joinTimestamps.size} active users...`);
     const now = Date.now();
     const SnapshotOps = [];
 
-    for (const [userId, startTime] of joinTimestamps.entries()) {
-        const durationMs = now - startTime;
-        if (durationMs > 60000) { // Only save if > 1 minute pending
-            const minutes = Math.round(durationMs / 60000);
+    for (const [userId, data] of joinTimestamps.entries()) {
+        const { lastCheckpoint } = data;
+        const durationMs = now - lastCheckpoint;
 
-            // We adding the minutes accrued SO FAR
-            // Then we reset the startTime to NOW.
+        if (durationMs > 60000) { // Only save if > 1 minute accrued since last save
+            const minutes = Math.round(durationMs / 60000);
 
             // 1. Add to DB Path
             if (userManager.addVoiceMinutes) {
@@ -41,14 +39,14 @@ setInterval(async () => {
                 SnapshotOps.push(xpManager.addVoiceXP(userId, minutes));
             }
 
-            // Reset timer to avoid double counting on next interval or leave
-            joinTimestamps.set(userId, now);
+            // Update checkpoint to NOW (so we don't double count these minutes)
+            data.lastCheckpoint = now;
+            joinTimestamps.set(userId, data);
         }
     }
 
-    // Execute all save promises in parallel (fire and forget mostly, but we await to confirm)
+    // Execute all save promises in parallel
     await Promise.allSettled(SnapshotOps);
-    // log(`✅ [Voice] Periodic Save Complete.`);
 
 }, 5 * 60 * 1000); // 5 Minutes
 
@@ -82,7 +80,8 @@ module.exports = {
 
             // --- כניסה לערוץ (Join) ---
             if (newChannel && !oldChannel) {
-                joinTimestamps.set(userId, now);
+                // Init Session
+                joinTimestamps.set(userId, { sessionStart: now, lastCheckpoint: now });
 
                 // עדכון "נראה לאחרונה" כבר בכניסה
                 await userManager.updateLastActive(userId);
@@ -105,33 +104,41 @@ module.exports = {
                 // Cancel MVP Timer if they leave
                 await mvpManager.handleExit(member);
 
-                const joinedAt = joinTimestamps.get(userId);
+                const sessionData = joinTimestamps.get(userId);
 
-                if (joinedAt) {
-                    const durationMs = now - joinedAt;
+                if (sessionData) {
+                    const { sessionStart, lastCheckpoint } = sessionData;
 
-                    // חישובים רק אם היה מחובר מעל דקה
-                    if (durationMs > 60000) {
-                        const minutes = Math.round(durationMs / 60000);
+                    // A. Total Session Time (For Logs)
+                    const totalDurationMs = now - sessionStart;
+                    const totalMinutes = Math.round(totalDurationMs / 60000);
 
-                        log(`⏱️ [Voice] ${member.displayName} היה מחובר ${minutes} דקות.`);
+                    // B. Final Increment (For DB) - Time since last checkpoint
+                    const finalChunkMs = now - lastCheckpoint;
+                    const finalChunkMinutes = Math.round(finalChunkMs / 60000);
 
-                        // א. מתן XP על זמן שיחה
-                        if (xpManager.addVoiceXP) {
-                            await xpManager.addVoiceXP(userId, minutes);
+                    // חישובים רק אם היה מחובר מעל דקה בסה"כ
+                    if (totalMinutes >= 1) {
+                        log(`⏱️ [Voice] ${member.displayName} היה מחובר ${totalMinutes} דקות.`);
+
+                        // א. מתן XP על זמן שיחה (השארית)
+                        if (xpManager.addVoiceXP && finalChunkMinutes > 0) {
+                            await xpManager.addVoiceXP(userId, finalChunkMinutes);
                         }
 
-                        // ב. עדכון זמן Voice כללי בפרופיל
-                        if (userManager.addVoiceMinutes) {
-                            await userManager.addVoiceMinutes(userId, minutes);
+                        // ב. עדכון זמן Voice כללי בפרופיל (השארית)
+                        if (userManager.addVoiceMinutes && finalChunkMinutes > 0) {
+                            await userManager.addVoiceMinutes(userId, finalChunkMinutes);
                         }
 
-                        // ג. עדכון סטטיסטיקות משחק (הקובץ ששלחת!)
-                        // בודקים אם המשתמש שיחק במשהו בזמן הזה
+                        // ג. עדכון סטטיסטיקות משחק
+                        // כאן נרצה לעדכן את המשתמש בכמות דקות המדויקת של הסשן *המשחקי* הנוכחי?
+                        // אם הוא שיחק כל הסשן - אנחנו רוצים לשמור את ה-CHUNK הסופי.
+                        // GameStats שומר מצטבר, אז שולחים לו את ה-CHUNK.
                         const activity = member.presence?.activities?.find(a => a.type === 0); // 0 = Playing
-                        if (activity && activity.name) {
-                            log(`🎮 [GameStats] מעדכן ${minutes} דקות על ${activity.name}`);
-                            await gameStats.updateGameStats(userId, activity.name, minutes);
+                        if (activity && activity.name && finalChunkMinutes > 0) {
+                            log(`🎮 [GameStats] מעדכן ${finalChunkMinutes} דקות (סופי) על ${activity.name}`);
+                            await gameStats.updateGameStats(userId, activity.name, finalChunkMinutes);
                         }
                     }
 
@@ -169,7 +176,7 @@ module.exports = {
                 if (voiceState.member && !voiceState.member.user.bot && voiceState.channelId) {
                     // Check if already tracking (safety)
                     if (!joinTimestamps.has(voiceState.id)) {
-                        joinTimestamps.set(voiceState.id, now);
+                        joinTimestamps.set(voiceState.id, { sessionStart: now, lastCheckpoint: now });
                         restoredCount++;
                     }
                 }

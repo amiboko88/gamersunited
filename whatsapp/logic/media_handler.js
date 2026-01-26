@@ -5,6 +5,7 @@ const voiceEngine = require('../../handlers/media/voice'); // Using the aligned 
 const { generateContent } = require('../../handlers/ai/gemini');
 const codStats = require('../../handlers/ai/tools/cod_stats');
 const db = require('../../utils/firebase');
+const shimonBrain = require('../../handlers/ai/brain');
 
 async function downloadImages(mediaArray, sock) {
     let buffers = [];
@@ -119,15 +120,38 @@ async function handleScanCommand(sock, msg, chatJid, dbUserId, isAdmin, directBu
     // Execute Stats Logic on Aggregated Results
     try {
         const report = await codStats.execute({ matches: allMatches }, dbUserId || 'ScanAdmin', chatJid, buffers);
-        // Always send report if matches found (even in Auto Mode)
-        await sock.sendMessage(chatJid, { text: `📊 **Scan Report:**\n${report}` });
 
-        // React to original message to confirm processing
-        if (msg.key) await sock.sendMessage(chatJid, { react: { text: "✅", key: msg.key } });
+        // 🧠 Intelligent Response Handling
+        let isJson = false;
+        let pReport = null;
+        try { pReport = JSON.parse(report); isJson = true; } catch (e) { }
+
+        if (isJson && pReport.type === 'duplicate') {
+            // 🛑 DUPLICATE DETECTED
+            // If Manual Mode (!isAutoMode) -> Roast Immediately
+            // If Auto Mode (Resurrection/Passive) -> Return signal, let caller decide (to avoid double msg)
+            if (!isAutoMode) {
+                log(`♻️ [Scan] Duplicate detected. Triggering Shimon roast...`);
+                const aiRoast = await shimonBrain.ask(dbUserId || 'User', 'whatsapp', "Why did you duplicate these images?", false, null, chatJid);
+                await sock.sendMessage(chatJid, { text: aiRoast }, { quoted: msg });
+            } else {
+                log(`♻️ [Scan] Duplicate detected (Auto Mode). Suppressing immediate roast.`);
+            }
+            return pReport; // ✅ Return result to caller
+        } else {
+            // ✅ SUCCESS -> Standard Report
+            await sock.sendMessage(chatJid, { text: `📊 **Scan Report:**\n${report}` });
+
+            // React to original message to confirm processing
+            if (msg.key) await sock.sendMessage(chatJid, { react: { text: "✅", key: msg.key } });
+
+            return { type: 'success', text: report };
+        }
 
     } catch (e) {
         if (!isAutoMode) await sock.sendMessage(chatJid, { text: `❌ Save Error: ${e.message}` });
         else log(`❌ [AutoScan] Save Error: ${e.message}`);
+        return { type: 'error', message: e.message };
     }
 }
 

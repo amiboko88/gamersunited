@@ -64,7 +64,11 @@ async function handleMessageLogic(sock, msg, text, resolvedPhone) {
             }
 
             // A. Admin Commands
-            if (combinedText === 'סרוק' && isAdmin) {
+            const cleanText = combinedText.replace(/@\d+/g, '').trim().toLowerCase();
+            const scanKeywords = ['סרוק', 'תתעד', 'תעד', 'צלם', 'scan', 'document'];
+            const isScanRequest = scanKeywords.some(k => cleanText.startsWith(k) || cleanText === k);
+
+            if (isScanRequest && isAdmin) {
                 // If the command came WITH active images (e.g. caption on image), use them.
                 const directScanBuffers = await mediaHandler.downloadImages(mediaArray, sock);
                 await mediaHandler.handleScanCommand(sock, finalMsg, chatJid, linkedDbId, isAdmin, directScanBuffers);

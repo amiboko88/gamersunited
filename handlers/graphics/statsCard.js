@@ -49,7 +49,7 @@ async function generateMatchCard(matches, options = {}) {
     <html lang="en">
     <head>
         <style>
-            @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;600;900&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Outfit:wght@300;600;900&display=swap');
             
             body { 
                 margin: 0; padding: 0; width: ${width}px; height: ${height}px;
@@ -127,7 +127,7 @@ async function generateMatchCard(matches, options = {}) {
             .rank { color: #64748b; font-weight: 900; font-size: 28px; }
             .mvp-row .rank { color: #fbbf24; }
 
-            .name { display: flex; align-items: center; gap: 15px; color: #f1f5f9; letter-spacing: -0.5px; font-family: 'Outfit', 'Segoe UI Emoji', 'Arial', sans-serif; }
+            .name { display: flex; align-items: center; gap: 15px; color: #f1f5f9; letter-spacing: -0.5px; font-family: 'Outfit', 'Segoe UI Emoji', 'Noto Color Emoji', 'Arial', sans-serif; }
             .mvp-row .name { color: #ffffff; text-shadow: 0 0 20px rgba(251, 191, 36, 0.3); }
 
             .stat { font-family: 'Outfit', monospace; letter-spacing: -1px; }
@@ -140,6 +140,7 @@ async function generateMatchCard(matches, options = {}) {
                 background: #0f172a; color: #94a3b8; 
                 padding: 6px 12px; border-radius: 8px; 
                 text-align: center; width: fit-content; border: 1px solid rgba(255,255,255,0.05);
+                font-family: 'Outfit', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
             }
             .high-note { background: #be123c; color: white; border: none; box-shadow: 0 0 15px rgba(190, 18, 60, 0.5); }
 

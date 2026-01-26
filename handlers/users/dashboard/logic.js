@@ -62,11 +62,14 @@ class DashboardLogic {
         setStatusCallback(`🕵️ סורק ${users.length} משתמשים...`);
 
         for (const user of users) {
+            const fullName = user.displayName || 'Unknown User';
+            const parts = fullName.split(' ');
+
             const mockTgUser = {
                 id: user.tgId,
-                username: user.username,
-                first_name: user.displayName.split(' ')[0],
-                last_name: user.displayName.split(' ').slice(1).join(' ')
+                username: user.username, // Might be null/undefined, scanner handles it
+                first_name: parts[0],
+                last_name: parts.length > 1 ? parts.slice(1).join(' ') : ''
             };
             await scanner.scanUser(mockTgUser);
         }
@@ -90,19 +93,30 @@ class DashboardLogic {
         const unlinkedRef = db.collection('system_metadata').doc('telegram_unlinked_users');
 
         await db.runTransaction(async t => {
+            // READS MUST COME FIRST
             const orphanDoc = await t.get(orphanRef);
-            const orphanData = orphanDoc.data();
-            if (orphanData?.list && orphanData.list[tgId]) {
+            const unlinkedDoc = await t.get(unlinkedRef);
+
+            // Logic
+            const orphanData = orphanDoc.exists ? orphanDoc.data() : { list: {} };
+            const unlinkedData = unlinkedDoc.exists ? unlinkedDoc.data() : { list: {} };
+
+            let orphanUpdated = false;
+            let unlinkedUpdated = false;
+
+            if (orphanData.list && orphanData.list[tgId]) {
                 delete orphanData.list[tgId];
-                t.set(orphanRef, orphanData);
+                orphanUpdated = true;
             }
 
-            const unlinkedDoc = await t.get(unlinkedRef);
-            const unlinkedData = unlinkedDoc.data();
-            if (unlinkedData?.list && unlinkedData.list[tgId]) {
+            if (unlinkedData.list && unlinkedData.list[tgId]) {
                 delete unlinkedData.list[tgId];
-                t.set(unlinkedRef, unlinkedData);
+                unlinkedUpdated = true;
             }
+
+            // WRITES LAST
+            if (orphanUpdated) t.set(orphanRef, orphanData);
+            if (unlinkedUpdated) t.set(unlinkedRef, unlinkedData);
         });
 
         log(`🔗 [Telegram] חובר בהצלחה: ${discordId} <-> ${tgId}`);

@@ -86,7 +86,7 @@ async function execute(sock, chatId) {
             const scanResult = await mediaHandler.handleScanCommand(sock, imagesToProcess[imagesToProcess.length - 1], chatId, null, true, buffers, true);
 
             if (scanResult && scanResult.type === 'duplicate') {
-                imageContext = `\n[SYSTEM NOTE]: The images they sent were DUPLICATES (Already in DB). This likely means YOU (the bot) already scanned them before the restart. Acknowledge this calmly ("I recall these stats, no need to send again"). Do NOT roast them for spamming.`;
+                imageContext = `\n[SYSTEM NOTE]: The images are DUPLICATES (History). You already analyzed them. IGNORE THEM completely in your reply unless they asked "Did you see this?". Do NOT say "I recall these stats". Just be cool.`;
             } else if (scanResult && scanResult.reason === 'quality') {
                 imageContext = `\n[SYSTEM NOTE]: The images they sent were UNREADABLE (Bad quality). Mock them for taking bad photos while you were gone.`;
             } else {

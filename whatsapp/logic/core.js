@@ -48,14 +48,9 @@ async function handleMessageLogic(sock, msg, text, resolvedPhone) {
 
     // 4. Buffer & Process
     bufferSystem.addToBuffer(senderPhone, msg, text, async (finalMsg, combinedText, mediaArray) => {
-        // 🔒 Locking
-        if (processingGroups.has(chatJid)) {
-            log(`🔒 [Core] Group Lock Active: ${chatJid}`);
-            return;
-        }
-        processingGroups.add(chatJid);
-        const lockTimeout = setTimeout(() => processingGroups.delete(chatJid), 10000);
 
+        // 🔒 Locking Removed: Was causing dropped messages during rapid chat.
+        // We rely on the buffer to handle accumulation.
         try {
             // 🛡️ IGNORE EMPTY MESSAGES (Audio, Stickers without caption) to prevent Hallucinations ("Silence silence")
             if ((!combinedText || combinedText.trim().length === 0) && mediaArray.length === 0) {

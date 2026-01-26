@@ -6,7 +6,7 @@ const definition = {
     type: "function",
     function: {
         name: "show_cod_profile",
-        description: "Show a PERSONAL WARZONE Operator Card (K/D, Kills, Matches). Use when user asks 'My Warzone Stats', 'How am I in COD', 'My K/D'. NOT for XP/Level.",
+        description: "Show a PERSONAL WARZONE Operator Card. ⚠️ RESTRICTION: Use ONLY when specific context of 'Warzone', 'COD', 'K/D' is present. If user says 'Show my stats' or 'Profile' generically -> DO NOT CALL. Ask 'In which game?'.",
         parameters: {
             type: "object",
             properties: {
@@ -52,10 +52,36 @@ async function execute(args, userId, chatId) {
                 return `Couldn't find user: ${targetSearch}`;
             }
         } else {
-            // Self
-            const dStr = await db.collection('users').doc(targetId).get();
-            if (dStr.exists) {
-                const d = dStr.data();
+            // Self - Robust Lookup Strategy 🧠
+            // The 'userId' from WhatsApp is a Phone Number.
+            // But the Games might be on a different document (e.g., Discord ID) if accounts are linked.
+
+            // 1. Try Direct Doc (Phone ID)
+            let userDoc = await db.collection('users').doc(userId).get();
+
+            if (userDoc.exists) {
+                // Check if it's a "shell" that points to a main profile?
+                // For now, assume this is it, BUT also check by identity query.
+                if (!userDoc.data().games && !userDoc.data().gamertag) {
+                    // Try finding by identity field (reverse lookup)
+                    // If this phone is listed as 'whatsappPhone' on another doc
+                    const snap = await db.collection('users').where('identity.whatsappPhone', '==', userId).get();
+                    if (!snap.empty) {
+                        userDoc = snap.docs[0];
+                        targetId = userDoc.id; // Switch target to the Main Doc
+                    }
+                }
+            } else {
+                // Phone doc doesn't exist? Try identity lookup
+                const snap = await db.collection('users').where('identity.whatsappPhone', '==', userId).get();
+                if (!snap.empty) {
+                    userDoc = snap.docs[0];
+                    targetId = userDoc.id;
+                }
+            }
+
+            if (userDoc.exists) {
+                const d = userDoc.data();
                 targetName = d.identity?.displayName;
                 avatarUrl = d.identity?.avatar || d.identity?.avatar_discord || avatarUrl;
             }

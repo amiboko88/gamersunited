@@ -258,7 +258,8 @@ async function execute(args, userId, chatId, imageBuffers) {
     }
 
     // 5. Return Text Summary
-    let response = `✅ הנתונים נשמרו בהצלחה ודוח גרפי נשלח לקבוצה.`;
+    // 🤫 SILENCE: Don't send "Scan Report" text effectively. The Image/Reaction is enough.
+    let response = ""; // Empty string = No text response from Brain (handled by reaction/image)
 
     const isGroup = chatId && chatId.includes('@g.us');
 

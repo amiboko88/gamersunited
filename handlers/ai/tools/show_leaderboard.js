@@ -6,7 +6,7 @@ const definition = {
     type: "function",
     function: {
         name: "show_cod_leaderboard",
-        description: "Show the WARZONE / COD Leaderboard Image (Kills, Damage, Wins). Use ONLY when explicitly asked for 'Warzone', 'Game Stats', 'Best Players in COD'.",
+        description: "Show the WARZONE / COD Leaderboard Image (Kills, Damage, Wins). ⚠️ RESTRICTION: Use ONLY when explicitly asked for 'Warzone', 'COD', or 'Shooting' stats. If user just says 'Table', 'Rankings', or 'Who is best' WITHOUT context -> DO NOT CALL. Ask for clarification.",
         parameters: {
             type: "object",
             properties: {

@@ -19,7 +19,6 @@ async function execute(sock, chatId) {
         log(`🧟 [Resurrection] No history found.`);
         return;
     }
-
     // 1. Filter Timeline
     // Look for messages from the last 12 hours (Crash/Sleep protection)
     const LOOKBACK_WINDOW = 12 * 60 * 60 * 1000;

@@ -6,8 +6,8 @@ module.exports = {
     definition: {
         type: "function",
         function: {
-            name: "get_user_profile",
-            description: "Get user profile card (XP, Level, Balance). Use when user asks 'my stats' or 'who am i'.",
+            name: "get_community_profile",
+            description: "Show GENERAL COMMUNITY Profile Card (Level, XP, Balance). Use for 'My Level', 'My XP', 'Who am I'. NOT for Warzone.",
             parameters: {
                 type: "object",
                 properties: {

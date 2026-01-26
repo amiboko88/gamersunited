@@ -5,8 +5,8 @@ module.exports = {
     definition: {
         type: "function",
         function: {
-            name: "get_leaderboard",
-            description: "Get current top players stats.",
+            name: "get_community_leaderboard",
+            description: "Show the GENERAL COMMUNITY Leaderboard (XP, Levels, Activity). Use this when adding 'XP', 'Level', 'Role', 'Server' etc. NOT for Warzone stats.",
             parameters: {
                 type: "object",
                 properties: { limit: { type: "integer" } }

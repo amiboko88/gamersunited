@@ -7,9 +7,11 @@ const match = require('./match');
 const codStats = require('./cod_stats'); // ✅ ניתוח תמונות וורזון
 const linkAlias = require('./link_alias'); // ✅ קישור כינויים בדיעבד
 const queryStats = require('./query_stats'); // ✅ שאילתת נתונים (AI)
+const showLeaderboard = require('./show_leaderboard'); // 🏆 ויזואליזציה של טבלה
+const showProfile = require('./show_cod_profile'); // 🪖 כרטיס שחקן אישי וורזון
 
 // הסרנו את games (הישן) מהרשימה
-const allTools = [dj, ranking, identity, birthday, match, codStats, linkAlias, queryStats];
+const allTools = [dj, ranking, identity, birthday, match, codStats, linkAlias, queryStats, showLeaderboard, showProfile];
 
 exports.definitions = allTools.map(t => t.definition);
 

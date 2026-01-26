@@ -86,7 +86,7 @@ async function execute(sock, chatId) {
             const scanResult = await mediaHandler.handleScanCommand(sock, imagesToProcess[imagesToProcess.length - 1], chatId, null, true, buffers, true);
 
             if (scanResult && scanResult.type === 'duplicate') {
-                imageContext = `\n[SYSTEM NOTE]: The images they sent were DUPLICATES (User tried to spam/scam). Roast them for sending old stats while you were gone.`;
+                imageContext = `\n[SYSTEM NOTE]: The images they sent were DUPLICATES (Already in DB). This likely means YOU (the bot) already scanned them before the restart. Acknowledge this calmly ("I recall these stats, no need to send again"). Do NOT roast them for spamming.`;
             } else if (scanResult && scanResult.reason === 'quality') {
                 imageContext = `\n[SYSTEM NOTE]: The images they sent were UNREADABLE (Bad quality). Mock them for taking bad photos while you were gone.`;
             } else {
@@ -109,13 +109,13 @@ async function execute(sock, chatId) {
     
     Response Rules (If replying):
     1. Tone: Cool, dismissive, Hebrew Slang.
-    2. If images involved: Use the [SYSTEM NOTE] context (Roast for duplicates/bad quality, or specific confirmation).
-    3. If they insulted you ("bot fell"): Roast them back.
+    2. If images are DUPLICATES: Say "I already have these, relaxation". Don't accuse of spam.
+    3. If only insults: Roast them back ("I heard you crying").
     4. MAX 15 WORDS.
     `;
 
-    // Use 'system_resurrection' as user to bypass stats logic but keep memory context
-    const comeback = await brain.ask('system_resurrection', 'whatsapp', prompt, true);
+    // Use a numeric ID to pass Firestore validation (UserUtils strips non-digits)
+    const comeback = await brain.ask('1010101010', 'whatsapp', prompt, true);
 
     if (comeback && !comeback.includes('SKIP')) {
         await sock.sendMessage(chatId, { text: comeback });

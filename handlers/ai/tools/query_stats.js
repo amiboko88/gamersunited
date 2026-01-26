@@ -75,22 +75,31 @@ async function execute(args, userId, chatId) {
 
             gamesSnap.forEach(doc => stats.push({ ...doc.data(), username: targetName }));
         } else {
-            // Global Query (Requires Collection Group Index usually, but we can try specific recent active users)
-            // Implementation: Scan active users (expensive but safer without index)
-            const activeSnap = await db.collection('users').where('meta.lastActive', '>=', queryDate.toISOString()).get();
+            // Global Query - Scan ALL users (Safe for <500 users, we have ~60)
+            // We removed 'meta.lastActive' filter because it might exclude silent gamers.
+            const usersSnap = await db.collection('users').get();
 
-            for (const doc of activeSnap.docs) {
+            // Parallelize the subcollection queries for speed
+            const promises = usersSnap.docs.map(async doc => {
                 const games = await doc.ref.collection('games')
                     .where('timestamp', '>=', queryDate)
                     .orderBy('timestamp', 'desc')
-                    .limit(2) // Small limit per user for global
+                    .limit(3) // Get top 3 per user
                     .get();
 
-                games.forEach(g => stats.push({ ...g.data(), username: doc.data().identity?.displayName }));
-            }
+                return games.docs.map(g => ({ ...g.data(), username: doc.data().identity?.displayName }));
+            });
 
-            // Sort global results
-            stats.sort((a, b) => b.timestamp - a.timestamp);
+            const results = await Promise.all(promises);
+            stats = results.flat();
+
+            // Sort global results by time desc
+            stats.sort((a, b) => {
+                const tA = a.timestamp.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
+                const tB = b.timestamp.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
+                return tB - tA;
+            });
+
             stats = stats.slice(0, limit);
         }
 

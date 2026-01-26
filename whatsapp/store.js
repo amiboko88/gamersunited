@@ -341,8 +341,8 @@ class SimpleStore {
 
         this.messages[jid].push(msg);
 
-        // Limit to 50
-        if (this.messages[jid].length > 50) {
+        // Limit to 200 (Support 12h Lookback in active groups)
+        if (this.messages[jid].length > 200) {
             this.messages[jid].shift();
         }
 

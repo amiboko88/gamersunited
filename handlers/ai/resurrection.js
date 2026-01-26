@@ -21,13 +21,13 @@ async function execute(sock, chatId) {
     }
 
     // 1. Filter Timeline
-    // Look for messages from the last 60 minutes
-    const ONE_HOUR = 60 * 60 * 1000;
+    // Look for messages from the last 12 hours (Crash/Sleep protection)
+    const LOOKBACK_WINDOW = 12 * 60 * 60 * 1000;
     const now = Date.now();
 
     const relevantMessages = messages.filter(m => {
         const msgTime = (m.messageTimestamp || 0) * 1000;
-        return (now - msgTime) < ONE_HOUR; // Only recent history
+        return (now - msgTime) < LOOKBACK_WINDOW;
     });
 
     if (relevantMessages.length === 0) return;

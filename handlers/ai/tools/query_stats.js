@@ -11,7 +11,8 @@ const definition = {
             properties: {
                 targetUser: { type: "string", description: "The specific user ID or Name to query. If null, query widely." },
                 limit: { type: "integer", description: "Max number of games to retrieve (Default 5)." },
-                period: { type: "string", enum: ["today", "week", "all"], description: "Time period filter." }
+                period: { type: "string", enum: ["today", "yesterday", "week", "all"], description: "Time period filter." },
+                days: { type: "integer", description: "Number of past days to fetch (e.g. 2 for last 48h)." }
             },
             required: []
         }
@@ -23,8 +24,16 @@ async function execute(args, userId, chatId) {
         const limit = args.limit || 5;
         let queryDate = new Date();
 
-        if (args.period === 'week') queryDate.setDate(queryDate.getDate() - 7);
+        if (args.days) {
+            queryDate.setDate(queryDate.getDate() - args.days);
+            queryDate.setHours(0, 0, 0, 0);
+        }
+        else if (args.period === 'week') queryDate.setDate(queryDate.getDate() - 7);
         else if (args.period === 'all') queryDate = new Date(0);
+        else if (args.period === 'yesterday') {
+            queryDate.setDate(queryDate.getDate() - 1);
+            queryDate.setHours(0, 0, 0, 0); // Start of Yesterday
+        }
         else queryDate.setHours(0, 0, 0, 0); // Default: Today
 
         let stats = [];

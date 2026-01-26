@@ -8,6 +8,11 @@ const intelManager = require('../../handlers/intel/manager');
 const { whatsapp } = require('../../config/settings');
 
 const activeConversations = new Map();
+let lastGlobalBotActivity = 0;
+
+function touchBotActivity() {
+    lastGlobalBotActivity = Date.now();
+}
 
 async function processRequest(sock, msg, text, routerData, imageBuffers) {
     const { chatJid, senderPhone, dbUserId, isAdmin, isPrivate } = routerData;
@@ -23,28 +28,6 @@ async function processRequest(sock, msg, text, routerData, imageBuffers) {
     }
 
     // 2. Conversation State & Filtering
-    // Core already decided to RUN (or not) based on locks.
-    // Now we decide if AI *wants* to run (Smart Brain).
-
-    // Check if explicitly called (Trigger handled in core/buffer logic passing here).
-    // Wait, Core usually checks `isTriggered`.
-    // Let's assume Core passes a flag `isExplicitCall`.
-    // But `isExplicitCall` logic depends on text.
-    // We should re-evaluate trigger here OR accept it as arg.
-    // Let's calculate it here for safety or import utils.
-
-    // Actually, Core calls Buffer. Buffer calls back with `combinedText`.
-    // We need to re-check trigger on `combinedText`.
-
-    // Let's assume Core handles the "Trigger Detection" before calling Processor?
-    // No, Buffer callback is the execution point.
-    // I'll calculate `isExplicitCall` inside `processRequest` using a Helper or Regex.
-    // I'll duplicate `isTriggered` logic here or move `isTriggered` to Router/Utils.
-
-    // Let's imply `routerData.isExplicitCall` was passed?
-    // The text changes (Buffer combines it).
-    // So we must check trigger on FINAL text.
-
     const botId = sock.user?.id?.split(':')[0];
     const isExplicitCall = (
         text.includes(`@${botId}`) ||
@@ -55,8 +38,12 @@ async function processRequest(sock, msg, text, routerData, imageBuffers) {
     const lastInteraction = activeConversations.get(senderPhone);
     const isInConversation = lastInteraction && (Date.now() - lastInteraction < whatsapp.conversationTimeout);
 
+    // 🧠 GLOBAL ATTENTION WINDOW (The "Yogi Fix")
+    // If bot spoke in last 2 minutes, check EVERYTHING (unless it's a mention of someone else).
+    const isGlobalAttention = (Date.now() - lastGlobalBotActivity < 120000);
+
     // 🛑 Anti-Spam (Group Only)
-    if (!isExplicitCall) {
+    if (!isExplicitCall && !isGlobalAttention) {
         const groupCooldown = activeConversations.get(chatJid + '_last_auto_reply');
         if (groupCooldown && Date.now() - groupCooldown < 20000) return null;
     }
@@ -72,10 +59,14 @@ async function processRequest(sock, msg, text, routerData, imageBuffers) {
         if (quotedParticipant && !quotedParticipant.includes(botId)) return null; // Quoted someone else
 
         const hasMedia = imageBuffers && imageBuffers.length > 0;
-        if (!hasMedia && text.length > 10) {
+
+        // If Global Attention is ON, we relax the text length check
+        const contextCheckParams = isGlobalAttention ? { active: true } : null;
+
+        if (!hasMedia && (text.length > 10 || isGlobalAttention)) {
             const brainIdentity = dbUserId || senderPhone;
-            shouldRun = await shimonBrain.shouldReply(brainIdentity, text);
-            if (shouldRun) log(`💡 [Smart AI] Intervening on: "${text}"`);
+            shouldRun = await shimonBrain.shouldReply(brainIdentity, text, contextCheckParams);
+            if (shouldRun) log(`💡 [Smart AI] Intervening on: "${text}" (Attention: ${isGlobalAttention})`);
         }
     }
 
@@ -87,6 +78,7 @@ async function processRequest(sock, msg, text, routerData, imageBuffers) {
     // Update State
     activeConversations.set(senderPhone, Date.now());
     if (!isExplicitCall) activeConversations.set(chatJid + '_last_auto_reply', Date.now());
+    touchBotActivity(); // Update our own activity tracking
 
     await sock.sendPresenceUpdate('composing', chatJid);
 
@@ -112,4 +104,4 @@ async function processRequest(sock, msg, text, routerData, imageBuffers) {
     return { type: 'brain', data: aiResponse };
 }
 
-module.exports = { processRequest };
+module.exports = { processRequest, touchBotActivity };

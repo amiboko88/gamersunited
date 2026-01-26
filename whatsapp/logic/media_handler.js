@@ -6,6 +6,7 @@ const { generateContent } = require('../../handlers/ai/gemini');
 const codStats = require('../../handlers/ai/tools/cod_stats');
 const db = require('../../utils/firebase');
 const shimonBrain = require('../../handlers/ai/brain');
+const processor = require('./processor'); // 🔌 Link to attention system
 
 async function downloadImages(mediaArray, sock) {
     let buffers = [];
@@ -134,13 +135,32 @@ async function handleScanCommand(sock, msg, chatJid, dbUserId, isAdmin, directBu
                 log(`♻️ [Scan] Duplicate detected. Triggering Shimon roast...`);
                 const aiRoast = await shimonBrain.ask(dbUserId || 'User', 'whatsapp', "Why did you duplicate these images?", false, null, chatJid);
                 await sock.sendMessage(chatJid, { text: aiRoast }, { quoted: msg });
+                processor.touchBotActivity();
             } else {
                 log(`♻️ [Scan] Duplicate detected (Auto Mode). Suppressing immediate roast.`);
             }
             return pReport; // ✅ Return result to caller
-        } else {
+        }
+
+        // Case 2: Quality/Validation Error (ROAST_ME)
+        else if (typeof report === 'string' && report.startsWith('ROAST_ME:')) {
+            const errorContext = report.replace('ROAST_ME:', '').trim();
+            log(`📉 [Scan] Low Quality Detected: ${errorContext}`);
+
+            if (!isAutoMode) {
+                const aiRoast = await shimonBrain.ask(dbUserId || 'User', 'whatsapp', `The user sent a bad image. Roast them. Context: ${errorContext}`, false, null, chatJid);
+                await sock.sendMessage(chatJid, { text: aiRoast }, { quoted: msg });
+                processor.touchBotActivity();
+            }
+
+            return { type: 'error', reason: 'quality', message: errorContext };
+        }
+
+        // Case 3: Success
+        else {
             // ✅ SUCCESS -> Standard Report
             await sock.sendMessage(chatJid, { text: `📊 **Scan Report:**\n${report}` });
+            processor.touchBotActivity();
 
             // React to original message to confirm processing
             if (msg.key) await sock.sendMessage(chatJid, { react: { text: "✅", key: msg.key } });

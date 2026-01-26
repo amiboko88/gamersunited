@@ -17,14 +17,20 @@ module.exports = {
     async execute(args) {
         const limit = args.limit || 5;
         const snapshot = await db.collection('users').orderBy('economy.xp', 'desc').limit(limit).get();
-        
+
         if (snapshot.empty) return "הלוח ריק.";
-        
-        const rows = snapshot.docs.map((d, i) => {
-            const data = d.data();
-            return `#${i+1} ${data.identity?.displayName || 'Unknown'} - ${data.economy?.xp || 0} XP`;
-        });
-        
+
+        const rows = snapshot.docs
+            .filter(d => {
+                const name = d.data().identity?.displayName || '';
+                // Filter out broken names or test users
+                return name && !name.includes('משח') && !name.includes('test') && d.data().economy?.xp > 0;
+            })
+            .map((d, i) => {
+                const data = d.data();
+                return `#${i + 1} ${data.identity?.displayName || 'Unknown'} - ${data.economy?.xp || 0} XP`;
+            });
+
         return `🏆 **טבלת המובילים:**\n${rows.join('\n')}`;
     }
 };

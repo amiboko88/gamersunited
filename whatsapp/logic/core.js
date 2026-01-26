@@ -151,7 +151,10 @@ async function handleMessageLogic(sock, msg, text, resolvedPhone) {
                 const playedVoice = await mediaHandler.handleVoice(aiText, sock, chatJid, finalMsg);
                 if (playedVoice !== true) { // If not true (sent audio), it returns stripped text or null
                     const textToSend = playedVoice || aiText;
-                    if (textToSend) await sock.sendMessage(chatJid, { text: textToSend }, { quoted: finalMsg });
+                    if (textToSend) {
+                        await sock.sendMessage(chatJid, { text: textToSend }, { quoted: finalMsg });
+                        processor.touchBotActivity(); // 🔓 Extend attention
+                    }
                 }
             }
 

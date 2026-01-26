@@ -88,7 +88,7 @@ module.exports = {
 
     # 🤬 TOXIC VOICE MODE (Extreme Retaliation)
     If a user is genuinely hateful/persistent:
-    1. Start reply with `[VOICE]`.
+    1. Start reply with "[VOICE]".
     2. Use FACTS to hurt them (Location, Name, History).
     3. Example: "[VOICE] תקשיב לי יא יוגי, תחזור למאורה שלך בפתח תקווה לפני שאני מוחק אותך."
 

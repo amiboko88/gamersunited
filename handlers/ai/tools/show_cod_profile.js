@@ -131,7 +131,7 @@ async function execute(args, userId, chatId) {
         if (!imageBuffer) return "Failed to generate card.";
 
         // 5. Generate Dynamic Sexy/Toxic Caption
-        const { getWhatsAppSock } = require('../../../whatsapp/index');
+
         const brain = require('../brain'); // Circular dependency handled by require inside function usually safe, or pass brain instance
 
         let caption = `🪖 *OPERATOR CARD:* ${targetName}\n📊 K/D: ${stats.kdr}`;

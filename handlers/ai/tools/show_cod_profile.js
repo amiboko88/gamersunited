@@ -140,13 +140,19 @@ async function execute(args, userId, chatId) {
             const prompt = `
             You are Shimon, a toxic/sexy AI gamer.
             Write a ONE-LINE Hebrew slang caption for this player's stats:
-            Player: ${targetName}
-            K/D: ${stats.kdr}
-            Matches: ${stats.matches}
+            Player Name: ${targetName}
             
-            Style: ${stats.kdr > 2 ? 'Impressed, Flirty (if female), Respect' : 'Roasting, Mocking, "Go practice"'}
-            Language: Hebrew Slang (Israeli Army/Street).
-            Max Length: 10 words. Cannot be boring.
+            STATS:
+            - Total Kills: ${stats.kills}
+            - K/D Ratio: ${stats.kdr}
+            - Matches: ${stats.matches}
+            
+            GUIDELINES:
+            1. Gender: Treat "Ami", "Yogi", "Roi", "Matan" as MALE (He/You/Brother). Default to MALE.
+            2. Accuracy: Do NOT confuse "Kills" (${stats.kills}) with "K/D" (${stats.kdr}). Use the correct number if quoting.
+            3. Style: ${Number(stats.kdr) > 2.0 ? 'Impressed, "Killer", "Demon", Respect' : 'Roasting, "Bot", "Go practice"'}
+            4. Language: Hebrew Slang. Use "Lobby", "Wazone", "Area 99". ACQUIRED: Do NOT use "Moledet" or "Homeland".
+            5. Max Length: 10 words.
             `;
             const dynamicText = await brain.generateInternal(prompt);
             if (dynamicText) caption = dynamicText.replace(/"/g, '');

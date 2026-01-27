@@ -100,7 +100,7 @@ async function executeDailyRecap(chatId, force = false) {
 
         // 5. Send to Group (chatId must be provided by scheduler or config)
         // If chatId is not passed, use default from config or look it up
-        const targetChat = chatId || process.env.WHATSAPP_ADMIN_GROUP;
+        const targetChat = chatId || process.env.WHATSAPP_MAIN_GROUP_ID;
 
         if (targetChat) {
             const { getWhatsAppSock } = require('../../whatsapp/index');

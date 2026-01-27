@@ -50,7 +50,7 @@ const source = {
                 });
 
                 if (title.toUpperCase().includes('ABSOLUTE')) {
-                    results.absolute_meta = weapons;
+                    results.absolute_meta = weapons.slice(0, 3); // Strict: Top 3 only
                 } else if (title.toUpperCase().includes('META')) {
                     results.meta.push({ category: title, weapons });
                 }
@@ -98,13 +98,8 @@ const source = {
             // 2. Fallback: Search for any "Warzone" related headers
             const allLinks = Array.from(document.querySelectorAll('a[href*="/patchnotes/"]'));
 
-            // Prioritize "Season 01 Reloaded" or newest date
-            // The links usually contain the date in URL: /2026/01/...
-            let bestLink = allLinks.find(l => l.innerText.includes('Season 01 Reloaded') || l.href.includes('reloaded'));
-
-            if (!bestLink) {
-                bestLink = allLinks.find(l => l.href.toLowerCase().includes('warzone') && l.href.includes('2026'));
-            }
+            // Prioritize newest dates in URL
+            const bestLink = allLinks.find(l => l.innerText.toLowerCase().includes('warzone') || l.href.includes('warzone'));
 
             if (bestLink) {
                 return {
@@ -137,11 +132,13 @@ const source = {
         const q = query.toLowerCase().trim();
 
         // Handle "Absolute" / "Meta" general queries
-        if (q === 'absolute' || q === 'meta' || q.includes('מטא') || q.includes('מטה') || q.includes('הכי חזק')) {
+        if (genericTerms.some(t => q === t || (t.length > 3 && q.includes(t)))) {
             if (cachedData.absolute_meta && cachedData.absolute_meta.length > 0) {
                 const list = cachedData.absolute_meta.slice(0, 5).map(w => `• ${w.name}`).join('\n');
                 return {
-                    text: `👑 **ABSOLUTE META (הכי חזקים):**\n${list}\n\nלפירוט על נשק, כתוב: "תן לי בילד ל[שם הנשק]"`
+                    text: `👑 **ABSOLUTE META (הכי חזקים):**\n${list}\n\nלפירוט על נשק, כתוב: "תן לי בילד ל[שם הנשק]"`,
+                    weapons: cachedData.absolute_meta.slice(0, 5), // Expose for graphics
+                    title: "WARZONE / ABSOLUTE META"
                 };
             }
         }

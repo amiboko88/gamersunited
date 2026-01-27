@@ -11,6 +11,7 @@ const { log } = require('../../utils/logger');
 const db = require('../../utils/firebase');
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
+const metaListGraphics = require('../graphics/metaList');
 
 class IntelManager {
     constructor() {
@@ -92,31 +93,60 @@ class IntelManager {
     // --- Core Data Fetchers (Delegated) ---
 
     async getMeta(query) {
+        let result = null;
+
         // 1. Try COD (Priority)
         const codData = await this._getData('meta', () => codSource.getMeta());
         const codResult = await codSource.searchWeapon(query, codData);
 
-        // If found valid weapon, return it
-        if (codResult && codResult.isWeapon) return codResult;
+        if (codResult && (codResult.isWeapon || codResult.weapons)) {
+            result = codResult;
+        }
 
-        // 2. Try BF6 (Fallback)
-        const bf6Data = await this._getData('bf6', () => bf6Source.getMeta());
-        // We need a search method in BF6 source too, or ad-hoc here.
-        // Let's implement text search for BF6 here since it's simple list.
-        if (bf6Data && Array.isArray(bf6Data)) {
-            const q = query.toLowerCase().trim();
-            const found = bf6Data.find(w => w.name.toLowerCase().includes(q));
-            if (found) {
-                return {
-                    text: `🔫 **${found.name}** (BF6)\n\n${found.attachments.map(a => `• ${a.part}: ${a.name}`).join('\n')}`,
-                    image: found.image,
-                    isWeapon: true
-                };
+        // 2. Try BF6 (Fallback) if no result yet
+        if (!result) {
+            const bf6Data = await this._getData('bf6', () => bf6Source.getMeta());
+
+            if (bf6Data && Array.isArray(bf6Data)) {
+                const q = query.toLowerCase().trim();
+                const genericTerms = ['absolute', 'meta', 'מטא', 'מטה', 'הכי חזק', 'נשק', 'רובה', 'טוב'];
+
+                // A. Generic Request -> Return Top 5 LIST
+                if (genericTerms.some(t => q === t || (t.length > 3 && q.includes(t)))) {
+                    result = {
+                        text: bf6Source.getFormattedMeta(bf6Data),
+                        isWeapon: true,
+                        weapons: bf6Data.slice(0, 5), // Expose for graphics
+                        title: "BATTLEFIELD 6 / META"
+                    };
+                }
+                // B. Specific Search
+                else {
+                    const found = bf6Data.find(w => w.name.toLowerCase().includes(q));
+                    if (found) {
+                        result = {
+                            text: `🔫 **${found.name}** (BF6)\n\n${found.attachments.map(a => `• ${a.part}: ${a.name}`).join('\n')}`,
+                            image: found.image,
+                            isWeapon: true
+                        };
+                    }
+                }
             }
         }
 
-        // 3. Return original failure or tailored message
-        return codResult;
+        // 3. GRAPHICS GENERATION (The Visual Upgrade)
+        if (result && result.weapons) {
+            try {
+                const buffer = await metaListGraphics.generateList(result.title || "META LOADOUTS", result.weapons);
+                result.image = buffer; // Assign buffer to be sent as image
+                // result.text can remain as caption
+            } catch (e) {
+                log(`❌ [Intel] Graphics Gen Failed: ${e.message}`);
+                // Fallback to text (result.text is already there)
+            }
+        }
+
+        return result || codResult; // Return whatever we found (or the original failure/text from generic search)
     }
 
     async getPlaylists() {

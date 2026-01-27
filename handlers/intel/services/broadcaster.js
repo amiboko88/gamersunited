@@ -19,28 +19,58 @@ class IntelBroadcaster {
         const finalItem = await enricher.enrich(item);
         let finalSummary = finalItem.aiSummary || finalItem.summary;
 
+        // 2. Generate Graphics (Visual Upgrade)
+        let imageBuffer = null;
+        try {
+            const newsCard = require('../../graphics/newsCard');
+            imageBuffer = await newsCard.generateNewsCard(finalItem);
+        } catch (e) {
+            log(`⚠️ [Intel] Graphics Gen Failed: ${e.message}`);
+        }
+
         const { discord, whatsapp, telegram } = clients;
 
-        // 2. WhatsApp
+        // 3. WhatsApp
         try {
             const { sendToMainGroup } = require('../../../whatsapp/index');
-            await sendToMainGroup(`${finalSummary}`);
+            // If image exists, send as image with caption
+            if (imageBuffer) {
+                await sendToMainGroup(`${finalItem.title}\n\n${finalSummary}`, [], imageBuffer);
+            } else {
+                await sendToMainGroup(`${finalSummary}`);
+            }
         } catch (e) { log(`Error Broadcast WA: ${e.message}`); }
 
-        // 3. Telegram
+        // 4. Telegram
         try {
             const tg = telegram && telegram.telegram ? telegram.telegram : telegram;
-            if (tg && tg.sendMessage) {
+            if (tg) {
                 const chatId = process.env.TG_MAIN_GROUP_ID || '-1001836262829';
-                await tg.sendMessage(chatId, `${finalSummary}`, { parse_mode: 'Markdown' });
+                if (imageBuffer) {
+                    await tg.sendPhoto(chatId, { source: imageBuffer }, {
+                        caption: `🚨 **${finalItem.title}**\n\n${finalSummary}`,
+                        parse_mode: 'Markdown'
+                    });
+                } else if (tg.sendMessage) {
+                    await tg.sendMessage(chatId, `${finalSummary}`, { parse_mode: 'Markdown' });
+                }
             }
         } catch (e) { log(`Error Broadcast TG: ${e.message}`); }
 
-        // 4. Discord
+        // 5. Discord
         try {
             if (discord) {
                 const channel = discord.channels.cache.find(c => c.name.includes('news') || c.name.includes('עדכונים'));
-                if (channel) channel.send(`**${item.title}**\n${finalSummary}`);
+                if (channel) {
+                    if (imageBuffer) {
+                        await channel.send({
+                            content: `**${finalItem.title}**\n${finalSummary}`,
+                            files: [imageBuffer]
+                        });
+                    } else {
+                        channel.send(`**${finalItem.title}**\n${finalSummary}`);
+                    }
+                }
             }
         } catch (e) { log(`Error Broadcast DS: ${e.message}`); }
     }

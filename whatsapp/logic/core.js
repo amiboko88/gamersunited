@@ -128,8 +128,12 @@ async function handleMessageLogic(sock, msg, text, resolvedPhone) {
             if (result.type === 'intel') {
                 const data = result.data;
                 if (typeof data === 'object' && data.image) {
-                    await sock.sendMessage(chatJid, { image: { url: data.image }, caption: data.text }, { quoted: finalMsg });
-                    if (data.code) setTimeout(() => sock.sendMessage(chatJid, { text: data.code }), 500);
+                    const imgContent = Buffer.isBuffer(data.image) ? data.image : { url: data.image };
+                    await sock.sendMessage(chatJid, { image: imgContent, caption: data.text, mimetype: 'image/png' }, { quoted: finalMsg });
+
+                    if (data.code && data.code !== "No Code Available") {
+                        setTimeout(() => sock.sendMessage(chatJid, { text: data.code }), 500);
+                    }
                 } else {
                     const txt = typeof data === 'string' ? data : (data.aiSummary || data.text);
                     if (txt) await sock.sendMessage(chatJid, { text: txt }, { quoted: finalMsg });

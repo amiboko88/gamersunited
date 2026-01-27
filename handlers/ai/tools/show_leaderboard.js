@@ -11,7 +11,7 @@ const definition = {
             type: "object",
             properties: {
                 period: { type: "string", enum: ["week", "all", "yesterday"], description: "Time period (Default: week)." },
-                stat: { type: "string", enum: ["kills", "damage", "score", "matches"], description: "Sort by which stat? (Default: score)" }
+                stat: { type: "string", enum: ["kills", "damage", "score", "matches"], description: "Sort by which stat? (Default: damage)" }
             },
             required: []
         }
@@ -21,7 +21,7 @@ const definition = {
 async function execute(args, userId, chatId) {
     try {
         const period = args.period || 'week';
-        const sortStat = args.stat || 'score';
+        const sortStat = args.stat || 'damage';
 
         // 1. Determine Date Range
         let queryDate = new Date();

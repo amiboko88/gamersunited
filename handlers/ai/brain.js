@@ -167,18 +167,18 @@ class ShimonBrain {
             
             Message: "${text}"
             
-            Task: Decide if you should intervene and reply voluntarily.
+            Task: Your goal is to be a SILENT OBSERVER unless explicitly needed.
             
-            Criteria for YES:
-            1. The user is asking a general question (e.g., "Why is the internet slow?", "What game should I play?").
-            2. The user is incorrect about a gaming fact (you need to correct them).
-            3. The user sounds desperate for help with technology.
-            4. The message fits your specific knowledge base (Gaming, Discord, Servers, Tech).
-
-            Criteria for NO:
-            1. Casual conversation (e.g., "Good morning", "How are you?").
-            2. Message directed at a specific person (e.g., "@Danny come here").
-            3. Short/Meaningless text (e.g., "lol", "k").
+            Criteria for YES (Intervene):
+            1. The user mentions "Shimon", "Bot", "Admin", or "Manager".
+            2. The user asks a DIRECT question to the group that no one is answering (e.g., "Does anyone know if servers are down?").
+            3. The user is spreading MISINFORMATION about Gaming/Tech (You must correct them).
+            
+            Criteria for NO (Silence):
+            1. Users talking to EACH OTHER (e.g., "Yogi did you see that?", "Yeah bro").
+            2. Reactions to links/news posted by others (e.g., "Wow crazy", "Damn").
+            3. Casual chatter, laughs, jokes, political/news discussions not related to gaming.
+            4. If you are unsure -> NO.
             
             Reply ONLY with "YES" or "NO".
             `;

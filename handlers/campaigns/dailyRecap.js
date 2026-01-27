@@ -7,13 +7,18 @@ async function executeDailyRecap(chatId, force = false) {
     try {
         log(`⏰ [DailyRecap] Starting daily recap generation...`);
 
-        // 1. Define Time Range (Yesterday 12:00 PM to Today 12:00 PM)
-        // Or simply "Last 24 Hours" since this runs at 12:00 PM
+        // 1. Define Time Range (Strict Calendar "Yesterday")
         const now = new Date();
-        const yesterday = new Date(now);
-        yesterday.setHours(now.getHours() - 24);
+        const yesterdayStart = new Date(now);
+        yesterdayStart.setDate(now.getDate() - 1);
+        yesterdayStart.setHours(0, 0, 0, 0);
 
-        log(`📅 [DailyRecap] Range: ${yesterday.toLocaleString()} - ${now.toLocaleString()}`);
+        const yesterdayEnd = new Date(yesterdayStart);
+        yesterdayEnd.setHours(23, 59, 59, 999);
+
+        // This ensures the report covers exactly ONE DAY (the previous one)
+        // regardless of what time the script runs (e.g. at noon).
+        log(`📅 [DailyRecap] Range: ${yesterdayStart.toLocaleString()} - ${yesterdayEnd.toLocaleString()}`);
 
         // 2. Fetch ALL Users
         const usersSnap = await db.collection('users').get();
@@ -25,7 +30,8 @@ async function executeDailyRecap(chatId, force = false) {
 
             // Fetch games in range
             const gamesSnap = await doc.ref.collection('games')
-                .where('timestamp', '>=', yesterday)
+                .where('timestamp', '>=', yesterdayStart)
+                .where('timestamp', '<=', yesterdayEnd)
                 .get();
 
             if (!gamesSnap.empty) {

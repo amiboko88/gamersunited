@@ -70,9 +70,24 @@ async function execute(args, userId, chatId, imageBuffers) {
 
     // 2.5 Validation (The Matan Filter)
     // Check for "Damage 0" or missing - indicates bad OCR or blurry image
-    const invalidMatch = args.matches.find(m => !m.damage || m.damage <= 0);
+    const invalidMatch = args.matches.find(m => {
+        const dmg = parseInt(m.damage) || 0;
+        const kills = parseInt(m.kills) || 0;
+
+        // Rule 1: Zero Damage implies bad scan (unless 0 kills)
+        if (kills > 0 && dmg <= 0) return true;
+
+        // Rule 2: Impossible Ratio (e.g. 10 Kills with 400 Damage)
+        // Minimum reasonable damage per kill is ~100 (stealing kills).
+        // If Kills > 3 and Ratio < 100, it's suspicious.
+        if (kills > 3 && (dmg / kills) < 100) return true;
+
+        return false;
+    });
+
     if (invalidMatch) {
-        return "ROAST_ME: ❌ Image quality is garbage. Cannot read Damage stats. Tell them to learn to take a screenshot.";
+        log(`❌ [COD Stats] Rejected Ratio: ${invalidMatch.kills} Kills / ${invalidMatch.damage} Damage`);
+        return `❌ **נתונים לא הגיוניים!**\nהמערכת זיהתה יחס בלתי אפשרי (למשל ${invalidMatch.kills} הריגות עם ${invalidMatch.damage} נזק).\n👉 נסה לצלם שוב חד וברור, או כתוב לי בפרטי אם זה באג.`;
     }
 
     // 2.6 Mark images as processed (After validation passes)
@@ -156,7 +171,7 @@ async function execute(args, userId, chatId, imageBuffers) {
             mode: match.mode || 'Unknown',
             kills: parseInt(match.kills) || 0,
             damage: parseInt(match.damage) || 0,
-            score: parseInt(match.score) || 0,
+            // score: parseInt(match.score) || 0, // REMOVED (User Request)
             placement: parseInt(match.placement) || 0,
             evidence_batch: batchId,
             proofUrl: proofUrl,
@@ -165,6 +180,24 @@ async function execute(args, userId, chatId, imageBuffers) {
 
         if (foundUser) {
             // ✅ EXACT/STRONG MATCH - Save to User DB
+
+            // 🛑 DUPLICATE CHECK 2.0 (Query-Based)
+            // Prevent saving if exact same Kilsl/Damage exists for this user in last 24h
+            const duplicateCheckTime = new Date();
+            duplicateCheckTime.setHours(duplicateCheckTime.getHours() - 24);
+
+            const existingDupes = await db.collection('users').doc(foundUser.id).collection('games')
+                .where('kills', '==', parseInt(match.kills) || 0)
+                .where('damage', '==', parseInt(match.damage) || 0)
+                .where('timestamp', '>=', duplicateCheckTime)
+                .get();
+
+            if (!existingDupes.empty) {
+                log(`🛑 [COD Stats] Skipped Duplicate for ${foundUser.displayName} (${match.kills}K/${match.damage}D) - Already exists.`);
+                ignoredCount++; // Track ignored
+                continue; // Skip saving
+            }
+
             const gameRef = db.collection('users').doc(foundUser.id).collection('games').doc();
             batchOps.set(gameRef, statData);
             savedCount++;

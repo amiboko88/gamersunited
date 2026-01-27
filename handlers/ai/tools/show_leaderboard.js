@@ -21,10 +21,11 @@ const definition = {
 async function execute(args, userId, chatId) {
     try {
         const period = args.period || 'week';
-        const sortStat = args.stat || 'damage';
+        const sortStat = args.stat || 'damage'; // User Requested: DAMAGE is King
 
         // 1. Determine Date Range
         let queryDate = new Date();
+        let endDate = new Date(); // Default: Now
         let periodText = "Last 7 Days";
 
         if (period === 'all') {
@@ -32,34 +33,37 @@ async function execute(args, userId, chatId) {
             periodText = "All Time Legends";
         } else if (period === 'yesterday') {
             queryDate.setDate(queryDate.getDate() - 1);
-            queryDate.setHours(0, 0, 0, 0);
-            periodText = "Yesterday's Heroes";
+            queryDate.setHours(0, 0, 0, 0); // Start of Yesterday
+
+            endDate = new Date(queryDate);
+            endDate.setHours(23, 59, 59, 999); // End of Yesterday
+
+            periodText = `Yesterday's Heroes (${queryDate.getDate()}/${queryDate.getMonth() + 1})`;
         } else {
             queryDate.setDate(queryDate.getDate() - 7); // Default Week
         }
 
         log(`🏆 [Leaderboard] Generating ${period} table (Sort: ${sortStat})...`);
 
-        // 2. Fetch Data (Aggregated from all users)
-        // Optimization: We fetch all users, then top 3 games per user in rang, then aggregate.
-        // For a true "Leaderboard", we usually want "Summary Stats" (Total Kills over period).
-        // But our DB stores "Games".
-        // SO: We must fetch ALL games for the period and sum them up per user.
+        // ...
 
         const usersSnap = await db.collection('users').get();
-        let playerStats = new Map(); // <Name, {kills, damage, matches, score, avatar}>
+        let playerStats = new Map();
 
         const promises = usersSnap.docs.map(async doc => {
             const userData = doc.data();
             const name = userData.identity?.displayName || "Unknown";
             const avatar = userData.identity?.avatar || userData.identity?.avatar_discord || "https://cdn.discordapp.com/embed/avatars/0.png";
 
-            // Limit to recent 50 games to avoid explosion, or just get all for accurate stats?
-            // "Week" can have many games. Let's get up to 50.
-            const games = await doc.ref.collection('games')
-                .where('timestamp', '>=', queryDate)
-                .limit(50)
-                .get();
+            // Query with OPTIONAL end date
+            let query = doc.ref.collection('games')
+                .where('timestamp', '>=', queryDate);
+
+            if (period === 'yesterday') {
+                query = query.where('timestamp', '<=', endDate);
+            }
+
+            const games = await query.limit(50).get();
 
             if (!games.empty) {
                 let p = { name, avatar, kills: 0, damage: 0, matches: 0, score: 0 };

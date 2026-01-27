@@ -202,20 +202,20 @@ class LeaderboardRenderer {
                     <img src="${p.avatar}" class="avatar" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
                     <div class="name-box">
                         <div class="name">${p.name}</div>
-                        <div class="sub-name">${p.matches} Matches • ${p.kdr} K/D</div>
+                        <div class="sub-name">${p.matches} Matches Played</div>
                     </div>
-                </div>
-                <div class="cell-stat">
-                    <div class="stat-value text-green">${p.kills.toLocaleString()}</div>
-                    <div class="stat-label">KILLS</div>
                 </div>
                 <div class="cell-stat">
                     <div class="stat-value text-orange">${p.damage.toLocaleString()}</div>
                     <div class="stat-label">DAMAGE</div>
                 </div>
                 <div class="cell-stat">
-                    <div class="stat-value text-blue">${p.score?.toLocaleString() || 0}</div>
-                    <div class="stat-label">SCORE</div>
+                    <div class="stat-value text-green">${p.kills.toLocaleString()}</div>
+                    <div class="stat-label">KILLS</div>
+                </div>
+                <div class="cell-stat">
+                    <div class="stat-value text-blue">${p.matches > 0 ? (p.kills / p.matches).toFixed(1) : '0.0'}</div>
+                    <div class="stat-label">AVG KILLS</div>
                 </div>
             </div>
             `;

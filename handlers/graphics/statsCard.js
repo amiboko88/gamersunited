@@ -38,7 +38,6 @@ async function generateMatchCard(matches, options = {}) {
             </div>
             <div class="stat kills">${p.kills}</div>
             <div class="stat damage">${p.damage}</div>
-            <div class="stat score">${score}</div>
             <div class="note ${p.kills >= 15 ? 'high-note' : ''}">${note}</div>
         </div>
         `;
@@ -100,14 +99,14 @@ async function generateMatchCard(matches, options = {}) {
 
             /* Table Header */
             .thead {
-                display: grid; grid-template-columns: 0.5fr 3fr 1fr 1fr 1fr 1fr;
+                display: grid; grid-template-columns: 0.5fr 3fr 1fr 1fr 1fr;
                 padding: 0 25px; margin-bottom: 15px;
                 font-size: 16px; color: #64748b; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;
             }
 
             /* Rows */
             .row {
-                display: grid; grid-template-columns: 0.5fr 3fr 1fr 1fr 1fr 1fr; align-items: center;
+                display: grid; grid-template-columns: 0.5fr 3fr 1fr 1fr 1fr; align-items: center;
                 background: rgba(30, 41, 59, 0.4);
                 backdrop-filter: blur(10px);
                 border-left: 4px solid rgba(255,255,255,0.1);
@@ -165,7 +164,6 @@ async function generateMatchCard(matches, options = {}) {
                 <div>OPERATOR</div>
                 <div>KILLS</div>
                 <div>DAMAGE</div>
-                <div>SCORE</div>
                 <div>TAG</div>
             </div>
 

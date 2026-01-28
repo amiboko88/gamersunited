@@ -228,6 +228,21 @@ class ShimonBrain {
         }
     }
 
+    async generateJSON(prompt) {
+        try {
+            const runner = await openai.chat.completions.create({
+                model: "gpt-4o", // Strong model for JSON
+                messages: [{ role: "system", content: prompt }],
+                response_format: { type: "json_object" },
+                temperature: 0.1
+            });
+            return JSON.parse(runner.choices[0].message.content);
+        } catch (error) {
+            log(`❌ [Brain] JSON Gen Error: ${error.message}`);
+            return null;
+        }
+    }
+
     async executeKillSwitch(targetUserId, platform) {
         try {
             log(`☠️ [Brain] KILL SWITCH ACTIVATED against ${targetUserId}`);

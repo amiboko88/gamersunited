@@ -97,22 +97,58 @@ async function execute(sock, chatId) {
     }
 
     // 4. Generate Comeback (AI Decision Layer)
+    // 🕰️ Night Mode Logic
+    // Default: 02:00 to 08:00 is "Sleep Time"
+    const hour = new Date().getHours();
+    let isNightMode = hour >= 2 && hour < 8;
+
+    // 🎧 Discord Override: If people are validly connected to Voice, stay awake!
+    try {
+        const { client: discordClient } = require('../../discord');
+        if (discordClient && discordClient.isReady()) {
+            let voiceCount = 0;
+            discordClient.guilds.cache.forEach(g => {
+                // Count non-bot users in voice
+                voiceCount += g.voiceStates.cache.filter(v => v.member && !v.member.user.bot).size;
+            });
+
+            if (voiceCount > 0) {
+                log(`🎧 [Resurrection] Discord Active (${voiceCount} users). Overriding Night Mode! ☀️`);
+                isNightMode = false;
+            }
+        }
+    } catch (e) {
+        log(`⚠️ [Resurrection] Could not check Discord state: ${e.message}`);
+    }
+
     const prompt = `
-    Context: You (Shimon) just woke up after a restart/crash.
+    Context: You (Shimon) just woke up after a restart.
+    Current Time: ${hour}:00 (${isNightMode ? 'NIGHT MODE 🌙' : 'DAY MODE ☀️'})
     
     MISSED CHAT TRANSCRIPT:
     ${gapMessages.map(m => `- ${m.name}: "${m.text}" ${m.hasImage ? '[SENT IMAGE]' : ''}`).join('\n')}
     ${imageContext}
     
-    Task: Decide if you need to reply.
-    - If they completely ignored you / General chat: Reply "SKIP".
-    - If they mentioned you, the bot, the crash, or sent images THAT ARE NEW: Reply.
-    - If images are DUPLICATES: REPLY "SKIP". Do not say anything. Silence is better than spam.
+    Task: Decide execution strategy.
     
-    Response Rules (If replying):
-    1. Tone: Cool, dismissive, Hebrew Slang.
-    2. If only insults: Roast them back ("I heard you crying").
-    3. MAX 15 WORDS.
+    RULES:
+    1. **IMAGES**: I have already scanned them and liked them (✅). DO NOT COMMENT on images unless the user specifically asks "Did you see this?".
+       - If they just sent an image: Reply "SKIP".
+    
+    2. **NIGHT MODE (${isNightMode ? 'ACTIVE' : 'OFF'})**: 
+       - If ACTIVE: You are asleep. Reply "SKIP" to EVERYTHING unless they explicitly tag/mention you by name.
+    
+    3. **INSULTS**:
+       - If someone explicitly cursed YOU (Shimon/Bot) in the transcript -> ROAST THEM BACK immediately.
+       - If they are cursing each other -> Reply "SKIP".
+    
+    4. **CASUAL CHAT**:
+       - If they are just talking -> Reply "SKIP".
+       - If they mention "Shimon" or "Bot" -> Reply.
+
+    Response Format:
+    - If "SKIP" -> Just write "SKIP".
+    - If Replying -> Write the Hebrew response (Max 10 words, slang, sharp).
     `;
 
     // Use a numeric ID to pass Firestore validation (UserUtils strips non-digits)

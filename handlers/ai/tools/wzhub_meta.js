@@ -46,6 +46,20 @@ async function execute(args) {
         // Note: Specific mode scraping requires clicking buttons, 
         // which is risky. We start with global meta.
 
+        // 🧠 ALIAS DICTIONARY (Fix Common Errors)
+        const ALIASES = {
+            'KOGUT': 'Kogot-7',
+            'KOGOT': 'Kogot-7',
+            'קוגוט': 'Kogot-7',
+            'KAR98': 'Kar98k',
+            'STG': 'STG44'
+        };
+
+        if (args.weapon && ALIASES[args.weapon.toUpperCase()]) {
+            log(`[WZHUB] 🧠 Correcting weapon name: ${args.weapon} -> ${ALIASES[args.weapon.toUpperCase()]}`);
+            args.weapon = ALIASES[args.weapon.toUpperCase()];
+        }
+
         let url, selector, title;
 
         // "Batel" / "Redsec" / "BF6" -> BFHUB (Project Redsec / Delta Force / BF6)
@@ -102,7 +116,7 @@ async function execute(args) {
         }
 
         if (!imageBuffer) {
-            return "❌ Failed to capture meta screenshot. Check site status.";
+            return "[TOOL_ERROR] Failed to capture meta screenshot (Timeout/Network). SYSTEM INSTRUCTION: Do NOT invent weapon names. Tell the user you are unable to retrieve the meta right now due to a connection error.";
         }
 
         // Send Image if Socket Available
@@ -113,8 +127,16 @@ async function execute(args) {
             await sock.sendMessage(chatId, {
                 image: imageBuffer,
                 caption: finalCaption
+
             });
-            return "[RESPONSE_SENT] Sent Meta Screenshot.";
+
+            // ✅ Return Data to AI so it doesn't hallucinate
+            let successMsg = `[RESPONSE_SENT] Sent Meta Screenshot for ${args.weapon || mode}.`;
+            if (args.weapon) {
+                // User explicit request: "No text, only image". Avoid hallucinations.
+                successMsg += `\n\nSYSTEM INSTRUCTION: Verify the image is sent. Do NOT list attachments textually. Simply say "Here is the loadout for ${args.weapon}."`;
+            }
+            return successMsg;
         }
 
         // Fallback for testing (Return buffer as success signal if no chat)

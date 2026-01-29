@@ -48,16 +48,14 @@ class BrowserAdapter {
             await page.setViewport({ width: 1920, height: 1080 });
             await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
 
-            /*
             await page.setRequestInterception(true);
             page.on('request', (req) => {
-                if (['image', 'stylesheet', 'font', 'media', 'websocket'].includes(req.resourceType())) {
+                if (['image', 'media', 'websocket'].includes(req.resourceType())) { // Allow stylesheet/font for layout
                     req.abort();
                 } else {
                     req.continue();
                 }
             });
-            */
 
             log(`[Browser] Navigating to ${url}...`);
             // Optimized: domcontentloaded is faster/safer for heavy media sites like COD
@@ -241,7 +239,7 @@ class BrowserAdapter {
             await page.setViewport({ width: 1920, height: 1200, deviceScaleFactor: 2 });
 
             log(`[Browser] 📸 Navigating to ${url} for Screenshot...`);
-            await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
             // Try Element Screenshot First
             try {
@@ -367,6 +365,9 @@ class BrowserAdapter {
             await page.setViewport({ width: 1920, height: 1200, deviceScaleFactor: 2 });
 
             log(`[Browser] 🔭 Hunting for loadout "${targetText}" on ${url}...`);
+
+            page.on('console', msg => log(`[Browser Console] 🧩 ${msg.text()}`));
+
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
 
             // Wait for list to render (Support Angular/BFHUB/WZHUB)
@@ -385,63 +386,70 @@ class BrowserAdapter {
             }
 
             // Logic: Find Card -> Click Expand -> Screenshot
-            const result = await page.evaluate(async (text) => {
-                // Helper to find text safely
-                const containsText = (el, t) => el.innerText && el.innerText.toUpperCase().includes(t.toUpperCase());
+            const result = await page.evaluate(async (target) => {
+                // --- Fuzzy Search Logic (Levenshtein-ish) ---
+                function getScore(str1, str2) {
+                    const s1 = str1.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                    const s2 = str2.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                    if (s1 === s2) return 1.0;
+                    if (s1.includes(s2) || s2.includes(s1)) return 0.8;
 
-                // 1. Find all cards (Try precise selectors first)
-                let cards = Array.from(document.querySelectorAll('.loadout-card, .meta-row, app-loadout-card, div[class*="card"]'));
-                let targetCard = cards.find(c => containsText(c, text));
+                    // Simple shared character count for short strings
+                    let matches = 0;
+                    for (let i = 0; i < Math.min(s1.length, s2.length); i++) {
+                        if (s1[i] === s2[i]) matches++;
+                    }
+                    return matches / Math.max(s1.length, s2.length);
+                }
 
-                // 2. Fallback: Smart Text Search
-                if (!targetCard) {
-                    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-                    let node;
-                    while (node = walker.nextNode()) {
-                        if (node.nodeValue.toUpperCase().includes(text.toUpperCase())) {
-                            let el = node.parentElement;
-                            let bestCandidate = null;
+                // 1. Gather all candidates
+                // Support WZHUB, WZSTATS, BFHUB layouts
+                let candidates = Array.from(document.querySelectorAll('.loadout-card, .meta-row, app-loadout-card, div[class*="card"], li.weapon-item'));
+                let bestCard = null;
+                let bestScore = 0;
 
-                            for (let i = 0; i < 8; i++) {
-                                if (!el || el === document.body) break;
+                // 2. Score each candidate
+                for (const card of candidates) {
+                    const text = card.innerText || "";
+                    // Check Weapon Name specifically if possible
+                    const nameEl = card.querySelector('.weapon-name, h3, .name, .title');
+                    const cleanText = nameEl ? nameEl.innerText : text;
 
-                                if (el.tagName === 'LI' || el.tagName === 'APP-LOADOUT-CARD') {
-                                    bestCandidate = el;
-                                    break;
-                                }
+                    const score = getScore(cleanText, target);
 
-                                const style = window.getComputedStyle(el);
-                                if (el.offsetWidth > 200 && (style.display === 'flex' || style.display === 'grid' || el.classList.contains('loadout-card'))) {
-                                    bestCandidate = el;
-                                    if (el.offsetHeight > 100) break;
-                                }
-                                el = el.parentElement;
-                            }
-
-                            targetCard = bestCandidate || el;
-                            if (targetCard) break;
-                        }
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestCard = card;
                     }
                 }
 
-                if (!targetCard) return null;
+                // Threshold (0.6 means roughly 60% match, e.g. KOGUT vs KOGOT is 4/5 = 0.8)
+                if (bestScore < 0.6) {
+                    // Last Resort: Global Text Search if structure failed
+                    if (document.body.innerText.toUpperCase().includes(target.toUpperCase())) {
+                        // Fallback to strict search old logic if found in body but not in cards
+                        // (Not implemented here to keep it simple, usually finding the card is key)
+                    }
+                    return null;
+                }
+
+                const targetCard = bestCard;
 
                 // 3. Find Expand Button OR Click Card
-                // Try to find the specific WZStats cursor element first (User Tip)
-                const cursorBtn = targetCard.querySelector('.loadout-content.cursor');
-                const standardBtn = targetCard.querySelector('.loadout-card__toggle-btn, .expand-btn, button, [role="button"], .chevron');
+                // 3. Find Expand Button OR Click Card
 
-                // WZHUB Specific: Look for "Show Details" button text
-                const showDetailsBtn = Array.from(targetCard.querySelectorAll('button')).find(b => b.innerText.toUpperCase().includes('SHOW DETAILS'));
 
-                if (showDetailsBtn) {
-                    showDetailsBtn.click();
-                } else if (cursorBtn) {
-                    cursorBtn.click();
-                } else if (standardBtn) {
-                    standardBtn.click();
+                // Prioritize "SHOW DETAILS" anywhere in the card
+                const allEls = Array.from(targetCard.querySelectorAll('*'));
+                const showDetailsEl = allEls.find(el => el.innerText && el.innerText.toUpperCase().includes('SHOW DETAILS'));
+                if (showDetailsEl) {
+                    showDetailsEl.click();
                 } else {
-                    targetCard.click();
+                    const cursorBtn = targetCard.querySelector('.loadout-content.cursor');
+                    const standardBtn = targetCard.querySelector('.loadout-card__toggle-btn, .expand-btn, button, [role="button"], .chevron');
+                    if (cursorBtn) cursorBtn.click();
+                    else if (standardBtn) standardBtn.click();
+                    else targetCard.click();
                 }
 
                 // AD BLOCKING / CLEANUP
@@ -462,46 +470,118 @@ class BrowserAdapter {
             // Wait for expansion animation
             await new Promise(r => setTimeout(r, 2000));
 
-            // Get Handle
-            const element = await page.$('[data-screenshot-target="true"]');
+            // WZHUB: Wait for validation of expansion
+            try {
+                // Try to wait for an attachment or code to appear visible
+                await page.waitForFunction(
+                    (el) => el.innerText.length > 50,
+                    { timeout: 3000 },
+                    await page.$('[data-screenshot-target="true"]')
+                );
+            } catch (e) { }
 
-            if (!element) throw new Error("Target element lost after interaction.");
+            // CRITICAL: Robust Content-Based Finding (Ignore DOM IDs/Classes)
+            const ElementHandle = await page.evaluateHandle((target) => {
+                // 1. Scan for Build Code Pattern globally
+                const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                let node, codeNode;
+                const codeRegex = /[A-Z0-9]{3,4}-[A-Z0-9]{5,6}-[A-Z0-9]{3,8}/;
 
-            // Extract Build Code (Robust Search)
-            const buildCode = await page.evaluate(el => {
-                // Strategy 1: "LOADOUT CODE" Label (WZHUB Style)
-                const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-                let node;
                 while (node = walker.nextNode()) {
-                    if (node.nodeValue.toUpperCase().includes('LOADOUT CODE') || node.nodeValue.toUpperCase().includes('BUILD CODE')) {
-                        const parent = node.parentElement;
-                        const fullText = parent.innerText.trim();
-
-                        // Check sibling (The code is usually next to the label)
-                        if (fullText.toUpperCase().includes('CODE')) {
-                            const sibling = parent.nextElementSibling;
-                            if (sibling) return sibling.innerText.trim();
-                            // Or maybe inside the same parent but after newline
-                            const parts = fullText.split('\n');
-                            if (parts.length > 1) return parts[parts.length - 1].trim();
-                        }
+                    if (codeRegex.test(node.nodeValue)) {
+                        codeNode = node.parentElement;
+                        break;
                     }
                 }
 
-                // Strategy 2: WZHUB Copy Button (Yellow icon)
-                // Look for svg or button near the code
+                if (codeNode) {
+                    // Found the code! Climb up to a reasonable container (Card)
+                    let container = codeNode;
+                    while (container && container.tagName !== 'BODY') {
+                        if (container.classList.contains('loadout-card') ||
+                            container.classList.contains('meta-row') ||
+                            container.innerText.length > 500 || // Big container
+                            container.parentElement.tagName === 'BODY') {
+                            return container;
+                        }
+                        container = container.parentElement;
+                    }
+                    return codeNode.parentElement.parentElement; // Fallback
+                }
 
-                // Strategy 3: Regex Fallback
+                // 2. If no code found, look for Weapon Name + "Muzzle" (Expanded content)
+                const rows = Array.from(document.querySelectorAll('div, li, section'));
+                for (const row of rows) {
+                    if (row.innerText.includes(target) && row.innerText.includes('Muzzle')) {
+                        return row;
+                    }
+                }
+
+                // 3. Fallback to attribute
+                return document.querySelector('[data-screenshot-target="true"]');
+            }, targetText);
+
+            let element = null;
+            if (ElementHandle && ElementHandle.asElement()) {
+                element = ElementHandle.asElement();
+            }
+
+            if (!element) {
+                log(`[Browser] ⚠️ Target element lost. Fallback to viewport screenshot.`);
+                const buffer = await page.screenshot({ fullPage: false });
+                await page.close();
+                return { buffer, buildCode: null, attachments: [] };
+            }
+
+            // Debug innerText before processing
+            const fullText = await page.evaluate(el => el.innerText, element);
+            log(`[Browser] 📝 Found Text (${fullText.length} chars): ${fullText.substring(0, 100).replace(/\n/g, ' ')}...`);
+
+            // Extract Build Code AND Attachments (Robust Search)
+            const extractedData = await page.evaluate(el => {
+                const data = { buildCode: null, attachments: [] };
+
+                // 1. Build Code extraction (Existing strategies)
                 const text = el.innerText;
-                // Pattern: XXX-XXXXX-XXXX (e.g. S07-6WVQQ-A711) or WZHUB style (A01-AUXZ7-Y5BD1-1)
-                // Generalized: [A-Z0-9]{3,5}-[A-Z0-9]{5}-[A-Z0-9]{3,5}
-                const match = text.match(/[A-Z0-9]{3,4}-[A-Z0-9]{5,6}-[A-Z0-9]{3,8}(-[0-9])?/);
-                if (match) return match[0];
+                const codeMatch = text.match(/[A-Z0-9]{3,4}-[A-Z0-9]{5,6}-[A-Z0-9]{3,8}(-[0-9])?/);
+                if (codeMatch) data.buildCode = codeMatch[0];
 
-                return null;
+                // 2. Attachments Extraction
+                // Look for common attachment structures
+                // WZHUB: .attachment-name, .wrapper .name
+                const attEls = el.querySelectorAll('.attachment, .att-name, .wrapper, .setup-item');
+                attEls.forEach(att => {
+                    // Try to separate Slot from Name if possible
+                    // Often: "Muzzle" (label) -> "Sonic Suppressor" (value)
+                    const label = att.querySelector('.label, .type, .slot')?.innerText;
+                    const value = att.querySelector('.name, .value, .attachment-name')?.innerText || att.innerText;
+
+                    if (value && value.length > 2 && !value.includes('Unlock')) {
+                        // Cleanup
+                        const cleanVal = value.replace(/\n/g, ' ').replace('META', '').trim();
+                        if (cleanVal !== data.buildCode) {
+                            data.attachments.push(label ? `${label}: ${cleanVal}` : cleanVal);
+                        }
+                    }
+                });
+
+                // Fallback: simple text line scan if no classes found
+                if (data.attachments.length === 0) {
+                    const lines = text.split('\n');
+                    // Filter out noise
+                    data.attachments = lines.filter(l =>
+                        l.length > 3 &&
+                        !l.includes('Build Code') &&
+                        !l.includes(data.buildCode) &&
+                        !['META', 'ABSOLUTE', 'TIER'].includes(l.toUpperCase())
+                    ).slice(0, 5); // Take first 5 logical lines as candidates
+                }
+
+                return data;
             }, element);
 
-            log(`[Browser] 🧬 Extracted Build Code: ${buildCode}`);
+            log(`[Browser] 🧬 Element Text Dump (First 100 chars): ${await page.evaluate(el => el.innerText.substring(0, 100).replace(/\n/g, ' '), element)}`);
+            log(`[Browser] 🧬 Extracted: Code=${extractedData.buildCode}, Atts=${extractedData.attachments.length}`);
 
             // Scroll into view nicely
             await element.scrollIntoViewIfNeeded();
@@ -510,7 +590,7 @@ class BrowserAdapter {
             const buffer = await element.screenshot({ omitBackground: true });
             await page.close();
 
-            return { buffer, buildCode };
+            return { buffer, buildCode: extractedData.buildCode, attachments: extractedData.attachments };
 
         } catch (error) {
             log(`❌ [Browser] Detail Screenshot Error: ${error.message}`);

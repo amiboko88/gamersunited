@@ -27,8 +27,10 @@ class FortuneWheel {
 
             snapshot.forEach(doc => {
                 const data = doc.data();
-                // אם כבר זכה השבוע או מוחרג - דלג (TODO)
-                candidates.push({ id: doc.id, ...data });
+                // חובה: משתמש עם חשבון טלגרם מקושר
+                if (data.platforms?.telegram) {
+                    candidates.push({ id: doc.id, ...data });
+                }
             });
 
             if (candidates.length === 0) return log('⚠️ [Wheel] אין מועמדים להגרלה.');

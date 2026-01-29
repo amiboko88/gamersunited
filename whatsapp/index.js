@@ -34,14 +34,16 @@ async function connectToWhatsApp() {
 
         const sock = makeWASocket({
             version,
-            logger: pino({ level: 'fatal' }), // 🤫 Silence the session key dumps
+            logger: pino({ level: 'fatal' }),
             auth: state,
             msgRetryCounterCache,
             connectTimeoutMs: 60000,
-            keepAliveIntervalMs: 10000,
+            defaultQueryTimeoutMs: 0, // Disable query timeout to prevent 503 during sync
+            keepAliveIntervalMs: 30000, // Balanced heartbeat
             emitOwnEvents: false,
             browser: ["Shimon Bot", "Chrome", "1.0.0"],
-            syncFullHistory: true
+            syncFullHistory: false, // 🚀 Faster sync, less 428 errors
+            markOnlineOnConnect: true
         });
 
         setSocket(sock); // ✅ שומרים במודול החיצוני

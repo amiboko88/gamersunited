@@ -11,7 +11,8 @@ const showLeaderboard = require('./show_leaderboard'); // 🏆 ויזואליז�
 const showProfile = require('./show_cod_profile'); // 🪖 כרטיס שחקן אישי וורזון
 
 // הסרנו את games (הישן) מהרשימה
-const allTools = [dj, ranking, identity, birthday, match, codStats, linkAlias, queryStats, showLeaderboard, showProfile];
+const wzhubMeta = require('./wzhub_meta'); // ✅ WZ Meta Guns
+const allTools = [dj, ranking, identity, birthday, match, codStats, linkAlias, queryStats, showLeaderboard, showProfile, wzhubMeta];
 
 exports.definitions = allTools.map(t => t.definition);
 

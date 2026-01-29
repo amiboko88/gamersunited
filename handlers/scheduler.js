@@ -194,13 +194,19 @@ module.exports = {
 
         // --- 🎡 גלגל המזל השבועי (חמישי ב-20:00) ---
         cron.schedule('0 20 * * 4', async () => {
+            log('[Scheduler] ⏳ Starting Thursday Task: Fortune Wheel (20:00)');
             const fortuneWheel = require('./economy/fortuneWheel'); // Late require
-            const { getBot } = require('../telegram/client'); // לוודא שיש בוט
+            const { getBot } = require('../telegram/client'); // לוודא שיש בוט?
+            // Note: fortuneWheel internal logic uses getBot() from client globally or passed param
+            // In fortuneWheel.js we see: async selectWeeklyWinner(clients)
 
             try {
+                const clients = { telegram: getBot() };
+                if (!clients.telegram) log('⚠️ [Scheduler] Telegram bot not active for Wheel, running anyway (DB update only).');
+
                 log('[Scheduler] 🎰 מגריל זוכה בגלגל המזל...');
-                const clients = { telegram: getBot() }; // נדרש לשימוש בתוך selectWeeklyWinner
                 await fortuneWheel.selectWeeklyWinner(clients);
+                log('[Scheduler] ✅ Fortune Wheel Task Completed.');
             } catch (e) {
                 log(`❌ [Wheel] Error: ${e.message}`);
             }
@@ -208,8 +214,14 @@ module.exports = {
 
         // --- ✨ Telegram Weekly Spark (חמישי ב-19:00) ---
         cron.schedule('0 19 * * 4', async () => {
-            const campaign = require('../telegram/campaign');
-            await campaign.runWeeklySpark();
+            log('[Scheduler] ⏳ Starting Thursday Task: Weekly Spark (19:00)');
+            try {
+                const campaign = require('../telegram/campaign');
+                await campaign.runWeeklySpark();
+                log('[Scheduler] ✅ Weekly Spark Task Completed.');
+            } catch (e) {
+                log(`❌ [Spark] Critical Error: ${e.message}`);
+            }
         }, { timezone: "Asia/Jerusalem" });
 
         // --- 👻 Operation Ghost Protocol (ראשון, שלישי, חמישי ב-20:30) ---

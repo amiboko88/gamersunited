@@ -81,6 +81,14 @@ class XPManager {
         }
     }
 
+    calculateRank(level) {
+        if (level >= 50) return { name: "PREDATOR", color: "linear-gradient(90deg, #ff0000, #ff3300)" }; // Red
+        if (level >= 30) return { name: "PLATINUM", color: "linear-gradient(90deg, #00ced1, #008b8b)" }; // Teal/Cyan
+        if (level >= 15) return { name: "GOLD", color: "linear-gradient(90deg, #ffd700, #ffa500)" };     // Gold
+        if (level >= 5) return { name: "SILVER", color: "linear-gradient(90deg, #c0c0c0, #a9a9a9)" };   // Silver
+        return { name: "ROOKIE", color: "linear-gradient(90deg, #cd7f32, #8b4513)" };                    // Bronze
+    }
+
     async processLevelUpEvent(userId, platform, level, xp, userData, contextObj, replyFunc) {
         try {
             const name = userData.identity?.displayName || "Gamer";
@@ -121,7 +129,8 @@ class XPManager {
             }
 
             // --- 2. Generate Graphic Card ---
-            const cardBuffer = await graphics.profile.generateLevelUpCard(name, level, xp, avatar);
+            const rank = this.calculateRank(level);
+            const cardBuffer = await graphics.profile.generateLevelUpCard(name, level, xp, avatar, rank.name, rank.color);
 
             if (platform === 'whatsapp' && contextObj.sock && contextObj.chatId) {
                 // A. Send Image with Caption (Smart Mentions)
@@ -151,7 +160,7 @@ class XPManager {
 
                 await contextObj.sock.sendMessage(contextObj.chatId, {
                     image: cardBuffer,
-                    caption: `🎉 *LEVEL UP!* \nמזל טוב ${displayTag} עלית לרמה *${level}*!\n💰 קיבלת 100₪ מתנה לחשבון.`,
+                    caption: `🎉 *LEVEL UP!* \nמזל טוב ${displayTag} עלית לרמה *${level}* (${rank.name})!\n💰 קיבלת 100₪ מתנה לחשבון.`,
                     mentions: mentions
                 });
 
@@ -160,7 +169,7 @@ class XPManager {
                     const factsContext = await learningEngine.getUserProfile(userId, platform);
                     const prompt = `
                     Generate a SHORT Hebrew Voice Message text from Shimon to ${name}.
-                    Context: They just reached Level ${level}. You gave them 100 shekels.
+                    Context: They just reached Level ${level} (${rank.name}). You gave them 100 shekels.
                     Tone: Cynical, "Ars" (Israeli slang), funny, roasting but congratulating.
                     User Facts: ${factsContext}
                     
@@ -192,7 +201,7 @@ class XPManager {
             } else {
 
                 // Discord Fallback
-                if (replyFunc) await replyFunc(`🎉 **LEVEL UP!** ${name} -> Level ${level} (+100 Coins 💰)`);
+                if (replyFunc) await replyFunc(`🎉 **LEVEL UP!** ${name} -> Level ${level} (${rank.name}) (+100 Coins 💰)`);
             }
 
         } catch (error) {

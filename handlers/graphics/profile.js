@@ -10,7 +10,7 @@ class ProfileRenderer {
         return 5 * (level ** 2) + 50 * level + 100;
     }
 
-    async generateLevelUpCard(username, level, xp, avatarUrl, rankName = "GAMER") {
+    async generateLevelUpCard(username, level, xp, avatarUrl, rankName = "GAMER", rankColor = "linear-gradient(90deg, #ff0055, #ff3300)") {
         // חישוב אחוז התקדמות
         const nextLevelXp = this._getNextLevelXp(level);
         const prevLevelXp = this._getNextLevelXp(level - 1);
@@ -85,16 +85,17 @@ class ProfileRenderer {
 
                 .rank-badge {
                     position: absolute; bottom: 5px; right: 50%; transform: translateX(50%);
-                    background: linear-gradient(90deg, #ff0055, #ff3300);
+                    background: ${rankColor};
                     color: white;
                     padding: 5px 18px;
                     border-radius: 12px;
                     font-weight: 900;
                     font-size: 16px;
                     text-transform: uppercase;
-                    box-shadow: 0 5px 15px rgba(255, 0, 85, 0.5);
+                    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
                     border: 2px solid #141419;
                     white-space: nowrap;
+                    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
                 }
 
                 .content { flex: 1; z-index: 5; color: white; display: flex; flex-direction: column; justify-content: center; }
@@ -110,7 +111,7 @@ class ProfileRenderer {
 
                 .level-badge {
                     font-size: 32px; font-weight: 900; 
-                    color: #00ffff;
+                    color: ${rankColor.includes('gold') ? '#ffd700' : '#00ffff'};
                     text-shadow: 0 0 20px rgba(0,255,255,0.6);
                 }
 
@@ -128,9 +129,9 @@ class ProfileRenderer {
 
                 .progress-bar {
                     height: 100%; width: ${progressPercent}%;
-                    background: linear-gradient(90deg, #00ffff, #0055ff);
+                    background: ${rankColor}; 
                     border-radius: 12px;
-                    box-shadow: 0 0 30px rgba(0, 255, 255, 0.4);
+                    box-shadow: 0 0 30px rgba(255, 255, 255, 0.2);
                     position: relative;
                 }
                 

@@ -36,14 +36,17 @@ module.exports = {
             const avatar = data.identity?.avatarURL || "https://cdn.discordapp.com/embed/avatars/0.png";
 
             // יצירת הכרטיס
-            const cardBuffer = await graphics.profile.generateLevelUpCard(name, level, xp, avatar);
+            const xpManager = require('../../economy/xpManager'); // Import XP Logic
+            const rank = xpManager.calculateRank(level);
+
+            const cardBuffer = await graphics.profile.generateLevelUpCard(name, level, xp, avatar, rank.name, rank.color);
 
             if (sock && chatId && cardBuffer) {
                 await sock.sendMessage(chatId, {
-                    image: cardBuffer
-                    // caption removed as requested
+                    image: cardBuffer,
+                    caption: `💳 *GAMER CARD*\n👤 ${name} | הרמה: ${level} (${rank.name})`
                 });
-                return "Image sent. STOP. Do not output text.";
+                return "[RESPONSE_SENT] Sent identity card.";
             }
 
             return `רמה: ${level} | XP: ${xp}`;

@@ -24,14 +24,16 @@ async function execute(args, userId, chatId) {
         const sortStat = args.stat || 'damage'; // User Requested: DAMAGE is King
 
         // 1. Determine Date Range
-        let queryDate = new Date();
-        let endDate = new Date(); // Default: Now
-        let periodText = "Last 7 Days";
+        let queryDate = new Date(0); // Default: All Time (Epoch 1970)
+        let endDate = new Date(); // Only used for 'yesterday'
+        let periodText = "All Time Legends"; // Default
 
-        if (period === 'all') {
-            queryDate = new Date(0);
-            periodText = "All Time Legends";
+        if (period === 'week') {
+            queryDate = new Date();
+            queryDate.setDate(queryDate.getDate() - 7);
+            periodText = "Last 7 Days";
         } else if (period === 'yesterday') {
+            queryDate = new Date();
             queryDate.setDate(queryDate.getDate() - 1);
             queryDate.setHours(0, 0, 0, 0); // Start of Yesterday
 
@@ -39,9 +41,10 @@ async function execute(args, userId, chatId) {
             endDate.setHours(23, 59, 59, 999); // End of Yesterday
 
             periodText = `Yesterday's Heroes (${queryDate.getDate()}/${queryDate.getMonth() + 1})`;
-        } else {
-            queryDate.setDate(queryDate.getDate() - 7); // Default Week
+        } else if (period === 'all') {
+            // Already set as default
         }
+
 
         log(`🏆 [Leaderboard] Generating ${period} table (Sort: ${sortStat})...`);
 

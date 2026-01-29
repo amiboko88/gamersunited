@@ -6,7 +6,7 @@ const definition = {
     type: "function",
     function: {
         name: "show_cod_profile",
-        description: "Show a PERSONAL WARZONE Operator Card. ⚠️ RESTRICTION: Use ONLY when specific context of 'Warzone', 'COD', 'K/D' is present. If user says 'Show my stats' or 'Profile' generically -> DO NOT CALL. Ask 'In which game?'.",
+        description: "Show a PERSONAL WARZONE Operator Card. Trigger IMMEDIATELY if keywords 'Warzone', 'COD', 'K/D', or 'Stats' are used in a Call of Duty context. Do not ask for game clarification if 'Warzone' is explicitly mentioned.",
         parameters: {
             type: "object",
             properties: {

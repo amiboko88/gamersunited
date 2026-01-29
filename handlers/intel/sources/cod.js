@@ -1,5 +1,5 @@
 const stringSimilarity = require('string-similarity');
-const brain = require('../../ai/brain');
+// Brain moved to lazy require
 const { log } = require('../../../utils/logger');
 
 const browserAdapter = require('../adapters/browser');
@@ -7,6 +7,8 @@ const browserAdapter = require('../adapters/browser');
 const WZ_URL = 'https://wzhub.gg/loadouts';
 const PLAYLIST_URL = 'https://wzhub.gg/playlist/wz';
 const HUB_URL = 'https://www.callofduty.com/patchnotes';
+
+const genericTerms = ['absolute', 'meta', 'מטא', 'מטה', 'הכי חזק', 'נשק', 'רובה', 'טוב', 'loadout', 'build', 'class'];
 
 const source = {
     // --- WZ Meta Extraction ---
@@ -165,6 +167,7 @@ const source = {
         // 3. Brain Fallback
         if (!found && q.length > 2) {
             try {
+                const brain = require('../../ai/brain');
                 const candidates = allWeapons.map(w => w.name).slice(0, 50).join(', ');
                 const aiGuess = await brain.generateInternal(`
                 User searched for weapon: "${query}" (Hebrew/Typo).

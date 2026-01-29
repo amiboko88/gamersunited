@@ -155,6 +155,8 @@ class BrowserAdapter {
                                 await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 120000 });
                             } catch (e) {
                                 log(`[Browser] ⚠️ Navigation Timeout/Error: ${e.message} (Proceeding to extract text anyway)`);
+                                // If we timed out, stop loading to free resources
+                                await page.evaluate(() => window.stop());
                             }
 
                             try {
@@ -162,8 +164,8 @@ class BrowserAdapter {
                             } catch (e) { }
 
                             // CRITICAL: Heavy wait for full React Hydration (Bug Fixes are last)
-                            log(`[Browser] ⏳ Waiting 10s for full hydration...`);
-                            await new Promise(r => setTimeout(r, 10000));
+                            log(`[Browser] ⏳ Waiting 3s for hydration...`);
+                            await new Promise(r => setTimeout(r, 3000));
 
                             // Check for Age Gate AGAIN on the new page
                             try {

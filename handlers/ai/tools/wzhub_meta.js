@@ -34,116 +34,69 @@ const definition = {
     }
 };
 
+const intelManager = require('../../intel/manager');
+
 async function execute(args) {
-    const { mode, game, chatId } = args;
-    log(`🔫 [WZHUB] Fetching Meta for ${game} - ${mode}...`);
+    const { mode, game, chatId, weapon } = args;
+    log(`🔫 [Tool] Fetching Meta via IntelManager for ${game} (Weapon: ${weapon || 'All'})...`);
 
     try {
-        // Map mode to URL
-        // Probed & Verified: https://wzhub.gg/meta is reliable.
-        // Tabs are SPA-based, so for now we stick to the main page which usually shows proper meta.
+        // 1. Construct Query for IntelManager
+        let query = "Absolute Meta"; // Default
 
-        // Note: Specific mode scraping requires clicking buttons, 
-        // which is risky. We start with global meta.
+        const isBatel = game && (game.toUpperCase().includes('BF6') || game.toUpperCase().includes('BATEL'));
 
-        // 🧠 ALIAS DICTIONARY (Fix Common Errors)
-        const ALIASES = {
-            'KOGUT': 'Kogot-7',
-            'KOGOT': 'Kogot-7',
-            'קוגוט': 'Kogot-7',
-            'KAR98': 'Kar98k',
-            'STG': 'STG44'
-        };
-
-        if (args.weapon && ALIASES[args.weapon.toUpperCase()]) {
-            log(`[WZHUB] 🧠 Correcting weapon name: ${args.weapon} -> ${ALIASES[args.weapon.toUpperCase()]}`);
-            args.weapon = ALIASES[args.weapon.toUpperCase()];
+        if (weapon) {
+            query = weapon;
+        } else if (isBatel) {
+            query = "BF6 Meta"; // Triggers BF6 fallback list
+        } else if (args.tier === 'Meta') {
+            query = "Meta";
         }
 
-        let url, selector, title;
+        // 2. Call Manager
+        const result = await intelManager.getMeta(query);
 
-        // "Batel" / "Redsec" / "BF6" -> BFHUB (Project Redsec / Delta Force / BF6)
-        const isBatel = game.toUpperCase().includes('BF6') || game.toUpperCase().includes('BATEL') || mode.toUpperCase().includes('BATEL') || mode.toUpperCase().includes('REDSEC');
-
-        if (isBatel || mode === 'Ranked') {
-            // BF6 / Batel Request -> BFHUB
-            url = 'https://bfhub.gg/meta/br';
-            // Target ONLY "Absolute Meta" section.
-            // BFHUB Structure: Sections usually have headers. We need the container under "Absolute Meta"
-            // Selector: .meta-category:first-of-type (assuming Absolute is top) or specific ID
-            selector = 'text:Absolute Meta';
-            title = "BF6 REDSEC META (BFHUB)";
-        } else {
-            // Warzone Request -> WZHUB (User Requested Revert)
-            if (mode === 'Battle Royale') {
-                url = 'https://wzhub.gg/loadouts';
-            } else {
-                url = 'https://wzhub.gg/loadouts';
-            }
-            // WZHUB: Absolute Meta is usually the first list/category
-            // We want to avoid capturing the whole page.
-            // Let's rely on finding the "Absolute Meta" header's parent or the first loadout set.
-            // If user asked for specific Tier (Meta), use Exact Match to avoid "Absolute Meta".
-            if (args.tier === 'Meta') {
-                selector = 'text_exact:Meta';
-                title = "WARZONE META (Tier 2)";
-            } else {
-                selector = 'text:Absolute Meta';
-                title = "WARZONE ABSOLUTE META";
-            }
+        if (!result) {
+            return "❌ No meta data found at this moment.";
         }
 
-        log(`📸 [MetaScraper] Screenshotting ${url} (Selector: ${selector})...`);
+        // 3. Handle Visual Response (Image)
+        if (result.image) {
+            const { getWhatsAppSock } = require('../../../whatsapp/index');
+            const sock = getWhatsAppSock();
 
-        let imageBuffer;
-        let finalCaption = `🔫 **${title}**\nSource: ${url.split('/')[2]}`;
+            if (sock && chatId) {
+                // Determine Mimetype (Buffer or URL)
+                const imgContent = Buffer.isBuffer(result.image) ? result.image : { url: result.image };
 
-        if (args.weapon) {
-            log(`🎯 [MetaScraper] Hunting for specific loadout: ${args.weapon}`);
-            const result = await browser.getDetailedScreenshot(url, args.weapon);
+                await sock.sendMessage(chatId, {
+                    image: imgContent,
+                    caption: result.text || `🔫 **${query.toUpperCase()} Loadouts**`,
+                    mimetype: 'image/png'
+                });
 
-            if (!result || !result.buffer) {
-                return `❌ Could not find a loadout for **${args.weapon}** on ${url.split('/')[2]}.\nTry checking the specific weapon name.`;
+                // If specific code exists
+                if (result.code) {
+                    setTimeout(() => sock.sendMessage(chatId, { text: result.code }), 500);
+                }
+
+                return `[RESPONSE_SENT] Successfully sent visual loadout for ${query}.`;
             }
-            imageBuffer = result.buffer;
 
-            finalCaption = `🔫 **${args.weapon.toUpperCase()} Loadout**\n${title}`;
-            if (result.buildCode) {
-                finalCaption += `\n\n📋 **Build Code:**\n\`${result.buildCode}\``;
-            }
-        } else {
-            imageBuffer = await browser.getScreenshot(url, selector);
+            // Fallback if no socket (Test mode)
+            return "[SUCCESS] Image generated but no socket to send.";
         }
 
-        if (!imageBuffer) {
-            return "[TOOL_ERROR] Failed to capture meta screenshot (Timeout/Network). SYSTEM INSTRUCTION: Do NOT invent weapon names. Tell the user you are unable to retrieve the meta right now due to a connection error.";
+        // 4. Handle Text Response
+        if (result.text) {
+            return result.text;
         }
 
-        // Send Image if Socket Available
-        const { getWhatsAppSock } = require('../../../whatsapp/index');
-        const sock = getWhatsAppSock();
-
-        if (sock && chatId) {
-            await sock.sendMessage(chatId, {
-                image: imageBuffer,
-                caption: finalCaption
-
-            });
-
-            // ✅ Return Data to AI so it doesn't hallucinate
-            let successMsg = `[RESPONSE_SENT] Sent Meta Screenshot for ${args.weapon || mode}.`;
-            if (args.weapon) {
-                // User explicit request: "No text, only image". Avoid hallucinations.
-                successMsg += `\n\nSYSTEM INSTRUCTION: Verify the image is sent. Do NOT list attachments textually. Simply say "Here is the loadout for ${args.weapon}."`;
-            }
-            return successMsg;
-        }
-
-        // Fallback for testing (Return buffer as success signal if no chat)
-        return `[SUCCESS] Image Captured (${imageBuffer.length} bytes)`;
+        return "❌ Data format error.";
 
     } catch (e) {
-        log(`❌ [MetaScraper] Error: ${e.message}`);
+        log(`❌ [Tool] Error: ${e.message}`);
         return "Failed to fetch meta loadouts.";
     }
 }

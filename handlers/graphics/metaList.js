@@ -50,7 +50,7 @@ class MetaListRenderer {
                 * { box-sizing: border-box; }
                 
                 body {
-                    margin: 0; padding: 40px;
+                    margin: 0; padding: 20px; /* Reduced from 40px */
                     width: ${width}px;
                     font-family: 'Teko', sans-serif;
                     background: #0f0f12;
@@ -65,14 +65,17 @@ class MetaListRenderer {
 
                 .main-title {
                     font-family: 'Orbitron', sans-serif;
-                    font-size: 80px; font-weight: 900;
+                    font-size: 70px; /* Slightly smaller to prevent chop */
+                    font-weight: 900;
                     color: #fff;
                     text-transform: uppercase;
-                    margin-bottom: 40px;
-                    letter-spacing: 10px;
+                    margin-bottom: 30px;
+                    letter-spacing: 8px;
                     text-shadow: 0 0 30px rgba(255, 215, 0, 0.3);
                     border-bottom: 4px solid #ffd700;
-                    padding-bottom: 10px;
+                    padding-bottom: 5px;
+                    text-align: center;
+                    width: 100%;
                 }
 
                 .grid {

@@ -1,5 +1,4 @@
 const browserAdapter = require('../adapters/browser');
-const brain = require('../../ai/brain');
 const { log } = require('../../../utils/logger');
 
 class IntelEnricher {
@@ -17,6 +16,9 @@ class IntelEnricher {
         if (!isTarget) return item;
 
         try {
+            // Lazy Load Brain to fix Circular Dependency
+            const brain = require('../../ai/brain');
+
             const articleText = await browserAdapter.getArticleContent(item.link);
             if (articleText && articleText.length > 100) {
 

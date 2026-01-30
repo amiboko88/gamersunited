@@ -2,234 +2,230 @@
 const { log } = require('../../utils/logger');
 const { getUserData } = require('../../utils/userUtils');
 const audioManager = require('../audio/manager');
-const voiceManager = require('../ai/voice'); // ✅ ElevenLabs Manager
+const voiceManager = require('../ai/voice'); // ✅ ElevenLabs Manager (Keep untouched)
 const config = require('../ai/config');
-const db = require('../../utils/firebase'); // For Stats Query
+const db = require('../../utils/firebase');
 const { OpenAI } = require('openai');
 const fs = require('fs');
 const path = require('path');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const MIN_USERS = 3;
-const COOLDOWN = 30 * 60 * 1000;
-let lastPodcastTime = 0;
-let isStabilizing = false;
-let activeChannelId = null;
+
+// --- Configuration ---
+const NEWS_COOLDOWN = 30 * 60 * 1000; // 30 Minutes for News
+const DAILY_RESET_HOUR = 6; // 6:00 AM reset
+let lastNewsTime = 0;
+let dailySentUsers = new Set(); // Tracks users who got Seduction today
+let lastReset = new Date().getDate();
+
+// Debounce map to prevent flickering (4->3->4)
+const stabilizationMap = new Map();
 
 class PodcastManager {
 
-    async handleVoiceStateUpdate(oldState, newState) {
-        // 🛑 1. Ignore Bot's own movements
-        if (newState.member.user.bot) {
-            if (!newState.channelId && oldState.channelId === activeChannelId) {
-                log('[Podcast] Bot disconnected. Clearing state.');
-                activeChannelId = null;
-                isStabilizing = false;
-            }
-            return;
-        }
+    constructor() {
+        // Periodic cleanup for daily reset
+        setInterval(() => this._checkDailyReset(), 60 * 60 * 1000);
+    }
 
-        const channel = newState.channel;
-
-        // 🛑 2. Active Session Logic
-        if (activeChannelId) {
-            if (oldState.channelId !== activeChannelId && newState.channelId !== activeChannelId) return;
-
-            const guild = oldState.guild || newState.guild;
-            const activeChannel = guild.channels.cache.get(activeChannelId);
-
-            if (!activeChannel) {
-                activeChannelId = null;
-                return;
-            }
-
-            const currentMembers = activeChannel.members.filter(m => !m.user.bot).size;
-            if (currentMembers < MIN_USERS) {
-                log('[Podcast] Audience too small (<3). Stopping session.');
-                const audioPlayer = require('../audio/manager');
-                if (audioPlayer.stop) audioPlayer.stop(guild.id);
-                activeChannelId = null;
-                isStabilizing = false;
-            }
-            return;
-        }
-
-        // 🛑 3. Validation for New Session
-        if (!channel) return;
-
-        const TEST_CHANNEL_ID = '1396779274173943828';
-        const isTestMode = channel.id === TEST_CHANNEL_ID;
-
-        const now = Date.now();
-        if (!isTestMode && now - lastPodcastTime < COOLDOWN) return;
-
-        const humans = Array.from(channel.members.filter(m => !m.user.bot).values());
-        const requiredUsers = isTestMode ? 1 : MIN_USERS;
-
-        // 🚀 4. Trigger Sequence
-        if (humans.length >= requiredUsers) {
-            if (isStabilizing) return;
-            isStabilizing = true;
-            log(`[Podcast] Crowd detected... Stabilizing (6s)...`);
-
-            setTimeout(async () => {
-                const targetChannel = newState.guild.channels.cache.get(channel.id);
-                if (!targetChannel) { isStabilizing = false; return; }
-
-                const finalHumans = targetChannel.members.filter(m => !m.user.bot).size;
-                if (finalHumans < requiredUsers) {
-                    log('[Podcast] Crowd dispersed during stabilization. Cancelled.');
-                    isStabilizing = false;
-                    return;
-                }
-
-                log(`[Podcast] 🎙️ LIVE! Starting session.`);
-                isStabilizing = false;
-                lastPodcastTime = Date.now();
-                activeChannelId = channel.id;
-
-                const victim = humans.find(h => h.id === newState.member.id) || humans[Math.floor(Math.random() * humans.length)];
-
-                try {
-                    await this.playPersonalPodcast(channel, victim);
-                } catch (e) {
-                    log(`❌ [Podcast] Critical Playback Fail: ${e.message}`);
-                    activeChannelId = null;
-                    const audioPlayer = require('../audio/manager');
-                    audioPlayer.stop(channel.guild.id);
-                }
-
-            }, 6000);
+    _checkDailyReset() {
+        const today = new Date().getDate();
+        if (today !== lastReset) {
+            log('[Podcast] 🌅 Daily Reset of Seduction List.');
+            dailySentUsers.clear();
+            lastReset = today;
         }
     }
 
-    async playPersonalPodcast(voiceChannel, member) {
-        log(`[Podcast] Generating Script (ElevenLabs + Stats) for ${member.displayName}...`);
+    async handleVoiceStateUpdate(oldState, newState) {
+        if (newState.member.user.bot) return;
 
-        // 1. Data Fetch (Stats + Facts)
-        const userData = await getUserData(member.id, 'discord');
-        const roasts = userData?.brain?.roasts || [];
-        const facts = userData?.brain?.facts?.map(f => f.content) || [];
+        const channel = newState.channel;
+        if (!channel) return; // User Left (Handle disconnect logic if needed, but mainly we focus on joins)
 
-        // 🔍 Fetch Last Game Stats
-        let statsContext = "No recent games recorded.";
+        // Ignore Test Channel/AFK if needed (Add filters here)
+
+        const humans = Array.from(channel.members.filter(m => !m.user.bot).values());
+        const count = humans.length;
+
+        // Prevent rapid firing on connect/disconnect flickering
+        const channelId = channel.id;
+        if (stabilizationMap.has(channelId)) clearTimeout(stabilizationMap.get(channelId));
+
+        // Wait 3 seconds to ensure count is stable
+        const timer = setTimeout(() => this._processStableState(channel, humans, count, newState.member), 3000);
+        stabilizationMap.set(channelId, timer);
+    }
+
+    async _processStableState(channel, humans, count, triggerMember) {
         try {
-            const gamesSnap = await db.collection('users').doc(member.id).collection('games')
-                .orderBy('timestamp', 'desc').limit(1).get();
-
-            if (!gamesSnap.empty) {
-                const game = gamesSnap.docs[0].data();
-                const kills = game.kills || 0;
-                const damage = game.damage || 0;
-                const mode = game.mode || 'Warzone';
-
-                let performance = "AVERAGE";
-                if (kills === 0) performance = "TRASH (0 Kills)";
-                else if (kills > 7) performance = "SWEATY TRYHARD";
-                else if (damage < 500) performance = "PACIFIST (No Damage)";
-
-                statsContext = `LAST MATCH (${mode}): ${kills} Kills, ${damage} Dmg. Performance: ${performance}.`;
+            // MODE 1: BREAKING NEWS (Exactly 4 Users)
+            if (count === 4) {
+                if (Date.now() - lastNewsTime > NEWS_COOLDOWN) {
+                    log(`[Podcast] 🚨 Triggering BREAKING NEWS (Count: 4) in ${channel.name}`);
+                    lastNewsTime = Date.now();
+                    await this.playBreakingNews(channel, humans);
+                } else {
+                    log(`[Podcast] ⏳ News Cooldown Active.`);
+                }
+                return;
             }
-        } catch (e) { log(`⚠️ Failed to fetch stats: ${e.message}`); }
 
-        const contextData = [...facts, ...roasts].slice(0, 3);
-        const personalContext = contextData.length ? contextData.join('\n') : "Just roast him generically.";
+            // MODE 2: SEDUCTION (5+ Users)
+            if (count > 4) {
+                // Check if the SPECIFIC member who joined is the one triggering it
+                // We rely on 'triggerMember' passed from update.
+                // However, in _processStableState we have the list.
+                // To be safe, we check if the Trigger Member is in the list and NOT served yet.
 
-        // 2. GPT-4o Script Generation
+                if (dailySentUsers.has(triggerMember.id)) {
+                    log(`[Podcast] 🛑 User ${triggerMember.displayName} already served Seduction today.`);
+                    return;
+                }
+
+                // Check if triggerMember is actually present (didn't leave during debounce)
+                if (!humans.find(h => h.id === triggerMember.id)) return;
+
+                log(`[Podcast] 💋 Triggering SEDUCTION for ${triggerMember.displayName} (Count: ${count})`);
+                await this.playSeduction(channel, triggerMember);
+
+                // Mark as served
+                dailySentUsers.add(triggerMember.id);
+            }
+
+        } catch (e) {
+            log(`❌ [Podcast] Error in process logic: ${e.message}`);
+        }
+    }
+
+    // --- MODE 1: BREAKING NEWS 🚨 ---
+    async playBreakingNews(channel, members) {
+        const names = members.map(m => m.displayName).join(', ');
+
         const prompt = `
+        Scenario: "Breaking News" Broadcast interrupting a gaming session.
         Characters:
-        1. Shimon: 40yo Israeli Ars. Voice: Deep, Hoarse, Aggressive.
-        2. Shirly: 25yo Cynical Tel-Avivian. Voice: High, Bored, Sarcastic.
+        1. Shimon: Aggressive, Toxic News Anchor. (Voice: Deep).
+        2. Shirly: Flirty, Sexual Sidekick. (Voice: Seductive).
 
-        Goal: Roast "${member.displayName}".
-        
-        🔥 REQUIRED CONTEXT 🔥
-        ${statsContext}
-        
-        Additional Info:
-        ${personalContext}
+        Context:
+        - Room: "${channel.name}"
+        - Players Present: ${names}
 
-        Rules:
-        - ⚠️ MUST reference the Kills/Damage from the Last Match if available!
-        - Language: STREET HEBREW (Slang allowed, English gaming terms ok).
-        - Length: EXACTLY 3 lines.
-        - Format: Speaker: Text
-        - Order: Shimon -> Shirly -> Shimon.
-        - Style: Brutal, Funny, Authentic.
+        Goal:
+        - Shimon insults them for being addicts/losers.
+        - Shirly reads the list of names and promises a sexual reward if they win.
 
-        Output Example:
-        Shimon: בואנה שירלי, ראית את ה-0 הריגות של עמי? פדיחות.
-        Shirly: עזוב נו, הוא עשה 200 נזק, הוא ירה בציפורים כל המשחק.
-        Shimon: ציפורים עאלק, זה נראה כאילו הוא משחק עם הרגליים.
+        Format:
+        Shimon: <Line>
+        Shirly: <Line>
+        Shimon: <Line>
+        Shirly: <Line>
+
+        Language: Hebrew Slang. Short & Punchy.
         `;
 
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [{ role: "system", content: "You are a savage Israeli comedy writer." }, { role: "user", content: prompt }],
-            max_tokens: 300,
-            temperature: 0.95
-        });
+        await this._generateAndPlay(channel, prompt, 'news');
+    }
 
-        const rawScript = completion.choices[0].message.content;
-        const script = rawScript.split('\n').filter(l => l.includes(':')).map(line => {
-            const [speaker, ...textParts] = line.split(':');
+    // --- MODE 2: SEDUCTION 💋 ---
+    async playSeduction(channel, member) {
+        // Fetch User Data for Ammo
+        const userData = await getUserData(member.id, 'discord');
+        const facts = userData?.brain?.facts?.map(f => f.content) || [];
+        const personalContext = facts.slice(0, 2).join('. ') || "No specific data.";
+
+        const prompt = `
+        Scenario: Shirly (Femme Fatale) welcomes a specific user who just joined.
+        Target: "${member.displayName}".
+        Context: ${personalContext}
+
+        Goal:
+        - Be EXTREMELY flirty and sexual.
+        - Roast them on a specific trait (e.g. gambling, bad aim) but make it sound hot.
+        - "I've been waiting for you..." vibe.
+
+        Format:
+        Shirly: <Monologue>
+
+        Length: 2-3 sentences max.
+        Language: Hebrew Slang.
+        `;
+
+        await this._generateAndPlay(channel, prompt, 'seduction');
+    }
+
+    // --- CORE GENERATOR (Shared) ---
+    async _generateAndPlay(channel, prompt, mode) {
+        try {
+            // 1. Generate Script
+            const completion = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: [{ role: "system", content: "You are a creative scriptwriter for a gaming bot." }, { role: "user", content: prompt }],
+                max_tokens: 300,
+                temperature: 0.9 + (Math.random() * 0.1) // High creativity
+            });
+
+            const scriptText = completion.choices[0].message.content;
+            const script = this._parseScript(scriptText);
+
+            if (!script.length) throw new Error("Empty Script Generated");
+
+            // 2. Audio Pipeline
+            const queue = [];
+            const tempDir = path.join(__dirname, '../../temp_audio');
+            if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+            // Intro Sound
+            const introFile = mode === 'news' ? 'breaking_news.mp3' : 'intro.mp3';
+            const introPath = path.join(__dirname, `../../assets/audio/effects/${introFile}`);
+            if (fs.existsSync(introPath)) queue.push({ type: 'file', path: introPath });
+
+            // TTS Generation (ElevenLabs)
+            for (const [i, line] of script.entries()) {
+                const buffer = await voiceManager.speak(line.text, {
+                    voiceId: line.voiceId,
+                    stability: 0.4, // Lower for more emotion
+                    similarityBoost: 0.85
+                });
+
+                if (buffer) {
+                    const filePath = path.join(tempDir, `pod_v3_${i}_${Date.now()}.mp3`);
+                    fs.writeFileSync(filePath, buffer);
+                    queue.push({ type: 'file', path: filePath, temp: true });
+                }
+            }
+
+            // Playback
+            for (const item of queue) {
+                await audioManager.playLocalFileAndWait(channel.guild.id, channel.id, item.path);
+                // Pause breakdown: Fast for news, Slow for seduction
+                const pause = mode === 'news' ? 300 : 800;
+                await new Promise(r => setTimeout(r, pause));
+            }
+
+            // Cleanup
+            setTimeout(() => {
+                queue.filter(i => i.temp).forEach(i => {
+                    try { fs.unlinkSync(i.path); } catch (e) { }
+                });
+            }, 5000);
+
+        } catch (e) {
+            log(`❌ [Podcast] Gen Fail: ${e.message}`);
+        }
+    }
+
+    _parseScript(text) {
+        return text.split('\n').filter(l => l.includes(':')).map(line => {
+            const [speaker, ...content] = line.split(':');
             const name = speaker.trim().toLowerCase();
             return {
                 speaker: name,
-                text: textParts.join(':').trim(),
-                // Select Voice ID based on speaker name
+                text: content.join(':').trim(),
                 voiceId: name.includes('shirly') ? config.SHIRLY_VOICE_ID : config.SHIMON_VOICE_ID
             };
         });
-
-        if (!script.length) throw new Error("Script generation failed (Empty)");
-
-        // 3. Audio Construction (ElevenLabs)
-        const queue = [];
-
-        // Intro
-        const introPath = path.join(__dirname, '../../assets/audio/effects/intro.mp3');
-        if (fs.existsSync(introPath)) queue.push({ type: 'file', path: introPath });
-
-        // TTS Generation
-        const tempDir = path.join(__dirname, '../../temp_audio');
-        if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-
-        for (const [i, line] of script.entries()) {
-            // Call ElevenLabs via VoiceManager
-            const buffer = await voiceManager.speak(line.text, {
-                voiceId: line.voiceId,
-                stability: 0.5,
-                similarityBoost: 0.8
-            });
-
-            if (buffer) {
-                const filePath = path.join(tempDir, `pod_eleven_${member.id}_${i}_${Date.now()}.mp3`);
-                fs.writeFileSync(filePath, buffer);
-                queue.push({ type: 'file', path: filePath, temp: true });
-            }
-        }
-
-        // Laugh Track
-        const laughPath = path.join(__dirname, '../../assets/audio/effects/laugh.mp3');
-        if (fs.existsSync(laughPath)) queue.push({ type: 'file', path: laughPath });
-
-        // 4. Playback
-        for (const item of queue) {
-            if (!activeChannelId) break;
-            await audioManager.playLocalFileAndWait(voiceChannel.guild.id, voiceChannel.id, item.path);
-            await new Promise(r => setTimeout(r, 600)); // Natural pause between speakers
-        }
-
-        // 5. Cleanup
-        setTimeout(() => {
-            queue.filter(i => i.temp).forEach(i => {
-                try { fs.unlinkSync(i.path); } catch (e) { }
-            });
-            activeChannelId = null;
-            const am = require('../audio/manager');
-            if (am.stop) am.stop(voiceChannel.guild.id);
-        }, 2000);
     }
 }
 

@@ -111,8 +111,32 @@ module.exports = {
 
                     const imageBuffer = await graphics.voice.generateCard(channelName, allMembers);
 
+                    // --- AI TOXIC TRIGGER (Dynamic FOMO) ---
+                    const brain = require('./ai/brain'); // Lazy load
+                    let caption = `🔥 *${channelName}* בוער! בואו להצטרף.`;
+
+                    try {
+                        // Generate dynamic toxic text
+                        const prompt = `
+                        Sitrep: ${totalVoiceUsers} gamers are currently in the voice channel "${channelName}".
+                        Objective: Write a short, aggressive, and funny "Fear Of Missing Out" (FOMO) alert for the WhatsApp group to get others to join.
+                        Persona: Shimon (Toxic Gamer Bot).
+                        Language: Hebrew (Slang).
+                        Max Length: 1-2 sentneces.
+                        Tone: High energy, slight insult to those not playing.
+                        Examples:
+                        - "כולם בחדר ורק אתם ישנים? יאללה כנסו!"
+                        - "יש פה 4 אנשים, מה איתכם יא בוטים?"
+                        `;
+
+                        const aiText = await brain.generateInternal(prompt);
+                        if (aiText) caption = `🔥 **${aiText}**`;
+                    } catch (e) {
+                        log(`⚠️ [FOMO] AI Gen Failed, using static text.`);
+                    }
+
                     const { sendToMainGroup } = require('../whatsapp/index');
-                    await sendToMainGroup(`🔥 *${channelName}* בוער! בואו להצטרף.`, [], imageBuffer);
+                    await sendToMainGroup(caption, [], imageBuffer);
 
                     // עדכון זמן שליחה ב-DB
                     await TIMERS_REF.set({ lastFomoAlert: new Date().toISOString() }, { merge: true });

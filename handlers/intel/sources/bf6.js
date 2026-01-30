@@ -5,8 +5,8 @@ const UPDATE_URL = 'https://www.ea.com/games/battlefield/battlefield-6/news?page
 
 const source = {
     // --- BF6 Meta Extraction ---
-    async getMeta() {
-        return browserAdapter._fetchPage(BF_URL, () => {
+    async getMeta(category = 'absolute') {
+        const data = await browserAdapter._fetchPage(BF_URL, () => {
             const weapons = [];
             document.querySelectorAll('.loadout-card').forEach(w => {
                 const name = w.querySelector('.gun-badge__text')?.innerText.trim();
@@ -15,7 +15,6 @@ const source = {
                 const attachments = [];
                 w.querySelectorAll('.attachment-card').forEach(a => {
                     const type = a.querySelector('.attachment-card-content__name span')?.innerText.trim() || "Part";
-                    // Name is inside a div, possibly with a level badge we want to ignore
                     let partName = "Unknown";
                     const nameContainer = a.querySelector('.attachment-card-content__name > div');
                     if (nameContainer) {
@@ -26,8 +25,41 @@ const source = {
 
                 if (name) weapons.push({ name, image, attachments });
             });
-            return weapons.slice(0, 5); // Return top 5
+            return weapons;
         });
+
+        if (!data || data.length === 0) return null;
+
+        // --- Post-Processing Logic ---
+        const cat = category.toLowerCase();
+        let finalWeapons = data;
+        let title = "BF6 LOADOUTS";
+
+        // 1. Category Filtering (Heuristic based on name/known list could be added here, 
+        //    but for now we slice based on Tier since we scrape the 'Meta' page)
+
+        if (cat === 'absolute' || cat === 'meta') {
+            title = "BF6 ABSOLUTE META";
+            finalWeapons = data.slice(0, 4); // Top 4 for Absolute
+        } else if (cat === 'all' || cat === 'list') {
+            title = "BF6 META LIST";
+            finalWeapons = data.slice(0, 10);
+        } else {
+            // Specific weapon search or Category filter attempt
+            // If user asks for "SMG", we try to find common SMG names or just return general
+            // Since we can't reliably detect Type without scraping it, we return Top 6.
+            title = `BF6 ${cat.toUpperCase()}`;
+            // Optional: Add simple name filter if query matches
+            const filtered = data.filter(w => w.name.toLowerCase().includes(cat));
+            if (filtered.length > 0) finalWeapons = filtered;
+            else finalWeapons = data.slice(0, 6); // Fallback
+        }
+
+        return {
+            weapons: finalWeapons,
+            title: title,
+            isList: true
+        };
     },
 
     // --- BF6 Game Updates (EA Official) ---
@@ -62,19 +94,10 @@ const source = {
     },
 
     // --- Formatter ---
-    getFormattedMeta(weapons) {
-        if (!weapons || weapons.length === 0) return "❌ BF6 Data Unavailable.";
-
-        // Sanity Check: If weapons look like COD keys (e.g. Kastov, M4, Taq), fail it.
-        const suspicious = ['kastov', 'm4', 'taq', 'iso', 'lachmann'];
-        const isSuspicious = weapons.some(w => suspicious.some(s => w.name.toLowerCase().includes(s)));
-
-        if (isSuspicious) {
-            return "⚠️ **Intel Warning**: קיבלתי מידע שגוי (נשקי Warzone). כנראה הערוץ המוצפן (BFHub) נפרץ או מעביר אותנו לכתובת אחרת.";
-        }
-
-        const list = weapons.slice(0, 5).map(w => `• ${w.name}`).join('\n');
-        return `🔫 **BF6 META LOADOUTS (Top 5):**\n${list}\n\nלפירוט על נשק, כתוב: "תן לי בילד ל[שם הנשק]"`;
+    getFormattedMeta(result) {
+        if (!result || !result.weapons) return "❌ BF6 Data Unavailable.";
+        const list = result.weapons.map(w => `• ${w.name}`).join('\n');
+        return `👑 **${result.title}**\n${list}`;
     }
 };
 

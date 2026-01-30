@@ -72,7 +72,7 @@ async function execute(args) {
 
                 await sock.sendMessage(chatId, {
                     image: imgContent,
-                    caption: result.text || `🔫 **${query.toUpperCase()} Loadouts**`,
+                    caption: `👑 **${result.title || query.toUpperCase()}**`, // Minified Caption
                     mimetype: 'image/png'
                 });
 

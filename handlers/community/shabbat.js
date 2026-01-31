@@ -49,7 +49,12 @@ class ShabbatManager {
         const exit = new Date(this.currentTimes.exit);
 
         // Strict: From Lighting to Havdalah
-        return now >= entry && now <= exit;
+        const isResting = now >= entry && now <= exit;
+        if (isResting) {
+            // Optional: Limit spam by checking minutes % 10 or similar if needed, but for now we want to see it.
+            // log(`🕯️ [Shabbat] Status: ACTIVE. Now: ${now.toLocaleTimeString()}, Exit: ${exit.toLocaleTimeString()}`);
+        }
+        return isResting;
     }
 
     init(discordClient, whatsappSock, telegramBot) {
@@ -58,14 +63,28 @@ class ShabbatManager {
         // Schedule Weekly Fetch (Friday 08:00 AM)
         cron.schedule('0 8 * * 5', () => this.fetchAndSchedule());
 
-        // Startup Check (Friday Recovery)
+        // Startup Check (Friday Recovery OR Stale Config Fix)
         const now = new Date();
-        if (now.getDay() === 5 && now.getHours() >= 8) {
-            log('🕯️ [Shabbat] Startup on Friday detected. Fetching times...');
+        const isFridayMorning = now.getDay() === 5 && now.getHours() >= 8;
+
+        // Check if current config is outdated (Exit time passed)
+        let isConfigStale = false;
+        if (this.currentTimes && this.currentTimes.exit) {
+            const exitTime = new Date(this.currentTimes.exit);
+            // If exit time is in the past, and it's Friday/Saturday, we might need new times
+            if (now > exitTime && (now.getDay() === 5 || now.getDay() === 6)) {
+                isConfigStale = true;
+            }
+        } else {
+            isConfigStale = true; // No config at all
+        }
+
+        if (isFridayMorning || isConfigStale) {
+            log(`🕯️ [Shabbat] Startup Check: ${isConfigStale ? 'Config Stale/Missing' : 'Friday Morning'}. Fetching fresh times...`);
             this.fetchAndSchedule();
         }
 
-        log('🕯️ [Shabbat] Manager Initialized (Observant Mode 🕎). System is: ' + (this.isShabbat() ? 'RESTING 😴' : 'ACTIVE ✅'));
+        log('🕯️ [Shabbat] Manager Initialized. System is: ' + (this.isShabbat() ? 'RESTING 😴' : 'ACTIVE ✅'));
     }
 
     async fetchAndSchedule() {

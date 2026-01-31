@@ -142,7 +142,7 @@ async function connectToWhatsApp() {
                 // 🕯️ Shabbat Observance Check
                 const shabbatManager = require('../handlers/community/shabbat');
                 if (shabbatManager.isShabbat && shabbatManager.isShabbat()) {
-                    // console.log('😴 [Shabbat] Shimon is resting.');
+                    console.log('😴 [Shabbat] Shimon is resting (Message Ignored).');
                     return;
                 }
 

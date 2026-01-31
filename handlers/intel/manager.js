@@ -34,29 +34,42 @@ class IntelManager {
 
         log('🧠 [Intel] System 2.0 (The Newsroom) Initialized.');
         this._updateCache();
+
+        // 👮 Automated Intel Patrol (Safety Net)
+        // Checks every 6 hours for missed updates (if PatchBot failed)
+        const cron = require('node-cron');
+        cron.schedule('0 */6 * * *', () => this.checkNews());
+        log('🛡️ [Intel] Background Patrol Active (Every 6h).');
     }
 
     // --- PatchBot Event Listener (Event-Driven Updates) ---
     async handlePatchBot(msg) {
         try {
             // 1. Validate Source & Content
+            // 1. Validate Source & Content
             const PATCHBOT_CHANNEL = '1016291126992437268';
-            if (msg.channel.id !== PATCHBOT_CHANNEL) return;
+
+            // Debug Log to find correct channel if missing
+            if (msg.channel.id !== PATCHBOT_CHANNEL) {
+                log(`⚠️ [Intel] PatchBot posted in UNTRACKED channel: ${msg.channel.id} (Expected: ${PATCHBOT_CHANNEL})`);
+                return;
+            }
 
             if (msg.embeds.length === 0) return; // Second message usually has no embed or just image
             const embed = msg.embeds[0];
-            const title = embed.title || embed.author?.name || "";
+            const rawTitle = embed.title || embed.author?.name || "";
+            const title = rawTitle.toLowerCase(); // ✅ Case Insensitive Search
             const rawUrl = embed.url || (embed.description && embed.description.match(/https:\/\/patchbot\.io\/click\/[a-zA-Z0-9%\-_]+/)?.[0]);
 
-            log(`🕵️ [Intel] PatchBot Message Detected! Title: "${title}"`);
+            log(`🕵️ [Intel] PatchBot Message Detected! Title: "${rawTitle}"`);
 
             // 2. Filter Relevant Games
-            // "Battlefield 6", "NVIDIA GeForce Driver", "Call of Duty", "EA SPORTS FC"
+            // Broadened filters to catch "Battlefield 2042", "BF2042", etc.
             let type = null;
-            if (title.includes('Battlefield 6')) type = 'BF6';
-            else if (title.includes('NVIDIA') || title.includes('GeForce')) type = 'NVIDIA';
-            else if (title.includes('Call of Duty') || title.includes('Warzone')) type = 'COD';
-            else if (title.includes('EA SPORTS FC') || title.includes('FIFA')) type = 'FC26';
+            if (title.includes('battlefield') || title.includes('bf2042') || title.includes('bf6')) type = 'BF6';
+            else if (title.includes('nvidia') || title.includes('geforce')) type = 'NVIDIA';
+            else if (title.includes('call of duty') || title.includes('warzone') || title.includes('mw3') || title.includes('bo6')) type = 'COD';
+            else if (title.includes('ea sports fc') || title.includes('fifa')) type = 'FC26';
 
             if (!type) {
                 log(`🕵️ [Intel] Ignoring PatchBot Update for: "${title}" (Not in Watchlist)`);
@@ -213,7 +226,13 @@ class IntelManager {
         // 1. Basic cleaning
         const cleanText = text.replace(/^(שמעון|שימי|shimon),?\s*/i, '').trim();
 
-        // 2. AI Classification
+        // 2. Keyword Shortcuts (Bypass AI)
+        if (cleanText.includes('טבלה') || cleanText.includes('table')) {
+            log(`🧠 [Intel] Shortcut: 'Table' detected -> WEAPON_META`);
+            return await this.getMeta("absolute");
+        }
+
+        // 3. AI Classification
         const classification = await classifier.classify(cleanText);
         const { intent, entity, game } = classification;
 

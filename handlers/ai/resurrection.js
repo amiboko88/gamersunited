@@ -164,7 +164,8 @@ async function execute(sock, chatId) {
     - If Replying -> Write the Hebrew response (Max 10 words). You MAY use [VOICE] prefix for audio.
     `;
 
-    const comeback = await brain.ask('1010101010', 'whatsapp', prompt, true);
+    // Use a System ID for the brain ask, but SKIP persistence to avoid creating garbage user docs
+    const comeback = await brain.ask('ReviewerBot', 'whatsapp', prompt, true, null, null, true);
 
     if (comeback && !comeback.includes('SKIP')) {
         log(`🧟 [Resurrection] Sending comeback: "${comeback.substring(0, 30)}..."`);

@@ -54,7 +54,7 @@ class VoiceManager {
 
         // Settings: Allow per-call overrides, otherwise use defaults
         const settings = {
-            stability: options.stability !== undefined ? options.stability : 0.0, // V3 requires 0.0 for creativity
+            stability: options.stability !== undefined ? options.stability : 0.5, // V3 Standard: 0.5
             similarity_boost: options.similarityBoost || 0.8,
             style: options.style || 0.5, // V3 supports style
             use_speaker_boost: options.useSpeakerBoost !== undefined ? options.useSpeakerBoost : true

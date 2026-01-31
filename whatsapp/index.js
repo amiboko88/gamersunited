@@ -82,6 +82,10 @@ async function connectToWhatsApp() {
             if (notification.id !== MAIN_GROUP_ID) return;
             const { action, participants } = notification;
             for (const participant of participants) {
+                if (typeof participant !== 'string') {
+                    console.log('⚠️ [WhatsApp] Ignored invalid participant data:', participant);
+                    continue;
+                }
                 const realPhone = getRealPhoneNumber(participant) || participant.split('@')[0];
 
                 if (action === 'add') {

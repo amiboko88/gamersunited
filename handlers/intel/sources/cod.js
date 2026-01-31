@@ -101,7 +101,12 @@ const source = {
             const allLinks = Array.from(document.querySelectorAll('a[href*="/patchnotes/"]'));
 
             // Prioritize newest dates in URL
-            const bestLink = allLinks.find(l => l.innerText.toLowerCase().includes('warzone') || l.href.includes('warzone'));
+            const bestLink = allLinks.find(l => {
+                const text = l.innerText.toLowerCase();
+                const isGarbage = text.includes('skip') || text.includes('main content') || text.length < 5;
+                if (isGarbage) return false;
+                return text.includes('warzone') || l.href.includes('warzone');
+            });
 
             if (bestLink) {
                 return {

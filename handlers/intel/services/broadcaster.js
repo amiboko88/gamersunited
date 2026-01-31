@@ -39,11 +39,30 @@ class IntelBroadcaster {
         // 3. WhatsApp
         try {
             const { sendToMainGroup } = require('../../../whatsapp/index');
-            // If image exists, send as image with minimal caption (Title Only)
+
+            // Helper: Format Caption (Strip *, Move Emoji to End for Hebrew)
+            const formatForHebrew = (text) => {
+                let clean = text.replace(/\*/g, '').trim(); // Remove asterisks
+                // Check for leading emoji (simple regex)
+                const emojiRegex = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation})/u;
+                const match = clean.match(emojiRegex);
+
+                if (match) {
+                    const emoji = match[0];
+                    clean = clean.replace(emoji, '').trim();
+                    clean = `${clean} ${emoji}`; // Append to end
+                }
+                return clean;
+            };
+
+            const caption = imageBuffer ? finalItem.title : finalSummary;
+            const finalCaption = formatForHebrew(caption);
+
+            // If image exists, send as image with minimal caption
             if (imageBuffer) {
-                await sendToMainGroup(`*${finalItem.title}*`, [], imageBuffer, item.tagAll || false);
+                await sendToMainGroup(finalCaption, [], imageBuffer, item.tagAll || false);
             } else {
-                await sendToMainGroup(`${finalSummary}`, [], null, item.tagAll || false);
+                await sendToMainGroup(finalCaption, [], null, item.tagAll || false);
             }
         } catch (e) { log(`Error Broadcast WA: ${e.message}`); }
 

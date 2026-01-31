@@ -185,7 +185,7 @@ class PodcastManager {
             for (const [i, line] of script.entries()) {
                 const buffer = await voiceManager.speak(line.text, {
                     voiceId: line.voiceId,
-                    stability: 0.4, // Lower for more emotion
+                    stability: 0.5, // Strict V3: 0.5 (Natural)
                     similarityBoost: 0.85
                 });
 

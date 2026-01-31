@@ -100,9 +100,9 @@ class MVPVoiceManager {
 
             log(`👑 [MVP] Speech: "${speechText}"`);
 
-            // C. Generate Audio (ElevenLabs V3/V2 High Quality)
+            // C. Generate Audio (ElevenLabs V3/Turbo High Quality)
             const audioBuffer = await voiceAI.speak(speechText, {
-                modelId: 'eleven_multilingual_v2', // Best for Hebrew Clones
+                modelId: 'eleven_turbo_v2_5', // Updated to Turbo 2.5 (V3 equivalent speed/quality)
                 stability: 0.3,
                 style: 0.7
             });

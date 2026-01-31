@@ -39,9 +39,9 @@ class IntelBroadcaster {
         // 3. WhatsApp
         try {
             const { sendToMainGroup } = require('../../../whatsapp/index');
-            // If image exists, send as image with caption
+            // If image exists, send as image with minimal caption (Title Only)
             if (imageBuffer) {
-                await sendToMainGroup(`${finalItem.title}\n\n${finalSummary}`, [], imageBuffer, item.tagAll || false);
+                await sendToMainGroup(`*${finalItem.title}*`, [], imageBuffer, item.tagAll || false);
             } else {
                 await sendToMainGroup(`${finalSummary}`, [], null, item.tagAll || false);
             }
@@ -54,7 +54,7 @@ class IntelBroadcaster {
                 const chatId = process.env.TG_MAIN_GROUP_ID || '-1001836262829';
                 if (imageBuffer) {
                     await tg.sendPhoto(chatId, { source: imageBuffer }, {
-                        caption: `🚨 **${finalItem.title}**\n\n${finalSummary}`,
+                        caption: `🚨 **${finalItem.title}**`, // Minimal Caption
                         parse_mode: 'Markdown'
                     });
                 } else if (tg.sendMessage) {
@@ -73,7 +73,7 @@ class IntelBroadcaster {
                 if (channel) {
                     if (imageBuffer) {
                         await channel.send({
-                            content: `**${finalItem.title}**\n${finalSummary}`,
+                            content: `**${finalItem.title}**`, // Minimal Caption
                             files: [imageBuffer]
                         });
                     } else {

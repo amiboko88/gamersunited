@@ -102,8 +102,10 @@ class IntelManager {
             const enrichedItem = await enricher.enrich(item, "summary"); // "summary" triggers default prompt
 
             // 5. Broadcast
-            await broadcaster.broadcast(enrichedItem, this.clients);
-            log(`✅ [Intel] Successfully Broadcasted ${type} Update.`);
+            // 🛑 Discord Filter: PatchBot already posts there, so we skip Discord to avoid redundancy.
+            const clientsNoDiscord = { ...this.clients, discord: null };
+            await broadcaster.broadcast(enrichedItem, clientsNoDiscord);
+            log(`✅ [Intel] Successfully Broadcasted ${type} Update (Skipped Discord).`);
 
         } catch (error) {
             log(`❌ [Intel] PatchBot Handler Error: ${error.message}`);
@@ -233,9 +235,45 @@ class IntelManager {
         const cleanText = text.replace(/^(שמעון|שימי|shimon),?\s*/i, '').trim();
 
         // 2. Keyword Shortcuts (Bypass AI)
+        // 🔀 Tables Shortcut (Meta vs Leaderboard)
         if (cleanText.includes('טבלה') || cleanText.includes('table')) {
-            log(`🧠 [Intel] Shortcut: 'Table' detected -> WEAPON_META`);
-            return await this.getMeta("absolute");
+
+            // 1. Weapon Meta Table (Explicit)
+            if (cleanText.includes('meta') || cleanText.includes('נשק') || cleanText.includes('weapon') || cleanText.includes('gun')) {
+                log(`🧠 [Intel] Shortcut: 'Weapon Table' detected -> WEAPON_META`);
+                return await this.getMeta("absolute");
+            }
+
+            // 2. Leaderboard / Ranking (Who is best?)
+            // 2. Leaderboard / Ranking (Who is best?)
+            if (cleanText.includes('top') || cleanText.includes('best') || cleanText.includes('score') || cleanText.includes('rank') || cleanText.includes('אלופים') || cleanText.includes('הכי טוב') || cleanText.includes('דירוג')) {
+                log(`🧠 [Intel] Shortcut: 'Leaderboard' detected -> RANKING_MANAGER`);
+                const rankingManager = require('../ranking/manager');
+
+                // 2a. Warzone Stats (Explicit "COD", "Warzone", "Kill")
+                if (cleanText.includes('warzone') || cleanText.includes('cod') || cleanText.includes('וורזון') || cleanText.includes('הריגות')) {
+                    const wzImg = await rankingManager.getWarzoneLeaderboard('WEEKLY');
+                    if (wzImg) {
+                        return { text: "🔫 *טבלת רוצחים שבועית* (Warzone Elite)", image: wzImg };
+                    }
+                    return { text: "❌ אין מספיק נתונים לטבלת וורזון השבוע. תתחילו לסרוק!" };
+                }
+
+                // 2b. Discord Activity (Default)
+                const realBoardImg = await rankingManager.getImmediateLeaderboard();
+                if (realBoardImg) {
+                    return {
+                        text: "🏆 *טבלת האלופים השבועית* (Live Update)",
+                        image: realBoardImg
+                    };
+                }
+            }
+
+            // 3. Ambiguity Handler (Cynical/Smart) 🧠
+            // If we are here, they said "Table" but didn't specify what kind.
+            return {
+                text: "איזה טבלה אתה רוצה? 🤨\nתהיה ספציפי: *'טבלת אלופים'* (מי הכי טוב) או *'טבלת נשקים'* (מטה)?\nאני לא קורא מחשבות (עדיין)."
+            };
         }
 
         // 3. AI Classification

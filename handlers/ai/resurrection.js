@@ -54,12 +54,21 @@ async function execute(sock, chatId) {
     // Sort by time ascending
     relevantMessages.sort((a, b) => (a.messageTimestamp || 0) - (b.messageTimestamp || 0));
 
+    // Helper to unwrap (Same as in index.js)
+    const unwrap = (m) => {
+        if (!m) return m;
+        if (m.ephemeralMessage) return unwrap(m.ephemeralMessage.message);
+        if (m.viewOnceMessage) return unwrap(m.viewOnceMessage.message);
+        return m;
+    };
+
     for (const msg of relevantMessages) {
         const sender = msg.key.participant || msg.key.remoteJid;
         const isBot = msg.key.fromMe || (sender && sender.includes(botId));
 
-        const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || "";
-        const hasImage = msg.message?.imageMessage;
+        const realMsg = unwrap(msg.message);
+        const text = realMsg?.conversation || realMsg?.extendedTextMessage?.text || realMsg?.imageMessage?.caption || "";
+        const hasImage = realMsg?.imageMessage;
 
         if (isBot) {
             // 🧹 Bot replied? Clear pending "gap" messages (they were handled)

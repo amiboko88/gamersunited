@@ -61,6 +61,42 @@ class RankingManager {
     }
 
     /**
+     * מחזיר את תמונת הלידרבורד הנוכחית (לבקשת משתמש)
+     * @returns {Promise<Buffer|null>} Image Buffer
+     */
+    async getImmediateLeaderboard() {
+        try {
+            const leaders = await rankingCore.getWeeklyLeaderboard(5);
+            if (!leaders || leaders.length === 0) return null;
+            const weekNum = this._getWeekNumber();
+            return await graphics.leaderboard.generateImage(leaders, weekNum);
+        } catch (e) {
+            log(`❌ [Ranking] Get Immediate Error: ${e.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * מחזיר את תמונת הלידרבורד של וורזון (הריגות/נזק)
+     * @returns {Promise<Buffer|null>} Image Buffer
+     */
+    async getWarzoneLeaderboard(period = 'WEEKLY') {
+        try {
+            // 1. Fetch Stats
+            const leaders = await rankingCore.getWarzoneStats(5, period);
+            if (!leaders || leaders.length === 0) return null;
+
+            // 2. Generate Image
+            const periodText = period === 'WEEKLY' ? 'WEEKLY PERFORMANCE' : 'ALL TIME LEGENDS';
+            return await graphics.leaderboard.generateCODLeaderboard(leaders, periodText);
+
+        } catch (e) {
+            log(`❌ [Ranking] Warzone Leaderboard Error: ${e.message}`);
+            return null;
+        }
+    }
+
+    /**
      * התהליך המרכזי: שליפה, רינדור והפצה
      */
     async runWeeklyProcess() {

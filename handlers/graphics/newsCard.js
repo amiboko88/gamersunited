@@ -123,19 +123,19 @@ class NewsCardRenderer {
 
                 .body-content {
                     flex: 1;
-                    padding: 50px;
+                    padding: 40px;
                     background: #111;
-                    /* Texture overlay */
-                    background-image: radial-gradient(circle at 50% 50%, #222 1px, transparent 1px);
-                    background-size: 20px 20px;
+                    /* Clean background (Scanning Line reduced) */
+                    background-image: linear-gradient(0deg, transparent 24%, rgba(255, 255, 255, .03) 25%, rgba(255, 255, 255, .03) 26%, transparent 27%, transparent 74%, rgba(255, 255, 255, .03) 75%, rgba(255, 255, 255, .03) 76%, transparent 77%, transparent);
+                    background-size: 50px 50px;
                 }
 
                 .report-section {
-                    margin-bottom: 40px;
-                    background: rgba(255,255,255,0.03);
-                    padding: 25px;
-                    border-radius: 10px;
-                    border-right: 5px solid #555; /* Default Neutral */
+                    margin-bottom: 30px;
+                    background: rgba(255,255,255,0.05); /* Slightly brighter */
+                    padding: 30px;
+                    border-radius: 8px;
+                    border-right: 8px solid #555; /* Thicker accent */
                 }
 
                 .section-title {

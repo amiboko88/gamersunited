@@ -127,9 +127,6 @@ class RankingCore {
         }
     }
 
-    /**
-     * פונקציה לאיפוס המדדים השבועיים (שמירת Snapshot חדש)
-     */
     async resetWeeklyStats() {
         try {
             const usersSnapshot = await db.collection('users').get();
@@ -147,6 +144,75 @@ class RankingCore {
             });
             log('🔄 [Ranking] Weekly statistics snapshot updated.');
         } catch (e) { log(`❌ [Ranking] Reset Error: ${e.message}`); }
+    }
+
+    /**
+     * שולף את סטטיסטיקת הוורזון (לפי סריקות)
+     * @param {number} limit 
+     * @param {string} period 'WEEKLY' or 'ALL_TIME'
+     */
+    async getWarzoneStats(limit = 10, period = 'ALL_TIME') {
+        try {
+            const usersSnapshot = await db.collection('users').get();
+            const players = [];
+
+            // Define Timeframe
+            let sinceDate = new Date(0); // Epoch
+            if (period === 'WEEKLY') {
+                sinceDate = new Date();
+                sinceDate.setDate(sinceDate.getDate() - 7);
+            }
+
+            // Iterate Users (Parallel Fetch for Speed)
+            const promises = usersSnapshot.docs.map(async (userDoc) => {
+                const userData = userDoc.data();
+                // Filter Bots/Unknowns
+                if (userData.identity?.isBot) return null;
+
+                // Fetch Games
+                const gamesRef = userDoc.ref.collection('games');
+                const gamesSnap = await gamesRef.where('timestamp', '>=', sinceDate).get();
+
+                if (gamesSnap.empty) return null;
+
+                let kills = 0;
+                let damage = 0;
+                let matches = 0;
+
+                gamesSnap.forEach(g => {
+                    const stats = g.data();
+                    kills += (stats.kills || 0);
+                    damage += (stats.damage || 0);
+                    matches++;
+                });
+
+                // Calculate Score (Simple: Kills * 100 + Damage / 10) ? 
+                // Use pure Kills for sorting as per industry standard for "Best Killer"
+                // Or "Score" if available. Let's sort by Kills.
+
+                return {
+                    id: userDoc.id,
+                    name: userData.identity?.displayName || 'Unknown Soldier',
+                    avatar: userData.identity?.avatarURL || userData.identity?.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png',
+                    kills,
+                    damage,
+                    matches,
+                    kdr: matches > 0 ? (kills / matches).toFixed(2) : 0
+                };
+            });
+
+            const results = await Promise.all(promises);
+            const activePlayers = results.filter(p => p !== null);
+
+            // Sort by Kills (Descending)
+            activePlayers.sort((a, b) => b.kills - a.kills);
+
+            return activePlayers.slice(0, limit);
+
+        } catch (error) {
+            log(`❌ [RankingCore] Warzone Stats Error: ${error.message}`);
+            return [];
+        }
     }
 }
 

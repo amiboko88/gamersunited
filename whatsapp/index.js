@@ -146,9 +146,20 @@ async function connectToWhatsApp() {
                     return;
                 }
 
-                const text = msg.message.conversation ||
-                    msg.message.extendedTextMessage?.text ||
-                    msg.message.imageMessage?.caption || "";
+                // 🕵️ Robust Text Extraction (Handles Ephemeral, ViewOnce, etc.)
+                const unwrapMessage = (m) => {
+                    if (m.ephemeralMessage) return unwrapMessage(m.ephemeralMessage.message);
+                    if (m.viewOnceMessage) return unwrapMessage(m.viewOnceMessage.message);
+                    if (m.viewOnceMessageV2) return unwrapMessage(m.viewOnceMessageV2.message);
+                    return m;
+                };
+
+                const realMsg = unwrapMessage(msg.message);
+                const text = realMsg.conversation ||
+                    realMsg.extendedTextMessage?.text ||
+                    realMsg.imageMessage?.caption ||
+                    realMsg.videoMessage?.caption ||
+                    realMsg.documentMessage?.caption || "";
 
                 const senderIdentifier = msg.key.participant || msg.key.remoteJid;
                 const realSenderPhone = getRealPhoneNumber(senderIdentifier);

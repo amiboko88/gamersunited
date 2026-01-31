@@ -2,9 +2,14 @@
 const db = require('./firebase');
 
 function cleanWhatsAppId(id) {
-    if (!id) return id;
+    if (!id || typeof id !== 'string') return id;
     if (/^\d+$/.test(id)) return id;
-    return id.split('@')[0].replace(/\D/g, '');
+
+    // If it's a mention or platform string, clean it
+    const cleaned = id.split('@')[0].replace(/\D/g, '');
+
+    // If cleaning results in empty (e.g. "ReviewerBot"), return original
+    return cleaned || id;
 }
 
 async function getUserRef(id, platform = 'discord') {
@@ -48,7 +53,9 @@ async function getUserRef(id, platform = 'discord') {
     }
 
     // אם לא מצאנו - מחזירים רפרנס למסמך (אבל לא יוצרים אותו!)
-    return db.collection('users').doc(cleanId);
+    // וידוא שה-ID לא ריק - אם ריק משתמשים בדיפולט בטוח (system_bot)
+    const finalId = cleanId || 'anonymous_system_user';
+    return db.collection('users').doc(finalId);
 }
 
 async function getUserData(id, platform = 'discord') {

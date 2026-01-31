@@ -90,6 +90,10 @@ class ContextManager {
         context += `\n### 👤 User Info (${platform}):\n`;
 
         try {
+            if (!userId) {
+                context += `[SYSTEM INFO] No User ID provided. Generic response mode.`;
+                return context;
+            }
             const userRef = await getUserRef(userId, platform);
             const doc = await userRef.get();
 

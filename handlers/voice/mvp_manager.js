@@ -106,7 +106,7 @@ class MVPVoiceManager {
 
             // C. Generate Audio (ElevenLabs V3/Turbo High Quality)
             const audioBuffer = await voiceAI.speak(speechText, {
-                modelId: 'eleven_turbo_v2_5', // Updated to Turbo 2.5 (V3 equivalent speed/quality)
+                modelId: 'eleven_v3', // Strict V3 Only
                 stability: 0.5, // Strict V3 Requirement
                 style: 0.7 // Style can be flexible usually, but safer to keep high? V3 supports it.
             });

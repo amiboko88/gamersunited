@@ -107,6 +107,7 @@ const source = {
                     text.includes('main content') ||
                     text.includes('united states') ||
                     text.includes('context') ||
+                    text.includes('back to top') ||
                     text.length < 5;
                 if (isGarbage) return false;
                 return text.includes('warzone') || l.href.includes('warzone');

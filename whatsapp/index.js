@@ -139,6 +139,13 @@ async function connectToWhatsApp() {
                 if (!msg.message || msg.key.fromMe) return;
                 if (msg.key.remoteJid === 'status@broadcast') return;
 
+                // 🕯️ Shabbat Observance Check
+                const shabbatManager = require('../handlers/community/shabbat');
+                if (shabbatManager.isShabbat && shabbatManager.isShabbat()) {
+                    // console.log('😴 [Shabbat] Shimon is resting.');
+                    return;
+                }
+
                 const text = msg.message.conversation ||
                     msg.message.extendedTextMessage?.text ||
                     msg.message.imageMessage?.caption || "";
@@ -159,6 +166,26 @@ async function connectToWhatsApp() {
 
                 const userDoc = await userRef.get();
                 // 3. משתמש מאומת - ממשיכים
+
+                // --- 🕯️ Shabbat Auto-Reaction (Prayer Hands) ---
+                // If user replies to a Shabbat/Havdalah card, react with 🙏
+                const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
+                if (quotedContext && quotedContext.quotedMessage) {
+                    const quotedContent = quotedContext.quotedMessage.conversation ||
+                        quotedContext.quotedMessage.extendedTextMessage?.text ||
+                        quotedContext.quotedMessage.imageMessage?.caption || "";
+
+                    // Check if quoted message is a Shabbat/Havdalah card
+                    if (quotedContent.includes('זמני כניסת') || quotedContent.includes('זמני יציאת') ||
+                        quotedContent.includes('שבת שלום') || quotedContent.includes('שבוע טוב')) {
+
+                        // React with Prayer Hands
+                        await sock.sendMessage(msg.key.remoteJid, {
+                            react: { text: '🙏', key: msg.key }
+                        });
+                        console.log(`🙏 [WhatsApp] Auto-Reacted to Shabbat Reply from ${pushName}`);
+                    }
+                }
 
                 // --- ☠️ Kill Switch Trigger (WhatsApp) ---
                 const isQuote = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
@@ -215,10 +242,23 @@ async function connectToWhatsApp() {
     }
 }
 
-async function sendToMainGroup(text, mentions = [], imageBuffer = null) {
+async function sendToMainGroup(text, mentions = [], imageBuffer = null, tagAll = false) {
     const sock = getSocket();
     if (!sock || !MAIN_GROUP_ID) return;
     try {
+        // Tag All Logic
+        if (tagAll) {
+            try {
+                const groupMetadata = await sock.groupMetadata(MAIN_GROUP_ID);
+                mentions = groupMetadata.participants.map(p => p.id);
+                // Optional: Append hidden char or just use mentions array
+                // If text doesn't contain the mentions, they might not highlight visually on some clients,
+                // but usually passing the array is enough for notification.
+            } catch (e) {
+                console.error('❌ Failed to fetch group metadata for TagAll:', e.message);
+            }
+        }
+
         if (imageBuffer) {
             await sock.sendMessage(MAIN_GROUP_ID, {
                 image: imageBuffer,

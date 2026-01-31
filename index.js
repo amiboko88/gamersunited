@@ -108,6 +108,10 @@ process.once('SIGINT', () => gracefulShutdown('SIGINT'));
         if (statusSystem) statusSystem.start(discordClient);
         if (intelManager) intelManager.initIntel(discordClient, getWhatsAppSock(), getBot());
 
+        // 🕯️ Shabbat Manager Init
+        const shabbatManager = require('./handlers/community/shabbat');
+        if (shabbatManager) shabbatManager.init(discordClient, getWhatsAppSock(), getBot());
+
         // ✅ Ghost Protocol Init (CRITICAL Fix)
         const ghostProtocol = require('./handlers/users/ghostProtocol');
         if (ghostProtocol) {

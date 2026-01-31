@@ -20,10 +20,16 @@ class IntelBroadcaster {
         let finalSummary = finalItem.aiSummary || finalItem.summary;
 
         // 2. Generate Graphics (Visual Upgrade)
-        let imageBuffer = null;
+        let imageBuffer = item.image; // Use pre-existing image if provided (e.g. Shabbat Card)
+
         try {
-            const newsCard = require('../../graphics/newsCard');
-            imageBuffer = await newsCard.generateNewsCard(finalItem);
+            if (!imageBuffer) {
+                const newsCard = require('../../graphics/newsCard');
+                // Only generate news card for actual News items, not system messages that lack image
+                if (item.title && (item.title.includes('UPDATE') || item.title.includes('News'))) {
+                    imageBuffer = await newsCard.generateNewsCard(finalItem);
+                }
+            }
         } catch (e) {
             log(`⚠️ [Intel] Graphics Gen Failed: ${e.message}`);
         }
@@ -35,9 +41,9 @@ class IntelBroadcaster {
             const { sendToMainGroup } = require('../../../whatsapp/index');
             // If image exists, send as image with caption
             if (imageBuffer) {
-                await sendToMainGroup(`${finalItem.title}\n\n${finalSummary}`, [], imageBuffer);
+                await sendToMainGroup(`${finalItem.title}\n\n${finalSummary}`, [], imageBuffer, item.tagAll || false);
             } else {
-                await sendToMainGroup(`${finalSummary}`);
+                await sendToMainGroup(`${finalSummary}`, [], null, item.tagAll || false);
             }
         } catch (e) { log(`Error Broadcast WA: ${e.message}`); }
 

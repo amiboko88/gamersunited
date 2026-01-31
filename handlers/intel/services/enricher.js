@@ -97,18 +97,23 @@ class IntelEnricher {
                     Task: Translate and summarize these Game Patch Notes into cool, slang-heavy Hebrew for gamers.
                     Tone: Excited, "Bro", Informative (Shimon Persona).
                     Rules:
-                    1. Start with "🚨 עדכון חדש! 🚨".
-                    2. Bullet points for key changes (Nerfs/Buffs/New Modes).
-                    3. Keep it under 150 words.
-                    4. Use emojis.
-                    Content:
-                    "${articleText.slice(0, 4000)}"
+                    1. Start with "🚨 הנה עדכון חם! 🚨".
+                    2. Use emojis.
+                    3. Extract the 3 most important changes.
+                    4. Keep it SHORT (max 4 lines).
+                    5. CRITICAL: DO NOT use Asterisks (*), Quotes ("), or Markdown. Just plain text.
+                    
+                    Text to summarize:
+                    "${articleText.slice(0, isLongText ? 12000 : 5000)}"
                     `;
                 }
 
-                const aiSummary = await brain.generateInternal(systemPrompt);
+                let aiSummary = await brain.generateInternal(systemPrompt);
 
                 if (aiSummary) {
+                    // 🧼 Generic Output Cleanup (Safety Net)
+                    aiSummary = aiSummary.replace(/[*"`]/g, '').trim();
+
                     // Return enhanced object
                     return { ...item, summary: aiSummary, aiSummary: aiSummary };
                 }

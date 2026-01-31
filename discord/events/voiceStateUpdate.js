@@ -178,6 +178,11 @@ module.exports = {
                     if (!joinTimestamps.has(voiceState.id)) {
                         joinTimestamps.set(voiceState.id, { sessionStart: now, lastCheckpoint: now });
                         restoredCount++;
+
+                        // 👑 Startup Check: If MVP is receiving us, acknowledge him!
+                        // This handles the case where bot restarts while MVP is already holding court.
+                        const mvpManager = require('../../handlers/voice/mvp_manager');
+                        mvpManager.handleEntrance(voiceState.member, voiceState.channelId).catch(console.error);
                     }
                 }
             });

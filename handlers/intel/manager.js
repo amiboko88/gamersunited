@@ -363,14 +363,15 @@ class IntelManager {
 
                 // 2. Change Detection
                 let isNew = false;
+                let shouldBroadcast = true; // Default to true for change detection
                 const lastTitle = status[check.titleKey];
                 const lastDate = status[check.dateKey];
 
                 if (!lastTitle && !lastDate) {
-                    // First run logic: Treat as new to populate cache, but maybe skip broadcast?
-                    // Let's populate cache so "What is new?" works immediately.
+                    // First run logic: Treat as new to populate cache, BUT SKIP BROADCAST to prevent startup spam
                     isNew = true;
-                    log(`🛡️ [Intel] First run for ${check.type}. Populating cache.`);
+                    shouldBroadcast = false; // 🔇 Silent Cache Population
+                    log(`🛡️ [Intel] First run for ${check.type}. Populating cache (Silent).`);
                 } else if (check.checkType === 'title' && item.title !== lastTitle) {
                     isNew = true;
                 } else if (check.checkType === 'date') {
@@ -391,8 +392,12 @@ class IntelManager {
                     // 4. SAVE TO CACHE ( The News Stand )
                     await db.collection('intel_cache').doc(check.type).set(enrichedItem);
 
-                    // 5. Broadcast
-                    await broadcaster.broadcast(enrichedItem, this.clients);
+                    // 5. Broadcast (Only if valid new update)
+                    if (shouldBroadcast) {
+                        await broadcaster.broadcast(enrichedItem, this.clients);
+                    } else {
+                        log(`🔇 [Intel] Silent Update (Startup/Init): ${item.title}`);
+                    }
 
                     // 6. Update Status
                     await statusRef.set({

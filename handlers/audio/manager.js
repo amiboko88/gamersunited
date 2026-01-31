@@ -177,6 +177,47 @@ class AudioManager {
             return "resumed";
         }
     }
+
+    /**
+     * 🤫 Wait for silence in the channel before playing
+     * @param {number} minSilenceMs - How long it must be silent (default 1.5s)
+     * @param {number} maxWaitMs - Max time to wait before forcing (default 10s)
+     */
+    async waitForSilence(minSilenceMs = 1500, maxWaitMs = 10000) {
+        if (!this.connection) return true;
+
+        const startTime = Date.now();
+        let silenceStart = Date.now();
+
+        return new Promise((resolve) => {
+            const check = setInterval(() => {
+                const now = Date.now();
+                // Check Max Wait
+                if (now - startTime > maxWaitMs) {
+                    log('⏳ [Audio] Timeout waiting for silence. Playing anyway.');
+                    clearInterval(check);
+                    resolve(true);
+                    return;
+                }
+
+                // Check Speaking Status
+                // The logical map is internal, but users.size works generally for active speaking SSRCs
+                const isSomeoneSpeaking = this.connection.receiver.speaking.users.size > 0;
+
+                if (isSomeoneSpeaking) {
+                    silenceStart = now; // Reset silence counter
+                } else {
+                    const silenceDuration = now - silenceStart;
+                    if (silenceDuration >= minSilenceMs) {
+                        // log(`🤫 [Audio] Detected ${silenceDuration}ms silence. Proceeding.`);
+                        clearInterval(check);
+                        resolve(true);
+                        return;
+                    }
+                }
+            }, 200); // Check every 200ms
+        });
+    }
 }
 
 module.exports = new AudioManager();

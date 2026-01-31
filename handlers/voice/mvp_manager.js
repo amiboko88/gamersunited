@@ -70,6 +70,10 @@ class MVPVoiceManager {
         try {
             log(`👑 [MVP] Generating Royal Content for ${mvpData.name}...`);
 
+            // 🤫 Smart Wait: Don't interrupt if people are talking
+            // Wait for 1.5s of silence, max 12s wait
+            await musicPlayer.waitForSilence(1500, 12000);
+
             // A. Get User Stats / Win Count
             const userDoc = await db.collection('users').doc(member.id).get();
             const userData = userDoc.exists ? userDoc.data() : {};

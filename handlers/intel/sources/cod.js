@@ -103,7 +103,11 @@ const source = {
             // Prioritize newest dates in URL
             const bestLink = allLinks.find(l => {
                 const text = l.innerText.toLowerCase();
-                const isGarbage = text.includes('skip') || text.includes('main content') || text.length < 5;
+                const isGarbage = text.includes('skip') ||
+                    text.includes('main content') ||
+                    text.includes('united states') ||
+                    text.includes('context') ||
+                    text.length < 5;
                 if (isGarbage) return false;
                 return text.includes('warzone') || l.href.includes('warzone');
             });

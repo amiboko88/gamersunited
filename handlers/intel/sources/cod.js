@@ -112,12 +112,16 @@ const source = {
                 };
             }
 
-            // 3. Ultimate Fallback: Any Patch Note
-            const anyLink = allLinks[0];
-            if (anyLink) {
+            // 3. Ultimate Fallback: Valid Patch Note Search
+            const validLink = allLinks.find(l => {
+                const txt = l.innerText.trim().toLowerCase();
+                return txt.length > 5 && !txt.includes('skip to') && !txt.includes('main content');
+            });
+
+            if (validLink) {
                 return {
-                    title: `COD OFFICIAL: ${anyLink.innerText.trim()}`,
-                    link: anyLink.href,
+                    title: `COD OFFICIAL: ${validLink.innerText.trim()}`,
+                    link: validLink.href,
                     date: new Date().toISOString(),
                     summary: "Official Patch Notes (General). Click link to read."
                 };

@@ -40,6 +40,12 @@ class IntelManager {
         const cron = require('node-cron');
         cron.schedule('0 */6 * * *', () => this.checkNews());
         log('🛡️ [Intel] Background Patrol Active (Every 6h).');
+
+        // Startup Trigger (Delayed to allow DB connection)
+        setTimeout(() => {
+            log('🚀 [Intel] Running Startup News Check...');
+            this.checkNews();
+        }, 30000); // 30s delay
     }
 
     // --- PatchBot Event Listener (Event-Driven Updates) ---

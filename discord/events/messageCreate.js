@@ -110,6 +110,13 @@ module.exports = {
             const hasTrigger = content.includes('שמעון') || content.includes('שימי');
 
             if (isMentioned || hasTrigger) {
+                // 🛑 Shabbat Check
+                const shabbatManager = require('../../handlers/community/shabbat');
+                if (shabbatManager.isShabbat()) {
+                    await message.reply("שבת שלום! אני נח עכשיו, תחזור אחר כך. 🕯️🍷");
+                    return;
+                }
+
                 await message.channel.sendTyping();
                 let cleanText = message.content.replace(/<@!?\d+>/g, '').trim();
                 const response = await brain.ask(message.author.id, 'discord', cleanText);

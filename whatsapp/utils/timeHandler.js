@@ -1,17 +1,17 @@
 const { log } = require('../../utils/logger');
+const shabbatManager = require('../../handlers/community/shabbat');
 
 function isSystemActive() {
-    const now = new Date();
+    const now = new Date(); // Local server time (assuming offset handled or irrelevant for isShabbat)
 
-    // המרה לשעון ישראל
+    // 1. 🕯️ שמירת שבת 🕯️ (Dynamic Check)
+    if (shabbatManager.isShabbat()) {
+        return { active: false, reason: "Shabbat" };
+    }
+
+    // המרה לשעון ישראל עבור לוגיקה קבועה (במידה והשרת לא בישראל)
     const israelTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Jerusalem" }));
-    const day = israelTime.getDay(); // 0 = ראשון, 6 = שבת
     const hour = israelTime.getHours();
-
-    // 1. 🕯️ שמירת שבת 🕯️
-    // Logic moved to dynamic 'shabbat.js'. This file only handles Night/Siesta.
-    // if (day === 5 && hour >= 17) return { active: false, reason: "Shabbat" };
-    // if (day === 6 && hour < 20) return { active: false, reason: "Shabbat" };
 
     // 2. 😴 שעות שינה (01:00 - 08:00)
     if (hour >= 1 && hour < 8) return { active: false, reason: "Night" };

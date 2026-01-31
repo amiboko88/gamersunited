@@ -66,7 +66,10 @@ class IntelBroadcaster {
         // 5. Discord
         try {
             if (discord) {
-                const channel = discord.channels.cache.find(c => c.name.includes('news') || c.name.includes('עדכונים'));
+                // User defined channel: 583575179880431616 (General) or fallback to 'news'
+                const targetChannelId = '583575179880431616';
+                const channel = discord.channels.cache.get(targetChannelId) || discord.channels.cache.find(c => c.name.includes('news') || c.name.includes('עדכונים'));
+
                 if (channel) {
                     if (imageBuffer) {
                         await channel.send({

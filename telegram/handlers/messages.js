@@ -214,6 +214,13 @@ module.exports = (bot) => {
             const hasTrigger = text.includes("שמעון") || text.includes("שימי");
 
             if (isReplyToBot || hasTrigger) {
+                // 🛑 Shabbat Check
+                const shabbatManager = require('../../handlers/community/shabbat');
+                if (shabbatManager.isShabbat()) {
+                    await ctx.reply("שבת שלום! אני נח עכשיו, תחזור אחר כך. 🕯️🍷", { reply_to_message_id: ctx.message.message_id });
+                    return;
+                }
+
                 await ctx.replyWithChatAction("typing");
 
                 // שימוש ב-ID המקושר לזיכרון, או ב-TG ID זמני (אבל בלי לשמור ל-DB אם המוח חכם)

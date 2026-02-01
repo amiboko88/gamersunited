@@ -158,6 +158,10 @@ class PodcastManager {
     // --- CORE GENERATOR (Shared) ---
     async _generateAndPlay(channel, prompt, mode) {
         try {
+            // 🤫 Smart Wait: Don't interrupt if people are talking
+            log(`[Podcast] 🤫 Waiting for silence in ${channel.name}...`);
+            await audioManager.waitForSilence(1500, 10000);
+
             // 1. Generate Script
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o",
@@ -167,7 +171,17 @@ class PodcastManager {
             });
 
             const scriptText = completion.choices[0].message.content;
-            const script = this._parseScript(scriptText);
+            let script = this._parseScript(scriptText);
+
+            // Fallback for Seduction (If AI forgot prefixes)
+            if (!script.length && mode === 'seduction') {
+                log(`[Podcast] ⚠️ Fallback parsing for Seduction text (No prefix detected).`);
+                script = [{
+                    speaker: 'shirly',
+                    text: scriptText.trim(),
+                    voiceId: config.SHIRLY_VOICE_ID
+                }];
+            }
 
             if (!script.length) throw new Error("Empty Script Generated");
 
@@ -183,10 +197,9 @@ class PodcastManager {
 
             // TTS Generation (ElevenLabs)
             for (const [i, line] of script.entries()) {
+                log(`[Podcast] 🗣️ Generating audio for ${line.speaker}... (${i + 1}/${script.length})`);
                 const buffer = await voiceManager.speak(line.text, {
-                    voiceId: line.voiceId,
-                    stability: 0.5, // Strict V3: 0.5 (Natural)
-                    similarityBoost: 0.85
+                    voiceId: line.voiceId
                 });
 
                 if (buffer) {
@@ -220,10 +233,17 @@ class PodcastManager {
         return text.split('\n').filter(l => l.includes(':')).map(line => {
             const [speaker, ...content] = line.split(':');
             const name = speaker.trim().toLowerCase();
+
+            // Comprehensive check for Shimon vs Shirly
+            const isShirly = name.includes('shirly') ||
+                name.includes('shirley') ||
+                name.includes('שירלי') ||
+                name.includes('שיר');
+
             return {
                 speaker: name,
-                text: content.join(':').trim(),
-                voiceId: name.includes('shirly') ? config.SHIRLY_VOICE_ID : config.SHIMON_VOICE_ID
+                text: content.join(':').replace(/[*_~`"]/g, '').trim(), // Clean quotes and asterisks
+                voiceId: isShirly ? config.SHIRLY_VOICE_ID : config.SHIMON_VOICE_ID
             };
         });
     }

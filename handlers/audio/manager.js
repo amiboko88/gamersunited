@@ -60,7 +60,7 @@ class AudioManager {
                 adapterCreator: channel.guild.voiceAdapterCreator,
             });
 
-            await entersState(this.connection, VoiceConnectionStatus.Ready, 5000);
+            await entersState(this.connection, VoiceConnectionStatus.Ready, 10000); // Increased to 10s
             this.connection.subscribe(this.musicPlayer);
             return true;
         } catch (error) {
@@ -74,12 +74,27 @@ class AudioManager {
      */
     async playLocalFile(guildId, channelId, filePath) {
         try {
-            // אם לא מחובר או מחובר לערוץ אחר - מתחבר מחדש
-            if (!this.connection || this.connection.joinConfig.channelId !== channelId) {
+            // Check if connection is valid and ready
+            const isDisconnected = this.connection &&
+                (this.connection.state.status === VoiceConnectionStatus.Disconnected ||
+                    this.connection.state.status === VoiceConnectionStatus.Destroyed);
+
+            // אם לא מחובר, מחובר לערוץ אחר, או שהחיבור נותק - מתחבר מחדש
+            if (!this.connection || this.connection.joinConfig.channelId !== channelId || isDisconnected) {
+                log(`🔊 [AudioManager] Connecting to channel ${channelId} (Status: ${this.connection?.state?.status || 'None'})...`);
                 const { client } = require('../../discord/index');
                 const guild = await client?.guilds.fetch(guildId).catch(() => null);
                 const channel = guild?.channels.cache.get(channelId);
-                if (channel) await this.joinChannel(channel);
+
+                if (channel) {
+                    const success = await this.joinChannel(channel);
+                    if (!success) throw new Error("Failed to join voice channel.");
+                } else {
+                    throw new Error(`Channel ${channelId} not found in guild ${guildId}.`);
+                }
+            } else {
+                // Ensure subscribed if already in channel
+                this.connection.subscribe(this.effectPlayer);
             }
 
             // השמעת הקובץ כאפקט (כדי לא לעצור מוזיקה אם קיימת בעתיד)

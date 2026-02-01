@@ -119,7 +119,7 @@ class StatsReviewManager {
 
             // 1. Save to User Profile
             await userRef.collection('games').add({
-                game: 'Warzone',
+                game: data.game || 'Warzone',
                 mode: data.mode || 'Unknown',
                 kills: data.kills,
                 damage: data.damage,

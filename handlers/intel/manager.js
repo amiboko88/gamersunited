@@ -323,6 +323,14 @@ class IntelManager {
     // --- Automated News Cycle (The background worker) ---
     async checkNews() {
         try {
+            // 🌙 Night Mode Protection (01:00 - 07:00)
+            const now = new Date();
+            const hour = now.getHours(); // 0-23
+            if (hour >= 1 && hour < 7) {
+                log('😴 [Intel] Night Mode Active (01:00-07:00). Skipping check to prevent spam.');
+                return;
+            }
+
             log('🕵️ [Intel] Checking for fresh intel (Background)...');
             const statusRef = db.collection('system_metadata').doc('intel_status');
             const statusDoc = await statusRef.get();
@@ -394,7 +402,9 @@ class IntelManager {
 
                     // 5. Broadcast (Only if valid new update)
                     if (shouldBroadcast) {
-                        await broadcaster.broadcast(enrichedItem, this.clients);
+                        // 🛑 Force Mute Discord (User Request: WhatsApp Only)
+                        const clientsNoDiscord = { ...this.clients, discord: null };
+                        await broadcaster.broadcast(enrichedItem, clientsNoDiscord);
                     } else {
                         log(`🔇 [Intel] Silent Update (Startup/Init): ${item.title}`);
                     }

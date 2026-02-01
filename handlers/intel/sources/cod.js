@@ -103,14 +103,26 @@ const source = {
             // Prioritize newest dates in URL
             const bestLink = allLinks.find(l => {
                 const text = l.innerText.toLowerCase();
+                const cleanText = text.replace(/[^a-z0-9]/g, ' ').trim(); // Remove symbols for better matching
+
                 const isGarbage = text.includes('skip') ||
                     text.includes('main content') ||
                     text.includes('united states') ||
                     text.includes('context') ||
                     text.includes('back to top') ||
-                    text.length < 5;
+                    text.includes('legal') ||
+                    text.includes('privacy') ||
+                    text.includes('terms') ||
+                    cleanText.length < 10; // Increased min length to avoid short navigation links
+
                 if (isGarbage) return false;
-                return text.includes('warzone') || l.href.includes('warzone');
+
+                // Must look like a real update title or have proper path
+                // e.g. "Season 01 Reloaded", "Patch Notes", etc.
+                const validTitle = text.includes('season') || text.includes('update') || text.includes('patch') || text.includes('notes');
+                const validUrl = l.href.includes('patchnotes') && (l.href.includes('2025') || l.href.includes('2026')); // Ensure current year context
+
+                return (validTitle || validUrl) && (text.includes('warzone') || l.href.includes('warzone'));
             });
 
             if (bestLink) {

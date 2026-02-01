@@ -11,7 +11,8 @@ const definition = {
             type: "object",
             properties: {
                 period: { type: "string", enum: ["week", "all", "yesterday"], description: "Time period (Default: week)." },
-                stat: { type: "string", enum: ["kills", "damage", "score", "matches"], description: "Sort by which stat? (Default: damage)" }
+                stat: { type: "string", enum: ["kills", "damage", "score", "matches"], description: "Sort by which stat? (Default: damage)" },
+                game: { type: "string", enum: ["Warzone", "BF6"], description: "Game type (Default: Warzone)." }
             },
             required: []
         }
@@ -22,6 +23,7 @@ async function execute(args, userId, chatId) {
     try {
         const period = args.period || 'week';
         const sortStat = args.stat || 'damage'; // User Requested: DAMAGE is King
+        const targetGame = args.game || 'Warzone';
 
         // 1. Determine Date Range
         let queryDate = new Date(0); // Default: All Time (Epoch 1970)
@@ -44,6 +46,8 @@ async function execute(args, userId, chatId) {
         } else if (period === 'all') {
             // Already set as default
         }
+
+        if (targetGame !== 'Warzone') periodText = `${targetGame}: ${periodText}`;
 
 
         log(`🏆 [Leaderboard] Generating ${period} table (Sort: ${sortStat})...`);
@@ -73,6 +77,11 @@ async function execute(args, userId, chatId) {
 
                 games.forEach(g => {
                     const d = g.data();
+
+                    // Game Filter Logic (Legacy fallback)
+                    const gType = d.game || 'Warzone';
+                    if (gType !== targetGame) return;
+
                     p.kills += (parseInt(d.kills) || 0);
                     p.damage += (parseInt(d.damage) || 0);
                     p.score += (parseInt(d.score) || 0);

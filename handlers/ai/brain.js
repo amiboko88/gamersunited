@@ -221,7 +221,8 @@ class ShimonBrain {
                 messages: [{ role: "system", content: prompt }],
                 temperature: 0.7
             });
-            return runner.choices[0].message.content;
+            const text = runner.choices[0].message.content;
+            return text.replace(/[*_~`"]/g, '').trim(); // FOMO Fix: Clean quotes and asterisks
         } catch (error) {
             log(`❌ [Brain] Internal Gen Error: ${error.message}`);
             return null;

@@ -17,6 +17,12 @@ class MVPVoiceManager {
     async handleEntrance(member, channelId) {
         if (!member || !channelId || member.user.bot) return;
 
+        // 🚫 AFK Check: Don't announce MVP if they join AFK channel
+        if (member.guild.afkChannelId === channelId) {
+            log(`👑 [MVP] Ignoring entrance to AFK channel for ${member.displayName}.`);
+            return;
+        }
+
         try {
             // 1. Check if MVP
             const mvpDoc = await db.collection('system_metadata').doc('current_mvp').get();
@@ -104,12 +110,8 @@ class MVPVoiceManager {
 
             log(`👑 [MVP] Speech: "${speechText}"`);
 
-            // C. Generate Audio (ElevenLabs V3/Turbo High Quality)
-            const audioBuffer = await voiceAI.speak(speechText, {
-                modelId: 'eleven_v3', // Strict V3 Only
-                stability: 0.5, // Strict V3 Requirement
-                style: 0.7 // Style can be flexible usually, but safer to keep high? V3 supports it.
-            });
+            // C. Generate Audio (Default settings in voiceAI will match media/voice.js)
+            const audioBuffer = await voiceAI.speak(speechText);
 
             if (!audioBuffer) {
                 log(`❌ [MVP] Failed to generate audio.`);

@@ -44,7 +44,8 @@ class VoiceManager {
             return null;
         }
 
-        const cleanText = text.replace(/[*_~`]/g, '').replace('[VOICE]', '').trim();
+        // Clean text: Remove asterisks, underscores, quotes, etc. (Hebrew FOMO fix)
+        const cleanText = text.replace(/[*_~`"]/g, '').replace('[VOICE]', '').trim();
         if (!cleanText) return null;
 
         // Determine Configuration
@@ -52,11 +53,11 @@ class VoiceManager {
         const voiceId = options.voiceId || this.voiceId;
         const modelId = options.modelId || "eleven_v3"; // ✅ Enforced V3 for Hebrew stability
 
-        // Settings: Allow per-call overrides, otherwise use defaults
+        // Settings: Match handlers/media/voice.js (Stability 0.0 works best for user)
         const settings = {
-            stability: options.stability !== undefined ? options.stability : 0.5, // V3 Optimized for Hebrew: 0.5
+            stability: options.stability !== undefined ? options.stability : 0.0,
             similarity_boost: options.similarityBoost || 0.8,
-            style: options.style || 0.5, // V3 supports style
+            style: options.style || 0.5,
             use_speaker_boost: options.useSpeakerBoost !== undefined ? options.useSpeakerBoost : true
         };
 
@@ -69,6 +70,7 @@ class VoiceManager {
             const response = await axios({
                 method: 'POST',
                 url: `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+                params: { output_format: 'mp3_44100_128' }, // Explicit format as in media/voice.js
                 headers: {
                     'Accept': 'audio/mpeg',
                     'xi-api-key': this.elevenLabsKey,

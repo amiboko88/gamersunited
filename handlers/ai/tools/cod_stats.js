@@ -19,9 +19,10 @@ const definition = {
                             kills: { type: "integer" },
                             damage: { type: "integer" },
                             placement: { type: "integer" },
-                            mode: { type: "string" }
+                            mode: { type: "string" },
+                            game: { type: "string", description: "Warzone, BF6, etc." }
                         },
-                        required: ["username", "kills", "damage"]
+                        required: ["username", "kills", "damage", "game"]
                     }
                 }
             },
@@ -167,7 +168,7 @@ async function execute(args, userId, chatId, imageBuffers) {
         }
 
         const statData = {
-            game: 'Warzone',
+            game: match.game || 'Warzone',
             mode: match.mode || 'Unknown',
             kills: parseInt(match.kills) || 0,
             damage: parseInt(match.damage) || 0,

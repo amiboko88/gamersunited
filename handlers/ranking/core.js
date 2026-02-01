@@ -147,11 +147,12 @@ class RankingCore {
     }
 
     /**
-     * שולף את סטטיסטיקת הוורזון (לפי סריקות)
+     * שולף את סטטיסטיקת הגיימינג (וורזון, BF6 וכו')
      * @param {number} limit 
      * @param {string} period 'WEEKLY' or 'ALL_TIME'
+     * @param {string} targetGame 'Warzone' or 'BF6'
      */
-    async getWarzoneStats(limit = 10, period = 'ALL_TIME') {
+    async getWarzoneStats(limit = 10, period = 'ALL_TIME', targetGame = 'Warzone') {
         try {
             const usersSnapshot = await db.collection('users').get();
             const players = [];
@@ -181,6 +182,11 @@ class RankingCore {
 
                 gamesSnap.forEach(g => {
                     const stats = g.data();
+
+                    // Game Filter Logic
+                    const game = stats.game || 'Warzone';
+                    if (game !== targetGame) return;
+
                     kills += (stats.kills || 0);
                     damage += (stats.damage || 0);
                     matches++;

@@ -12,7 +12,8 @@ const definition = {
                 targetUser: { type: "string", description: "The specific user ID or Name to query. If null, query widely." },
                 limit: { type: "integer", description: "Max number of games to retrieve (Default 5)." },
                 period: { type: "string", enum: ["today", "yesterday", "week", "all"], description: "Time period filter." },
-                days: { type: "integer", description: "Number of past days to fetch (e.g. 2 for last 48h)." }
+                days: { type: "integer", description: "Number of past days to fetch (e.g. 2 for last 48h)." },
+                game: { type: "string", enum: ["Warzone", "BF6"], description: "Game type (Default: Warzone)." }
             },
             required: []
         }
@@ -22,6 +23,7 @@ const definition = {
 async function execute(args, userId, chatId) {
     try {
         const limit = args.limit || 5;
+        const targetGame = args.game || 'Warzone';
         let queryDate = new Date();
 
         if (args.days) {
@@ -69,6 +71,7 @@ async function execute(args, userId, chatId) {
             // Specific User
             const gamesSnap = await db.collection('users').doc(targetId).collection('games')
                 .where('timestamp', '>=', queryDate)
+                .where('game', '==', targetGame)
                 .orderBy('timestamp', 'desc')
                 .limit(limit)
                 .get();
@@ -83,6 +86,7 @@ async function execute(args, userId, chatId) {
             const promises = usersSnap.docs.map(async doc => {
                 const games = await doc.ref.collection('games')
                     .where('timestamp', '>=', queryDate)
+                    .where('game', '==', targetGame)
                     .orderBy('timestamp', 'desc')
                     .limit(3) // Get top 3 per user
                     .get();
@@ -109,6 +113,7 @@ async function execute(args, userId, chatId) {
 
         // 3. Format for AI
         return JSON.stringify(stats.map(s => ({
+            game: s.game || 'Warzone',
             player: s.username,
             kills: s.kills,
             damage: s.damage,

@@ -92,7 +92,7 @@ async function handleScanCommand(sock, msg, chatJid, dbUserId, isAdmin, directBu
         }
 
         try {
-            const parts = [{ text: "Extract Warzone Scoreboard data from these images. Return JSON list: [{username, kills, damage, placement, mode}]. If not a scoreboard, return empty list." }];
+            const parts = [{ text: "Extract Gaming Scoreboard data from these images. Detect the game: 'Warzone' or 'BF6'. For BF6 (Battlefield Redsec), 'Placement' is in 'YOUR SQUAD PLACEMENT'. Return JSON list: [{username, kills, damage, placement, mode, game}]. If not a scoreboard, return empty list." }];
             chunk.forEach(b => parts.push({ inlineData: { mimeType: "image/jpeg", data: b.toString("base64") } }));
 
             const result = await generateContent(parts, "gemini-2.0-flash");
